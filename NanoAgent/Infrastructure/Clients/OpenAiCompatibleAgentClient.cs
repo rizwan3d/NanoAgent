@@ -10,14 +10,24 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     private readonly string _model;
     private readonly AgentPromptFactory _promptFactory;
     private readonly FileToolService _fileToolService;
+    private readonly AppRuntimeOptions _runtimeOptions;
+    private readonly IChatConsole _chatConsole;
     private readonly HttpClient _httpClient;
 
-    public OpenAiCompatibleAgentClient(string endpoint, string model, AgentPromptFactory promptFactory, FileToolService fileToolService)
+    public OpenAiCompatibleAgentClient(
+        string endpoint,
+        string model,
+        AgentPromptFactory promptFactory,
+        FileToolService fileToolService,
+        IChatConsole chatConsole,
+        AppRuntimeOptions runtimeOptions)
     {
         _endpoint = endpoint.TrimEnd('/');
         _model = model;
         _promptFactory = promptFactory;
         _fileToolService = fileToolService;
+        _chatConsole = chatConsole;
+        _runtimeOptions = runtimeOptions;
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
     }
@@ -34,6 +44,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
             for (int iteration = 0; iteration < 8; iteration++)
             {
+                WriteVerbose($"chat iteration {iteration + 1}: sending request with {messages.Count} message(s)");
                 ChatCompletionRequest request = CreateRequest(messages);
                 ChatCompletionResponse? completion = await SendRequestAsync(request);
                 ChatMessage? message = completion?.Choices?.FirstOrDefault()?.Message;
@@ -47,7 +58,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
                 {
                     return !string.IsNullOrWhiteSpace(message.Content)
                         ? message.Content.Trim()
-                        : "Unable to parse response";
+                        : BuildEmptyResponseMessage(message);
                 }
 
                 messages.Add(new ChatMessage
@@ -59,7 +70,9 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
                 foreach (ChatToolCall toolCall in message.ToolCalls)
                 {
+                    WriteVerbose($"tool call: {toolCall.Function.Name} {toolCall.Function.Arguments}");
                     string toolResult = _fileToolService.Execute(toolCall);
+                    WriteVerbose($"tool result: {SummarizeToolResult(toolResult)}");
                     messages.Add(new ChatMessage
                     {
                         Role = ChatRole.Tool,
@@ -103,4 +116,26 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
             Messages = messages.ToArray(),
             Tools = _fileToolService.GetToolDefinitions()
         };
+
+    private void WriteVerbose(string message)
+    {
+        if (!_runtimeOptions.Verbose)
+        {
+            return;
+        }
+
+        _chatConsole.RenderVerboseMessage(message);
+    }
+
+    private static string SummarizeToolResult(string toolResult)
+    {
+        string firstLine = toolResult.Replace("\r\n", "\n").Split('\n', 2)[0];
+        return firstLine.Length <= 120 ? firstLine : firstLine[..117] + "...";
+    }
+
+    private static string BuildEmptyResponseMessage(ChatMessage message)
+    {
+        string role = string.IsNullOrWhiteSpace(message.Role) ? "<unknown>" : message.Role;
+        return $"Assistant returned no final text response. role={role}";
+    }
 }

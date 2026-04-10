@@ -5,6 +5,8 @@ internal static class Program
     static async Task Main(string[] args)
     {
         Console.OutputEncoding = System.Text.Encoding.UTF8;
+        AppRuntimeOptions runtimeOptions = new(
+            Verbose: args.Contains("--verbose", StringComparer.OrdinalIgnoreCase));
 
         if (args.Contains("--edit-global-config", StringComparer.OrdinalIgnoreCase))
         {
@@ -18,7 +20,9 @@ internal static class Program
             config.Endpoint,
             config.Model,
             new AgentPromptFactory(),
-            new FileToolService());
+            new FileToolService(),
+            chatConsole,
+            runtimeOptions);
 
         ChatApplication application = new ChatApplication(chatConsole, agentClient, config);
         await application.RunAsync();

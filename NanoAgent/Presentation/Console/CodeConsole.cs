@@ -9,6 +9,7 @@ internal sealed class CodeConsole : IChatConsole
     private const string UserTone = "\u001b[38;5;252m";
     private const string AgentTone = "\u001b[38;5;255m";
     private const string DividerTone = "\u001b[38;5;239m";
+    private const string VerboseTone = "\u001b[38;5;117m";
 
     public void RenderHeader(AppConfig config)
     {
@@ -51,5 +52,10 @@ internal sealed class CodeConsole : IChatConsole
 
         Console.WriteLine($"{DividerTone}  │{Reset}");
         Console.WriteLine($"{Muted}  ready for the next message{Reset}\n");
+    }
+
+    public void RenderVerboseMessage(string message)
+    {
+        Console.WriteLine($"{VerboseTone}[verbose]{Reset} {Muted}{message}{Reset}");
     }
 }

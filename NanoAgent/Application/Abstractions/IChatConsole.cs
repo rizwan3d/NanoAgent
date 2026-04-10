@@ -6,4 +6,5 @@ internal interface IChatConsole
     string? ReadUserInput();
     void RenderUserMessage(string userInput);
     void RenderAgentMessage(string message);
+    void RenderVerboseMessage(string message);
 }
