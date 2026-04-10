@@ -127,6 +127,12 @@ internal sealed class ReadFileToolArguments
     public string Path { get; set; } = string.Empty;
 }
 
+internal sealed class ListFilesToolArguments
+{
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+}
+
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]

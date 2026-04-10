@@ -27,16 +27,40 @@ internal sealed class FileToolService
                     }
                 }
             }
+        },
+        new()
+        {
+            Function = new ChatToolFunctionDefinition
+            {
+                Name = "list_files",
+                Description = "List files and directories inside a folder. Use this to discover project structure before reading files.",
+                Parameters = new ChatToolParameters
+                {
+                    AdditionalProperties = false,
+                    Required = ["path"],
+                    Properties = new Dictionary<string, ChatToolParameterProperty>
+                    {
+                        ["path"] = new()
+                        {
+                            Type = "string",
+                            Description = "Relative or absolute path to a directory."
+                        }
+                    }
+                }
+            }
         }
     ];
 
-    public string Execute(ChatToolCall toolCall)
-    {
-        if (!string.Equals(toolCall.Function.Name, "read_file", StringComparison.Ordinal))
+    public string Execute(ChatToolCall toolCall) =>
+        toolCall.Function.Name switch
         {
-            return $"Tool error: unsupported tool '{toolCall.Function.Name}'.";
-        }
+            "read_file" => ExecuteReadFile(toolCall),
+            "list_files" => ExecuteListFiles(toolCall),
+            _ => $"Tool error: unsupported tool '{toolCall.Function.Name}'."
+        };
 
+    private static string ExecuteReadFile(ChatToolCall toolCall)
+    {
         ReadFileToolArguments? arguments;
         try
         {
@@ -71,6 +95,54 @@ internal sealed class FileToolService
         }
     }
 
+    private static string ExecuteListFiles(ChatToolCall toolCall)
+    {
+        ListFilesToolArguments? arguments;
+        try
+        {
+            arguments = JsonSerializer.Deserialize(
+                toolCall.Function.Arguments,
+                FileToolJsonContext.Default.ListFilesToolArguments);
+        }
+        catch (JsonException exception)
+        {
+            return $"Tool error: invalid arguments for list_files. {exception.Message}";
+        }
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
+        {
+            return "Tool error: 'path' is required.";
+        }
+
+        string directoryPath = ResolvePath(arguments.Path);
+        if (!Directory.Exists(directoryPath))
+        {
+            return $"Tool error: directory not found: {directoryPath}";
+        }
+
+        try
+        {
+            string[] entries = Directory
+                .EnumerateFileSystemEntries(directoryPath)
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .Select(path =>
+                {
+                    bool isDirectory = Directory.Exists(path);
+                    string name = Path.GetFileName(path);
+                    return isDirectory ? $"DIR  {name}" : $"FILE {name}";
+                })
+                .ToArray();
+
+            return entries.Length == 0
+                ? $"DIRECTORY: {directoryPath}\n<empty>"
+                : $"DIRECTORY: {directoryPath}\n{string.Join('\n', entries)}";
+        }
+        catch (Exception exception)
+        {
+            return $"Tool error: unable to list directory '{directoryPath}'. {exception.Message}";
+        }
+    }
+
     private static string ResolvePath(string path)
     {
         if (Path.IsPathRooted(path))
@@ -84,6 +156,7 @@ internal sealed class FileToolService
 
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ReadFileToolArguments))]
+[JsonSerializable(typeof(ListFilesToolArguments))]
 internal sealed partial class FileToolJsonContext : JsonSerializerContext
 {
 }

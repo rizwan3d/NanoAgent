@@ -78,7 +78,9 @@ internal sealed class AgentPromptFactory
            - If using a library/framework feature, follow official idioms
 
         8.5. Tool use
+           - You can use the list_files tool to inspect directory contents before choosing files to read
            - You can use the read_file tool to inspect files before answering
+           - Prefer listing likely directories when you need to discover where code lives
            - Prefer reading relevant source files instead of guessing their contents
            - Use relative paths when possible
            - Do not claim to have read a file unless you actually used the tool
