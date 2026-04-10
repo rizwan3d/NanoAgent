@@ -16,11 +16,14 @@ internal static class Program
 
         AppConfig config = AppConfigStore.Load();
         IChatConsole chatConsole = new CodeConsole();
+        AgentPromptFactory promptFactory = new();
+        IToolService toolService = new FileToolService();
+        IChatSession chatSession = new ChatSession(promptFactory.CreateSystemPrompt());
         IAgentClient agentClient = new OpenAiCompatibleAgentClient(
             config.Endpoint,
             config.Model,
-            new AgentPromptFactory(),
-            new FileToolService(),
+            toolService,
+            chatSession,
             chatConsole,
             runtimeOptions);
 

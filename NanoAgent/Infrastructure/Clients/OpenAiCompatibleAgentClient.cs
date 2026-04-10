@@ -10,46 +10,36 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     private const int DefaultMaxTokens = 32000;
     private readonly string _endpoint;
     private readonly string _model;
-    private readonly AgentPromptFactory _promptFactory;
-    private readonly FileToolService _fileToolService;
+    private readonly IToolService _toolService;
+    private readonly IChatSession _chatSession;
     private readonly AppRuntimeOptions _runtimeOptions;
     private readonly IChatConsole _chatConsole;
     private readonly HttpClient _httpClient;
-    private readonly List<ChatMessage> _sessionMessages;
 
     public OpenAiCompatibleAgentClient(
         string endpoint,
         string model,
-        AgentPromptFactory promptFactory,
-        FileToolService fileToolService,
+        IToolService toolService,
+        IChatSession chatSession,
         IChatConsole chatConsole,
         AppRuntimeOptions runtimeOptions)
     {
         _endpoint = endpoint.TrimEnd('/');
         _model = model;
-        _promptFactory = promptFactory;
-        _fileToolService = fileToolService;
+        _toolService = toolService;
+        _chatSession = chatSession;
         _chatConsole = chatConsole;
         _runtimeOptions = runtimeOptions;
         _httpClient = new HttpClient();
         _httpClient.Timeout = Timeout.InfiniteTimeSpan;
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        _sessionMessages =
-        [
-            new ChatMessage
-            {
-                Role = ChatRole.System,
-                Content = _promptFactory.CreateSystemPrompt()
-            }
-        ];
     }
 
     public async Task<string> GetResponseAsync(string userPrompt)
     {
         try
         {
-            List<ChatMessage> messages = CloneMessages(_sessionMessages);
-            messages.Add(new ChatMessage { Role = ChatRole.User, Content = userPrompt });
+            List<ChatMessage> messages = _chatSession.CreateTurnMessages(userPrompt);
             int autoContinueCount = 0;
 
             for (int iteration = 0; iteration < MaxToolIterations; iteration++)
@@ -83,7 +73,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
                         Role = ChatRole.Assistant,
                         Content = message.Content ?? string.Empty
                     });
-                    CommitSessionMessages(messages);
+                    _chatSession.CommitTurn(messages);
                     return responseText;
                 }
 
@@ -98,7 +88,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
                 {
                     MaybeRenderUserFacingCommand(toolCall);
                     WriteVerbose(FormatToolCallVerboseMessage(toolCall));
-                    string toolResult = _fileToolService.Execute(toolCall);
+                    string toolResult = _toolService.Execute(toolCall);
                     WriteVerbose(FormatToolResultVerboseMessage(toolCall, toolResult));
                     messages.Add(new ChatMessage
                     {
@@ -149,7 +139,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
             Temperature = 0.7,
             MaxTokens = DefaultMaxTokens,
             Messages = messages.ToArray(),
-            Tools = _fileToolService.GetToolDefinitions()
+            Tools = _toolService.GetToolDefinitions()
         };
 
     private void WriteVerbose(string message)
@@ -291,33 +281,4 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         });
     }
 
-    private void CommitSessionMessages(List<ChatMessage> messages)
-    {
-        _sessionMessages.Clear();
-        _sessionMessages.AddRange(CloneMessages(messages));
-    }
-
-    private static List<ChatMessage> CloneMessages(IEnumerable<ChatMessage> messages) =>
-        messages.Select(CloneMessage).ToList();
-
-    private static ChatMessage CloneMessage(ChatMessage message) =>
-        new()
-        {
-            Role = message.Role,
-            Content = message.Content,
-            ToolCallId = message.ToolCallId,
-            ToolCalls = message.ToolCalls?.Select(CloneToolCall).ToArray()
-        };
-
-    private static ChatToolCall CloneToolCall(ChatToolCall toolCall) =>
-        new()
-        {
-            Id = toolCall.Id,
-            Type = toolCall.Type,
-            Function = new ChatToolFunctionCall
-            {
-                Name = toolCall.Function.Name,
-                Arguments = toolCall.Function.Arguments
-            }
-        };
 }
