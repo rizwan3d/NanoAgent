@@ -55,6 +55,32 @@ internal sealed class FileToolService
         {
             Function = new ChatToolFunctionDefinition
             {
+                Name = "write_file",
+                Description = "Create or overwrite a UTF-8 text file on disk. Use this to generate code or update source files.",
+                Parameters = new ChatToolParameters
+                {
+                    AdditionalProperties = false,
+                    Required = ["path", "content"],
+                    Properties = new Dictionary<string, ChatToolParameterProperty>
+                    {
+                        ["path"] = new()
+                        {
+                            Type = "string",
+                            Description = "Relative or absolute path to the file to create or overwrite."
+                        },
+                        ["content"] = new()
+                        {
+                            Type = "string",
+                            Description = "Full UTF-8 text content to write into the file."
+                        }
+                    }
+                }
+            }
+        },
+        new()
+        {
+            Function = new ChatToolFunctionDefinition
+            {
                 Name = "run_command",
                 Description = "Run a shell command in the current working directory. Uses PowerShell on Windows and bash on macOS/Linux when available.",
                 Parameters = new ChatToolParameters
@@ -79,6 +105,7 @@ internal sealed class FileToolService
         {
             "read_file" => ExecuteReadFile(toolCall),
             "list_files" => ExecuteListFiles(toolCall),
+            "write_file" => ExecuteWriteFile(toolCall),
             "run_command" => ExecuteRunCommand(toolCall),
             _ => $"Tool error: unsupported tool '{toolCall.Function.Name}'."
         };
@@ -212,6 +239,44 @@ internal sealed class FileToolService
         }
     }
 
+    private static string ExecuteWriteFile(ChatToolCall toolCall)
+    {
+        WriteFileToolArguments? arguments;
+        try
+        {
+            arguments = JsonSerializer.Deserialize(
+                toolCall.Function.Arguments,
+                FileToolJsonContext.Default.WriteFileToolArguments);
+        }
+        catch (JsonException exception)
+        {
+            return $"Tool error: invalid arguments for write_file. {exception.Message}";
+        }
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
+        {
+            return "Tool error: 'path' is required.";
+        }
+
+        string fullPath = ResolvePath(arguments.Path);
+
+        try
+        {
+            string? directory = Path.GetDirectoryName(fullPath);
+            if (!string.IsNullOrWhiteSpace(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            File.WriteAllText(fullPath, arguments.Content ?? string.Empty);
+            return $"FILE_WRITTEN: {fullPath}";
+        }
+        catch (Exception exception)
+        {
+            return $"Tool error: unable to write file '{fullPath}'. {exception.Message}";
+        }
+    }
+
     private static string ResolvePath(string path)
     {
         if (Path.IsPathRooted(path))
@@ -262,6 +327,7 @@ internal sealed class FileToolService
 [JsonSerializable(typeof(ReadFileToolArguments))]
 [JsonSerializable(typeof(ListFilesToolArguments))]
 [JsonSerializable(typeof(RunCommandToolArguments))]
+[JsonSerializable(typeof(WriteFileToolArguments))]
 internal sealed partial class FileToolJsonContext : JsonSerializerContext
 {
 }

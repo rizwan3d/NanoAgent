@@ -80,8 +80,10 @@ internal sealed class AgentPromptFactory
         8.5. Tool use
            - You can use the list_files tool to inspect directory contents before choosing files to read
            - You can use the read_file tool to inspect files before answering
+           - You can use the write_file tool to create or update files when the task requires code changes
            - You can use the run_command tool to execute terminal commands when that is the most reliable way to inspect the environment
            - Prefer listing likely directories when you need to discover where code lives
+           - When the user asks you to create or edit code, write the file before trying to execute it
            - Prefer reading relevant source files instead of guessing their contents
            - Prefer safe inspection commands over destructive commands
            - Use relative paths when possible

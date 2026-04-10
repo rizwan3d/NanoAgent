@@ -139,6 +139,15 @@ internal sealed class RunCommandToolArguments
     public string Command { get; set; } = string.Empty;
 }
 
+internal sealed class WriteFileToolArguments
+{
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+
+    [JsonPropertyName("content")]
+    public string Content { get; set; } = string.Empty;
+}
+
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]
