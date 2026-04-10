@@ -14,10 +14,23 @@ internal sealed class CodeConsole : IChatConsole
     private const string VerboseCommandTone = "\u001b[38;5;221m";
     private const string VerboseShellTone = "\u001b[38;5;150m";
     private const string VerboseJsonTone = "\u001b[38;5;109m";
-    private const string DividerGlyph = "│";
+    private const string WriteTone = "\u001b[38;5;151m";
+    private const string DiffAddTone = "\u001b[38;5;114m";
+    private const string DiffRemoveTone = "\u001b[38;5;203m";
+    private const string DiffHunkTone = "\u001b[38;5;117m";
+    private const string DiffContextTone = "\u001b[38;5;250m";
+    private const string CodeFenceTone = "\u001b[38;5;110m";
+    private const string BashCodeTone = "\u001b[38;5;221m";
+    private const string PowerShellCodeTone = "\u001b[38;5;150m";
+    private const string GenericCodeTone = "\u001b[38;5;181m";
+    private const string DividerGlyph = "\u2502";
+    private const string ReturnGlyph = "\u23BF";
+    private const string MiddleDot = "\u00B7";
+    private const string DownArrow = "\u2193";
     private readonly object _consoleLock = new();
     private int _activeStatusRow = -1;
     private int _activeStatusWidth;
+    private string? _activeStatusText;
 
     public void RenderHeader(AppConfig config)
     {
@@ -25,8 +38,11 @@ internal sealed class CodeConsole : IChatConsole
         {
             Console.Clear();
             Console.WriteLine();
-            Console.WriteLine($"{Warm}  {config.AppName}{Reset}  {Muted}{config.Model}{Reset}");
-            Console.WriteLine($"{DividerTone}  {new string('─', 53)}{Reset}");
+            Console.WriteLine($"{Warm}  {config.AppName}{Reset}");
+            Console.WriteLine($"{Muted}  Model:{Reset} {UserTone}{config.Model}{Reset}");
+            Console.WriteLine($"{Muted}  Github:{Reset} {VerboseCommandTone}github.com/rizwan3d/NanoAgent{Reset}");
+            Console.WriteLine($"{Muted}  Suponser:{Reset} {Warm}ALFAIN Technologies (PVT) Limited{Reset} {VerboseJsonTone}(https://alfain.co/){Reset}");
+            Console.WriteLine($"{DividerTone}  {new string('\u2500', 53)}{Reset}");
             Console.WriteLine($"{Muted}  Chat in the terminal. Press Ctrl+C to quit.{Reset}");
             Console.WriteLine();
         }
@@ -57,8 +73,50 @@ internal sealed class CodeConsole : IChatConsole
     {
         lock (_consoleLock)
         {
-            ClearActiveStatusLine();
+            bool restoreStatusLine = SuspendActiveStatusLine();
             Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset} {Accent}>{Reset} {VerboseCommandTone}{command}{Reset}");
+            ResumeActiveStatusLine(restoreStatusLine);
+        }
+    }
+
+    public void RenderMutedToolCall(string toolName)
+    {
+        lock (_consoleLock)
+        {
+            bool restoreStatusLine = SuspendActiveStatusLine();
+            Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset} {Muted}tool:{Reset} {Muted}{toolName}{Reset}");
+            ResumeActiveStatusLine(restoreStatusLine);
+        }
+    }
+
+    public void RenderFileOperationMessage(
+        string operation,
+        string path,
+        string summary,
+        IReadOnlyList<FilePreviewLine> previewLines,
+        int hiddenLineCount)
+    {
+        lock (_consoleLock)
+        {
+            bool restoreStatusLine = SuspendActiveStatusLine();
+            Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset} {Accent}{operation}{Reset}({VerboseCommandTone}{path}{Reset})");
+            Console.WriteLine($"  {Muted}{ReturnGlyph}  {summary}{Reset}");
+
+            foreach (FilePreviewLine previewLine in previewLines)
+            {
+                string number = previewLine.Number is int value
+                    ? value.ToString().PadLeft(6)
+                    : "      ";
+                string lineTone = GetPreviewLineTone(operation, previewLine.Text);
+                Console.WriteLine($"  {Muted}{number} {lineTone}{previewLine.Text}{Reset}");
+            }
+
+            if (hiddenLineCount > 0)
+            {
+                Console.WriteLine($"  {Muted}     ... +{hiddenLineCount} lines{Reset}");
+            }
+
+            ResumeActiveStatusLine(restoreStatusLine);
         }
     }
 
@@ -69,8 +127,9 @@ internal sealed class CodeConsole : IChatConsole
             ClearActiveStatusLine();
             _activeStatusRow = Console.CursorTop;
             _activeStatusWidth = 0;
+            _activeStatusText = null;
             Console.WriteLine();
-            RenderStatusLine("(0s · ↓ estimating...)");
+            RenderStatusLine($"(0s {MiddleDot} {DownArrow} estimating...)");
         }
     }
 
@@ -99,6 +158,7 @@ internal sealed class CodeConsole : IChatConsole
             RenderStatusLine(FormatActivity(elapsed, outputTokens, isEstimate));
             _activeStatusRow = -1;
             _activeStatusWidth = 0;
+            _activeStatusText = null;
         }
     }
 
@@ -107,6 +167,8 @@ internal sealed class CodeConsole : IChatConsole
         lock (_consoleLock)
         {
             string[] responseLines = message.Replace("\r\n", "\n").Split('\n');
+            bool inCodeBlock = false;
+            string? codeLanguage = null;
 
             foreach (string line in responseLines)
             {
@@ -116,7 +178,16 @@ internal sealed class CodeConsole : IChatConsole
                     continue;
                 }
 
-                Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset} {AgentTone}{line}{Reset}");
+                if (TryToggleCodeFence(line, ref inCodeBlock, ref codeLanguage))
+                {
+                    Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset} {CodeFenceTone}{line}{Reset}");
+                    continue;
+                }
+
+                string tone = inCodeBlock
+                    ? GetCodeBlockTone(codeLanguage)
+                    : AgentTone;
+                Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset} {tone}{line}{Reset}");
             }
 
             Console.WriteLine($"{DividerTone}  {DividerGlyph}{Reset}");
@@ -167,6 +238,7 @@ internal sealed class CodeConsole : IChatConsole
         }
 
         _activeStatusWidth = desiredWidth;
+        _activeStatusText = text;
         Console.SetCursorPosition(left, top);
     }
 
@@ -183,16 +255,46 @@ internal sealed class CodeConsole : IChatConsole
         Console.SetCursorPosition(left, top);
         _activeStatusRow = -1;
         _activeStatusWidth = 0;
+        _activeStatusText = null;
+    }
+
+    private bool SuspendActiveStatusLine()
+    {
+        if (_activeStatusRow < 0)
+        {
+            return false;
+        }
+
+        (int left, int top) = Console.GetCursorPosition();
+        Console.SetCursorPosition(0, _activeStatusRow);
+        Console.Write(new string(' ', Math.Max(1, _activeStatusWidth)));
+        Console.SetCursorPosition(left, top);
+        _activeStatusRow = -1;
+        _activeStatusWidth = 0;
+        return !string.IsNullOrWhiteSpace(_activeStatusText);
+    }
+
+    private void ResumeActiveStatusLine(bool restoreStatusLine)
+    {
+        if (!restoreStatusLine || string.IsNullOrWhiteSpace(_activeStatusText))
+        {
+            return;
+        }
+
+        _activeStatusRow = Console.CursorTop;
+        _activeStatusWidth = 0;
+        Console.WriteLine();
+        RenderStatusLine(_activeStatusText);
     }
 
     private static string FormatActivity(TimeSpan elapsed, int? outputTokens, bool isEstimate)
     {
         string time = FormatElapsed(elapsed);
         string tokens = outputTokens is int count
-            ? $"↓ {FormatTokenCount(count)} tokens"
-            : "↓ estimating...";
+            ? $"{DownArrow} {FormatTokenCount(count)} tokens"
+            : $"{DownArrow} estimating...";
         string estimateSuffix = outputTokens is int && isEstimate ? " est." : string.Empty;
-        return $"({time} · {tokens}{estimateSuffix})";
+        return $"({time} {MiddleDot} {tokens}{estimateSuffix})";
     }
 
     private static string FormatElapsed(TimeSpan elapsed)
@@ -223,6 +325,69 @@ internal sealed class CodeConsole : IChatConsole
         }
 
         return count.ToString();
+    }
+
+    private static string GetPreviewLineTone(string operation, string text)
+    {
+        if (string.Equals(operation, "Write", StringComparison.Ordinal))
+        {
+            return WriteTone;
+        }
+
+        if (string.Equals(operation, "Edit", StringComparison.Ordinal)
+            || string.Equals(operation, "ApplyPatch", StringComparison.Ordinal))
+        {
+            if (text.StartsWith("@@", StringComparison.Ordinal))
+            {
+                return DiffHunkTone;
+            }
+
+            if (text.StartsWith("+", StringComparison.Ordinal) && !text.StartsWith("+++", StringComparison.Ordinal))
+            {
+                return DiffAddTone;
+            }
+
+            if (text.StartsWith("-", StringComparison.Ordinal) && !text.StartsWith("---", StringComparison.Ordinal))
+            {
+                return DiffRemoveTone;
+            }
+
+            if (text.StartsWith(" ", StringComparison.Ordinal))
+            {
+                return DiffContextTone;
+            }
+        }
+
+        return AgentTone;
+    }
+
+    private static bool TryToggleCodeFence(string line, ref bool inCodeBlock, ref string? codeLanguage)
+    {
+        if (!line.StartsWith("```", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!inCodeBlock)
+        {
+            codeLanguage = line["```".Length..].Trim().ToLowerInvariant();
+            inCodeBlock = true;
+            return true;
+        }
+
+        inCodeBlock = false;
+        codeLanguage = null;
+        return true;
+    }
+
+    private static string GetCodeBlockTone(string? codeLanguage)
+    {
+        return codeLanguage switch
+        {
+            "bash" or "sh" or "shell" or "zsh" => BashCodeTone,
+            "powershell" or "ps1" or "pwsh" or "cmd" or "bat" => PowerShellCodeTone,
+            _ => GenericCodeTone
+        };
     }
 
     private static void RenderVerboseRunCommandCall(string message)

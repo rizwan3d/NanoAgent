@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 
 namespace NanoAgent;
 
@@ -97,9 +98,11 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
                 foreach (ChatToolCall toolCall in message.ToolCalls)
                 {
+                    MaybeRenderMutedToolCall(toolCall);
                     MaybeRenderUserFacingCommand(toolCall);
                     WriteVerbose(FormatToolCallVerboseMessage(toolCall));
                     string toolResult = _toolService.Execute(toolCall);
+                    MaybeRenderUserFacingFileChange(toolCall, toolResult);
                     WriteVerbose(FormatToolResultVerboseMessage(toolCall, toolResult));
                     messages.Add(new ChatMessage
                     {
@@ -396,6 +399,124 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         _chatConsole.RenderCommandMessage(command);
     }
 
+    private void MaybeRenderMutedToolCall(ChatToolCall toolCall)
+    {
+        if (_runtimeOptions.Verbose)
+        {
+            return;
+        }
+
+        if (string.Equals(toolCall.Function.Name, "run_command", StringComparison.Ordinal)
+            || string.Equals(toolCall.Function.Name, "write_file", StringComparison.Ordinal)
+            || string.Equals(toolCall.Function.Name, "edit_file", StringComparison.Ordinal)
+            || string.Equals(toolCall.Function.Name, "apply_patch", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _chatConsole.RenderMutedToolCall(toolCall.Function.Name);
+    }
+
+    private void MaybeRenderUserFacingFileChange(ChatToolCall toolCall, string toolResult)
+    {
+        if (_runtimeOptions.Verbose || toolResult.StartsWith("Tool error:", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        switch (toolCall.Function.Name)
+        {
+            case "write_file":
+                RenderWriteFile(toolCall);
+                break;
+            case "edit_file":
+                RenderEditFile(toolCall, toolResult);
+                break;
+            case "apply_patch":
+                RenderApplyPatch(toolCall);
+                break;
+        }
+    }
+
+    private void RenderWriteFile(ChatToolCall toolCall)
+    {
+        WriteFileToolArguments? arguments = ParseToolArguments(
+            toolCall.Function.Arguments,
+            FileToolJsonContext.Default.WriteFileToolArguments);
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
+        {
+            return;
+        }
+
+        string displayPath = ToDisplayPath(arguments.Path);
+        List<FilePreviewLine> previewLines = BuildPreviewLines(arguments.Content ?? string.Empty, startLineNumber: 1, out int hiddenLineCount);
+        int writtenLines = CountLines(arguments.Content ?? string.Empty);
+
+        _chatConsole.RenderFileOperationMessage(
+            "Write",
+            displayPath,
+            $"Wrote {writtenLines} lines to {displayPath}",
+            previewLines,
+            hiddenLineCount);
+    }
+
+    private void RenderEditFile(ChatToolCall toolCall, string toolResult)
+    {
+        EditFileToolArguments? arguments = ParseToolArguments(
+            toolCall.Function.Arguments,
+            FileToolJsonContext.Default.EditFileToolArguments);
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
+        {
+            return;
+        }
+
+        string displayPath = ToDisplayPath(arguments.Path);
+        List<FilePreviewLine> previewLines = BuildDiffPreviewLines(toolResult, out int hiddenLineCount);
+
+        _chatConsole.RenderFileOperationMessage(
+            "Edit",
+            displayPath,
+            $"Edited {displayPath}",
+            previewLines,
+            hiddenLineCount);
+    }
+
+    private void RenderApplyPatch(ChatToolCall toolCall)
+    {
+        ApplyPatchToolArguments? arguments = ParseToolArguments(
+            toolCall.Function.Arguments,
+            FileToolJsonContext.Default.ApplyPatchToolArguments);
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Patch))
+        {
+            return;
+        }
+
+        List<PatchFilePreview> previews = BuildPatchPreviews(arguments.Patch);
+        if (previews.Count == 0)
+        {
+            _chatConsole.RenderFileOperationMessage(
+                "ApplyPatch",
+                "<multiple files>",
+                "Applied patch",
+                [],
+                0);
+            return;
+        }
+
+        foreach (PatchFilePreview preview in previews.Take(3))
+        {
+            _chatConsole.RenderFileOperationMessage(
+                "ApplyPatch",
+                preview.Path,
+                preview.Summary,
+                preview.Lines,
+                preview.HiddenLineCount);
+        }
+    }
+
     private static int EstimateOutputTokens(StringBuilder contentBuilder, Dictionary<int, StreamingToolCallState> toolCalls)
     {
         int characterCount = contentBuilder.Length;
@@ -423,6 +544,201 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         }
 
         return Math.Max(1, (int)Math.Ceiling(characterCount / 4d));
+    }
+
+    private static T? ParseToolArguments<T>(string json, JsonTypeInfo<T> typeInfo) where T : class
+    {
+        try
+        {
+            return JsonSerializer.Deserialize(json, typeInfo);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static List<FilePreviewLine> BuildPreviewLines(string content, int startLineNumber, out int hiddenLineCount)
+    {
+        string[] lines = NormalizePreviewContent(content);
+        int previewCount = Math.Min(lines.Length, 10);
+        List<FilePreviewLine> previewLines = new(previewCount);
+
+        for (int i = 0; i < previewCount; i++)
+        {
+            previewLines.Add(new FilePreviewLine(startLineNumber + i, lines[i]));
+        }
+
+        hiddenLineCount = Math.Max(0, lines.Length - previewCount);
+        return previewLines;
+    }
+
+    private static string[] NormalizePreviewContent(string content) =>
+        content.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+
+    private static int CountLines(string content) => NormalizePreviewContent(content).Length;
+
+    private static string ToDisplayPath(string path)
+    {
+        string fullPath = ToolRuntime.ResolvePath(path);
+        string currentDirectory = Path.GetFullPath(Environment.CurrentDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        if (fullPath.StartsWith(currentDirectory, StringComparison.OrdinalIgnoreCase))
+        {
+            string relativePath = Path.GetRelativePath(currentDirectory, fullPath);
+            return relativePath.Replace('/', Path.DirectorySeparatorChar);
+        }
+
+        return fullPath;
+    }
+
+    private static List<PatchFilePreview> BuildPatchPreviews(string patch)
+    {
+        List<PatchFilePreview> previews = [];
+        string[] lines = patch.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        PatchFilePreviewBuilder? current = null;
+        int? currentLineNumber = null;
+
+        foreach (string line in lines)
+        {
+            if (line.StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                if (current is not null)
+                {
+                    previews.Add(current.Build());
+                }
+
+                string rawPath = line["+++ ".Length..].Trim();
+                string normalizedPath = NormalizePatchPath(rawPath);
+                current = new PatchFilePreviewBuilder(normalizedPath);
+                currentLineNumber = null;
+                continue;
+            }
+
+            if (current is null)
+            {
+                continue;
+            }
+
+            if (line.StartsWith("@@ ", StringComparison.Ordinal) || line.StartsWith("@@", StringComparison.Ordinal))
+            {
+                currentLineNumber = ParsePatchStartLine(line);
+                continue;
+            }
+
+            if (line.StartsWith("+", StringComparison.Ordinal) && !line.StartsWith("+++", StringComparison.Ordinal))
+            {
+                current.AddLine(currentLineNumber, line[1..]);
+                if (currentLineNumber.HasValue)
+                {
+                    currentLineNumber++;
+                }
+
+                continue;
+            }
+
+            if (line.StartsWith(" ", StringComparison.Ordinal))
+            {
+                if (currentLineNumber.HasValue)
+                {
+                    currentLineNumber++;
+                }
+
+                continue;
+            }
+        }
+
+        if (current is not null)
+        {
+            previews.Add(current.Build());
+        }
+
+        return previews.Where(preview => !string.IsNullOrWhiteSpace(preview.Path)).ToList();
+    }
+
+    private static List<FilePreviewLine> BuildDiffPreviewLines(string toolResult, out int hiddenLineCount)
+    {
+        const string marker = "\nDIFF:\n";
+        int markerIndex = toolResult.IndexOf(marker, StringComparison.Ordinal);
+        if (markerIndex < 0)
+        {
+            hiddenLineCount = 0;
+            return [];
+        }
+
+        string diff = toolResult[(markerIndex + marker.Length)..];
+        string[] lines = diff.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
+        List<FilePreviewLine> previewLines = [];
+
+        foreach (string line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            if (line.StartsWith("diff --git ", StringComparison.Ordinal)
+                || line.StartsWith("index ", StringComparison.Ordinal)
+                || line.StartsWith("--- ", StringComparison.Ordinal)
+                || line.StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (previewLines.Count >= 10)
+            {
+                break;
+            }
+
+            if (line.StartsWith("@@", StringComparison.Ordinal)
+                || (line.StartsWith("+", StringComparison.Ordinal) && !line.StartsWith("+++", StringComparison.Ordinal))
+                || (line.StartsWith("-", StringComparison.Ordinal) && !line.StartsWith("---", StringComparison.Ordinal))
+                || line.StartsWith(" ", StringComparison.Ordinal))
+            {
+                previewLines.Add(new FilePreviewLine(null, line));
+            }
+        }
+
+        hiddenLineCount = Math.Max(0, lines.Count(line =>
+            line.StartsWith("@@", StringComparison.Ordinal)
+            || (line.StartsWith("+", StringComparison.Ordinal) && !line.StartsWith("+++", StringComparison.Ordinal))
+            || (line.StartsWith("-", StringComparison.Ordinal) && !line.StartsWith("---", StringComparison.Ordinal))
+            || line.StartsWith(" ", StringComparison.Ordinal)) - previewLines.Count);
+
+        return previewLines;
+    }
+
+    private static string NormalizePatchPath(string rawPath)
+    {
+        string path = rawPath.Trim();
+        if (path.StartsWith("b/", StringComparison.Ordinal) || path.StartsWith("a/", StringComparison.Ordinal))
+        {
+            path = path[2..];
+        }
+
+        return path == "/dev/null" ? "<deleted>" : path;
+    }
+
+    private static int ParsePatchStartLine(string hunkHeader)
+    {
+        int plusIndex = hunkHeader.IndexOf('+');
+        if (plusIndex < 0)
+        {
+            return 1;
+        }
+
+        int commaIndex = hunkHeader.IndexOf(',', plusIndex);
+        int endIndex = commaIndex >= 0 ? commaIndex : hunkHeader.IndexOf(" @@", StringComparison.Ordinal);
+        if (endIndex < 0)
+        {
+            endIndex = hunkHeader.Length;
+        }
+
+        string value = hunkHeader[(plusIndex + 1)..endIndex];
+        return int.TryParse(value, out int lineNumber) ? lineNumber : 1;
     }
 
     private static string SummarizeToolResult(string toolResult)
@@ -654,5 +970,42 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
                     Arguments = _arguments.Length == 0 ? "{}" : _arguments.ToString()
                 }
             };
+    }
+
+    private sealed record PatchFilePreview(
+        string Path,
+        string Summary,
+        List<FilePreviewLine> Lines,
+        int HiddenLineCount);
+
+    private sealed class PatchFilePreviewBuilder
+    {
+        private readonly string _path;
+        private readonly List<FilePreviewLine> _lines = [];
+        private int _hiddenLineCount;
+
+        public PatchFilePreviewBuilder(string path)
+        {
+            _path = path;
+        }
+
+        public void AddLine(int? lineNumber, string text)
+        {
+            if (_lines.Count < 10)
+            {
+                _lines.Add(new FilePreviewLine(lineNumber, text));
+                return;
+            }
+
+            _hiddenLineCount++;
+        }
+
+        public PatchFilePreview Build()
+        {
+            string summary = _lines.Count == 0
+                ? $"Applied patch to {_path}"
+                : $"Applied patch to {_path}";
+            return new PatchFilePreview(_path, summary, _lines, _hiddenLineCount);
+        }
     }
 }

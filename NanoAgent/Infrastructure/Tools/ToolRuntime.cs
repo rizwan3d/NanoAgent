@@ -100,6 +100,19 @@ internal static class ToolRuntime
             CreateNoWindow = true
         };
 
+    public static ProcessStartInfo CreateGitDiffNoIndexStartInfo(string originalPath, string updatedPath) =>
+        new()
+        {
+            FileName = "git",
+            Arguments =
+                $"diff --no-index --unified=3 --no-color -- \"{originalPath.Replace("\"", "\"\"")}\" \"{updatedPath.Replace("\"", "\"\"")}\"",
+            WorkingDirectory = Environment.CurrentDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
     public static int CountOccurrences(string content, string value)
     {
         int count = 0;

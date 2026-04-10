@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace NanoAgent;
 
 internal sealed class EditFileToolHandler : IToolHandler
@@ -95,11 +97,55 @@ internal sealed class EditFileToolHandler : IToolHandler
             string updatedContent = ToolRuntime.RestoreNewlines(updatedNormalizedContent, newline);
 
             File.WriteAllText(fullPath, updatedContent);
-            return $"FILE_EDITED: {fullPath}";
+            string diff = BuildDiff(content, updatedContent);
+            return $"FILE_EDITED: {fullPath}\nDIFF:\n{diff}";
         }
         catch (Exception exception)
         {
             return $"Tool error: unable to edit file '{fullPath}'. {exception.Message}";
+        }
+    }
+
+    private static string BuildDiff(string originalContent, string updatedContent)
+    {
+        if (!ToolRuntime.IsCommandAvailable("git"))
+        {
+            return "<git unavailable>";
+        }
+
+        string originalPath = Path.Combine(Path.GetTempPath(), $"nanoagent-before-{Guid.NewGuid():N}.tmp");
+        string updatedPath = Path.Combine(Path.GetTempPath(), $"nanoagent-after-{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            File.WriteAllText(originalPath, originalContent);
+            File.WriteAllText(updatedPath, updatedContent);
+
+            ProcessStartInfo startInfo = ToolRuntime.CreateGitDiffNoIndexStartInfo(originalPath, updatedPath);
+            using Process process = new() { StartInfo = startInfo };
+            process.Start();
+            string standardOutput = process.StandardOutput.ReadToEnd();
+            string standardError = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+
+            if (process.ExitCode is not 0 and not 1)
+            {
+                return string.IsNullOrWhiteSpace(standardError) ? "<diff unavailable>" : standardError.TrimEnd();
+            }
+
+            return string.IsNullOrWhiteSpace(standardOutput) ? "<no diff>" : standardOutput.TrimEnd();
+        }
+        finally
+        {
+            if (File.Exists(originalPath))
+            {
+                File.Delete(originalPath);
+            }
+
+            if (File.Exists(updatedPath))
+            {
+                File.Delete(updatedPath);
+            }
         }
     }
 }
