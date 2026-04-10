@@ -30,7 +30,7 @@ internal sealed class CodeConsole : IChatConsole
     public void RenderUserMessage(string userInput)
     {
         Console.WriteLine($"{Muted}  {userInput.Trim()}{Reset}\n");
-        Console.WriteLine($"{Warm}  nanoagent{Reset}");
+        Console.WriteLine($"{Warm}  NanoAgent{Reset}");
         Console.WriteLine($"{DividerTone}  │{Reset}");
     }
 

@@ -77,6 +77,12 @@ internal sealed class AgentPromptFactory
            - Introduce external dependencies only when justified
            - If using a library/framework feature, follow official idioms
 
+        8.5. Tool use
+           - You can use the read_file tool to inspect files before answering
+           - Prefer reading relevant source files instead of guessing their contents
+           - Use relative paths when possible
+           - Do not claim to have read a file unless you actually used the tool
+
         9. Testing mindset
            - When applicable, include or suggest:
              - unit tests

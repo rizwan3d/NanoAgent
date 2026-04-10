@@ -7,6 +7,7 @@ internal static class ChatRole
     public const string System = "system";
     public const string User = "user";
     public const string Assistant = "assistant";
+    public const string Tool = "tool";
 }
 
 internal sealed class ChatCompletionRequest
@@ -22,6 +23,9 @@ internal sealed class ChatCompletionRequest
 
     [JsonPropertyName("max_tokens")]
     public int MaxTokens { get; set; }
+
+    [JsonPropertyName("tools")]
+    public ChatToolDefinition[] Tools { get; set; } = Array.Empty<ChatToolDefinition>();
 }
 
 internal sealed class ChatCompletionResponse
@@ -43,6 +47,84 @@ internal sealed class ChatMessage
 
     [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
+
+    [JsonPropertyName("tool_calls")]
+    public ChatToolCall[]? ToolCalls { get; set; }
+
+    [JsonPropertyName("tool_call_id")]
+    public string? ToolCallId { get; set; }
+}
+
+internal sealed class ChatToolDefinition
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "function";
+
+    [JsonPropertyName("function")]
+    public ChatToolFunctionDefinition Function { get; set; } = new();
+}
+
+internal sealed class ChatToolFunctionDefinition
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("parameters")]
+    public ChatToolParameters Parameters { get; set; } = new();
+}
+
+internal sealed class ChatToolParameters
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "object";
+
+    [JsonPropertyName("properties")]
+    public Dictionary<string, ChatToolParameterProperty> Properties { get; set; } = [];
+
+    [JsonPropertyName("required")]
+    public string[] Required { get; set; } = Array.Empty<string>();
+
+    [JsonPropertyName("additionalProperties")]
+    public bool AdditionalProperties { get; set; }
+}
+
+internal sealed class ChatToolParameterProperty
+{
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "string";
+
+    [JsonPropertyName("description")]
+    public string Description { get; set; } = string.Empty;
+}
+
+internal sealed class ChatToolCall
+{
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
+    [JsonPropertyName("type")]
+    public string Type { get; set; } = "function";
+
+    [JsonPropertyName("function")]
+    public ChatToolFunctionCall Function { get; set; } = new();
+}
+
+internal sealed class ChatToolFunctionCall
+{
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = string.Empty;
+
+    [JsonPropertyName("arguments")]
+    public string Arguments { get; set; } = "{}";
+}
+
+internal sealed class ReadFileToolArguments
+{
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
 }
 
 [JsonSourceGenerationOptions(WriteIndented = false)]

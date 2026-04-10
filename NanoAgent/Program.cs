@@ -17,7 +17,8 @@ internal static class Program
         IAgentClient agentClient = new OpenAiCompatibleAgentClient(
             config.Endpoint,
             config.Model,
-            new AgentPromptFactory());
+            new AgentPromptFactory(),
+            new FileToolService());
 
         ChatApplication application = new ChatApplication(chatConsole, agentClient, config);
         await application.RunAsync();
