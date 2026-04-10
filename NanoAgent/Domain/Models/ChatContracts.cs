@@ -148,6 +148,15 @@ internal sealed class WriteFileToolArguments
     public string Content { get; set; } = string.Empty;
 }
 
+internal sealed class CodeSearchToolArguments
+{
+    [JsonPropertyName("pattern")]
+    public string Pattern { get; set; } = string.Empty;
+
+    [JsonPropertyName("path")]
+    public string? Path { get; set; }
+}
+
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]

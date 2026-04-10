@@ -81,6 +81,32 @@ internal sealed class FileToolService
         {
             Function = new ChatToolFunctionDefinition
             {
+                Name = "code_search",
+                Description = "Search code and text files for a pattern. Use this to find symbols, strings, or references across the project.",
+                Parameters = new ChatToolParameters
+                {
+                    AdditionalProperties = false,
+                    Required = ["pattern"],
+                    Properties = new Dictionary<string, ChatToolParameterProperty>
+                    {
+                        ["pattern"] = new()
+                        {
+                            Type = "string",
+                            Description = "The text or regex-style pattern to search for."
+                        },
+                        ["path"] = new()
+                        {
+                            Type = "string",
+                            Description = "Optional relative or absolute file or directory path to limit the search scope."
+                        }
+                    }
+                }
+            }
+        },
+        new()
+        {
+            Function = new ChatToolFunctionDefinition
+            {
                 Name = "run_command",
                 Description = "Run a shell command in the current working directory. Uses PowerShell on Windows and bash on macOS/Linux when available.",
                 Parameters = new ChatToolParameters
@@ -106,6 +132,7 @@ internal sealed class FileToolService
             "read_file" => ExecuteReadFile(toolCall),
             "list_files" => ExecuteListFiles(toolCall),
             "write_file" => ExecuteWriteFile(toolCall),
+            "code_search" => ExecuteCodeSearch(toolCall),
             "run_command" => ExecuteRunCommand(toolCall),
             _ => $"Tool error: unsupported tool '{toolCall.Function.Name}'."
         };
@@ -277,6 +304,46 @@ internal sealed class FileToolService
         }
     }
 
+    private static string ExecuteCodeSearch(ChatToolCall toolCall)
+    {
+        CodeSearchToolArguments? arguments;
+        try
+        {
+            arguments = JsonSerializer.Deserialize(
+                toolCall.Function.Arguments,
+                FileToolJsonContext.Default.CodeSearchToolArguments);
+        }
+        catch (JsonException exception)
+        {
+            return $"Tool error: invalid arguments for code_search. {exception.Message}";
+        }
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Pattern))
+        {
+            return "Tool error: 'pattern' is required.";
+        }
+
+        string scopePath = ResolveScope(arguments.Path);
+        if (!File.Exists(scopePath) && !Directory.Exists(scopePath))
+        {
+            return $"Tool error: search path not found: {scopePath}";
+        }
+
+        try
+        {
+            if (IsCommandAvailable("rg"))
+            {
+                return ExecuteRipgrepSearch(arguments.Pattern, scopePath);
+            }
+
+            return ExecuteFallbackSearch(arguments.Pattern, scopePath);
+        }
+        catch (Exception exception)
+        {
+            return $"Tool error: unable to search for '{arguments.Pattern}'. {exception.Message}";
+        }
+    }
+
     private static string ResolvePath(string path)
     {
         if (Path.IsPathRooted(path))
@@ -286,6 +353,9 @@ internal sealed class FileToolService
 
         return Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
     }
+
+    private static string ResolveScope(string? path) =>
+        string.IsNullOrWhiteSpace(path) ? Environment.CurrentDirectory : ResolvePath(path);
 
     private static ProcessStartInfo CreateShellStartInfo(string command)
     {
@@ -321,6 +391,116 @@ internal sealed class FileToolService
 
     private static string EscapePosix(string command) =>
         $"'{command.Replace("'", "'\"'\"'")}'";
+
+    private static bool IsCommandAvailable(string commandName)
+    {
+        try
+        {
+            ProcessStartInfo startInfo;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                startInfo = new ProcessStartInfo
+                {
+                    FileName = "where",
+                    Arguments = commandName,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+            }
+            else
+            {
+                startInfo = new ProcessStartInfo
+                {
+                    FileName = "/bin/sh",
+                    Arguments = $"-lc 'command -v {commandName}'",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+            }
+
+            using Process process = new() { StartInfo = startInfo };
+            process.Start();
+            process.WaitForExit();
+            return process.ExitCode == 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string ExecuteRipgrepSearch(string pattern, string scopePath)
+    {
+        string escapedPattern = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? pattern.Replace("\"", "\"\"")
+            : pattern.Replace("\"", "\\\"");
+        string escapedScopePath = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? scopePath.Replace("\"", "\"\"")
+            : scopePath.Replace("\"", "\\\"");
+
+        string command = $"rg -n --hidden --glob \"!.git\" \"{escapedPattern}\" \"{escapedScopePath}\"";
+        ProcessStartInfo startInfo = CreateShellStartInfo(command);
+        using Process process = new() { StartInfo = startInfo };
+
+        process.Start();
+        string standardOutput = process.StandardOutput.ReadToEnd();
+        string standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode == 1 && string.IsNullOrWhiteSpace(standardError))
+        {
+            return $"SEARCH: {pattern}\nSCOPE: {scopePath}\n<no matches>";
+        }
+
+        if (process.ExitCode != 0 && process.ExitCode != 1)
+        {
+            return $"Tool error: code_search failed.\nSTDERR:\n{standardError.TrimEnd()}";
+        }
+
+        string output = string.IsNullOrWhiteSpace(standardOutput) ? "<no matches>" : standardOutput.TrimEnd();
+        return $"SEARCH: {pattern}\nSCOPE: {scopePath}\n{output}";
+    }
+
+    private static string ExecuteFallbackSearch(string pattern, string scopePath)
+    {
+        IEnumerable<string> files = File.Exists(scopePath)
+            ? [scopePath]
+            : Directory.EnumerateFiles(scopePath, "*", SearchOption.AllDirectories)
+                .Where(path => !path.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase));
+
+        List<string> matches = [];
+
+        foreach (string filePath in files)
+        {
+            try
+            {
+                int lineNumber = 0;
+                foreach (string line in File.ReadLines(filePath))
+                {
+                    lineNumber++;
+                    if (line.Contains(pattern, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matches.Add($"{filePath}:{lineNumber}:{line}");
+                        if (matches.Count >= 200)
+                        {
+                            return $"SEARCH: {pattern}\nSCOPE: {scopePath}\n{string.Join('\n', matches)}\n<results truncated>";
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return matches.Count == 0
+            ? $"SEARCH: {pattern}\nSCOPE: {scopePath}\n<no matches>"
+            : $"SEARCH: {pattern}\nSCOPE: {scopePath}\n{string.Join('\n', matches)}";
+    }
 }
 
 [JsonSourceGenerationOptions(WriteIndented = false)]
@@ -328,6 +508,7 @@ internal sealed class FileToolService
 [JsonSerializable(typeof(ListFilesToolArguments))]
 [JsonSerializable(typeof(RunCommandToolArguments))]
 [JsonSerializable(typeof(WriteFileToolArguments))]
+[JsonSerializable(typeof(CodeSearchToolArguments))]
 internal sealed partial class FileToolJsonContext : JsonSerializerContext
 {
 }
