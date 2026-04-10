@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace NanoAgent;
 
@@ -81,6 +82,63 @@ internal sealed class FileToolService
         {
             Function = new ChatToolFunctionDefinition
             {
+                Name = "edit_file",
+                Description = "Edit an existing UTF-8 text file by replacing a specific text snippet with new text.",
+                Parameters = new ChatToolParameters
+                {
+                    AdditionalProperties = false,
+                    Required = ["path", "old_text", "new_text"],
+                    Properties = new Dictionary<string, ChatToolParameterProperty>
+                    {
+                        ["path"] = new()
+                        {
+                            Type = "string",
+                            Description = "Relative or absolute path to the file to edit."
+                        },
+                        ["old_text"] = new()
+                        {
+                            Type = "string",
+                            Description = "Exact existing text to find in the file."
+                        },
+                        ["new_text"] = new()
+                        {
+                            Type = "string",
+                            Description = "Replacement text to write into the file."
+                        },
+                        ["replace_all"] = new()
+                        {
+                            Type = "boolean",
+                            Description = "Optional flag. When true, replace every match; otherwise replace exactly one match."
+                        }
+                    }
+                }
+            }
+        },
+        new()
+        {
+            Function = new ChatToolFunctionDefinition
+            {
+                Name = "apply_patch",
+                Description = "Apply a multi-file unified diff patch. Use this for coordinated edits, file creation, file deletion, or larger structured changes.",
+                Parameters = new ChatToolParameters
+                {
+                    AdditionalProperties = false,
+                    Required = ["patch"],
+                    Properties = new Dictionary<string, ChatToolParameterProperty>
+                    {
+                        ["patch"] = new()
+                        {
+                            Type = "string",
+                            Description = "A unified diff patch string, typically starting with diff headers like ---/+++ or git diff format."
+                        }
+                    }
+                }
+            }
+        },
+        new()
+        {
+            Function = new ChatToolFunctionDefinition
+            {
                 Name = "code_search",
                 Description = "Search code and text files for a pattern. Use this to find symbols, strings, or references across the project.",
                 Parameters = new ChatToolParameters
@@ -132,6 +190,8 @@ internal sealed class FileToolService
             "read_file" => ExecuteReadFile(toolCall),
             "list_files" => ExecuteListFiles(toolCall),
             "write_file" => ExecuteWriteFile(toolCall),
+            "edit_file" => ExecuteEditFile(toolCall),
+            "apply_patch" => ExecuteApplyPatch(toolCall),
             "code_search" => ExecuteCodeSearch(toolCall),
             "run_command" => ExecuteRunCommand(toolCall),
             _ => $"Tool error: unsupported tool '{toolCall.Function.Name}'."
@@ -243,6 +303,7 @@ internal sealed class FileToolService
         try
         {
             ProcessStartInfo startInfo = CreateShellStartInfo(arguments.Command);
+            string shellCommand = FormatShellCommand(startInfo);
             using Process process = new() { StartInfo = startInfo };
 
             process.Start();
@@ -256,6 +317,8 @@ internal sealed class FileToolService
             return
                 $"COMMAND: {arguments.Command}\n" +
                 $"SHELL: {startInfo.FileName}\n" +
+                $"EXECUTED: {shellCommand}\n" +
+                $"WORKDIR: {startInfo.WorkingDirectory}\n" +
                 $"EXIT_CODE: {process.ExitCode}\n" +
                 $"STDOUT:\n{output}\n" +
                 $"STDERR:\n{error}";
@@ -304,6 +367,69 @@ internal sealed class FileToolService
         }
     }
 
+    private static string ExecuteEditFile(ChatToolCall toolCall)
+    {
+        EditFileToolArguments? arguments;
+        try
+        {
+            arguments = JsonSerializer.Deserialize(
+                toolCall.Function.Arguments,
+                FileToolJsonContext.Default.EditFileToolArguments);
+        }
+        catch (JsonException exception)
+        {
+            return $"Tool error: invalid arguments for edit_file. {exception.Message}";
+        }
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
+        {
+            return "Tool error: 'path' is required.";
+        }
+
+        if (string.IsNullOrEmpty(arguments.OldText))
+        {
+            return "Tool error: 'old_text' is required.";
+        }
+
+        string fullPath = ResolvePath(arguments.Path);
+        if (!File.Exists(fullPath))
+        {
+            return $"Tool error: file not found: {fullPath}";
+        }
+
+        try
+        {
+            string content = File.ReadAllText(fullPath);
+            string newline = DetectPreferredNewline(content);
+            string normalizedContent = NormalizeNewlines(content);
+            string normalizedOldText = NormalizeNewlines(arguments.OldText);
+            string normalizedNewText = NormalizeNewlines(arguments.NewText);
+            int matchCount = CountOccurrences(normalizedContent, normalizedOldText);
+
+            if (matchCount == 0)
+            {
+                return $"Tool error: old_text was not found in file: {fullPath}";
+            }
+
+            if (!arguments.ReplaceAll && matchCount > 1)
+            {
+                return $"Tool error: old_text matched {matchCount} locations. Set replace_all=true or provide a more specific old_text.";
+            }
+
+            string updatedNormalizedContent = arguments.ReplaceAll
+                ? normalizedContent.Replace(normalizedOldText, normalizedNewText)
+                : ReplaceFirst(normalizedContent, normalizedOldText, normalizedNewText);
+            string updatedContent = RestoreNewlines(updatedNormalizedContent, newline);
+
+            File.WriteAllText(fullPath, updatedContent);
+            return $"FILE_EDITED: {fullPath}";
+        }
+        catch (Exception exception)
+        {
+            return $"Tool error: unable to edit file '{fullPath}'. {exception.Message}";
+        }
+    }
+
     private static string ExecuteCodeSearch(ChatToolCall toolCall)
     {
         CodeSearchToolArguments? arguments;
@@ -344,6 +470,68 @@ internal sealed class FileToolService
         }
     }
 
+    private static string ExecuteApplyPatch(ChatToolCall toolCall)
+    {
+        ApplyPatchToolArguments? arguments;
+        try
+        {
+            arguments = JsonSerializer.Deserialize(
+                toolCall.Function.Arguments,
+                FileToolJsonContext.Default.ApplyPatchToolArguments);
+        }
+        catch (JsonException exception)
+        {
+            return $"Tool error: invalid arguments for apply_patch. {exception.Message}";
+        }
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Patch))
+        {
+            return "Tool error: 'patch' is required.";
+        }
+
+        try
+        {
+            if (!IsCommandAvailable("git"))
+            {
+                return "Tool error: git is required for apply_patch but was not found.";
+            }
+
+            string tempPatchPath = Path.Combine(Path.GetTempPath(), $"nanoagent-{Guid.NewGuid():N}.patch");
+            File.WriteAllText(tempPatchPath, arguments.Patch);
+
+            try
+            {
+                ProcessStartInfo startInfo = CreateGitApplyStartInfo(tempPatchPath);
+                using Process process = new() { StartInfo = startInfo };
+
+                process.Start();
+                string standardOutput = process.StandardOutput.ReadToEnd();
+                string standardError = process.StandardError.ReadToEnd();
+                process.WaitForExit();
+
+                if (process.ExitCode != 0)
+                {
+                    string error = string.IsNullOrWhiteSpace(standardError) ? "<empty>" : standardError.TrimEnd();
+                    return $"Tool error: apply_patch failed.\nSTDERR:\n{error}";
+                }
+
+                string output = string.IsNullOrWhiteSpace(standardOutput) ? "<empty>" : standardOutput.TrimEnd();
+                return $"PATCH_APPLIED\nSTDOUT:\n{output}";
+            }
+            finally
+            {
+                if (File.Exists(tempPatchPath))
+                {
+                    File.Delete(tempPatchPath);
+                }
+            }
+        }
+        catch (Exception exception)
+        {
+            return $"Tool error: unable to apply patch. {exception.Message}";
+        }
+    }
+
     private static string ResolvePath(string path)
     {
         if (Path.IsPathRooted(path))
@@ -364,7 +552,7 @@ internal sealed class FileToolService
             return new ProcessStartInfo
             {
                 FileName = "powershell",
-                Arguments = $"-NoProfile -Command {EscapePowerShell(command)}",
+                Arguments = $"-NoProfile -EncodedCommand {EncodePowerShellCommand(command)}",
                 WorkingDirectory = Environment.CurrentDirectory,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -386,11 +574,62 @@ internal sealed class FileToolService
         };
     }
 
-    private static string EscapePowerShell(string command) =>
-        $"'{command.Replace("'", "''")}'";
-
     private static string EscapePosix(string command) =>
         $"'{command.Replace("'", "'\"'\"'")}'";
+
+    private static string EncodePowerShellCommand(string command)
+    {
+        string wrappedCommand = $"& {{ {command} }}";
+        byte[] bytes = Encoding.Unicode.GetBytes(wrappedCommand);
+        return Convert.ToBase64String(bytes);
+    }
+
+    private static string FormatShellCommand(ProcessStartInfo startInfo)
+    {
+        if (string.IsNullOrWhiteSpace(startInfo.Arguments))
+        {
+            return startInfo.FileName;
+        }
+
+        return $"{startInfo.FileName} {startInfo.Arguments}";
+    }
+
+    private static int CountOccurrences(string content, string value)
+    {
+        int count = 0;
+        int index = 0;
+
+        while ((index = content.IndexOf(value, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += value.Length;
+        }
+
+        return count;
+    }
+
+    private static string ReplaceFirst(string content, string oldValue, string newValue)
+    {
+        int index = content.IndexOf(oldValue, StringComparison.Ordinal);
+        if (index < 0)
+        {
+            return content;
+        }
+
+        return string.Concat(
+            content.AsSpan(0, index),
+            newValue,
+            content.AsSpan(index + oldValue.Length));
+    }
+
+    private static string NormalizeNewlines(string content) =>
+        content.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private static string DetectPreferredNewline(string content) =>
+        content.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+
+    private static string RestoreNewlines(string content, string newline) =>
+        newline == "\n" ? content : content.Replace("\n", newline, StringComparison.Ordinal);
 
     private static bool IsCommandAvailable(string commandName)
     {
@@ -432,6 +671,18 @@ internal sealed class FileToolService
             return false;
         }
     }
+
+    private static ProcessStartInfo CreateGitApplyStartInfo(string patchPath) =>
+        new()
+        {
+            FileName = "git",
+            Arguments = $"apply --whitespace=nowarn --recount \"{patchPath.Replace("\"", "\"\"")}\"",
+            WorkingDirectory = Environment.CurrentDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
 
     private static string ExecuteRipgrepSearch(string pattern, string scopePath)
     {
@@ -508,7 +759,9 @@ internal sealed class FileToolService
 [JsonSerializable(typeof(ListFilesToolArguments))]
 [JsonSerializable(typeof(RunCommandToolArguments))]
 [JsonSerializable(typeof(WriteFileToolArguments))]
+[JsonSerializable(typeof(EditFileToolArguments))]
 [JsonSerializable(typeof(CodeSearchToolArguments))]
+[JsonSerializable(typeof(ApplyPatchToolArguments))]
 internal sealed partial class FileToolJsonContext : JsonSerializerContext
 {
 }

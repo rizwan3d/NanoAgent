@@ -148,6 +148,21 @@ internal sealed class WriteFileToolArguments
     public string Content { get; set; } = string.Empty;
 }
 
+internal sealed class EditFileToolArguments
+{
+    [JsonPropertyName("path")]
+    public string Path { get; set; } = string.Empty;
+
+    [JsonPropertyName("old_text")]
+    public string OldText { get; set; } = string.Empty;
+
+    [JsonPropertyName("new_text")]
+    public string NewText { get; set; } = string.Empty;
+
+    [JsonPropertyName("replace_all")]
+    public bool ReplaceAll { get; set; }
+}
+
 internal sealed class CodeSearchToolArguments
 {
     [JsonPropertyName("pattern")]
@@ -155,6 +170,12 @@ internal sealed class CodeSearchToolArguments
 
     [JsonPropertyName("path")]
     public string? Path { get; set; }
+}
+
+internal sealed class ApplyPatchToolArguments
+{
+    [JsonPropertyName("patch")]
+    public string Patch { get; set; } = string.Empty;
 }
 
 [JsonSourceGenerationOptions(WriteIndented = false)]
