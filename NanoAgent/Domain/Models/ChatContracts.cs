@@ -26,18 +26,35 @@ internal sealed class ChatCompletionRequest
 
     [JsonPropertyName("tools")]
     public ChatToolDefinition[] Tools { get; set; } = Array.Empty<ChatToolDefinition>();
+
+    [JsonPropertyName("stream")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Stream { get; set; }
+
+    [JsonPropertyName("stream_options")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ChatStreamOptions? StreamOptions { get; set; }
 }
 
 internal sealed class ChatCompletionResponse
 {
     [JsonPropertyName("choices")]
     public ChatChoice[] Choices { get; set; } = Array.Empty<ChatChoice>();
+
+    [JsonPropertyName("usage")]
+    public ChatUsage? Usage { get; set; }
 }
 
 internal sealed class ChatChoice
 {
     [JsonPropertyName("message")]
     public ChatMessage? Message { get; set; }
+
+    [JsonPropertyName("delta")]
+    public ChatMessageDelta? Delta { get; set; }
+
+    [JsonPropertyName("finish_reason")]
+    public string? FinishReason { get; set; }
 }
 
 internal sealed class ChatMessage
@@ -53,6 +70,18 @@ internal sealed class ChatMessage
 
     [JsonPropertyName("tool_call_id")]
     public string? ToolCallId { get; set; }
+}
+
+internal sealed class ChatMessageDelta
+{
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
+
+    [JsonPropertyName("content")]
+    public string? Content { get; set; }
+
+    [JsonPropertyName("tool_calls")]
+    public ChatToolCallDelta[]? ToolCalls { get; set; }
 }
 
 internal sealed class ChatToolDefinition
@@ -112,6 +141,21 @@ internal sealed class ChatToolCall
     public ChatToolFunctionCall Function { get; set; } = new();
 }
 
+internal sealed class ChatToolCallDelta
+{
+    [JsonPropertyName("index")]
+    public int Index { get; set; }
+
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
+
+    [JsonPropertyName("type")]
+    public string? Type { get; set; }
+
+    [JsonPropertyName("function")]
+    public ChatToolFunctionCallDelta? Function { get; set; }
+}
+
 internal sealed class ChatToolFunctionCall
 {
     [JsonPropertyName("name")]
@@ -119,6 +163,33 @@ internal sealed class ChatToolFunctionCall
 
     [JsonPropertyName("arguments")]
     public string Arguments { get; set; } = "{}";
+}
+
+internal sealed class ChatToolFunctionCallDelta
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("arguments")]
+    public string? Arguments { get; set; }
+}
+
+internal sealed class ChatStreamOptions
+{
+    [JsonPropertyName("include_usage")]
+    public bool IncludeUsage { get; set; }
+}
+
+internal sealed class ChatUsage
+{
+    [JsonPropertyName("prompt_tokens")]
+    public int PromptTokens { get; set; }
+
+    [JsonPropertyName("completion_tokens")]
+    public int CompletionTokens { get; set; }
+
+    [JsonPropertyName("total_tokens")]
+    public int TotalTokens { get; set; }
 }
 
 internal sealed class ReadFileToolArguments
@@ -181,6 +252,7 @@ internal sealed class ApplyPatchToolArguments
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]
+[JsonSerializable(typeof(ChatUsage))]
 internal partial class NanoAgentJsonContext : JsonSerializerContext
 {
 }

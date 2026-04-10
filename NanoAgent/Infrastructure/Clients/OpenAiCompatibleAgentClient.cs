@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -30,13 +31,22 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         _chatSession = chatSession;
         _chatConsole = chatConsole;
         _runtimeOptions = runtimeOptions;
-        _httpClient = new HttpClient();
-        _httpClient.Timeout = Timeout.InfiniteTimeSpan;
+        _httpClient = new HttpClient
+        {
+            Timeout = Timeout.InfiniteTimeSpan
+        };
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
     }
 
     public async Task<string> GetResponseAsync(string userPrompt)
     {
+        _chatConsole.BeginAgentActivity();
+        Stopwatch stopwatch = Stopwatch.StartNew();
+        ProgressSnapshot snapshot = new();
+        using CancellationTokenSource progressCts = new();
+        Task progressTask = RunProgressLoopAsync(stopwatch, snapshot, progressCts.Token);
+
         try
         {
             List<ChatMessage> messages = _chatSession.CreateTurnMessages(userPrompt);
@@ -46,7 +56,8 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
             {
                 WriteVerbose($"chat iteration {iteration + 1}: sending request with {messages.Count} message(s)");
                 ChatCompletionRequest request = CreateRequest(messages);
-                ChatCompletionResponse? completion = await SendRequestAsync(request);
+                snapshot.BeginRequest();
+                ChatCompletionResponse? completion = await SendRequestAsync(request, snapshot);
                 ChatMessage? message = completion?.Choices?.FirstOrDefault()?.Message;
 
                 if (message is null)
@@ -113,23 +124,230 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         {
             return $"Error communicating with LLM: {ex.Message}";
         }
+        finally
+        {
+            stopwatch.Stop();
+            progressCts.Cancel();
+
+            try
+            {
+                await progressTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+
+            _chatConsole.CompleteAgentActivity(stopwatch.Elapsed, snapshot.DisplayTokens, snapshot.IsEstimate);
+        }
     }
 
-    private async Task<ChatCompletionResponse?> SendRequestAsync(ChatCompletionRequest request)
+    private async Task<ChatCompletionResponse?> SendRequestAsync(ChatCompletionRequest request, ProgressSnapshot snapshot)
     {
         string payload = JsonSerializer.Serialize(request, NanoAgentJsonContext.Default.ChatCompletionRequest);
-        using StringContent content = new(payload, Encoding.UTF8, "application/json");
+        using HttpRequestMessage requestMessage = new(HttpMethod.Post, $"{_endpoint}/chat/completions")
+        {
+            Content = new StringContent(payload, Encoding.UTF8, "application/json")
+        };
 
-        using HttpResponseMessage response = await _httpClient.PostAsync($"{_endpoint}/chat/completions", content);
-        string responseBody = await response.Content.ReadAsStringAsync();
+        using HttpResponseMessage response = await _httpClient.SendAsync(
+            requestMessage,
+            HttpCompletionOption.ResponseHeadersRead);
 
         if (!response.IsSuccessStatusCode)
         {
+            string errorBody = await response.Content.ReadAsStringAsync();
             throw new InvalidOperationException(
-                $"API returned status code {(int)response.StatusCode} ({response.StatusCode}). {responseBody}");
+                $"API returned status code {(int)response.StatusCode} ({response.StatusCode}). {errorBody}");
         }
 
-        return JsonSerializer.Deserialize(responseBody, NanoAgentJsonContext.Default.ChatCompletionResponse);
+        string? mediaType = response.Content.Headers.ContentType?.MediaType;
+        return mediaType?.Contains("text/event-stream", StringComparison.OrdinalIgnoreCase) == true
+            ? await ReadStreamingCompletionAsync(response, snapshot)
+            : await ReadBufferedCompletionAsync(response, snapshot);
+    }
+
+    private async Task RunProgressLoopAsync(Stopwatch stopwatch, ProgressSnapshot snapshot, CancellationToken cancellationToken)
+    {
+        using PeriodicTimer timer = new(TimeSpan.FromMilliseconds(200));
+
+        while (await timer.WaitForNextTickAsync(cancellationToken))
+        {
+            _chatConsole.UpdateAgentActivity(
+                stopwatch.Elapsed,
+                snapshot.DisplayTokens,
+                snapshot.IsEstimate);
+        }
+    }
+
+    private static async Task<ChatCompletionResponse?> ReadBufferedCompletionAsync(
+        HttpResponseMessage response,
+        ProgressSnapshot snapshot)
+    {
+        string responseBody = await response.Content.ReadAsStringAsync();
+        ChatCompletionResponse? completion = JsonSerializer.Deserialize(
+            responseBody,
+            NanoAgentJsonContext.Default.ChatCompletionResponse);
+
+        if (completion?.Usage?.CompletionTokens > 0)
+        {
+            snapshot.CompleteRequestWithExactTokens(completion.Usage.CompletionTokens);
+        }
+        else if (completion?.Choices?.FirstOrDefault()?.Message is ChatMessage message)
+        {
+            int estimate = EstimateOutputTokens(
+                new StringBuilder(message.Content ?? string.Empty),
+                message.ToolCalls);
+            snapshot.UpdateCurrentEstimate(estimate);
+        }
+
+        return completion;
+    }
+
+    private static async Task<ChatCompletionResponse?> ReadStreamingCompletionAsync(
+        HttpResponseMessage response,
+        ProgressSnapshot snapshot)
+    {
+        await using Stream stream = await response.Content.ReadAsStreamAsync();
+        using StreamReader reader = new(stream);
+        StringBuilder eventData = new();
+        StringBuilder contentBuilder = new();
+        Dictionary<int, StreamingToolCallState> toolCalls = [];
+        string role = ChatRole.Assistant;
+        ChatUsage? usage = null;
+
+        while (true)
+        {
+            string? line = await reader.ReadLineAsync();
+            if (line is null)
+            {
+                break;
+            }
+
+            if (line.Length == 0)
+            {
+                if (eventData.Length > 0)
+                {
+                    ProcessSseEvent(
+                        eventData.ToString(),
+                        contentBuilder,
+                        toolCalls,
+                        snapshot,
+                        ref role,
+                        ref usage);
+                    eventData.Clear();
+                }
+
+                continue;
+            }
+
+            if (line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                eventData.AppendLine(line["data:".Length..].TrimStart());
+            }
+        }
+
+        if (eventData.Length > 0)
+        {
+            ProcessSseEvent(
+                eventData.ToString(),
+                contentBuilder,
+                toolCalls,
+                snapshot,
+                ref role,
+                ref usage);
+        }
+
+        ChatToolCall[]? finalizedToolCalls = toolCalls.Count == 0
+            ? null
+            : toolCalls.OrderBy(pair => pair.Key).Select(pair => pair.Value.Build()).ToArray();
+
+        return new ChatCompletionResponse
+        {
+            Choices =
+            [
+                new ChatChoice
+                {
+                    Message = new ChatMessage
+                    {
+                        Role = role,
+                        Content = contentBuilder.ToString(),
+                        ToolCalls = finalizedToolCalls
+                    }
+                }
+            ],
+            Usage = usage
+        };
+    }
+
+    private static void ProcessSseEvent(
+        string eventPayload,
+        StringBuilder contentBuilder,
+        Dictionary<int, StreamingToolCallState> toolCalls,
+        ProgressSnapshot snapshot,
+        ref string role,
+        ref ChatUsage? usage)
+    {
+        foreach (string rawEvent in eventPayload
+                     .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (string.Equals(rawEvent, "[DONE]", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            ChatCompletionResponse? chunk = JsonSerializer.Deserialize(
+                rawEvent,
+                NanoAgentJsonContext.Default.ChatCompletionResponse);
+
+            if (chunk is null)
+            {
+                continue;
+            }
+
+            if (chunk.Usage is not null && chunk.Usage.CompletionTokens > 0)
+            {
+                usage = chunk.Usage;
+                snapshot.CompleteRequestWithExactTokens(chunk.Usage.CompletionTokens);
+            }
+
+            foreach (ChatChoice choice in chunk.Choices)
+            {
+                ChatMessageDelta? delta = choice.Delta;
+                if (delta is null)
+                {
+                    continue;
+                }
+
+                if (!string.IsNullOrWhiteSpace(delta.Role))
+                {
+                    role = delta.Role;
+                }
+
+                if (!string.IsNullOrEmpty(delta.Content))
+                {
+                    contentBuilder.Append(delta.Content);
+                }
+
+                if (delta.ToolCalls is not null)
+                {
+                    foreach (ChatToolCallDelta toolCallDelta in delta.ToolCalls)
+                    {
+                        if (!toolCalls.TryGetValue(toolCallDelta.Index, out StreamingToolCallState? state))
+                        {
+                            state = new StreamingToolCallState();
+                            toolCalls[toolCallDelta.Index] = state;
+                        }
+
+                        state.Apply(toolCallDelta);
+                    }
+                }
+            }
+
+            if (!snapshot.CurrentRequestIsExact)
+            {
+                snapshot.UpdateCurrentEstimate(EstimateOutputTokens(contentBuilder, toolCalls));
+            }
+        }
     }
 
     private ChatCompletionRequest CreateRequest(List<ChatMessage> messages) =>
@@ -139,7 +357,12 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
             Temperature = 0.7,
             MaxTokens = DefaultMaxTokens,
             Messages = messages.ToArray(),
-            Tools = _toolService.GetToolDefinitions()
+            Tools = _toolService.GetToolDefinitions(),
+            Stream = true,
+            StreamOptions = new ChatStreamOptions
+            {
+                IncludeUsage = true
+            }
         };
 
     private void WriteVerbose(string message)
@@ -171,6 +394,35 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         }
 
         _chatConsole.RenderCommandMessage(command);
+    }
+
+    private static int EstimateOutputTokens(StringBuilder contentBuilder, Dictionary<int, StreamingToolCallState> toolCalls)
+    {
+        int characterCount = contentBuilder.Length;
+
+        foreach (StreamingToolCallState toolCall in toolCalls.Values)
+        {
+            characterCount += toolCall.Name.Length;
+            characterCount += toolCall.Arguments.Length;
+        }
+
+        return Math.Max(1, (int)Math.Ceiling(characterCount / 4d));
+    }
+
+    private static int EstimateOutputTokens(StringBuilder contentBuilder, ChatToolCall[]? toolCalls)
+    {
+        int characterCount = contentBuilder.Length;
+
+        if (toolCalls is not null)
+        {
+            foreach (ChatToolCall toolCall in toolCalls)
+            {
+                characterCount += toolCall.Function.Name.Length;
+                characterCount += toolCall.Function.Arguments.Length;
+            }
+        }
+
+        return Math.Max(1, (int)Math.Ceiling(characterCount / 4d));
     }
 
     private static string SummarizeToolResult(string toolResult)
@@ -281,4 +533,126 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         });
     }
 
+    private sealed class ProgressSnapshot
+    {
+        private readonly object _gate = new();
+        private int _exactCompletedTokens;
+        private int? _currentEstimatedTokens;
+        private bool _currentRequestExact;
+
+        public int? DisplayTokens
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    int total = _exactCompletedTokens + (_currentEstimatedTokens ?? 0);
+                    return total > 0 ? total : null;
+                }
+            }
+        }
+
+        public bool IsEstimate
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _currentEstimatedTokens.HasValue && !_currentRequestExact;
+                }
+            }
+        }
+
+        public bool CurrentRequestIsExact
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _currentRequestExact;
+                }
+            }
+        }
+
+        public void BeginRequest()
+        {
+            lock (_gate)
+            {
+                _currentEstimatedTokens = null;
+                _currentRequestExact = false;
+            }
+        }
+
+        public void UpdateCurrentEstimate(int estimatedTokens)
+        {
+            lock (_gate)
+            {
+                if (_currentRequestExact)
+                {
+                    return;
+                }
+
+                _currentEstimatedTokens = Math.Max(estimatedTokens, 1);
+            }
+        }
+
+        public void CompleteRequestWithExactTokens(int exactTokens)
+        {
+            lock (_gate)
+            {
+                _exactCompletedTokens += Math.Max(exactTokens, 0);
+                _currentEstimatedTokens = null;
+                _currentRequestExact = true;
+            }
+        }
+    }
+
+    private sealed class StreamingToolCallState
+    {
+        private readonly StringBuilder _name = new();
+        private readonly StringBuilder _arguments = new();
+
+        public string Id { get; private set; } = string.Empty;
+
+        public string Type { get; private set; } = "function";
+
+        public string Name => _name.ToString();
+
+        public string Arguments => _arguments.ToString();
+
+        public void Apply(ChatToolCallDelta delta)
+        {
+            if (!string.IsNullOrWhiteSpace(delta.Id))
+            {
+                Id = delta.Id;
+            }
+
+            if (!string.IsNullOrWhiteSpace(delta.Type))
+            {
+                Type = delta.Type!;
+            }
+
+            if (!string.IsNullOrWhiteSpace(delta.Function?.Name))
+            {
+                _name.Append(delta.Function.Name);
+            }
+
+            if (!string.IsNullOrEmpty(delta.Function?.Arguments))
+            {
+                _arguments.Append(delta.Function.Arguments);
+            }
+        }
+
+        public ChatToolCall Build() =>
+            new()
+            {
+                Id = string.IsNullOrWhiteSpace(Id) ? Guid.NewGuid().ToString("N") : Id,
+                Type = string.IsNullOrWhiteSpace(Type) ? "function" : Type,
+                Function = new ChatToolFunctionCall
+                {
+                    Name = Name,
+                    Arguments = _arguments.Length == 0 ? "{}" : _arguments.ToString()
+                }
+            };
+    }
 }
