@@ -133,6 +133,12 @@ internal sealed class ListFilesToolArguments
     public string Path { get; set; } = string.Empty;
 }
 
+internal sealed class RunCommandToolArguments
+{
+    [JsonPropertyName("command")]
+    public string Command { get; set; } = string.Empty;
+}
+
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ChatCompletionRequest))]
 [JsonSerializable(typeof(ChatCompletionResponse))]

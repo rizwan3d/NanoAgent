@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace NanoAgent;
 
@@ -48,6 +50,27 @@ internal sealed class FileToolService
                     }
                 }
             }
+        },
+        new()
+        {
+            Function = new ChatToolFunctionDefinition
+            {
+                Name = "run_command",
+                Description = "Run a shell command in the current working directory. Uses PowerShell on Windows and bash on macOS/Linux when available.",
+                Parameters = new ChatToolParameters
+                {
+                    AdditionalProperties = false,
+                    Required = ["command"],
+                    Properties = new Dictionary<string, ChatToolParameterProperty>
+                    {
+                        ["command"] = new()
+                        {
+                            Type = "string",
+                            Description = "The shell command to execute."
+                        }
+                    }
+                }
+            }
         }
     ];
 
@@ -56,6 +79,7 @@ internal sealed class FileToolService
         {
             "read_file" => ExecuteReadFile(toolCall),
             "list_files" => ExecuteListFiles(toolCall),
+            "run_command" => ExecuteRunCommand(toolCall),
             _ => $"Tool error: unsupported tool '{toolCall.Function.Name}'."
         };
 
@@ -143,6 +167,51 @@ internal sealed class FileToolService
         }
     }
 
+    private static string ExecuteRunCommand(ChatToolCall toolCall)
+    {
+        RunCommandToolArguments? arguments;
+        try
+        {
+            arguments = JsonSerializer.Deserialize(
+                toolCall.Function.Arguments,
+                FileToolJsonContext.Default.RunCommandToolArguments);
+        }
+        catch (JsonException exception)
+        {
+            return $"Tool error: invalid arguments for run_command. {exception.Message}";
+        }
+
+        if (arguments is null || string.IsNullOrWhiteSpace(arguments.Command))
+        {
+            return "Tool error: 'command' is required.";
+        }
+
+        try
+        {
+            ProcessStartInfo startInfo = CreateShellStartInfo(arguments.Command);
+            using Process process = new() { StartInfo = startInfo };
+
+            process.Start();
+            string standardOutput = process.StandardOutput.ReadToEnd();
+            string standardError = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+
+            string output = string.IsNullOrWhiteSpace(standardOutput) ? "<empty>" : standardOutput.TrimEnd();
+            string error = string.IsNullOrWhiteSpace(standardError) ? "<empty>" : standardError.TrimEnd();
+
+            return
+                $"COMMAND: {arguments.Command}\n" +
+                $"SHELL: {startInfo.FileName}\n" +
+                $"EXIT_CODE: {process.ExitCode}\n" +
+                $"STDOUT:\n{output}\n" +
+                $"STDERR:\n{error}";
+        }
+        catch (Exception exception)
+        {
+            return $"Tool error: unable to run command '{arguments.Command}'. {exception.Message}";
+        }
+    }
+
     private static string ResolvePath(string path)
     {
         if (Path.IsPathRooted(path))
@@ -152,11 +221,47 @@ internal sealed class FileToolService
 
         return Path.GetFullPath(Path.Combine(Environment.CurrentDirectory, path));
     }
+
+    private static ProcessStartInfo CreateShellStartInfo(string command)
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return new ProcessStartInfo
+            {
+                FileName = "powershell",
+                Arguments = $"-NoProfile -Command {EscapePowerShell(command)}",
+                WorkingDirectory = Environment.CurrentDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+        }
+
+        string shell = File.Exists("/bin/bash") ? "/bin/bash" : "/bin/sh";
+        return new ProcessStartInfo
+        {
+            FileName = shell,
+            Arguments = $"-lc {EscapePosix(command)}",
+            WorkingDirectory = Environment.CurrentDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+    }
+
+    private static string EscapePowerShell(string command) =>
+        $"'{command.Replace("'", "''")}'";
+
+    private static string EscapePosix(string command) =>
+        $"'{command.Replace("'", "'\"'\"'")}'";
 }
 
 [JsonSourceGenerationOptions(WriteIndented = false)]
 [JsonSerializable(typeof(ReadFileToolArguments))]
 [JsonSerializable(typeof(ListFilesToolArguments))]
+[JsonSerializable(typeof(RunCommandToolArguments))]
 internal sealed partial class FileToolJsonContext : JsonSerializerContext
 {
 }
