@@ -48,6 +48,10 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         }
     }
 
+    public string SessionId => _chatSession.SessionId;
+
+    public bool IsResumedSession => _chatSession.IsResumedSession;
+
     public async Task<string> GetResponseAsync(string userPrompt)
     {
         _chatConsole.BeginAgentActivity();

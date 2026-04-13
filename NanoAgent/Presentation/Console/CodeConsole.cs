@@ -32,7 +32,7 @@ internal sealed class CodeConsole : IChatConsole
     private int _activeStatusWidth;
     private string? _activeStatusText;
 
-    public void RenderHeader(AppConfig config)
+    public void RenderHeader(AppConfig config, string sessionId, bool isResumedSession)
     {
         lock (_consoleLock)
         {
@@ -40,10 +40,11 @@ internal sealed class CodeConsole : IChatConsole
             Console.WriteLine();
             Console.WriteLine($"{Warm}  {config.AppName}{Reset}");
             Console.WriteLine($"{Muted}  Model:{Reset} {UserTone}{config.Model}{Reset}");
+            Console.WriteLine($"{Muted}  Session:{Reset} {UserTone}{sessionId}{Reset} {Muted}({(isResumedSession ? "resumed" : "new")}){Reset}");
             Console.WriteLine($"{Muted}  Github:{Reset} {VerboseCommandTone}github.com/rizwan3d/NanoAgent{Reset}");
             Console.WriteLine($"{Muted}  Suponser:{Reset} {Warm}ALFAIN Technologies (PVT) Limited{Reset} {VerboseJsonTone}(https://alfain.co/){Reset}");
             Console.WriteLine($"{DividerTone}  {new string('\u2500', 53)}{Reset}");
-            Console.WriteLine($"{Muted}  Chat in the terminal. Press Ctrl+C to quit.{Reset}");
+            Console.WriteLine($"{Muted}  Chat in the terminal. Press Ctrl+C to quit. Use --session {sessionId} to resume later.{Reset}");
             Console.WriteLine();
         }
     }

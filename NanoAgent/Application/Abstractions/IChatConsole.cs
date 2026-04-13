@@ -4,7 +4,7 @@ internal readonly record struct FilePreviewLine(int? Number, string Text);
 
 internal interface IChatConsole
 {
-    void RenderHeader(AppConfig config);
+    void RenderHeader(AppConfig config, string sessionId, bool isResumedSession);
     string? ReadUserInput();
     void RenderUserMessage(string userInput);
     void RenderCommandMessage(string command);

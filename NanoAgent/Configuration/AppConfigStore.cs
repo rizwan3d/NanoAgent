@@ -21,6 +21,12 @@ internal static class AppConfigStore
     public static string GetLocalOverridePath() =>
         Path.Combine(Environment.CurrentDirectory, ".NanoAgent", "config.json");
 
+    public static string GetSessionsDirectoryPath()
+    {
+        string homeDirectory = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        return Path.Combine(homeDirectory, "NanoAgent", "sessions");
+    }
+
     public static AppConfig Load()
     {
         AppConfig defaultConfig = AppConfig.CreateDefault();

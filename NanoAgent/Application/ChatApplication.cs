@@ -15,20 +15,39 @@ internal sealed class ChatApplication
 
     public async Task RunAsync()
     {
-        _chatConsole.RenderHeader(_config);
-
-        while (true)
+        _chatConsole.RenderHeader(_config, _agentClient.SessionId, _agentClient.IsResumedSession);
+        ConsoleCancelEventHandler? cancelHandler = null;
+        cancelHandler = (_, eventArgs) =>
         {
-            string? userInput = _chatConsole.ReadUserInput();
-            if (string.IsNullOrWhiteSpace(userInput))
+            eventArgs.Cancel = true;
+            _chatConsole.RenderAgentMessage(
+                $"Session closed. Session ID: {_agentClient.SessionId}\nRun again with `--session {_agentClient.SessionId}` to continue this conversation.");
+            Environment.Exit(0);
+        };
+        Console.CancelKeyPress += cancelHandler;
+
+        try
+        {
+            while (true)
             {
-                continue;
+                string? userInput = _chatConsole.ReadUserInput();
+                if (string.IsNullOrWhiteSpace(userInput))
+                {
+                    continue;
+                }
+
+                _chatConsole.RenderUserMessage(userInput);
+
+                string agentResponse = await _agentClient.GetResponseAsync(userInput);
+                _chatConsole.RenderAgentMessage(agentResponse);
             }
-
-            _chatConsole.RenderUserMessage(userInput);
-
-            string agentResponse = await _agentClient.GetResponseAsync(userInput);
-            _chatConsole.RenderAgentMessage(agentResponse);
+        }
+        finally
+        {
+            if (cancelHandler is not null)
+            {
+                Console.CancelKeyPress -= cancelHandler;
+            }
         }
     }
 }
