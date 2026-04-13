@@ -604,25 +604,68 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     }
 
     private static List<PatchFilePreview> BuildPatchPreviews(string patch)
+        => BuildStructuredPatchPreviews(patch);
+
+    private static List<PatchFilePreview> BuildStructuredPatchPreviews(string patch)
     {
         List<PatchFilePreview> previews = [];
         string[] lines = patch.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         PatchFilePreviewBuilder? current = null;
-        int? currentLineNumber = null;
+        string currentOperation = "ApplyPatch";
+        int lineNumber = 1;
 
         foreach (string line in lines)
         {
-            if (line.StartsWith("+++ ", StringComparison.Ordinal))
+            if (line.StartsWith("*** Add File: ", StringComparison.Ordinal))
             {
                 if (current is not null)
                 {
                     previews.Add(current.Build());
                 }
 
-                string rawPath = line["+++ ".Length..].Trim();
-                string normalizedPath = NormalizePatchPath(rawPath);
-                current = new PatchFilePreviewBuilder(normalizedPath);
-                currentLineNumber = null;
+                currentOperation = "Add";
+                string path = line["*** Add File: ".Length..].Trim();
+                current = new PatchFilePreviewBuilder(path, $"Added {path}");
+                lineNumber = 1;
+                continue;
+            }
+
+            if (line.StartsWith("*** Delete File: ", StringComparison.Ordinal))
+            {
+                if (current is not null)
+                {
+                    previews.Add(current.Build());
+                }
+
+                string path = line["*** Delete File: ".Length..].Trim();
+                previews.Add(new PatchFilePreview(path, $"Deleted {path}", [], 0));
+                current = null;
+                currentOperation = "Delete";
+                continue;
+            }
+
+            if (line.StartsWith("*** Update File: ", StringComparison.Ordinal))
+            {
+                if (current is not null)
+                {
+                    previews.Add(current.Build());
+                }
+
+                currentOperation = "Update";
+                string path = line["*** Update File: ".Length..].Trim();
+                current = new PatchFilePreviewBuilder(path, $"Updated {path}");
+                lineNumber = 1;
+                continue;
+            }
+
+            if (line.StartsWith("*** Move to: ", StringComparison.Ordinal))
+            {
+                if (current is not null)
+                {
+                    string moveTarget = line["*** Move to: ".Length..].Trim();
+                    current.SetSummary($"Moved {current.Path} -> {moveTarget}");
+                }
+
                 continue;
             }
 
@@ -631,31 +674,23 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
                 continue;
             }
 
-            if (line.StartsWith("@@ ", StringComparison.Ordinal) || line.StartsWith("@@", StringComparison.Ordinal))
+            if (line.StartsWith("@@", StringComparison.Ordinal) || string.Equals(line, "*** End of File", StringComparison.Ordinal))
             {
-                currentLineNumber = ParsePatchStartLine(line);
                 continue;
             }
 
-            if (line.StartsWith("+", StringComparison.Ordinal) && !line.StartsWith("+++", StringComparison.Ordinal))
+            if (currentOperation == "Add" && line.StartsWith("+", StringComparison.Ordinal))
             {
-                current.AddLine(currentLineNumber, line[1..]);
-                if (currentLineNumber.HasValue)
-                {
-                    currentLineNumber++;
-                }
-
+                current.AddLine(lineNumber++, line[1..]);
                 continue;
             }
 
-            if (line.StartsWith(" ", StringComparison.Ordinal))
+            if ((currentOperation == "Update" || currentOperation == "ApplyPatch")
+                && (line.StartsWith(" ", StringComparison.Ordinal)
+                    || (line.StartsWith("+", StringComparison.Ordinal) && !line.StartsWith("+++", StringComparison.Ordinal))
+                    || (line.StartsWith("-", StringComparison.Ordinal) && !line.StartsWith("---", StringComparison.Ordinal))))
             {
-                if (currentLineNumber.HasValue)
-                {
-                    currentLineNumber++;
-                }
-
-                continue;
+                current.AddLine(null, line);
             }
         }
 
@@ -717,36 +752,6 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
             || line.StartsWith(" ", StringComparison.Ordinal)) - previewLines.Count);
 
         return previewLines;
-    }
-
-    private static string NormalizePatchPath(string rawPath)
-    {
-        string path = rawPath.Trim();
-        if (path.StartsWith("b/", StringComparison.Ordinal) || path.StartsWith("a/", StringComparison.Ordinal))
-        {
-            path = path[2..];
-        }
-
-        return path == "/dev/null" ? "<deleted>" : path;
-    }
-
-    private static int ParsePatchStartLine(string hunkHeader)
-    {
-        int plusIndex = hunkHeader.IndexOf('+');
-        if (plusIndex < 0)
-        {
-            return 1;
-        }
-
-        int commaIndex = hunkHeader.IndexOf(',', plusIndex);
-        int endIndex = commaIndex >= 0 ? commaIndex : hunkHeader.IndexOf(" @@", StringComparison.Ordinal);
-        if (endIndex < 0)
-        {
-            endIndex = hunkHeader.Length;
-        }
-
-        string value = hunkHeader[(plusIndex + 1)..endIndex];
-        return int.TryParse(value, out int lineNumber) ? lineNumber : 1;
     }
 
     private static string SummarizeToolResult(string toolResult)
@@ -989,13 +994,17 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     private sealed class PatchFilePreviewBuilder
     {
         private readonly string _path;
+        private string _summary;
         private readonly List<FilePreviewLine> _lines = [];
         private int _hiddenLineCount;
 
-        public PatchFilePreviewBuilder(string path)
+        public PatchFilePreviewBuilder(string path, string? summary = null)
         {
             _path = path;
+            _summary = string.IsNullOrWhiteSpace(summary) ? $"Applied patch to {path}" : summary;
         }
+
+        public string Path => _path;
 
         public void AddLine(int? lineNumber, string text)
         {
@@ -1008,12 +1017,14 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
             _hiddenLineCount++;
         }
 
+        public void SetSummary(string summary)
+        {
+            _summary = summary;
+        }
+
         public PatchFilePreview Build()
         {
-            string summary = _lines.Count == 0
-                ? $"Applied patch to {_path}"
-                : $"Applied patch to {_path}";
-            return new PatchFilePreview(_path, summary, _lines, _hiddenLineCount);
+            return new PatchFilePreview(_path, _summary, _lines, _hiddenLineCount);
         }
     }
 }
