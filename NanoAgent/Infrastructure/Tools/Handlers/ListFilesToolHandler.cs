@@ -19,7 +19,8 @@ internal sealed class ListFilesToolHandler : IToolHandler
                     ["path"] = new()
                     {
                         Type = "string",
-                        Description = "Relative or absolute path to a directory."
+                        Description = "Relative or absolute path to a directory.",
+                        MinLength = 1
                     }
                 }
             }

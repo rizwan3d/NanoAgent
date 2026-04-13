@@ -21,7 +21,8 @@ internal sealed class RunCommandToolHandler : IToolHandler
                     ["command"] = new()
                     {
                         Type = "string",
-                        Description = "The shell command to execute."
+                        Description = "The shell command to execute.",
+                        MinLength = 1
                     }
                 }
             }

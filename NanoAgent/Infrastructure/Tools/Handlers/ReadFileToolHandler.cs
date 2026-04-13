@@ -19,7 +19,8 @@ internal sealed class ReadFileToolHandler : IToolHandler
                     ["path"] = new()
                     {
                         Type = "string",
-                        Description = "Relative or absolute path to a text file."
+                        Description = "Relative or absolute path to a text file.",
+                        MinLength = 1
                     }
                 }
             }

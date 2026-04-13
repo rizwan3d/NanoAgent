@@ -24,7 +24,8 @@ internal sealed class ApplyPatchToolHandler : IToolHandler
                     ["patch"] = new()
                     {
                         Type = "string",
-                        Description = "The structured patch content to apply. It must begin with '*** Begin Patch' and end with '*** End Patch'."
+                        Description = "The structured patch content to apply. It must begin with '*** Begin Patch' and end with '*** End Patch'.",
+                        MinLength = 1
                     }
                 }
             }

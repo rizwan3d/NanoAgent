@@ -21,12 +21,14 @@ internal sealed class EditFileToolHandler : IToolHandler
                     ["path"] = new()
                     {
                         Type = "string",
-                        Description = "Relative or absolute path to the file to edit."
+                        Description = "Relative or absolute path to the file to edit.",
+                        MinLength = 1
                     },
                     ["old_text"] = new()
                     {
                         Type = "string",
-                        Description = "Exact existing text to find in the file."
+                        Description = "Exact existing text to find in the file.",
+                        MinLength = 1
                     },
                     ["new_text"] = new()
                     {

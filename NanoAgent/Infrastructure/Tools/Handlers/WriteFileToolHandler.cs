@@ -19,7 +19,8 @@ internal sealed class WriteFileToolHandler : IToolHandler
                     ["path"] = new()
                     {
                         Type = "string",
-                        Description = "Relative or absolute path to the file to create or overwrite."
+                        Description = "Relative or absolute path to the file to create or overwrite.",
+                        MinLength = 1
                     },
                     ["content"] = new()
                     {

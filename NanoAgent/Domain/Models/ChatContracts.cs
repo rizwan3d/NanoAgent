@@ -127,6 +127,42 @@ internal sealed class ChatToolParameterProperty
 
     [JsonPropertyName("description")]
     public string Description { get; set; } = string.Empty;
+
+    [JsonPropertyName("enum")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Enum { get; set; }
+
+    [JsonPropertyName("items")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ChatToolParameterProperty? Items { get; set; }
+
+    [JsonPropertyName("properties")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Dictionary<string, ChatToolParameterProperty>? Properties { get; set; }
+
+    [JsonPropertyName("required")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string[]? Required { get; set; }
+
+    [JsonPropertyName("additionalProperties")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? AdditionalProperties { get; set; }
+
+    [JsonPropertyName("minLength")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MinLength { get; set; }
+
+    [JsonPropertyName("maxLength")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? MaxLength { get; set; }
+
+    [JsonPropertyName("minimum")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Minimum { get; set; }
+
+    [JsonPropertyName("maximum")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Maximum { get; set; }
 }
 
 internal sealed class ChatToolCall

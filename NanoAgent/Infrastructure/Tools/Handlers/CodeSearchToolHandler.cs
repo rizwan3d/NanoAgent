@@ -21,12 +21,14 @@ internal sealed class CodeSearchToolHandler : IToolHandler
                     ["pattern"] = new()
                     {
                         Type = "string",
-                        Description = "The text or regex-style pattern to search for."
+                        Description = "The text or regex-style pattern to search for.",
+                        MinLength = 1
                     },
                     ["path"] = new()
                     {
                         Type = "string",
-                        Description = "Optional relative or absolute file or directory path to limit the search scope."
+                        Description = "Optional relative or absolute file or directory path to limit the search scope.",
+                        MinLength = 1
                     }
                 }
             }
