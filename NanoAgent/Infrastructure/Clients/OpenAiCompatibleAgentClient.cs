@@ -12,6 +12,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     private const int DefaultMaxTokens = 32000;
     private readonly string _endpoint;
     private readonly string _model;
+    private readonly string? _apiKey;
     private readonly IToolService _toolService;
     private readonly IChatSession _chatSession;
     private readonly AppRuntimeOptions _runtimeOptions;
@@ -21,6 +22,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     public OpenAiCompatibleAgentClient(
         string endpoint,
         string model,
+        string? apiKey,
         IToolService toolService,
         IChatSession chatSession,
         IChatConsole chatConsole,
@@ -28,6 +30,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
     {
         _endpoint = endpoint.TrimEnd('/');
         _model = model;
+        _apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey;
         _toolService = toolService;
         _chatSession = chatSession;
         _chatConsole = chatConsole;
@@ -38,6 +41,11 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         };
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         _httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("text/event-stream"));
+
+        if (_apiKey is not null)
+        {
+            _httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+        }
     }
 
     public async Task<string> GetResponseAsync(string userPrompt)

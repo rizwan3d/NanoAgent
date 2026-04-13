@@ -22,6 +22,7 @@ internal static class Program
         IAgentClient agentClient = new OpenAiCompatibleAgentClient(
             config.Endpoint,
             config.Model,
+            config.ApiKey,
             toolService,
             chatSession,
             chatConsole,
