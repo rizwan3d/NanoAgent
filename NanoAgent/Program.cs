@@ -45,7 +45,7 @@ internal static class Program
                 chatConsole,
                 runtimeOptions);
 
-            ChatApplication application = new ChatApplication(chatConsole, agentClient, config);
+            ChatApplication application = new ChatApplication(chatConsole, agentClient, config, sessionStore);
             await application.RunAsync();
         }
         catch (Exception exception)

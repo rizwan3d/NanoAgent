@@ -32,7 +32,7 @@ internal sealed class CodeConsole : IChatConsole
     private int _activeStatusWidth;
     private string? _activeStatusText;
 
-    public void RenderHeader(AppConfig config, string sessionId, bool isResumedSession)
+    public void RenderHeader(AppConfig config, string sessionId, bool isResumedSession, IReadOnlyList<ChatSessionSummary> recentSessions)
     {
         lock (_consoleLock)
         {
@@ -45,6 +45,18 @@ internal sealed class CodeConsole : IChatConsole
             Console.WriteLine($"{Muted}  Suponser:{Reset} {Warm}ALFAIN Technologies (PVT) Limited{Reset} {VerboseJsonTone}(https://alfain.co/){Reset}");
             Console.WriteLine($"{DividerTone}  {new string('\u2500', 53)}{Reset}");
             Console.WriteLine($"{Muted}  Chat in the terminal. Press Ctrl+C to quit. Use --session {sessionId} to resume later.{Reset}");
+            Console.WriteLine($"{Muted}  Type /sessions to list recent sessions anytime.{Reset}");
+            RenderRecentSessionsLocked(recentSessions);
+            Console.WriteLine();
+        }
+    }
+
+    public void RenderSessionList(IReadOnlyList<ChatSessionSummary> recentSessions)
+    {
+        lock (_consoleLock)
+        {
+            ClearActiveStatusLine();
+            RenderRecentSessionsLocked(recentSessions, includeDivider: true);
             Console.WriteLine();
         }
     }
@@ -452,6 +464,32 @@ internal sealed class CodeConsole : IChatConsole
             }
 
             Console.WriteLine($"          {Muted}{line}{Reset}");
+        }
+    }
+
+    private void RenderRecentSessionsLocked(IReadOnlyList<ChatSessionSummary> recentSessions, bool includeDivider = false)
+    {
+        if (includeDivider)
+        {
+            Console.WriteLine($"{Warm}  Recent Sessions{Reset}");
+        }
+
+        if (recentSessions.Count == 0)
+        {
+            Console.WriteLine($"{Muted}  No saved sessions yet.{Reset}");
+            return;
+        }
+
+        if (!includeDivider)
+        {
+            Console.WriteLine($"{Warm}  Recent Sessions{Reset}");
+        }
+
+        foreach (ChatSessionSummary session in recentSessions.Take(5))
+        {
+            string updated = session.UpdatedAtUtc.ToLocalTime().ToString("yyyy-MM-dd HH:mm");
+            Console.WriteLine($"{Muted}  -{Reset} {UserTone}{session.SessionId}{Reset} {Muted}({updated}, {session.MessageCount} messages){Reset}");
+            Console.WriteLine($"{Muted}    preview:{Reset} {AgentTone}{session.Preview}{Reset}");
         }
     }
 }

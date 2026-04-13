@@ -49,11 +49,61 @@ internal sealed class ChatSessionStore
         File.WriteAllText(filePath, json + Environment.NewLine);
     }
 
+    public IReadOnlyList<ChatSessionSummary> ListRecent(int maxCount)
+    {
+        Directory.CreateDirectory(_sessionsDirectoryPath);
+
+        return Directory.EnumerateFiles(_sessionsDirectoryPath, "*.json", SearchOption.TopDirectoryOnly)
+            .Select(path =>
+            {
+                try
+                {
+                    string json = File.ReadAllText(path);
+                    ChatSessionRecord? record = JsonSerializer.Deserialize(json, ChatSessionJsonContext.Default.ChatSessionRecord);
+                    if (record is null)
+                    {
+                        return null;
+                    }
+
+                    return CreateSummary(record);
+                }
+                catch
+                {
+                    return null;
+                }
+            })
+            .Where(summary => summary is not null)
+            .Cast<ChatSessionSummary>()
+            .OrderByDescending(summary => summary.UpdatedAtUtc)
+            .Take(Math.Max(0, maxCount))
+            .ToArray();
+    }
+
     public static string CreateSessionId() =>
         DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss") + "-" + Guid.NewGuid().ToString("N")[..8];
 
     private string GetSessionFilePath(string sessionId) =>
         Path.Combine(_sessionsDirectoryPath, $"{sessionId}.json");
+
+    private static ChatSessionSummary CreateSummary(ChatSessionRecord record)
+    {
+        ChatMessage? lastMessage = record.Messages
+            .LastOrDefault(message => !string.Equals(message.Role, ChatRole.System, StringComparison.Ordinal));
+
+        string preview = lastMessage?.Content?.Trim() ?? "<empty>";
+        preview = preview.Replace("\r\n", " ").Replace('\n', ' ').Trim();
+        if (preview.Length > 80)
+        {
+            preview = preview[..77] + "...";
+        }
+
+        return new ChatSessionSummary(
+            record.SessionId,
+            record.CreatedAtUtc,
+            record.UpdatedAtUtc,
+            preview,
+            record.Messages.Length);
+    }
 }
 
 internal sealed class ChatSessionRecord
@@ -66,6 +116,13 @@ internal sealed class ChatSessionRecord
 
     public ChatMessage[] Messages { get; init; } = Array.Empty<ChatMessage>();
 }
+
+internal sealed record ChatSessionSummary(
+    string SessionId,
+    DateTimeOffset CreatedAtUtc,
+    DateTimeOffset UpdatedAtUtc,
+    string Preview,
+    int MessageCount);
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, WriteIndented = true)]
 [JsonSerializable(typeof(ChatSessionRecord))]

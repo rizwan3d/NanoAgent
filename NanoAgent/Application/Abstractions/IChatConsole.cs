@@ -4,8 +4,9 @@ internal readonly record struct FilePreviewLine(int? Number, string Text);
 
 internal interface IChatConsole
 {
-    void RenderHeader(AppConfig config, string sessionId, bool isResumedSession);
+    void RenderHeader(AppConfig config, string sessionId, bool isResumedSession, IReadOnlyList<ChatSessionSummary> recentSessions);
     string? ReadUserInput();
+    void RenderSessionList(IReadOnlyList<ChatSessionSummary> recentSessions);
     void RenderUserMessage(string userInput);
     void RenderCommandMessage(string command);
     void RenderMutedToolCall(string toolName);
