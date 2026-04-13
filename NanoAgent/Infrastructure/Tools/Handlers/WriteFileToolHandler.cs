@@ -46,7 +46,7 @@ internal sealed class WriteFileToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
         {
-            return "Tool error: 'path' is required.";
+            return ToolExecutionResults.Error(Name, "'path' is required.");
         }
 
         string fullPath = ToolRuntime.ResolvePath(arguments.Path);
@@ -60,11 +60,15 @@ internal sealed class WriteFileToolHandler : IToolHandler
             }
 
             File.WriteAllText(fullPath, arguments.Content ?? string.Empty);
-            return $"FILE_WRITTEN: {fullPath}";
+            return ToolExecutionResults.Success(Name, result =>
+            {
+                result.Path = fullPath;
+                result.Message = "File written.";
+            });
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to write file '{fullPath}'. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to write file. {exception.Message}", result => result.Path = fullPath);
         }
     }
 }

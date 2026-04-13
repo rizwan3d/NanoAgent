@@ -41,13 +41,13 @@ internal sealed class ListFilesToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
         {
-            return "Tool error: 'path' is required.";
+            return ToolExecutionResults.Error(Name, "'path' is required.");
         }
 
         string directoryPath = ToolRuntime.ResolvePath(arguments.Path);
         if (!Directory.Exists(directoryPath))
         {
-            return $"Tool error: directory not found: {directoryPath}";
+            return ToolExecutionResults.Error(Name, "Directory not found.", result => result.Path = directoryPath);
         }
 
         try
@@ -63,13 +63,15 @@ internal sealed class ListFilesToolHandler : IToolHandler
                 })
                 .ToArray();
 
-            return entries.Length == 0
-                ? $"DIRECTORY: {directoryPath}\n<empty>"
-                : $"DIRECTORY: {directoryPath}\n{string.Join('\n', entries)}";
+            return ToolExecutionResults.Success(Name, result =>
+            {
+                result.Path = directoryPath;
+                result.Entries = entries;
+            });
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to list directory '{directoryPath}'. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to list directory. {exception.Message}", result => result.Path = directoryPath);
         }
     }
 }

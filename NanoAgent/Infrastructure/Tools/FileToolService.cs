@@ -22,7 +22,9 @@ internal sealed class FileToolService : IToolService
     public string Execute(ChatToolCall toolCall) =>
         _handlers.TryGetValue(toolCall.Function.Name, out IToolHandler? handler)
             ? handler.Execute(toolCall)
-            : $"Tool error: unsupported tool '{toolCall.Function.Name}'.";
+            : ToolExecutionResults.Error(
+                toolCall.Function.Name,
+                $"Unsupported tool '{toolCall.Function.Name}'.");
 
     private static IToolHandler[] CreateDefaultHandlers() =>
     [

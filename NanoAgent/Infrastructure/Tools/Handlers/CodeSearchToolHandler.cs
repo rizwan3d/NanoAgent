@@ -48,13 +48,13 @@ internal sealed class CodeSearchToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Pattern))
         {
-            return "Tool error: 'pattern' is required.";
+            return ToolExecutionResults.Error(Name, "'pattern' is required.");
         }
 
         string scopePath = ToolRuntime.ResolveScope(arguments.Path);
         if (!File.Exists(scopePath) && !Directory.Exists(scopePath))
         {
-            return $"Tool error: search path not found: {scopePath}";
+            return ToolExecutionResults.Error(Name, "Search path not found.", result => result.Scope = scopePath);
         }
 
         try
@@ -68,7 +68,11 @@ internal sealed class CodeSearchToolHandler : IToolHandler
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to search for '{arguments.Pattern}'. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to search. {exception.Message}", result =>
+            {
+                result.Pattern = arguments.Pattern;
+                result.Scope = scopePath;
+            });
         }
     }
 
@@ -90,18 +94,26 @@ internal sealed class CodeSearchToolHandler : IToolHandler
         string standardError = process.StandardError.ReadToEnd();
         process.WaitForExit();
 
-        if (process.ExitCode == 1 && string.IsNullOrWhiteSpace(standardError))
-        {
-            return $"SEARCH: {pattern}\nSCOPE: {scopePath}\n<no matches>";
-        }
-
         if (process.ExitCode != 0 && process.ExitCode != 1)
         {
-            return $"Tool error: code_search failed.\nSTDERR:\n{standardError.TrimEnd()}";
+            return ToolExecutionResults.Error("code_search", $"code_search failed. {standardError.TrimEnd()}", result =>
+            {
+                result.Pattern = pattern;
+                result.Scope = scopePath;
+                result.Stderr = standardError.TrimEnd();
+            });
         }
 
-        string output = string.IsNullOrWhiteSpace(standardOutput) ? "<no matches>" : standardOutput.TrimEnd();
-        return $"SEARCH: {pattern}\nSCOPE: {scopePath}\n{output}";
+        string[] matches = string.IsNullOrWhiteSpace(standardOutput)
+            ? []
+            : standardOutput.TrimEnd().Split('\n');
+
+        return ToolExecutionResults.Success("code_search", result =>
+        {
+            result.Pattern = pattern;
+            result.Scope = scopePath;
+            result.Matches = matches;
+        });
     }
 
     private static string ExecuteFallbackSearch(string pattern, string scopePath)
@@ -126,7 +138,13 @@ internal sealed class CodeSearchToolHandler : IToolHandler
                         matches.Add($"{filePath}:{lineNumber}:{line}");
                         if (matches.Count >= 200)
                         {
-                            return $"SEARCH: {pattern}\nSCOPE: {scopePath}\n{string.Join('\n', matches)}\n<results truncated>";
+                            return ToolExecutionResults.Success("code_search", result =>
+                            {
+                                result.Pattern = pattern;
+                                result.Scope = scopePath;
+                                result.Matches = matches.ToArray();
+                                result.Truncated = true;
+                            });
                         }
                     }
                 }
@@ -136,8 +154,11 @@ internal sealed class CodeSearchToolHandler : IToolHandler
             }
         }
 
-        return matches.Count == 0
-            ? $"SEARCH: {pattern}\nSCOPE: {scopePath}\n<no matches>"
-            : $"SEARCH: {pattern}\nSCOPE: {scopePath}\n{string.Join('\n', matches)}";
+        return ToolExecutionResults.Success("code_search", result =>
+        {
+            result.Pattern = pattern;
+            result.Scope = scopePath;
+            result.Matches = matches.ToArray();
+        });
     }
 }

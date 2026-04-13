@@ -41,23 +41,27 @@ internal sealed class ReadFileToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
         {
-            return "Tool error: 'path' is required.";
+            return ToolExecutionResults.Error(Name, "'path' is required.");
         }
 
         string fullPath = ToolRuntime.ResolvePath(arguments.Path);
         if (!File.Exists(fullPath))
         {
-            return $"Tool error: file not found: {fullPath}";
+            return ToolExecutionResults.Error(Name, "File not found.", result => result.Path = fullPath);
         }
 
         try
         {
             string content = File.ReadAllText(fullPath);
-            return $"FILE: {fullPath}\n{content}";
+            return ToolExecutionResults.Success(Name, result =>
+            {
+                result.Path = fullPath;
+                result.Content = content;
+            });
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to read file '{fullPath}'. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to read file. {exception.Message}", result => result.Path = fullPath);
         }
     }
 }

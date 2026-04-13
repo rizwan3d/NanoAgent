@@ -19,7 +19,7 @@ internal static class ToolArgumentParser
         }
         catch (JsonException exception)
         {
-            errorMessage = $"Tool error: invalid arguments for {toolName}. {exception.Message}";
+            errorMessage = ToolExecutionResults.Error(toolName, $"Invalid arguments. {exception.Message}");
             return null;
         }
     }

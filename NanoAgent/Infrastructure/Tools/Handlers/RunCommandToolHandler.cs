@@ -43,7 +43,7 @@ internal sealed class RunCommandToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Command))
         {
-            return "Tool error: 'command' is required.";
+            return ToolExecutionResults.Error(Name, "'command' is required.");
         }
 
         try
@@ -60,18 +60,20 @@ internal sealed class RunCommandToolHandler : IToolHandler
             string output = string.IsNullOrWhiteSpace(standardOutput) ? "<empty>" : standardOutput.TrimEnd();
             string error = string.IsNullOrWhiteSpace(standardError) ? "<empty>" : standardError.TrimEnd();
 
-            return
-                $"COMMAND: {arguments.Command}\n" +
-                $"SHELL: {startInfo.FileName}\n" +
-                $"EXECUTED: {shellCommand}\n" +
-                $"WORKDIR: {startInfo.WorkingDirectory}\n" +
-                $"EXIT_CODE: {process.ExitCode}\n" +
-                $"STDOUT:\n{output}\n" +
-                $"STDERR:\n{error}";
+            return ToolExecutionResults.Success(Name, result =>
+            {
+                result.Command = arguments.Command;
+                result.Shell = startInfo.FileName;
+                result.Executed = shellCommand;
+                result.Workdir = startInfo.WorkingDirectory;
+                result.ExitCode = process.ExitCode;
+                result.Stdout = output;
+                result.Stderr = error;
+            });
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to run command '{arguments.Command}'. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to run command. {exception.Message}", result => result.Command = arguments.Command);
         }
     }
 }

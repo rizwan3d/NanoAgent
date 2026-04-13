@@ -46,21 +46,21 @@ internal sealed class ApplyPatchToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Patch))
         {
-            return "Tool error: 'patch' is required.";
+            return ToolExecutionResults.Error(Name, "'patch' is required.");
         }
 
         try
         {
             if (!IsStructuredPatch(arguments.Patch))
             {
-                return "Tool error: apply_patch requires the structured Codex patch format beginning with '*** Begin Patch'.";
+                return ToolExecutionResults.Error(Name, "apply_patch requires the structured Codex patch format beginning with '*** Begin Patch'.");
             }
 
             return ApplyStructuredPatch(arguments.Patch);
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to apply patch. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to apply patch. {exception.Message}");
         }
     }
 
@@ -99,9 +99,11 @@ internal sealed class ApplyPatchToolHandler : IToolHandler
             }
         }
 
-        return changes.Count == 0
-            ? "PATCH_APPLIED\n<no changes>"
-            : $"PATCH_APPLIED\n{string.Join('\n', changes)}";
+        return ToolExecutionResults.Success("apply_patch", result =>
+        {
+            result.Message = changes.Count == 0 ? "Patch applied with no changes." : "Patch applied.";
+            result.Changes = changes.ToArray();
+        });
     }
 
     private static void ApplyAddFile(AddFileOperation operation)

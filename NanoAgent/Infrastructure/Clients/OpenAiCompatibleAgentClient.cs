@@ -427,7 +427,7 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
     private void MaybeRenderUserFacingFileChange(ChatToolCall toolCall, string toolResult)
     {
-        if (_runtimeOptions.Verbose || toolResult.StartsWith("Tool error:", StringComparison.Ordinal))
+        if (_runtimeOptions.Verbose || IsToolError(toolResult))
         {
             return;
         }
@@ -481,7 +481,8 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
         }
 
         string displayPath = ToDisplayPath(arguments.Path);
-        List<FilePreviewLine> previewLines = BuildDiffPreviewLines(toolResult, out int hiddenLineCount);
+        string diff = TryParseToolResult(toolResult)?.Diff ?? string.Empty;
+        List<FilePreviewLine> previewLines = BuildDiffPreviewLines(diff, out int hiddenLineCount);
 
         _chatConsole.RenderFileOperationMessage(
             "Edit",
@@ -704,15 +705,13 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
     private static List<FilePreviewLine> BuildDiffPreviewLines(string toolResult, out int hiddenLineCount)
     {
-        const string marker = "\nDIFF:\n";
-        int markerIndex = toolResult.IndexOf(marker, StringComparison.Ordinal);
-        if (markerIndex < 0)
+        if (string.IsNullOrWhiteSpace(toolResult))
         {
             hiddenLineCount = 0;
             return [];
         }
 
-        string diff = toolResult[(markerIndex + marker.Length)..];
+        string diff = toolResult;
         string[] lines = diff.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n');
         List<FilePreviewLine> previewLines = [];
 
@@ -756,14 +755,19 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
     private static string SummarizeToolResult(string toolResult)
     {
-        string normalized = toolResult.Replace("\r\n", "\n");
-
-        if (normalized.StartsWith("COMMAND:", StringComparison.Ordinal))
+        ToolExecutionResult? parsed = TryParseToolResult(toolResult);
+        if (parsed is not null)
         {
-            string[] lines = normalized.Split('\n');
-            return string.Join(" | ", lines.Take(5));
+            if (string.Equals(parsed.Tool, "run_command", StringComparison.Ordinal))
+            {
+                return $"tool={parsed.Tool} exit_code={parsed.ExitCode} command={parsed.Command}";
+            }
+
+            return $"tool={parsed.Tool} status={parsed.Status}" +
+                   (string.IsNullOrWhiteSpace(parsed.Message) ? string.Empty : $" message={parsed.Message}");
         }
 
+        string normalized = toolResult.Replace("\r\n", "\n");
         string firstLine = normalized.Split('\n', 2)[0];
         return firstLine.Length <= 120 ? firstLine : firstLine[..117] + "...";
     }
@@ -781,14 +785,40 @@ internal sealed class OpenAiCompatibleAgentClient : IAgentClient
 
     private static string FormatToolResultVerboseMessage(ChatToolCall toolCall, string toolResult)
     {
-        string summary = SummarizeToolResult(toolResult);
-
-        if (!string.Equals(toolCall.Function.Name, "run_command", StringComparison.Ordinal))
+        ToolExecutionResult? parsed = TryParseToolResult(toolResult);
+        if (string.Equals(toolCall.Function.Name, "run_command", StringComparison.Ordinal) && parsed is not null)
         {
-            return $"tool result: {summary}";
+            string stdout = parsed.Stdout ?? "<empty>";
+            string stderr = parsed.Stderr ?? "<empty>";
+
+            return
+                "tool result:\n" +
+                $"COMMAND: {parsed.Command}\n" +
+                $"SHELL: {parsed.Shell}\n" +
+                $"EXECUTED: {parsed.Executed}\n" +
+                $"WORKDIR: {parsed.Workdir}\n" +
+                $"EXIT_CODE: {parsed.ExitCode}\n" +
+                $"STDOUT:\n{stdout}\n" +
+                $"STDERR:\n{stderr}";
         }
 
-        return $"tool result:\n{summary}";
+        string summary = SummarizeToolResult(toolResult);
+        return $"tool result: {summary}";
+    }
+
+    private static bool IsToolError(string toolResult)
+    {
+        ToolExecutionResult? parsed = TryParseToolResult(toolResult);
+        return parsed is not null
+            ? string.Equals(parsed.Status, "error", StringComparison.OrdinalIgnoreCase)
+            : toolResult.StartsWith("Tool error:", StringComparison.Ordinal);
+    }
+
+    private static ToolExecutionResult? TryParseToolResult(string toolResult)
+    {
+        return ToolExecutionResults.TryParse(toolResult, out ToolExecutionResult? parsed)
+            ? parsed
+            : null;
     }
 
     private static string? TryReadJsonStringProperty(string json, string propertyName)

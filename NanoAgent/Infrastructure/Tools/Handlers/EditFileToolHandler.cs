@@ -58,18 +58,18 @@ internal sealed class EditFileToolHandler : IToolHandler
 
         if (arguments is null || string.IsNullOrWhiteSpace(arguments.Path))
         {
-            return "Tool error: 'path' is required.";
+            return ToolExecutionResults.Error(Name, "'path' is required.");
         }
 
         if (string.IsNullOrEmpty(arguments.OldText))
         {
-            return "Tool error: 'old_text' is required.";
+            return ToolExecutionResults.Error(Name, "'old_text' is required.");
         }
 
         string fullPath = ToolRuntime.ResolvePath(arguments.Path);
         if (!File.Exists(fullPath))
         {
-            return $"Tool error: file not found: {fullPath}";
+            return ToolExecutionResults.Error(Name, "File not found.", result => result.Path = fullPath);
         }
 
         try
@@ -83,12 +83,15 @@ internal sealed class EditFileToolHandler : IToolHandler
 
             if (matchCount == 0)
             {
-                return $"Tool error: old_text was not found in file: {fullPath}";
+                return ToolExecutionResults.Error(Name, "old_text was not found in file.", result => result.Path = fullPath);
             }
 
             if (!arguments.ReplaceAll && matchCount > 1)
             {
-                return $"Tool error: old_text matched {matchCount} locations. Set replace_all=true or provide a more specific old_text.";
+                return ToolExecutionResults.Error(
+                    Name,
+                    $"old_text matched {matchCount} locations. Set replace_all=true or provide a more specific old_text.",
+                    result => result.Path = fullPath);
             }
 
             string updatedNormalizedContent = arguments.ReplaceAll
@@ -98,11 +101,16 @@ internal sealed class EditFileToolHandler : IToolHandler
 
             File.WriteAllText(fullPath, updatedContent);
             string diff = BuildDiff(content, updatedContent);
-            return $"FILE_EDITED: {fullPath}\nDIFF:\n{diff}";
+            return ToolExecutionResults.Success(Name, result =>
+            {
+                result.Path = fullPath;
+                result.Diff = diff;
+                result.Message = "File edited.";
+            });
         }
         catch (Exception exception)
         {
-            return $"Tool error: unable to edit file '{fullPath}'. {exception.Message}";
+            return ToolExecutionResults.Error(Name, $"Unable to edit file. {exception.Message}", result => result.Path = fullPath);
         }
     }
 
