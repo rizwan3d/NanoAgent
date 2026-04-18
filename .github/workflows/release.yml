@@ -24,6 +24,7 @@ permissions:
   contents: write
 
 env:
+  APP_NAME: FinalAgent
   APP_PROJECT: FinalAgent/FinalAgent.csproj
   CONFIGURATION: Release
   DOTNET_NOLOGO: true
@@ -138,7 +139,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $archivePath = Join-Path $env:GITHUB_WORKSPACE "artifacts/packages/FinalAgent-$env:RELEASE_TAG-${{ matrix.rid }}.zip"
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE "artifacts/packages/$env:APP_NAME-${{ matrix.rid }}.zip"
           if (Test-Path $archivePath) {
             Remove-Item $archivePath -Force
           }
@@ -148,7 +149,7 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          archive_path="$GITHUB_WORKSPACE/artifacts/packages/FinalAgent-${RELEASE_TAG}-${{ matrix.rid }}.zip"
+          archive_path="$GITHUB_WORKSPACE/artifacts/packages/${APP_NAME}-${{ matrix.rid }}.zip"
           publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}"
           cd "$publish_dir"
           zip -r "$archive_path" .
