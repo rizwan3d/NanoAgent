@@ -1,4 +1,5 @@
 using FinalAgent.Infrastructure.Configuration;
+using FinalAgent.Infrastructure.Secrets;
 using FinalAgent.Application.Abstractions;
 using FinalAgent.Infrastructure.Storage;
 using Microsoft.Extensions.Configuration;
@@ -18,7 +19,9 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IUserDataPathProvider, UserDataPathProvider>();
         services.AddSingleton<IAgentConfigurationStore, JsonAgentConfigurationStore>();
-        services.AddSingleton<IApiKeySecretStore, JsonApiKeySecretStore>();
+        services.AddSingleton<IApiKeySecretStore, ApiKeySecretStore>();
+        services.AddSingleton<IProcessRunner, ProcessRunner>();
+        services.AddSingleton<IPlatformCredentialStore>(CreatePlatformCredentialStore());
         services.AddSingleton<IValidateOptions<ApplicationOptions>, ApplicationOptionsValidator>();
 
         services
@@ -30,5 +33,26 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
 
         return services;
+    }
+
+    private static Func<IServiceProvider, IPlatformCredentialStore> CreatePlatformCredentialStore()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return _ => new WindowsCredentialStore();
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return _ => new MacOsKeychainCredentialStore();
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return serviceProvider => new LinuxSecretToolCredentialStore(
+                serviceProvider.GetRequiredService<IProcessRunner>());
+        }
+
+        return _ => new UnsupportedPlatformCredentialStore();
     }
 }

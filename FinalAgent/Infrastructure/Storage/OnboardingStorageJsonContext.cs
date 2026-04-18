@@ -8,7 +8,6 @@ namespace FinalAgent.Infrastructure.Storage;
     UseStringEnumConverter = true,
     WriteIndented = true)]
 [JsonSerializable(typeof(AgentProviderProfile))]
-[JsonSerializable(typeof(StoredApiKeySecret))]
 internal sealed partial class OnboardingStorageJsonContext : JsonSerializerContext
 {
 }

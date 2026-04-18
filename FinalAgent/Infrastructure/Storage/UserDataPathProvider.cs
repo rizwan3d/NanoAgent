@@ -7,7 +7,6 @@ namespace FinalAgent.Infrastructure.Storage;
 internal sealed class UserDataPathProvider : IUserDataPathProvider
 {
     private const string ConfigurationFileName = "agent-profile.json";
-    private const string SecretFileName = "agent-secrets.json";
 
     private readonly ApplicationOptions _options;
 
@@ -23,15 +22,6 @@ internal sealed class UserDataPathProvider : IUserDataPathProvider
             ".config");
 
         return Path.Combine(root, _options.StorageDirectoryName, ConfigurationFileName);
-    }
-
-    public string GetSecretFilePath()
-    {
-        string root = ResolveFolder(
-            Environment.SpecialFolder.LocalApplicationData,
-            Path.Combine(".local", "share"));
-
-        return Path.Combine(root, _options.StorageDirectoryName, SecretFileName);
     }
 
     private static string ResolveFolder(Environment.SpecialFolder specialFolder, string fallbackRelativePath)
