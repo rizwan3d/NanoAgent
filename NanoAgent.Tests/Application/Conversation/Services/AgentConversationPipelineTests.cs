@@ -81,7 +81,7 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_HandOffToToolExecutionPipeline_When_ResponseContainsToolCalls()
+    public async Task ProcessAsync_Should_ContinueConversationAfterToolExecution_When_ResponseContainsToolCalls()
     {
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore
@@ -101,22 +101,42 @@ public sealed class AgentConversationPipelineTests
             ]);
 
         Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        ConversationProviderRequest? followUpRequest = null;
         providerClient
             .Setup(client => client.SendAsync(
                 It.IsAny<ConversationProviderRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ConversationProviderPayload(
-                ProviderKind.OpenAiCompatible,
-                """{ "choices": [] }""",
-                "resp_456"));
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                if (followUpRequest is null)
+                {
+                    followUpRequest = request.Messages.Count > 1
+                        ? request
+                        : null;
+                }
+
+                return Task.FromResult(request.Messages.Count == 1
+                    ? new ConversationProviderPayload(
+                        ProviderKind.OpenAiCompatible,
+                        """{ "choices": [] }""",
+                        "resp_456")
+                    : new ConversationProviderPayload(
+                        ProviderKind.OpenAiCompatible,
+                        """{ "choices": [] }""",
+                        "resp_789"));
+            });
 
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
         responseMapper
-            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
             .Returns(new ConversationResponse(
                 null,
                 [new ConversationToolCall("call_1", "directory_list", "{}")],
-                "resp_456"));
+                "resp_456"))
+            .Returns(new ConversationResponse(
+                "I inspected the workspace and can create the requested files next.",
+                [],
+                "resp_789"));
 
         Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
         toolExecutionPipeline
@@ -150,12 +170,19 @@ public sealed class AgentConversationPipelineTests
             Session,
             CancellationToken.None);
 
-        result.Kind.Should().Be(ConversationTurnResultKind.ToolExecution);
-        result.ResponseText.Should().Contain("Directory listing");
-        result.ToolExecutionResult.Should().NotBeNull();
+        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
+        result.ResponseText.Should().Be("I inspected the workspace and can create the requested files next.");
+        result.ToolExecutionResult.Should().BeNull();
         result.Metrics.Should().NotBeNull();
-        result.ToolExecutionResult!.Results.Should().ContainSingle();
-        result.ToolExecutionResult.Results[0].ToolName.Should().Be("directory_list");
+        followUpRequest.Should().NotBeNull();
+        followUpRequest!.Messages.Should().HaveCount(3);
+        followUpRequest.Messages[0].Role.Should().Be("user");
+        followUpRequest.Messages[1].Role.Should().Be("assistant");
+        followUpRequest.Messages[1].ToolCalls.Should().ContainSingle();
+        followUpRequest.Messages[1].ToolCalls[0].Name.Should().Be("directory_list");
+        followUpRequest.Messages[2].Role.Should().Be("tool");
+        followUpRequest.Messages[2].ToolCallId.Should().Be("call_1");
+        followUpRequest.Messages[2].Content.Should().Be("""{"Code":"ok","Message":"ok"}""");
     }
 
     [Fact]

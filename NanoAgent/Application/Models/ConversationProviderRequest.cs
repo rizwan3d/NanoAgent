@@ -6,6 +6,6 @@ public sealed record ConversationProviderRequest(
     AgentProviderProfile ProviderProfile,
     string ApiKey,
     string ModelId,
-    string UserInput,
+    IReadOnlyList<ConversationRequestMessage> Messages,
     string? SystemPrompt,
     IReadOnlyList<ToolDefinition> AvailableTools);

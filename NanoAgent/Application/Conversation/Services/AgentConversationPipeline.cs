@@ -8,6 +8,7 @@ namespace NanoAgent.Application.Conversation.Services;
 
 internal sealed class AgentConversationPipeline : IConversationPipeline
 {
+    private const int MaxProviderRoundsPerTurn = 8;
     private readonly TimeProvider _timeProvider;
     private readonly ITokenEstimator _tokenEstimator;
     private readonly IApiKeySecretStore _secretStore;
@@ -57,97 +58,122 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(settings.RequestTimeout);
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
+        List<ConversationRequestMessage> messages =
+        [
+            ConversationRequestMessage.User(input.Trim())
+        ];
+        int totalCompletionTokens = 0;
+        bool hasReportedCompletionTokens = false;
 
         ApplicationLogMessages.ConversationRequestStarted(
             _logger,
             session.ProviderName,
             session.ActiveModelId);
 
-        ConversationProviderPayload providerPayload;
+        for (int round = 0; round < MaxProviderRoundsPerTurn; round++)
+        {
+            ConversationProviderPayload providerPayload;
 
-        try
-        {
-            providerPayload = await _providerClient.SendAsync(
-                new ConversationProviderRequest(
-                    session.ProviderProfile,
-                    apiKey,
-                    session.ActiveModelId,
-                    input.Trim(),
-                    settings.SystemPrompt,
-                    _toolRegistry.GetToolDefinitions()),
-                timeoutSource.Token);
-        }
-        catch (ConversationProviderException)
-        {
-            throw;
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
-        {
-            throw new ConversationProviderException(
-                $"The conversation request timed out after {settings.RequestTimeout.TotalSeconds:0} seconds.");
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            throw new ConversationProviderException(
-                "The configured provider failed while processing the conversation request.",
-                exception);
-        }
+            try
+            {
+                providerPayload = await _providerClient.SendAsync(
+                    new ConversationProviderRequest(
+                        session.ProviderProfile,
+                        apiKey,
+                        session.ActiveModelId,
+                        messages,
+                        settings.SystemPrompt,
+                        _toolRegistry.GetToolDefinitions()),
+                    timeoutSource.Token);
+            }
+            catch (ConversationProviderException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
+            {
+                throw new ConversationProviderException(
+                    $"The conversation request timed out after {settings.RequestTimeout.TotalSeconds:0} seconds.");
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new ConversationProviderException(
+                    "The configured provider failed while processing the conversation request.",
+                    exception);
+            }
 
-        ConversationResponse response;
+            ConversationResponse response;
 
-        try
-        {
-            response = _responseMapper.Map(providerPayload);
-        }
-        catch (ConversationResponseException)
-        {
-            throw;
-        }
-        catch (Exception exception)
-        {
-            throw new ConversationResponseException(
-                "The provider response could not be normalized into the internal conversation model.",
-                exception);
-        }
+            try
+            {
+                response = _responseMapper.Map(providerPayload);
+            }
+            catch (ConversationResponseException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new ConversationResponseException(
+                    "The provider response could not be normalized into the internal conversation model.",
+                    exception);
+            }
 
-        if (response.HasToolCalls)
-        {
-            ApplicationLogMessages.ConversationToolHandoffStarted(
-                _logger,
-                response.ToolCalls.Count);
+            if (response.CompletionTokens is > 0)
+            {
+                totalCompletionTokens += response.CompletionTokens.Value;
+                hasReportedCompletionTokens = true;
+            }
 
-            ToolExecutionBatchResult toolExecutionResult = await _toolExecutionPipeline.ExecuteAsync(
-                response.ToolCalls,
-                session,
-                cancellationToken);
+            if (response.HasToolCalls)
+            {
+                ApplicationLogMessages.ConversationToolHandoffStarted(
+                    _logger,
+                    response.ToolCalls.Count);
 
-            ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
-            return ConversationTurnResult.ToolExecution(
-                toolExecutionResult,
+                ToolExecutionBatchResult toolExecutionResult = await _toolExecutionPipeline.ExecuteAsync(
+                    response.ToolCalls,
+                    session,
+                    cancellationToken);
+
+                ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
+
+                messages.Add(ConversationRequestMessage.AssistantToolCalls(
+                    response.ToolCalls,
+                    response.AssistantMessage));
+
+                foreach (ToolInvocationResult invocationResult in toolExecutionResult.Results)
+                {
+                    messages.Add(ConversationRequestMessage.ToolResult(
+                        invocationResult.ToolCallId,
+                        invocationResult.Result.JsonResult));
+                }
+
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(response.AssistantMessage))
+            {
+                throw new ConversationResponseException(
+                    "The provider response did not contain an assistant message or any tool calls.");
+            }
+
+            ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
+
+            return ConversationTurnResult.AssistantMessage(
+                response.AssistantMessage,
                 CreateMetrics(
                     startedAt,
-                    toolExecutionResult.ToDisplayText(),
-                    response.CompletionTokens));
+                    response.AssistantMessage,
+                    hasReportedCompletionTokens ? totalCompletionTokens : null));
         }
 
-        if (string.IsNullOrWhiteSpace(response.AssistantMessage))
-        {
-            throw new ConversationResponseException(
-                "The provider response did not contain an assistant message or any tool calls.");
-        }
-
-        ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
-
-        return ConversationTurnResult.AssistantMessage(
-            response.AssistantMessage,
-            CreateMetrics(
-                startedAt,
-                response.AssistantMessage,
-                response.CompletionTokens));
+        throw new ConversationResponseException(
+            "The provider requested too many sequential tool rounds without producing a final assistant message.");
     }
 
     private ConversationTurnMetrics CreateMetrics(

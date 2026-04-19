@@ -75,9 +75,10 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
                 request.SystemPrompt.Trim()));
         }
 
-        messages.Add(new OpenAiChatCompletionRequestMessage(
-            "user",
-            request.UserInput.Trim()));
+        foreach (ConversationRequestMessage message in request.Messages)
+        {
+            messages.Add(MapMessage(message));
+        }
 
         OpenAiChatCompletionToolDefinition[] tools = request.AvailableTools
             .Select(definition => new OpenAiChatCompletionToolDefinition(
@@ -93,6 +94,34 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             request.ModelId,
             messages,
             tools);
+    }
+
+    private static OpenAiChatCompletionRequestMessage MapMessage(ConversationRequestMessage message)
+    {
+        ArgumentNullException.ThrowIfNull(message);
+
+        if (message.ToolCalls.Count > 0)
+        {
+            OpenAiChatCompletionToolCall[] toolCalls = message.ToolCalls
+                .Select(static toolCall => new OpenAiChatCompletionToolCall(
+                    toolCall.Id,
+                    "function",
+                    new OpenAiChatCompletionFunctionCall(
+                        toolCall.Name,
+                        toolCall.ArgumentsJson)))
+                .ToArray();
+
+            return new OpenAiChatCompletionRequestMessage(
+                message.Role,
+                message.Content,
+                null,
+                toolCalls);
+        }
+
+        return new OpenAiChatCompletionRequestMessage(
+            message.Role,
+            message.Content,
+            message.ToolCallId);
     }
 
     private static string? TryGetResponseId(HttpResponseMessage response)

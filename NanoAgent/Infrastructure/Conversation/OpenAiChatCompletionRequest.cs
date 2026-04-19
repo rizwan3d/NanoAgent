@@ -10,7 +10,12 @@ internal sealed record OpenAiChatCompletionRequest(
 
 internal sealed record OpenAiChatCompletionRequestMessage(
     [property: JsonPropertyName("role")] string Role,
-    [property: JsonPropertyName("content")] string Content);
+    [property: JsonPropertyName("content")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Content,
+    [property: JsonPropertyName("tool_call_id")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolCallId = null,
+    [property: JsonPropertyName("tool_calls")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<OpenAiChatCompletionToolCall>? ToolCalls = null);
 
 internal sealed record OpenAiChatCompletionToolDefinition(
     [property: JsonPropertyName("type")] string Type,

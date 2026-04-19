@@ -34,7 +34,9 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234"),
                 "test-key",
                 "gpt-4.1",
-                "Explain the diff.",
+                [
+                    ConversationRequestMessage.User("Explain the diff.")
+                ],
                 "You are helpful.",
                 [CreateToolDefinition("file_read")]),
             CancellationToken.None);
@@ -47,6 +49,51 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         handler.RequestBody.Should().Contain("\"role\":\"user\"");
         handler.RequestBody.Should().Contain("\"tools\"");
         handler.RequestBody.Should().Contain("\"name\":\"file_read\"");
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_SerializeAssistantToolCallsAndToolMessages_When_RequestContainsToolHistory()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_2",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Done."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = new(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234/v1"),
+                "test-key",
+                "gpt-4.1",
+                [
+                    ConversationRequestMessage.User("Create the files."),
+                    ConversationRequestMessage.AssistantToolCalls([
+                        new ConversationToolCall("call_1", "file_write", """{"path":"index.html","content":"...","overwrite":true}""")
+                    ]),
+                    ConversationRequestMessage.ToolResult("call_1", """{"path":"index.html","written":true}""")
+                ],
+                "You are helpful.",
+                [CreateToolDefinition("file_write")]),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:1234/v1/chat/completions"));
+        handler.RequestBody.Should().Contain("\"role\":\"assistant\"");
+        handler.RequestBody.Should().Contain("\"tool_calls\"");
+        handler.RequestBody.Should().Contain("\"id\":\"call_1\"");
+        handler.RequestBody.Should().Contain("\"name\":\"file_write\"");
+        handler.RequestBody.Should().Contain("\"role\":\"tool\"");
+        handler.RequestBody.Should().Contain("\"tool_call_id\":\"call_1\"");
+        handler.RequestBody.Should().Contain("\\u0022written\\u0022:true");
         payload.ResponseId.Should().Be("req_789");
     }
 
