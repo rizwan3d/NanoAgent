@@ -1,6 +1,7 @@
 using FinalAgent.Application.Abstractions;
 using FinalAgent.ConsoleHost.Hosting;
 using FinalAgent.ConsoleHost.Prompts;
+using FinalAgent.ConsoleHost.Repl;
 using FinalAgent.ConsoleHost.Terminal;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,6 +21,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISecretPrompt, ConsoleSecretPrompt>();
         services.AddSingleton<IConfirmationPrompt, ConsoleConfirmationPrompt>();
         services.AddSingleton<IStatusMessageWriter, ConsoleStatusMessageWriter>();
+        services.AddSingleton<IReplInputReader, ConsoleReplInputReader>();
+        services.AddSingleton<IReplOutputWriter, ConsoleReplOutputWriter>();
         services.AddSingleton<ProcessExitCodeTracker>();
         services.AddHostedService<ConsoleApplicationHostedService>();
 

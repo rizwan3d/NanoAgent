@@ -57,4 +57,34 @@ internal static partial class ApplicationLogMessages
         Level = LogLevel.Warning,
         Message = "The provider returned duplicate model identifiers. Using the de-duplicated sorted set for selection.")]
     public static partial void DuplicateModelsDetected(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1009,
+        Level = LogLevel.Information,
+        Message = "Interactive shell started for model '{modelId}'.")]
+    public static partial void ReplStarted(ILogger logger, string modelId);
+
+    [LoggerMessage(
+        EventId = 1010,
+        Level = LogLevel.Information,
+        Message = "Interactive shell stopped.")]
+    public static partial void ReplStopped(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1011,
+        Level = LogLevel.Warning,
+        Message = "REPL command '{commandText}' failed unexpectedly.")]
+    public static partial void ReplCommandFailed(ILogger logger, string commandText, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1012,
+        Level = LogLevel.Warning,
+        Message = "Conversation pipeline failed unexpectedly during the interactive shell.")]
+    public static partial void ReplConversationFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(
+        EventId = 1013,
+        Level = LogLevel.Information,
+        Message = "Interactive shell input stream closed. Exiting the shell.")]
+    public static partial void ReplInputClosed(ILogger logger);
 }

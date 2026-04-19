@@ -1,4 +1,6 @@
 using FinalAgent.Application.Abstractions;
+using FinalAgent.Application.Repl.Commands;
+using FinalAgent.Application.Repl.Services;
 using FinalAgent.Application.Services;
 using FinalAgent.Domain.Abstractions;
 using FinalAgent.Domain.Services;
@@ -13,6 +15,11 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddScoped<IApplicationRunner, AgentApplicationRunner>();
+        services.AddSingleton<IReplRuntime, ReplRuntime>();
+        services.AddSingleton<IReplCommandDispatcher, ReplCommandDispatcher>();
+        services.AddSingleton<IConversationPipeline, AgentConversationPipeline>();
+        services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, ExitCommandHandler>();
         services.AddSingleton<IModelDiscoveryService, ModelDiscoveryService>();
         services.AddSingleton<IFirstRunOnboardingService, FirstRunOnboardingService>();
         services.AddSingleton<IOnboardingInputValidator, OnboardingInputValidator>();

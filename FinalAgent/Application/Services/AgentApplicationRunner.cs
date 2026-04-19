@@ -12,17 +12,20 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
 {
     private readonly IFirstRunOnboardingService _onboardingService;
     private readonly IModelDiscoveryService _modelDiscoveryService;
+    private readonly IReplRuntime _replRuntime;
     private readonly ApplicationOptions _options;
     private readonly ILogger<AgentApplicationRunner> _logger;
 
     public AgentApplicationRunner(
         IFirstRunOnboardingService onboardingService,
         IModelDiscoveryService modelDiscoveryService,
+        IReplRuntime replRuntime,
         IOptions<ApplicationOptions> options,
         ILogger<AgentApplicationRunner> logger)
     {
         _onboardingService = onboardingService;
         _modelDiscoveryService = modelDiscoveryService;
+        _replRuntime = replRuntime;
         _options = options.Value;
         _logger = logger;
     }
@@ -34,14 +37,20 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
         OnboardingResult result = await _onboardingService.EnsureOnboardedAsync(cancellationToken);
         ModelDiscoveryResult modelResult = await _modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken);
 
-        ApplicationLogMessages.RunnerCompleted(
-            _logger,
-            result.Profile.ProviderKind.ToDisplayName(),
-            result.WasOnboardedDuringCurrentRun);
-
         ApplicationLogMessages.ModelDiscoveryCompleted(
             _logger,
             modelResult.SelectedModelId,
             modelResult.SelectionSource.ToString());
+
+        await _replRuntime.RunAsync(
+            new ReplSessionContext(
+                result.Profile,
+                modelResult.SelectedModelId),
+            cancellationToken);
+
+        ApplicationLogMessages.RunnerCompleted(
+            _logger,
+            result.Profile.ProviderKind.ToDisplayName(),
+            result.WasOnboardedDuringCurrentRun);
     }
 }
