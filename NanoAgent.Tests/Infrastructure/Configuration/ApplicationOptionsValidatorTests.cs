@@ -99,7 +99,7 @@ public sealed class ApplicationOptionsValidatorTests
     }
 
     [Fact]
-    public void Validate_Should_ReturnFailure_When_ConversationTimeoutIsNotPositive()
+    public void Validate_Should_ReturnSuccess_When_ConversationTimeoutIsZero()
     {
         ApplicationOptions options = new()
         {
@@ -108,6 +108,29 @@ public sealed class ApplicationOptionsValidatorTests
             Conversation = new ConversationOptions
             {
                 RequestTimeoutSeconds = 0
+            },
+            Defaults = new ApplicationDefaultsOptions(),
+            ModelSelection = new ModelSelectionOptions
+            {
+                CacheDurationSeconds = 300
+            }
+        };
+
+        ValidateOptionsResult result = _sut.Validate(Options.DefaultName, options);
+
+        result.Succeeded.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Validate_Should_ReturnFailure_When_ConversationTimeoutIsNegative()
+    {
+        ApplicationOptions options = new()
+        {
+            ProductName = "NanoAgent",
+            StorageDirectoryName = "NanoAgent",
+            Conversation = new ConversationOptions
+            {
+                RequestTimeoutSeconds = -1
             },
             Defaults = new ApplicationDefaultsOptions(),
             ModelSelection = new ModelSelectionOptions

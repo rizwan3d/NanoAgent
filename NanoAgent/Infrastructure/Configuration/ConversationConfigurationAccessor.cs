@@ -19,9 +19,12 @@ internal sealed class ConversationConfigurationAccessor : IConversationConfigura
         string? systemPrompt = string.IsNullOrWhiteSpace(conversation.SystemPrompt)
             ? null
             : conversation.SystemPrompt.Trim();
+        TimeSpan requestTimeout = conversation.RequestTimeoutSeconds <= 0
+            ? Timeout.InfiniteTimeSpan
+            : TimeSpan.FromSeconds(conversation.RequestTimeoutSeconds);
 
         return new ConversationSettings(
             systemPrompt,
-            TimeSpan.FromSeconds(conversation.RequestTimeoutSeconds));
+            requestTimeout);
     }
 }

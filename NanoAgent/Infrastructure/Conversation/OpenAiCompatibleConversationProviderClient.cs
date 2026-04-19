@@ -88,6 +88,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
                     definition.Schema)))
             .ToArray();
 
+        // Intentionally omit max_tokens so the provider can use its maximum supported output/context policy.
         return new OpenAiChatCompletionRequest(
             request.ModelId,
             messages,

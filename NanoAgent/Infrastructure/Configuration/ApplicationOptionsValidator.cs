@@ -29,9 +29,9 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
         {
             failures.Add($"{ApplicationOptions.SectionName}:Conversation must be provided.");
         }
-        else if (options.Conversation.RequestTimeoutSeconds <= 0)
+        else if (options.Conversation.RequestTimeoutSeconds < 0)
         {
-            failures.Add($"{ApplicationOptions.SectionName}:Conversation:RequestTimeoutSeconds must be greater than zero.");
+            failures.Add($"{ApplicationOptions.SectionName}:Conversation:RequestTimeoutSeconds must be zero or greater.");
         }
 
         if (options.ModelSelection is null)

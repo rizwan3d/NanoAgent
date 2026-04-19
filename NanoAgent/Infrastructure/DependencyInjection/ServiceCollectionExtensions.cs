@@ -37,8 +37,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPlatformCredentialStore>(CreatePlatformCredentialStore());
         services.AddSingleton<ILoggerProvider, DailyFileLoggerProvider>();
         services.AddSingleton<IValidateOptions<ApplicationOptions>, ApplicationOptionsValidator>();
-        services.AddHttpClient<IConversationProviderClient, OpenAiCompatibleConversationProviderClient>();
-        services.AddHttpClient<IModelProviderClient, OpenAiCompatibleModelProviderClient>();
+        services.AddHttpClient<IConversationProviderClient, OpenAiCompatibleConversationProviderClient>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
+        services.AddHttpClient<IModelProviderClient, OpenAiCompatibleModelProviderClient>(client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
+        });
 
         services
             .AddOptions<ApplicationOptions>()

@@ -2,7 +2,7 @@ namespace NanoAgent.Infrastructure.Configuration;
 
 public sealed class ConversationOptions
 {
-    public int RequestTimeoutSeconds { get; set; } = 30;
+    public int RequestTimeoutSeconds { get; set; }
 
     public string? SystemPrompt { get; set; } =
     $"""
