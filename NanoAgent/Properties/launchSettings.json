@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "NanoAgent": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\Users\\allga\\source\\repos\\FinalAgent\\NanoAgent\\bin\\Debug\\net10.0\\code"
+    }
+  }
+}

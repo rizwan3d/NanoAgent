@@ -173,8 +173,11 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                 Math.Max(1, estimatedOutputTokens);
             _lineTop = terminal.CursorTop;
 
-            WriteStatusLine(TimeSpan.Zero);
-            _terminal.WriteLine();
+            if (TryWriteStatusLine(TimeSpan.Zero))
+            {
+                TryWriteTrailingNewLine();
+            }
+
             _updateTask = RunAsync(_cancellationSource.Token);
         }
 
@@ -204,23 +207,25 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
 
             while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
             {
-                WriteStatusLine(DateTimeOffset.UtcNow - startedAt);
-                _terminal.SetCursorPosition(0, _lineTop + 1);
+                if (!TryWriteStatusLine(DateTimeOffset.UtcNow - startedAt))
+                {
+                    break;
+                }
             }
         }
 
         private void ClearStatusLine()
         {
-            WriteLine(string.Empty);
+            TryWriteLine(string.Empty);
         }
 
-        private void WriteStatusLine(TimeSpan elapsed)
+        private bool TryWriteStatusLine(TimeSpan elapsed)
         {
-            WriteLine(
+            return TryWriteLine(
                 $"  ({FormatElapsed(elapsed)} \u00B7 \u2193 {CalculateRealtimeEstimate(elapsed)} tokens est.)");
         }
 
-        private void WriteLine(string value)
+        private bool TryWriteLine(string value)
         {
             int width = Math.Max(1, _terminal.WindowWidth - 1);
             string padded = value.Length > width
@@ -235,12 +240,34 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                 _terminal.SetCursorPosition(0, _lineTop);
                 _terminal.ForegroundColor = ConsoleColor.DarkGray;
                 _terminal.Write(padded);
+                return true;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+            catch (IOException)
+            {
+                return false;
             }
             finally
             {
                 _terminal.ForegroundColor = originalForeground;
                 _terminal.BackgroundColor = originalBackground;
                 _terminal.ResetColor();
+            }
+        }
+
+        private bool TryWriteTrailingNewLine()
+        {
+            try
+            {
+                _terminal.WriteLine();
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
             }
         }
 
