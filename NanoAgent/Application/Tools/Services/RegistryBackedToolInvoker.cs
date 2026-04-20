@@ -28,11 +28,31 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
     public async Task<ToolInvocationResult> InvokeAsync(
         ConversationToolCall toolCall,
         ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(toolCall);
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(allowedToolNames);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!allowedToolNames.Contains(toolCall.Name))
+        {
+            string phaseName = executionPhase == ConversationExecutionPhase.Planning
+                ? "planning"
+                : "execution";
+
+            return new ToolInvocationResult(
+                toolCall.Id,
+                toolCall.Name,
+                ToolResultFactory.PermissionDenied(
+                    "tool_not_available_in_phase",
+                    $"Tool '{toolCall.Name}' is not available during the {phaseName} phase.",
+                    new ToolRenderPayload(
+                        $"Tool unavailable: {toolCall.Name}",
+                        $"'{toolCall.Name}' cannot be used during the {phaseName} phase.")));
+        }
 
         if (!_toolRegistry.TryResolve(toolCall.Name, out ToolRegistration? registration) || registration is null)
         {
@@ -82,7 +102,8 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
             toolCall.Id,
             toolCall.Name,
             arguments,
-            session);
+            session,
+            executionPhase);
 
         PermissionEvaluationResult permissionResult = _permissionEvaluator.Evaluate(
             registration.PermissionPolicy,

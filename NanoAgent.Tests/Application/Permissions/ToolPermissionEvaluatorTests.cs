@@ -207,6 +207,87 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
         result.IsAllowed.Should().BeTrue();
     }
 
+    [Fact]
+    public void Evaluate_Should_DenyWriteTools_When_PlanningModeIsActive()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new StubPermissionConfigurationAccessor());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["edit"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Write,
+                        AllowedRoots = ["src"]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "path": "src/app.cs" }""",
+                executionPhase: ConversationExecutionPhase.Planning)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("planning_phase_write_blocked");
+    }
+
+    [Fact]
+    public void Evaluate_Should_AllowReadOnlyTools_When_PlanningModeIsActive()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new StubPermissionConfigurationAccessor());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["read"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Read,
+                        AllowedRoots = ["src"]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "path": "src/app.cs" }""",
+                executionPhase: ConversationExecutionPhase.Planning)));
+
+        result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyUnsafeShellCommands_When_PlanningModeIsActive()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new StubPermissionConfigurationAccessor());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["git", "rg"]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "command": "git checkout main" }""",
+                executionPhase: ConversationExecutionPhase.Planning)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("planning_phase_shell_blocked");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
@@ -217,7 +298,8 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
 
     private static ToolExecutionContext CreateContext(
         string argumentsJson,
-        ReplSessionContext? session = null)
+        ReplSessionContext? session = null,
+        ConversationExecutionPhase executionPhase = ConversationExecutionPhase.Execution)
     {
         using JsonDocument document = JsonDocument.Parse(argumentsJson);
 
@@ -225,7 +307,8 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
             "call_1",
             "tool",
             document.RootElement.Clone(),
-            session ?? CreateSession());
+            session ?? CreateSession(),
+            executionPhase);
     }
 
     private static ReplSessionContext CreateSession()

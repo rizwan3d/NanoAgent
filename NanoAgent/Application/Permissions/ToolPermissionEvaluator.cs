@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Planning;
 
 namespace NanoAgent.Application.Permissions;
 
@@ -24,6 +25,14 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
     {
         ArgumentNullException.ThrowIfNull(permissionPolicy);
         ArgumentNullException.ThrowIfNull(context);
+
+        PermissionEvaluationResult? planningModeResult = PlanningModePolicy.EvaluateRestrictions(
+            permissionPolicy,
+            context.ToolExecutionContext);
+        if (planningModeResult is not null)
+        {
+            return planningModeResult;
+        }
 
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         List<string> subjects = [];

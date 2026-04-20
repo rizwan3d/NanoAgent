@@ -27,6 +27,8 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "missing_tool", "{}"),
             Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("missing_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.NotFound);
@@ -44,6 +46,8 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "echo_tool", "[]"),
             Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("echo_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.InvalidArguments);
@@ -60,6 +64,8 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "exploding_tool", "{}"),
             Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("exploding_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.ExecutionError);
@@ -78,6 +84,8 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "slow_tool", "{}"),
             Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("slow_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.ExecutionError);
@@ -96,6 +104,8 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "approval_tool", """{ "path": "src/app.cs" }"""),
             Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("approval_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.Success);
@@ -119,10 +129,14 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult first = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "approval_tool", """{ "path": "src/app.cs" }"""),
             session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("approval_tool"),
             CancellationToken.None);
         ToolInvocationResult second = await sut.InvokeAsync(
             new ConversationToolCall("call_2", "approval_tool", """{ "path": "src/app.cs" }"""),
             session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("approval_tool"),
             CancellationToken.None);
 
         first.Result.Status.Should().Be(ToolResultStatus.Success);
@@ -147,6 +161,8 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "approval_tool", """{ "path": "src/app.cs" }"""),
             session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("approval_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.PermissionDenied);
@@ -165,10 +181,37 @@ public sealed class RegistryBackedToolInvokerTests
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "shell_restricted_tool", """{ "command": "rm -rf ." }"""),
             Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("shell_restricted_tool"),
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.PermissionDenied);
         result.Result.Message.Should().Contain("Allowed commands");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_ReturnPermissionDenied_When_ToolIsNotAvailableInPhase()
+    {
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([new EchoTool()], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", "echo_tool", "{}"),
+            Session,
+            ConversationExecutionPhase.Planning,
+            CreateAllowedToolNames("file_read"),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.PermissionDenied);
+        result.Result.JsonResult.Should().Contain("tool_not_available_in_phase");
+        result.Result.Message.Should().Contain("planning phase");
+    }
+
+    private static IReadOnlySet<string> CreateAllowedToolNames(params string[] toolNames)
+    {
+        return new HashSet<string>(toolNames, StringComparer.Ordinal);
     }
 
     private sealed class EchoTool : ITool

@@ -227,6 +227,15 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
     {
         public static NoOpResponseProgress Instance { get; } = new();
 
+        public Task ReportExecutionPlanAsync(
+            ExecutionPlanProgress executionPlanProgress,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(executionPlanProgress);
+            return Task.CompletedTask;
+        }
+
         public Task ReportToolCallsStartedAsync(
             IReadOnlyList<ConversationToolCall> toolCalls,
             CancellationToken cancellationToken)
@@ -256,6 +265,8 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         private readonly IConsoleInteractionGate _interactionGate;
         private readonly int _sessionSeedEstimatedTokens;
         private readonly object _syncLock = new();
+        private ExecutionPlanProgress? _executionPlanProgress;
+        private int _statusBlockLineCount;
         private int _statusLineTop;
         private DateTimeOffset _startedAt;
 
@@ -272,16 +283,34 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             _sessionSeedEstimatedTokens = Math.Max(0, completedSessionEstimatedOutputTokens) +
                 Math.Max(1, estimatedOutputTokens);
             _statusLineTop = terminal.CursorTop;
+            _statusBlockLineCount = 1;
             _startedAt = DateTimeOffset.UtcNow;
 
-            TryWriteStatusLine(TimeSpan.Zero);
+            TryWriteStatusBlock(TimeSpan.Zero);
         }
 
         public async ValueTask DisposeAsync()
         {
             await ValueTask.CompletedTask.ConfigureAwait(false);
-            ClearStatusLine();
+            ClearStatusBlock();
             TrySetCursorPosition(0, _statusLineTop);
+        }
+
+        public Task ReportExecutionPlanAsync(
+            ExecutionPlanProgress executionPlanProgress,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(executionPlanProgress);
+
+            lock (_syncLock)
+            {
+                _executionPlanProgress = executionPlanProgress;
+                ClearStatusBlock();
+                TryWriteStatusBlock(DateTimeOffset.UtcNow - _startedAt);
+            }
+
+            return Task.CompletedTask;
         }
 
         public Task ReportToolCallsStartedAsync(
@@ -308,27 +337,31 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
 
             lock (_syncLock)
             {
-                ClearStatusLine();
+                ClearStatusBlock();
                 TrySetCursorPosition(0, _statusLineTop);
 
                 WriteToolOutputs(toolExecutionResult);
 
                 _statusLineTop = _terminal.CursorTop;
-                TryWriteStatusLine(DateTimeOffset.UtcNow - _startedAt);
+                TryWriteStatusBlock(DateTimeOffset.UtcNow - _startedAt);
             }
 
             return Task.CompletedTask;
         }
 
-        private void ClearStatusLine()
+        private void ClearStatusBlock()
         {
             int width = Math.Max(1, _terminal.WindowWidth - 1);
 
             try
             {
                 using IDisposable _ = _interactionGate.EnterScope();
-                _terminal.SetCursorPosition(0, _statusLineTop);
-                _terminal.Write(new string(' ', width));
+                for (int offset = 0; offset < _statusBlockLineCount; offset++)
+                {
+                    _terminal.SetCursorPosition(0, _statusLineTop + offset);
+                    _terminal.Write(new string(' ', width));
+                }
+
                 _terminal.SetCursorPosition(0, _statusLineTop);
             }
             catch (ArgumentOutOfRangeException)
@@ -339,13 +372,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             }
         }
 
-        private bool TryWriteStatusLine(TimeSpan elapsed)
-        {
-            IReadOnlyList<StatusSegment> segments = BuildStatusSegments(elapsed);
-            return TryWriteStatusLine(segments);
-        }
-
-        private IReadOnlyList<StatusSegment> BuildStatusSegments(TimeSpan elapsed)
+        private string BuildStatusLine(TimeSpan elapsed)
         {
             const string workingLabel = "Working";
             string[] spinnerFrames = ["|", "/", "-", "\\"];
@@ -354,44 +381,105 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             int highlightedCharacterIndex = (int)Math.Max(0d, elapsed.TotalSeconds) %
                                             workingLabel.Length;
 
-            List<StatusSegment> segments = [];
-            segments.Add(new StatusSegment(
-                spinnerFrames[spinnerFrameIndex],
-                new Style(Color.Aqua, decoration: Decoration.Bold)));
-            segments.Add(new StatusSegment(" ", new Style(Color.Grey)));
+            List<string> segments = [];
+            segments.Add(spinnerFrames[spinnerFrameIndex]);
+            segments.Add(" ");
 
             for (int index = 0; index < workingLabel.Length; index++)
             {
-                segments.Add(new StatusSegment(
-                    workingLabel[index].ToString(),
-                    index == highlightedCharacterIndex
-                        ? new Style(Color.White, decoration: Decoration.Bold)
-                        : new Style(Color.Grey)));
+                segments.Add(workingLabel[index].ToString());
             }
 
-            segments.Add(new StatusSegment(
-                $" {MetricDisplayFormatter.FormatEstimatedOutputMetric(elapsed, CalculateRealtimeEstimate(elapsed))}",
-                new Style(Color.Grey)));
-            segments.Add(new StatusSegment("  Esc to interrupt", new Style(Color.Grey)));
+            segments.Add($" {MetricDisplayFormatter.FormatEstimatedOutputMetric(elapsed, CalculateRealtimeEstimate(elapsed))}");
+            segments.Add("  Esc to interrupt");
 
-            return segments;
+            return string.Concat(segments);
         }
 
-        private bool TryWriteStatusLine(IReadOnlyList<StatusSegment> segments)
+        private IReadOnlyList<string> BuildStatusBlockLines(TimeSpan elapsed)
+        {
+            List<string> lines = [];
+            lines.AddRange(BuildExecutionPlanLines());
+            lines.Add(BuildStatusLine(elapsed));
+            return lines;
+        }
+
+        private IReadOnlyList<string> BuildExecutionPlanLines()
+        {
+            if (_executionPlanProgress is null || _executionPlanProgress.Tasks.Count == 0)
+            {
+                return [];
+            }
+
+            const int maxVisibleTasks = 4;
+            ExecutionPlanProgress progress = _executionPlanProgress;
+            int taskCount = progress.Tasks.Count;
+            int currentTaskIndex = progress.CurrentTaskIndex;
+            int startIndex = currentTaskIndex switch
+            {
+                < 0 => Math.Max(0, taskCount - maxVisibleTasks),
+                <= 1 => 0,
+                _ => Math.Min(taskCount - maxVisibleTasks, currentTaskIndex - 1)
+            };
+            int endIndexExclusive = Math.Min(taskCount, startIndex + maxVisibleTasks);
+
+            List<string> lines =
+            [
+                $"Tasks: {progress.CompletedTaskCount} done | {progress.CurrentTaskCount} current | {progress.RemainingTaskCount} remaining"
+            ];
+
+            if (startIndex > 0)
+            {
+                lines.Add($"  ... +{startIndex} earlier {(startIndex == 1 ? "task" : "tasks")}");
+            }
+
+            for (int index = startIndex; index < endIndexExclusive; index++)
+            {
+                string prefix = index < progress.CompletedTaskCount
+                    ? "[x]"
+                    : index == currentTaskIndex
+                        ? "[>]"
+                        : "[ ]";
+
+                lines.Add($"  {prefix} {progress.Tasks[index]}");
+            }
+
+            if (endIndexExclusive < taskCount)
+            {
+                int remainingCount = taskCount - endIndexExclusive;
+                lines.Add($"  ... +{remainingCount} more {(remainingCount == 1 ? "task" : "tasks")}");
+            }
+
+            return lines;
+        }
+
+        private bool TryWriteStatusBlock(TimeSpan elapsed)
         {
             int width = Math.Max(1, _terminal.WindowWidth - 1);
-            IReadOnlyList<StatusSegment> visibleSegments = FitStatusSegments(segments, width);
-            string text = string.Concat(visibleSegments.Select(static segment => segment.Text));
-            string paddedText = text.Length < width
-                ? text.PadRight(width)
-                : text;
+            IReadOnlyList<string> lines = BuildStatusBlockLines(elapsed)
+                .Select(line => FitStatusText(line, width))
+                .ToArray();
 
             try
             {
                 using IDisposable _ = _interactionGate.EnterScope();
                 _terminal.SetCursorPosition(0, _statusLineTop);
-                _terminal.Write(paddedText);
+
+                for (int index = 0; index < lines.Count; index++)
+                {
+                    string paddedLine = lines[index].PadRight(width);
+                    if (index < lines.Count - 1)
+                    {
+                        _terminal.WriteLine(paddedLine);
+                    }
+                    else
+                    {
+                        _terminal.Write(paddedLine);
+                    }
+                }
+
                 _terminal.SetCursorPosition(0, _statusLineTop);
+                _statusBlockLineCount = Math.Max(1, lines.Count);
 
                 return true;
             }
@@ -405,48 +493,26 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             }
         }
 
-        private static IReadOnlyList<StatusSegment> FitStatusSegments(
-            IReadOnlyList<StatusSegment> segments,
+        private static string FitStatusText(
+            string text,
             int width)
         {
             if (width <= 0)
             {
-                return [];
+                return string.Empty;
             }
 
-            int totalLength = segments.Sum(static segment => segment.Text.Length);
-            if (totalLength <= width)
+            if (text.Length <= width)
             {
-                return segments;
+                return text;
             }
 
             if (width <= 3)
             {
-                return [new StatusSegment(new string('.', width), new Style(Color.Grey))];
+                return new string('.', width);
             }
 
-            int remaining = width - 3;
-            List<StatusSegment> fitted = [];
-            foreach (StatusSegment segment in segments)
-            {
-                if (remaining <= 0)
-                {
-                    break;
-                }
-
-                string text = segment.Text.Length <= remaining
-                    ? segment.Text
-                    : segment.Text[..remaining];
-
-                if (text.Length > 0)
-                {
-                    fitted.Add(new StatusSegment(text, segment.Style));
-                    remaining -= text.Length;
-                }
-            }
-
-            fitted.Add(new StatusSegment("...", new Style(Color.Grey)));
-            return fitted;
+            return text[..(width - 3)] + "...";
         }
 
         private void WriteToolOutputs(ToolExecutionBatchResult toolExecutionResult)
@@ -860,9 +926,5 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             {
             }
         }
-
-        private readonly record struct StatusSegment(
-            string Text,
-            Style Style);
     }
 }

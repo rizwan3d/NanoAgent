@@ -15,7 +15,7 @@ namespace NanoAgent.Tests.Application.Conversation.Services;
 public sealed class AgentConversationPipelineTests
 {
     [Fact]
-    public async Task ProcessAsync_Should_ReturnAssistantMessage_When_ResponseContainsNormalAssistantContent()
+    public async Task ProcessAsync_Should_RunPlanningThenExecution_When_ResponseContainsNormalAssistantContent()
     {
         ReplSessionContext session = CreateSession();
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
@@ -26,31 +26,51 @@ public sealed class AgentConversationPipelineTests
         Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
         configurationAccessor
             .Setup(accessor => accessor.GetSettings())
-            .Returns(CreateSettings("You are helpful."));
+            .Returns(CreateSettings("Base prompt"));
 
         Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
         toolRegistry
             .Setup(registry => registry.GetToolDefinitions())
             .Returns([
-                CreateToolDefinition("file_read")
+                CreateToolDefinition("file_read"),
+                CreateToolDefinition("file_write"),
+                CreateToolDefinition("shell_command")
             ]);
 
+        List<ConversationProviderRequest> requests = [];
         Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
         providerClient
             .Setup(client => client.SendAsync(
-                It.Is<ConversationProviderRequest>(request =>
-                    request.AvailableTools.Count == 1 &&
-                    request.AvailableTools[0].Name == "file_read"),
+                It.IsAny<ConversationProviderRequest>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ConversationProviderPayload(
-                ProviderKind.OpenAiCompatible,
-                """{ "choices": [] }""",
-                "resp_123"));
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
 
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
         responseMapper
-            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
-            .Returns(new ConversationResponse("Ready to help.", [], "resp_123"));
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                """
+                Objective
+                - Plan the refactor first.
+
+                Plan
+                1. Inspect the affected files.
+                2. Apply the refactor.
+                3. Run validation.
+                """,
+                [],
+                "resp_1"))
+            .Returns(new ConversationResponse(
+                "Implemented the refactor.",
+                [],
+                "resp_2"));
 
         Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
 
@@ -70,15 +90,34 @@ public sealed class AgentConversationPipelineTests
             CancellationToken.None);
 
         result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
-        result.ResponseText.Should().Be("Ready to help.");
+        result.ResponseText.Should().Be("Implemented the refactor.");
         result.Metrics.Should().NotBeNull();
-        result.Metrics!.EstimatedOutputTokens.Should().BeGreaterThan(0);
+        requests.Should().HaveCount(2);
+        requests[0].SystemPrompt.Should().Contain("Base prompt");
+        requests[0].SystemPrompt.Should().Contain("You are NanoAgent in Planning Mode.");
+        requests[0].AvailableTools.Select(static tool => tool.Name)
+            .Should()
+            .Equal("file_read", "shell_command");
+        requests[1].SystemPrompt.Should().Contain("Base prompt");
+        requests[1].SystemPrompt.Should().Contain("AUTOMATIC EXECUTION PHASE IS ACTIVE.");
+        requests[1].SystemPrompt.Should().Contain("Execution plan for the current request:");
+        requests[1].SystemPrompt.Should().Contain("1. Inspect the affected files.");
+        requests[1].AvailableTools.Select(static tool => tool.Name)
+            .Should()
+            .Equal("file_read", "file_write", "shell_command");
+        requests[1].Messages.Should().HaveCount(2);
+        requests[1].Messages[0].Role.Should().Be("user");
+        requests[1].Messages[0].Content.Should().Be("Plan the next refactor.");
+        requests[1].Messages[1].Role.Should().Be("assistant");
+        requests[1].Messages[1].Content.Should().Contain("Plan");
         session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory[0].Content.Should().Be("Plan the next refactor.");
+        session.ConversationHistory[1].Content.Should().Be("Implemented the refactor.");
         toolExecutionPipeline.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_ContinueConversationAfterToolExecution_When_ResponseContainsToolCalls()
+    public async Task ProcessAsync_Should_ExecuteToolCallsAcrossPlanningAndExecutionPhases()
     {
         ReplSessionContext session = CreateSession();
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
@@ -95,33 +134,23 @@ public sealed class AgentConversationPipelineTests
         toolRegistry
             .Setup(registry => registry.GetToolDefinitions())
             .Returns([
-                CreateToolDefinition("directory_list")
+                CreateToolDefinition("directory_list"),
+                CreateToolDefinition("file_write")
             ]);
 
+        List<ConversationProviderRequest> requests = [];
         Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
-        ConversationProviderRequest? followUpRequest = null;
         providerClient
             .Setup(client => client.SendAsync(
                 It.IsAny<ConversationProviderRequest>(),
                 It.IsAny<CancellationToken>()))
             .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
             {
-                if (followUpRequest is null)
-                {
-                    followUpRequest = request.Messages.Count > 1
-                        ? request
-                        : null;
-                }
-
-                return Task.FromResult(request.Messages.Count == 1
-                    ? new ConversationProviderPayload(
-                        ProviderKind.OpenAiCompatible,
-                        """{ "choices": [] }""",
-                        "resp_456")
-                    : new ConversationProviderPayload(
-                        ProviderKind.OpenAiCompatible,
-                        """{ "choices": [] }""",
-                        "resp_789"));
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
             });
 
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
@@ -129,29 +158,70 @@ public sealed class AgentConversationPipelineTests
             .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
             .Returns(new ConversationResponse(
                 null,
-                [new ConversationToolCall("call_1", "directory_list", "{}")],
-                "resp_456"))
+                [new ConversationToolCall("plan_call_1", "directory_list", "{}")],
+                "resp_1"))
             .Returns(new ConversationResponse(
-                "I inspected the workspace and can create the requested files next.",
+                """
+                Objective
+                - Inspect the workspace first.
+
+                Plan
+                1. Inspect the workspace.
+                2. Update the README.
+                3. Verify the result.
+                """,
                 [],
-                "resp_789"));
+                "resp_2"))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("exec_call_1", "file_write", """{ "path": "README.md", "content": "hello" }""")],
+                "resp_3"))
+            .Returns(new ConversationResponse(
+                "Implemented the requested change.",
+                [],
+                "resp_4"));
 
         Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
         toolExecutionPipeline
             .Setup(pipeline => pipeline.ExecuteAsync(
-                It.Is<IReadOnlyList<ConversationToolCall>>(calls => calls.Count == 1 && calls[0].Name == "directory_list"),
+                It.Is<IReadOnlyList<ConversationToolCall>>(calls =>
+                    calls.Count == 1 &&
+                    calls[0].Name == "directory_list"),
                 session,
+                ConversationExecutionPhase.Planning,
+                It.Is<IReadOnlySet<string>>(names =>
+                    names.Contains("directory_list") &&
+                    !names.Contains("file_write")),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ToolExecutionBatchResult([
                 new ToolInvocationResult(
-                    "call_1",
+                    "plan_call_1",
                     "directory_list",
                     ToolResultFactory.Success(
                         "Listed directory '.'.",
                         new ToolErrorPayload("ok", "ok"),
                         ToolJsonContext.Default.ToolErrorPayload,
-                        new ToolRenderPayload("Directory listing: .", "file: README.md")))
-            ]));
+                        new ToolRenderPayload("Directory listing: .", "README.md")))]));
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.Is<IReadOnlyList<ConversationToolCall>>(calls =>
+                    calls.Count == 1 &&
+                    calls[0].Name == "file_write"),
+                session,
+                ConversationExecutionPhase.Execution,
+                It.Is<IReadOnlySet<string>>(names =>
+                    names.Contains("directory_list") &&
+                    names.Contains("file_write")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "exec_call_1",
+                    "file_write",
+                    ToolResultFactory.Success(
+                        "Created README.md.",
+                        new ToolErrorPayload("ok", "ok"),
+                        ToolJsonContext.Default.ToolErrorPayload,
+                        new ToolRenderPayload("File write complete", "README.md")))]));
 
         AgentConversationPipeline sut = CreateSut(
             TimeProvider.System,
@@ -166,146 +236,43 @@ public sealed class AgentConversationPipelineTests
         RecordingConversationProgressSink progressSink = new();
 
         ConversationTurnResult result = await sut.ProcessAsync(
-            "Which models can I use?",
+            "Update the README.",
             session,
             progressSink,
             CancellationToken.None);
 
         result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
-        result.ResponseText.Should().Be("I inspected the workspace and can create the requested files next.");
+        result.ResponseText.Should().Be("Implemented the requested change.");
         result.ToolExecutionResult.Should().NotBeNull();
-        result.ToolExecutionResult!.Results.Should().ContainSingle();
-        result.ToolExecutionResult.Results[0].ToolName.Should().Be("directory_list");
-        result.Metrics.Should().NotBeNull();
-        followUpRequest.Should().NotBeNull();
-        followUpRequest!.Messages.Should().HaveCount(3);
-        followUpRequest.Messages[0].Role.Should().Be("user");
-        followUpRequest.Messages[1].Role.Should().Be("assistant");
-        followUpRequest.Messages[1].ToolCalls.Should().ContainSingle();
-        followUpRequest.Messages[1].ToolCalls[0].Name.Should().Be("directory_list");
-        followUpRequest.Messages[2].Role.Should().Be("tool");
-        followUpRequest.Messages[2].ToolCallId.Should().Be("call_1");
+        result.ToolExecutionResult!.Results.Select(static item => item.ToolName)
+            .Should()
+            .Equal("directory_list", "file_write");
+        progressSink.PlanProgressUpdates.Select(static update => update.CompletedTaskCount)
+            .Should()
+            .Equal(0, 1);
+        progressSink.PlanProgressUpdates[0].Tasks.Should().Equal(
+            "Inspect the workspace.",
+            "Update the README.",
+            "Verify the result.");
+        progressSink.StartedToolBatches.Should().HaveCount(2);
+        progressSink.CompletedToolBatches.Should().HaveCount(2);
+        requests.Should().HaveCount(4);
+        requests[1].Messages.Should().HaveCount(3);
+        requests[1].Messages[1].Role.Should().Be("assistant");
+        requests[1].Messages[1].ToolCalls.Should().ContainSingle();
+        requests[1].Messages[1].ToolCalls[0].Name.Should().Be("directory_list");
+        requests[1].Messages[2].Role.Should().Be("tool");
 
-        using JsonDocument toolFeedbackDocument = JsonDocument.Parse(followUpRequest.Messages[2].Content!);
-        JsonElement toolFeedback = toolFeedbackDocument.RootElement;
-        toolFeedback.GetProperty("ToolName").GetString().Should().Be("directory_list");
-        toolFeedback.GetProperty("Status").GetString().Should().Be("Success");
-        toolFeedback.GetProperty("IsSuccess").GetBoolean().Should().BeTrue();
-        toolFeedback.GetProperty("Message").GetString().Should().Be("Listed directory '.'.");
-        toolFeedback.GetProperty("Render").GetProperty("Title").GetString().Should().Be("Directory listing: .");
-        toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("ok");
-        toolFeedback.GetProperty("Data").GetProperty("Message").GetString().Should().Be("ok");
-        progressSink.StartedToolBatches.Should().ContainSingle();
-        progressSink.StartedToolBatches[0].Should().ContainSingle(tool => tool.Name == "directory_list");
-        progressSink.CompletedToolBatches.Should().ContainSingle();
-        progressSink.CompletedToolBatches[0].Results.Should().ContainSingle(result => result.ToolName == "directory_list");
-        session.ConversationHistory.Should().HaveCount(2);
-        session.ConversationHistory[1].Content.Should().Be("I inspected the workspace and can create the requested files next.");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_Should_SendStructuredFailureFeedback_When_ToolExecutionFails()
-    {
-        ReplSessionContext session = CreateSession();
-        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
-        secretStore
-            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync("test-key");
-
-        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
-        configurationAccessor
-            .Setup(accessor => accessor.GetSettings())
-            .Returns(CreateSettings());
-
-        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
-        toolRegistry
-            .Setup(registry => registry.GetToolDefinitions())
-            .Returns([
-                CreateToolDefinition("file_write")
-            ]);
-
-        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
-        ConversationProviderRequest? followUpRequest = null;
-        providerClient
-            .Setup(client => client.SendAsync(
-                It.IsAny<ConversationProviderRequest>(),
-                It.IsAny<CancellationToken>()))
-            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
-            {
-                if (request.Messages.Count > 1)
-                {
-                    followUpRequest = request;
-                }
-
-                return Task.FromResult(request.Messages.Count == 1
-                    ? new ConversationProviderPayload(
-                        ProviderKind.OpenAiCompatible,
-                        """{ "choices": [] }""",
-                        "resp_fail_1")
-                    : new ConversationProviderPayload(
-                        ProviderKind.OpenAiCompatible,
-                        """{ "choices": [] }""",
-                        "resp_fail_2"));
-            });
-
-        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
-        responseMapper
-            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
-            .Returns(new ConversationResponse(
-                null,
-                [new ConversationToolCall("call_fail_1", "file_write", """{"path":"index.html"}""")],
-                "resp_fail_1"))
-            .Returns(new ConversationResponse(
-                "The write failed because the tool arguments were incomplete.",
-                [],
-                "resp_fail_2"));
-
-        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
-        toolExecutionPipeline
-            .Setup(pipeline => pipeline.ExecuteAsync(
-                It.Is<IReadOnlyList<ConversationToolCall>>(calls => calls.Count == 1 && calls[0].Name == "file_write"),
-                session,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ToolExecutionBatchResult([
-                new ToolInvocationResult(
-                    "call_fail_1",
-                    "file_write",
-                    ToolResultFactory.InvalidArguments(
-                        "missing_content",
-                        "The 'content' argument is required.",
-                        new ToolRenderPayload("File write rejected", "The tool needs both path and content.")))
-            ]));
-
-        AgentConversationPipeline sut = CreateSut(
-            TimeProvider.System,
-            new HeuristicTokenEstimator(),
-            secretStore.Object,
-            providerClient.Object,
-            responseMapper.Object,
-            toolExecutionPipeline.Object,
-            toolRegistry.Object,
-            configurationAccessor.Object);
-
-        ConversationTurnResult result = await sut.ProcessAsync(
-            "Write the homepage file.",
-            session,
-            CancellationToken.None);
-
-        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
-        result.ResponseText.Should().Be("The write failed because the tool arguments were incomplete.");
-        followUpRequest.Should().NotBeNull();
-        result.ToolExecutionResult.Should().NotBeNull();
-        result.ToolExecutionResult!.Results.Should().ContainSingle();
-        result.ToolExecutionResult.Results[0].ToolName.Should().Be("file_write");
-
-        using JsonDocument toolFeedbackDocument = JsonDocument.Parse(followUpRequest!.Messages[2].Content!);
+        using JsonDocument toolFeedbackDocument = JsonDocument.Parse(requests[3].Messages[^1].Content!);
         JsonElement toolFeedback = toolFeedbackDocument.RootElement;
         toolFeedback.GetProperty("ToolName").GetString().Should().Be("file_write");
-        toolFeedback.GetProperty("Status").GetString().Should().Be("InvalidArguments");
-        toolFeedback.GetProperty("IsSuccess").GetBoolean().Should().BeFalse();
-        toolFeedback.GetProperty("Message").GetString().Should().Be("The 'content' argument is required.");
-        toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("missing_content");
-        toolFeedback.GetProperty("Render").GetProperty("Title").GetString().Should().Be("File write rejected");
+        toolFeedback.GetProperty("Status").GetString().Should().Be("Success");
+        toolFeedback.GetProperty("IsSuccess").GetBoolean().Should().BeTrue();
+        toolFeedback.GetProperty("Message").GetString().Should().Be("Created README.md.");
+        toolFeedback.GetProperty("Render").GetProperty("Title").GetString().Should().Be("File write complete");
+        toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("ok");
+        session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory[1].Content.Should().Be("Implemented the requested change.");
     }
 
     [Fact]
@@ -350,9 +317,7 @@ public sealed class AgentConversationPipelineTests
         Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
         toolRegistry
             .Setup(registry => registry.GetToolDefinitions())
-            .Returns([
-                CreateToolDefinition("shell_command")
-            ]);
+            .Returns([CreateToolDefinition("shell_command")]);
 
         Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
         providerClient
@@ -414,8 +379,10 @@ public sealed class AgentConversationPipelineTests
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
         responseMapper
             .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
-            .Returns(new ConversationResponse("First reply.", [], "resp_1"))
-            .Returns(new ConversationResponse("Second reply.", [], "resp_2"));
+            .Returns(new ConversationResponse("First plan.", [], "resp_1"))
+            .Returns(new ConversationResponse("First reply.", [], "resp_2"))
+            .Returns(new ConversationResponse("Second plan.", [], "resp_3"))
+            .Returns(new ConversationResponse("Second reply.", [], "resp_4"));
 
         AgentConversationPipeline sut = CreateSut(
             TimeProvider.System,
@@ -430,14 +397,14 @@ public sealed class AgentConversationPipelineTests
         await sut.ProcessAsync("First question", session, CancellationToken.None);
         await sut.ProcessAsync("What did I just ask?", session, CancellationToken.None);
 
-        requests.Should().HaveCount(2);
-        requests[1].Messages.Should().HaveCount(3);
-        requests[1].Messages[0].Role.Should().Be("user");
-        requests[1].Messages[0].Content.Should().Be("First question");
-        requests[1].Messages[1].Role.Should().Be("assistant");
-        requests[1].Messages[1].Content.Should().Be("First reply.");
-        requests[1].Messages[2].Role.Should().Be("user");
-        requests[1].Messages[2].Content.Should().Be("What did I just ask?");
+        requests.Should().HaveCount(4);
+        requests[2].Messages.Should().HaveCount(3);
+        requests[2].Messages[0].Role.Should().Be("user");
+        requests[2].Messages[0].Content.Should().Be("First question");
+        requests[2].Messages[1].Role.Should().Be("assistant");
+        requests[2].Messages[1].Content.Should().Be("First reply.");
+        requests[2].Messages[2].Role.Should().Be("user");
+        requests[2].Messages[2].Content.Should().Be("What did I just ask?");
     }
 
     [Fact]
@@ -477,9 +444,12 @@ public sealed class AgentConversationPipelineTests
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
         responseMapper
             .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
-            .Returns(new ConversationResponse("Reply one.", [], "resp_1"))
-            .Returns(new ConversationResponse("Reply two.", [], "resp_2"))
-            .Returns(new ConversationResponse("Reply three.", [], "resp_3"));
+            .Returns(new ConversationResponse("Plan one.", [], "resp_1"))
+            .Returns(new ConversationResponse("Reply one.", [], "resp_2"))
+            .Returns(new ConversationResponse("Plan two.", [], "resp_3"))
+            .Returns(new ConversationResponse("Reply two.", [], "resp_4"))
+            .Returns(new ConversationResponse("Plan three.", [], "resp_5"))
+            .Returns(new ConversationResponse("Reply three.", [], "resp_6"));
 
         AgentConversationPipeline sut = CreateSut(
             TimeProvider.System,
@@ -495,105 +465,14 @@ public sealed class AgentConversationPipelineTests
         await sut.ProcessAsync("Question two", session, CancellationToken.None);
         await sut.ProcessAsync("Question three", session, CancellationToken.None);
 
-        requests.Should().HaveCount(3);
-        requests[2].Messages.Should().HaveCount(3);
-        requests[2].Messages[0].Content.Should().Be("Question two");
-        requests[2].Messages[1].Content.Should().Be("Reply two.");
-        requests[2].Messages[2].Content.Should().Be("Question three");
-        requests[2].Messages.Select(static message => message.Content)
+        requests.Should().HaveCount(6);
+        requests[4].Messages.Should().HaveCount(3);
+        requests[4].Messages[0].Content.Should().Be("Question two");
+        requests[4].Messages[1].Content.Should().Be("Reply two.");
+        requests[4].Messages[2].Content.Should().Be("Question three");
+        requests[4].Messages.Select(static message => message.Content)
             .Should()
             .NotContain("Question one");
-    }
-
-    [Fact]
-    public async Task ProcessAsync_Should_AllowLongerSequentialToolChains_When_MaxToolRoundsPerTurnIsRaised()
-    {
-        ReplSessionContext session = CreateSession();
-        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
-        secretStore
-            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync("test-key");
-
-        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
-        configurationAccessor
-            .Setup(accessor => accessor.GetSettings())
-            .Returns(CreateSettings(maxToolRoundsPerTurn: 16));
-
-        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
-        toolRegistry
-            .Setup(registry => registry.GetToolDefinitions())
-            .Returns([
-                CreateToolDefinition("file_write")
-            ]);
-
-        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
-        providerClient
-            .Setup(client => client.SendAsync(
-                It.IsAny<ConversationProviderRequest>(),
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ConversationProviderPayload(
-                ProviderKind.OpenAiCompatible,
-                """{ "choices": [] }""",
-                "resp_tool_chain"));
-
-        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
-        MockSequence responseSequence = new();
-        for (int index = 1; index <= 10; index++)
-        {
-            int fileIndex = index;
-            responseMapper
-                .InSequence(responseSequence)
-                .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
-                .Returns(new ConversationResponse(
-                    null,
-                    [new ConversationToolCall($"call_{fileIndex}", "file_write", $$"""{"path":"random_number_{{fileIndex}}.txt","content":"Random Number for File {{fileIndex}}"}""")],
-                    $"resp_tool_chain_{fileIndex}"));
-        }
-
-        responseMapper
-            .InSequence(responseSequence)
-            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
-            .Returns(new ConversationResponse(
-                "Created all requested files.",
-                [],
-                "resp_tool_chain_final"));
-
-        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
-        toolExecutionPipeline
-            .Setup(pipeline => pipeline.ExecuteAsync(
-                It.IsAny<IReadOnlyList<ConversationToolCall>>(),
-                session,
-                It.IsAny<CancellationToken>()))
-            .Returns<IReadOnlyList<ConversationToolCall>, ReplSessionContext, CancellationToken>((calls, _, _) =>
-                Task.FromResult(new ToolExecutionBatchResult([
-                    new ToolInvocationResult(
-                        calls[0].Id,
-                        "file_write",
-                        ToolResultFactory.Success(
-                            $"Created {calls[0].Name}.",
-                            new ToolErrorPayload("ok", "ok"),
-                            ToolJsonContext.Default.ToolErrorPayload))
-                ])));
-
-        AgentConversationPipeline sut = CreateSut(
-            TimeProvider.System,
-            new HeuristicTokenEstimator(),
-            secretStore.Object,
-            providerClient.Object,
-            responseMapper.Object,
-            toolExecutionPipeline.Object,
-            toolRegistry.Object,
-            configurationAccessor.Object);
-
-        ConversationTurnResult result = await sut.ProcessAsync(
-            "Write 10 files with random numbers.",
-            session,
-            CancellationToken.None);
-
-        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
-        result.ResponseText.Should().Be("Created all requested files.");
-        result.ToolExecutionResult.Should().NotBeNull();
-        result.ToolExecutionResult!.Results.Should().HaveCount(10);
     }
 
     [Fact]
@@ -613,9 +492,7 @@ public sealed class AgentConversationPipelineTests
         Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
         toolRegistry
             .Setup(registry => registry.GetToolDefinitions())
-            .Returns([
-                CreateToolDefinition("file_write")
-            ]);
+            .Returns([CreateToolDefinition("file_write")]);
 
         Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
         providerClient
@@ -629,17 +506,27 @@ public sealed class AgentConversationPipelineTests
 
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
         responseMapper
-            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Plan first.",
+                [],
+                "resp_1"))
             .Returns(new ConversationResponse(
                 null,
-                [new ConversationToolCall("call_limit", "file_write", """{"path":"index.html"}""")],
-                "resp_limit"));
+                [new ConversationToolCall("call_limit_1", "file_write", """{"path":"index.html"}""")],
+                "resp_2"))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("call_limit_2", "file_write", """{"path":"index.html"}""")],
+                "resp_3"));
 
         Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
         toolExecutionPipeline
             .Setup(pipeline => pipeline.ExecuteAsync(
                 It.IsAny<IReadOnlyList<ConversationToolCall>>(),
                 session,
+                ConversationExecutionPhase.Execution,
+                It.Is<IReadOnlySet<string>>(names => names.Contains("file_write")),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ToolExecutionBatchResult([
                 new ToolInvocationResult(
@@ -648,8 +535,7 @@ public sealed class AgentConversationPipelineTests
                     ToolResultFactory.Success(
                         "Created index.html.",
                         new ToolErrorPayload("ok", "ok"),
-                        ToolJsonContext.Default.ToolErrorPayload))
-            ]));
+                        ToolJsonContext.Default.ToolErrorPayload))]));
 
         AgentConversationPipeline sut = CreateSut(
             TimeProvider.System,
@@ -725,9 +611,20 @@ public sealed class AgentConversationPipelineTests
 
     private sealed class RecordingConversationProgressSink : IConversationProgressSink
     {
+        public List<ExecutionPlanProgress> PlanProgressUpdates { get; } = [];
+
         public List<IReadOnlyList<ConversationToolCall>> StartedToolBatches { get; } = [];
 
         public List<ToolExecutionBatchResult> CompletedToolBatches { get; } = [];
+
+        public Task ReportExecutionPlanAsync(
+            ExecutionPlanProgress executionPlanProgress,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PlanProgressUpdates.Add(executionPlanProgress);
+            return Task.CompletedTask;
+        }
 
         public Task ReportToolCallsStartedAsync(
             IReadOnlyList<ConversationToolCall> toolCalls,

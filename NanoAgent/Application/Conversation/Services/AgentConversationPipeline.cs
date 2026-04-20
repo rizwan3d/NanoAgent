@@ -3,6 +3,7 @@ using NanoAgent.Application.Conversation.Serialization;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Logging;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Planning;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
@@ -70,23 +71,152 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "Conversation cannot start because the API key is missing.");
 
         ConversationSettings settings = _configurationAccessor.GetSettings();
+        IReadOnlyList<ToolDefinition> allToolDefinitions = _toolRegistry.GetToolDefinitions();
+        IReadOnlyList<ToolDefinition> planningToolDefinitions = PlanningModePolicy.FilterPlanningTools(
+            allToolDefinitions);
+        IReadOnlySet<string> planningToolNames = planningToolDefinitions
+            .Select(static definition => definition.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        IReadOnlySet<string> executionToolNames = allToolDefinitions
+            .Select(static definition => definition.Name)
+            .ToHashSet(StringComparer.Ordinal);
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(settings.RequestTimeout);
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
         string normalizedInput = input.Trim();
-        List<ConversationRequestMessage> messages =
+        List<ConversationRequestMessage> planningMessages =
         [
             .. session.GetConversationHistory(settings.MaxHistoryTurns),
             ConversationRequestMessage.User(normalizedInput)
         ];
-        List<ToolInvocationResult> executedToolResults = [];
-        int totalCompletionTokens = 0;
-        bool hasReportedCompletionTokens = false;
 
         ApplicationLogMessages.ConversationRequestStarted(
             _logger,
             session.ProviderName,
             session.ActiveModelId);
+
+        PhaseExecutionResult planningResult = await RunPhaseAsync(
+            apiKey,
+            session,
+            planningMessages,
+            PlanningModePolicy.CreatePlanningSystemPrompt(settings.SystemPrompt),
+            planningToolDefinitions,
+            planningToolNames,
+            ConversationExecutionPhase.Planning,
+            progressSink,
+            settings,
+            timeoutSource,
+            executionPlanTracker: null,
+            cancellationToken);
+
+        ExecutionPlanTracker? executionPlanTracker = ExecutionPlanTracker.Create(
+            PlanningModePolicy.ExtractPlanTasks(planningResult.AssistantMessage));
+        if (executionPlanTracker is not null)
+        {
+            await progressSink.ReportExecutionPlanAsync(
+                executionPlanTracker.CreateSnapshot(),
+                cancellationToken);
+        }
+
+        List<ConversationRequestMessage> executionMessages =
+        [
+            .. planningResult.Messages,
+            ConversationRequestMessage.AssistantMessage(planningResult.AssistantMessage)
+        ];
+
+        PhaseExecutionResult executionResult = await RunPhaseAsync(
+            apiKey,
+            session,
+            executionMessages,
+            PlanningModePolicy.CreateExecutionSystemPrompt(
+                settings.SystemPrompt,
+                planningResult.AssistantMessage),
+            allToolDefinitions,
+            executionToolNames,
+            ConversationExecutionPhase.Execution,
+            progressSink,
+            settings,
+            timeoutSource,
+            executionPlanTracker,
+            cancellationToken);
+
+        ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
+        session.AddConversationTurn(normalizedInput, executionResult.AssistantMessage);
+
+        int? completionTokens = null;
+        if (planningResult.HasReportedCompletionTokens || executionResult.HasReportedCompletionTokens)
+        {
+            completionTokens = planningResult.TotalCompletionTokens + executionResult.TotalCompletionTokens;
+        }
+
+        ToolExecutionBatchResult? toolExecutionResult = CombineToolExecutionResults(
+            planningResult.ExecutedToolResults,
+            executionResult.ExecutedToolResults);
+
+        return ConversationTurnResult.AssistantMessage(
+            executionResult.AssistantMessage,
+            toolExecutionResult,
+            CreateMetrics(
+                startedAt,
+                executionResult.AssistantMessage,
+                completionTokens));
+    }
+
+    private ConversationTurnMetrics CreateMetrics(
+        DateTimeOffset startedAt,
+        string responseText,
+        int? completionTokens)
+    {
+        TimeSpan elapsed = _timeProvider.GetUtcNow() - startedAt;
+        int estimatedOutputTokens = completionTokens is > 0
+            ? completionTokens.Value
+            : _tokenEstimator.Estimate(responseText);
+        return new ConversationTurnMetrics(elapsed, estimatedOutputTokens);
+    }
+
+    private static string CreateToolFeedbackContent(ToolInvocationResult invocationResult)
+    {
+        ArgumentNullException.ThrowIfNull(invocationResult);
+
+        using JsonDocument dataDocument = JsonDocument.Parse(invocationResult.Result.JsonResult);
+
+        ToolFeedbackRenderPayload? render = invocationResult.Result.RenderPayload is null
+            ? null
+            : new ToolFeedbackRenderPayload(
+                invocationResult.Result.RenderPayload.Title,
+                invocationResult.Result.RenderPayload.Text);
+
+        ToolFeedbackPayload payload = new(
+            invocationResult.ToolName,
+            invocationResult.Result.Status,
+            invocationResult.Result.IsSuccess,
+            invocationResult.Result.Message,
+            dataDocument.RootElement.Clone(),
+            render);
+
+        return JsonSerializer.Serialize(
+            payload,
+            ConversationJsonContext.Default.ToolFeedbackPayload);
+    }
+
+    private async Task<PhaseExecutionResult> RunPhaseAsync(
+        string apiKey,
+        ReplSessionContext session,
+        IReadOnlyList<ConversationRequestMessage> initialMessages,
+        string? systemPrompt,
+        IReadOnlyList<ToolDefinition> availableTools,
+        IReadOnlySet<string> allowedToolNames,
+        ConversationExecutionPhase executionPhase,
+        IConversationProgressSink progressSink,
+        ConversationSettings settings,
+        CancellationTokenSource timeoutSource,
+        ExecutionPlanTracker? executionPlanTracker,
+        CancellationToken cancellationToken)
+    {
+        List<ConversationRequestMessage> messages = initialMessages.ToList();
+        List<ToolInvocationResult> executedToolResults = [];
+        int totalCompletionTokens = 0;
+        bool hasReportedCompletionTokens = false;
 
         for (int round = 0; round < settings.MaxToolRoundsPerTurn; round++)
         {
@@ -100,8 +230,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                         apiKey,
                         session.ActiveModelId,
                         messages,
-                        settings.SystemPrompt,
-                        _toolRegistry.GetToolDefinitions()),
+                        systemPrompt,
+                        availableTools),
                     timeoutSource.Token);
             }
             catch (ConversationProviderException)
@@ -160,6 +290,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 ToolExecutionBatchResult toolExecutionResult = await _toolExecutionPipeline.ExecuteAsync(
                     response.ToolCalls,
                     session,
+                    executionPhase,
+                    allowedToolNames,
                     cancellationToken);
 
                 ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
@@ -168,6 +300,14 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 await progressSink.ReportToolResultsAsync(
                     toolExecutionResult,
                     cancellationToken);
+
+                if (executionPhase == ConversationExecutionPhase.Execution &&
+                    executionPlanTracker is not null)
+                {
+                    await progressSink.ReportExecutionPlanAsync(
+                        executionPlanTracker.Advance(),
+                        cancellationToken);
+                }
 
                 messages.Add(ConversationRequestMessage.AssistantToolCalls(
                     response.ToolCalls,
@@ -189,18 +329,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     "The provider response did not contain an assistant message or any tool calls.");
             }
 
-            ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
-            session.AddConversationTurn(normalizedInput, response.AssistantMessage);
-
-            return ConversationTurnResult.AssistantMessage(
+            return new PhaseExecutionResult(
                 response.AssistantMessage,
-                executedToolResults.Count == 0
-                    ? null
-                    : new ToolExecutionBatchResult(executedToolResults.ToArray()),
-                CreateMetrics(
-                    startedAt,
-                    response.AssistantMessage,
-                    hasReportedCompletionTokens ? totalCompletionTokens : null));
+                messages,
+                executedToolResults,
+                totalCompletionTokens,
+                hasReportedCompletionTokens);
         }
 
         throw new ConversationResponseException(
@@ -208,41 +342,24 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             $"Configured limit: {settings.MaxToolRoundsPerTurn} round(s).");
     }
 
-    private ConversationTurnMetrics CreateMetrics(
-        DateTimeOffset startedAt,
-        string responseText,
-        int? completionTokens)
+    private static ToolExecutionBatchResult? CombineToolExecutionResults(
+        IReadOnlyList<ToolInvocationResult> planningResults,
+        IReadOnlyList<ToolInvocationResult> executionResults)
     {
-        TimeSpan elapsed = _timeProvider.GetUtcNow() - startedAt;
-        int estimatedOutputTokens = completionTokens is > 0
-            ? completionTokens.Value
-            : _tokenEstimator.Estimate(responseText);
-        return new ConversationTurnMetrics(elapsed, estimatedOutputTokens);
-    }
+        List<ToolInvocationResult> results = [];
+        if (planningResults.Count > 0)
+        {
+            results.AddRange(planningResults);
+        }
 
-    private static string CreateToolFeedbackContent(ToolInvocationResult invocationResult)
-    {
-        ArgumentNullException.ThrowIfNull(invocationResult);
+        if (executionResults.Count > 0)
+        {
+            results.AddRange(executionResults);
+        }
 
-        using JsonDocument dataDocument = JsonDocument.Parse(invocationResult.Result.JsonResult);
-
-        ToolFeedbackRenderPayload? render = invocationResult.Result.RenderPayload is null
+        return results.Count == 0
             ? null
-            : new ToolFeedbackRenderPayload(
-                invocationResult.Result.RenderPayload.Title,
-                invocationResult.Result.RenderPayload.Text);
-
-        ToolFeedbackPayload payload = new(
-            invocationResult.ToolName,
-            invocationResult.Result.Status,
-            invocationResult.Result.IsSuccess,
-            invocationResult.Result.Message,
-            dataDocument.RootElement.Clone(),
-            render);
-
-        return JsonSerializer.Serialize(
-            payload,
-            ConversationJsonContext.Default.ToolFeedbackPayload);
+            : new ToolExecutionBatchResult(results);
     }
 
     private sealed class NoOpConversationProgressSink : IConversationProgressSink
@@ -257,6 +374,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             return Task.CompletedTask;
         }
 
+        public Task ReportExecutionPlanAsync(
+            ExecutionPlanProgress executionPlanProgress,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ArgumentNullException.ThrowIfNull(executionPlanProgress);
+            return Task.CompletedTask;
+        }
+
         public Task ReportToolResultsAsync(
             ToolExecutionBatchResult toolExecutionResult,
             CancellationToken cancellationToken)
@@ -264,5 +390,73 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             cancellationToken.ThrowIfCancellationRequested();
             return Task.CompletedTask;
         }
+    }
+
+    private sealed class ExecutionPlanTracker
+    {
+        private readonly IReadOnlyList<string> _tasks;
+        private int _completedTaskCount;
+
+        private ExecutionPlanTracker(IReadOnlyList<string> tasks)
+        {
+            _tasks = tasks;
+        }
+
+        public static ExecutionPlanTracker? Create(IReadOnlyList<string> tasks)
+        {
+            ArgumentNullException.ThrowIfNull(tasks);
+
+            return tasks.Count == 0
+                ? null
+                : new ExecutionPlanTracker(tasks.ToArray());
+        }
+
+        public ExecutionPlanProgress Advance()
+        {
+            if (_completedTaskCount < _tasks.Count)
+            {
+                _completedTaskCount++;
+            }
+
+            return CreateSnapshot();
+        }
+
+        public ExecutionPlanProgress CreateSnapshot()
+        {
+            return new ExecutionPlanProgress(
+                _tasks,
+                _completedTaskCount);
+        }
+    }
+
+    private sealed class PhaseExecutionResult
+    {
+        public PhaseExecutionResult(
+            string assistantMessage,
+            IReadOnlyList<ConversationRequestMessage> messages,
+            IReadOnlyList<ToolInvocationResult> executedToolResults,
+            int totalCompletionTokens,
+            bool hasReportedCompletionTokens)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(assistantMessage);
+            ArgumentNullException.ThrowIfNull(messages);
+            ArgumentNullException.ThrowIfNull(executedToolResults);
+
+            AssistantMessage = assistantMessage.Trim();
+            Messages = messages.ToArray();
+            ExecutedToolResults = executedToolResults.ToArray();
+            TotalCompletionTokens = totalCompletionTokens;
+            HasReportedCompletionTokens = hasReportedCompletionTokens;
+        }
+
+        public string AssistantMessage { get; }
+
+        public IReadOnlyList<ToolInvocationResult> ExecutedToolResults { get; }
+
+        public bool HasReportedCompletionTokens { get; }
+
+        public IReadOnlyList<ConversationRequestMessage> Messages { get; }
+
+        public int TotalCompletionTokens { get; }
     }
 }

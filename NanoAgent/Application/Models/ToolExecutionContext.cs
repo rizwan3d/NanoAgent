@@ -8,7 +8,8 @@ public sealed class ToolExecutionContext
         string toolCallId,
         string toolName,
         JsonElement arguments,
-        ReplSessionContext session)
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase = ConversationExecutionPhase.Execution)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolCallId);
         ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
@@ -24,10 +25,13 @@ public sealed class ToolExecutionContext
         }
 
         Arguments = arguments;
+        ExecutionPhase = executionPhase;
         Session = session;
     }
 
     public JsonElement Arguments { get; }
+
+    public ConversationExecutionPhase ExecutionPhase { get; }
 
     public ReplSessionContext Session { get; }
 

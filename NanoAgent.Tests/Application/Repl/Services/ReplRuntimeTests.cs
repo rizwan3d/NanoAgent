@@ -822,6 +822,16 @@ public sealed class ReplRuntimeTests
             _owner = owner;
         }
 
+        public Task ReportExecutionPlanAsync(
+            ExecutionPlanProgress executionPlanProgress,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            _owner.Events.Add($"plan:{executionPlanProgress.CompletedTaskCount}/{executionPlanProgress.Tasks.Count}");
+            return Task.CompletedTask;
+        }
+
         public Task ReportToolCallsStartedAsync(
             IReadOnlyList<ConversationToolCall> toolCalls,
             CancellationToken cancellationToken)

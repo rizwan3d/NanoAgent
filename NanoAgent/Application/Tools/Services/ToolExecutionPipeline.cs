@@ -15,10 +15,13 @@ internal sealed class ToolExecutionPipeline : IToolExecutionPipeline
     public async Task<ToolExecutionBatchResult> ExecuteAsync(
         IReadOnlyList<ConversationToolCall> toolCalls,
         ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(toolCalls);
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(allowedToolNames);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (toolCalls.Count == 0)
@@ -36,6 +39,8 @@ internal sealed class ToolExecutionPipeline : IToolExecutionPipeline
             ToolInvocationResult result = await _toolInvoker.InvokeAsync(
                 toolCall,
                 session,
+                executionPhase,
+                allowedToolNames,
                 cancellationToken);
 
             results.Add(result);

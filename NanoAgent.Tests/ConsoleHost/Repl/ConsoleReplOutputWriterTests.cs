@@ -190,6 +190,63 @@ public sealed class ConsoleReplOutputWriterTests
     }
 
     [Fact]
+    public async Task BeginResponseProgressAsync_Should_RenderTaskBoardAboveWorkingLine_When_PlanIsReported()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsoleReplOutputWriter sut = CreateSut(terminal);
+
+        await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
+        await progress.ReportExecutionPlanAsync(
+            new ExecutionPlanProgress(
+                [
+                    "Inspect the workspace.",
+                    "Update the README.",
+                    "Run tests."
+                ],
+                completedTaskCount: 0),
+            CancellationToken.None);
+
+        string output = GetPlainOutput(terminal.Output);
+        output.Should().Contain("Tasks: 0 done | 1 current | 2 remaining");
+        output.Should().Contain("[>] Inspect the workspace.");
+        output.Should().Contain("[ ] Update the README.");
+        output.Should().Contain("Working");
+    }
+
+    [Fact]
+    public async Task BeginResponseProgressAsync_Should_UpdateTaskMarkers_When_PlanProgressAdvances()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsoleReplOutputWriter sut = CreateSut(terminal);
+
+        await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
+        await progress.ReportExecutionPlanAsync(
+            new ExecutionPlanProgress(
+                [
+                    "Inspect the workspace.",
+                    "Update the README.",
+                    "Run tests."
+                ],
+                completedTaskCount: 0),
+            CancellationToken.None);
+        await progress.ReportExecutionPlanAsync(
+            new ExecutionPlanProgress(
+                [
+                    "Inspect the workspace.",
+                    "Update the README.",
+                    "Run tests."
+                ],
+                completedTaskCount: 1),
+            CancellationToken.None);
+
+        string output = GetPlainOutput(terminal.Output);
+        output.Should().Contain("Tasks: 1 done | 1 current | 1 remaining");
+        output.Should().Contain("[x] Inspect the workspace.");
+        output.Should().Contain("[>] Update the README.");
+        output.Should().Contain("[ ] Run tests.");
+    }
+
+    [Fact]
     public async Task BeginResponseProgressAsync_Should_NotThrow_When_DirectoryListPayloadOmitsEntries()
     {
         FakeConsoleTerminal terminal = new();

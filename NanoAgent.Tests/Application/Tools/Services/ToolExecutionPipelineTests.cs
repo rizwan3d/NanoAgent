@@ -18,11 +18,16 @@ public sealed class ToolExecutionPipelineTests
     [Fact]
     public async Task ExecuteAsync_Should_ReturnStructuredResultsInInputOrder()
     {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_read", "shell_command"],
+            StringComparer.Ordinal);
         Mock<IToolInvoker> toolInvoker = new(MockBehavior.Strict);
         toolInvoker
             .SetupSequence(invoker => invoker.InvokeAsync(
                 It.IsAny<ConversationToolCall>(),
                 Session,
+                ConversationExecutionPhase.Execution,
+                allowedToolNames,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ToolInvocationResult(
                 "call_1",
@@ -48,6 +53,8 @@ public sealed class ToolExecutionPipelineTests
                 new ConversationToolCall("call_2", "shell_command", "{}")
             ],
             Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
             CancellationToken.None);
 
         result.Results.Select(item => item.ToolCallId).Should().Equal("call_1", "call_2");
@@ -63,6 +70,9 @@ public sealed class ToolExecutionPipelineTests
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "gpt-5-mini",
             ["gpt-5-mini"]);
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_write"],
+            StringComparer.Ordinal);
         TrackingToolInvoker toolInvoker = new();
         ToolExecutionPipeline sut = new(toolInvoker);
 
@@ -72,6 +82,8 @@ public sealed class ToolExecutionPipelineTests
                 new ConversationToolCall("call_2", "file_write", """{ "path": "src/App.js" }""")
             ],
             session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
             CancellationToken.None);
 
         session.TryGetPendingUndoFileEdit(out WorkspaceFileEditTransaction? transaction).Should().BeTrue();
@@ -85,9 +97,13 @@ public sealed class ToolExecutionPipelineTests
         public Task<ToolInvocationResult> InvokeAsync(
             ConversationToolCall toolCall,
             ReplSessionContext session,
+            ConversationExecutionPhase executionPhase,
+            IReadOnlySet<string> allowedToolNames,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            executionPhase.Should().Be(ConversationExecutionPhase.Execution);
+            allowedToolNames.Should().Contain("file_write");
 
             WorkspaceFileEditTransaction transaction = toolCall.Id switch
             {

@@ -4,6 +4,10 @@ namespace NanoAgent.Application.Abstractions;
 
 public interface IConversationProgressSink
 {
+    Task ReportExecutionPlanAsync(
+        ExecutionPlanProgress executionPlanProgress,
+        CancellationToken cancellationToken);
+
     Task ReportToolCallsStartedAsync(
         IReadOnlyList<ConversationToolCall> toolCalls,
         CancellationToken cancellationToken);
