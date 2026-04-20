@@ -14,8 +14,6 @@ namespace NanoAgent.ConsoleHost.Repl;
 internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
 {
     private const double EstimatedTokensPerSecond = 4d;
-    private static readonly TimeSpan ProgressUpdateInterval = TimeSpan.FromMilliseconds(250);
-
     private const int HeaderDividerWidth = 53;
     private const string RepositoryUrl = "github.com/rizwan3d/NanoAgent";
     private const string SponsorName = "ALFAIN Technologies (PVT) Limited";
@@ -71,7 +69,6 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             new ProgressScope(
                 _terminal,
                 _outputTarget,
-                _console,
                 _interactionGate,
                 estimatedOutputTokens,
                 completedSessionEstimatedOutputTokens));
@@ -256,26 +253,21 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
     {
         private readonly IConsoleTerminal _terminal;
         private readonly ICliOutputTarget _outputTarget;
-        private readonly IAnsiConsole _console;
         private readonly IConsoleInteractionGate _interactionGate;
         private readonly int _sessionSeedEstimatedTokens;
         private readonly object _syncLock = new();
-        private readonly CancellationTokenSource _cancellationSource = new();
-        private readonly Task _updateTask;
         private int _statusLineTop;
         private DateTimeOffset _startedAt;
 
         public ProgressScope(
             IConsoleTerminal terminal,
             ICliOutputTarget outputTarget,
-            IAnsiConsole console,
             IConsoleInteractionGate interactionGate,
             int estimatedOutputTokens,
             int completedSessionEstimatedOutputTokens)
         {
             _terminal = terminal;
             _outputTarget = outputTarget;
-            _console = console;
             _interactionGate = interactionGate;
             _sessionSeedEstimatedTokens = Math.Max(0, completedSessionEstimatedOutputTokens) +
                 Math.Max(1, estimatedOutputTokens);
@@ -283,27 +275,13 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             _startedAt = DateTimeOffset.UtcNow;
 
             TryWriteStatusLine(TimeSpan.Zero);
-
-            _updateTask = RunAsync(_cancellationSource.Token);
         }
 
         public async ValueTask DisposeAsync()
         {
-            _cancellationSource.Cancel();
-
-            try
-            {
-                await _updateTask.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-            }
-            finally
-            {
-                ClearStatusLine();
-                TrySetCursorPosition(0, _statusLineTop);
-                _cancellationSource.Dispose();
-            }
+            await ValueTask.CompletedTask.ConfigureAwait(false);
+            ClearStatusLine();
+            TrySetCursorPosition(0, _statusLineTop);
         }
 
         public Task ReportToolCallsStartedAsync(
@@ -342,22 +320,6 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             return Task.CompletedTask;
         }
 
-        private async Task RunAsync(CancellationToken cancellationToken)
-        {
-            using PeriodicTimer timer = new(ProgressUpdateInterval);
-
-            while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(false))
-            {
-                lock (_syncLock)
-                {
-                    if (!TryWriteStatusLine(DateTimeOffset.UtcNow - _startedAt))
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-
         private void ClearStatusLine()
         {
             int width = Math.Max(1, _terminal.WindowWidth - 1);
@@ -366,7 +328,8 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             {
                 using IDisposable _ = _interactionGate.EnterScope();
                 _terminal.SetCursorPosition(0, _statusLineTop);
-                _console.Write(new string(' ', width));
+                _terminal.Write(new string(' ', width));
+                _terminal.SetCursorPosition(0, _statusLineTop);
             }
             catch (ArgumentOutOfRangeException)
             {
@@ -386,9 +349,9 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         {
             const string workingLabel = "Working";
             string[] spinnerFrames = ["|", "/", "-", "\\"];
-            int spinnerFrameIndex = (int)(Math.Max(0d, elapsed.TotalMilliseconds) / ProgressUpdateInterval.TotalMilliseconds) %
+            int spinnerFrameIndex = (int)Math.Max(0d, elapsed.TotalSeconds) %
                                     spinnerFrames.Length;
-            int highlightedCharacterIndex = (int)(Math.Max(0d, elapsed.TotalMilliseconds) / ProgressUpdateInterval.TotalMilliseconds) %
+            int highlightedCharacterIndex = (int)Math.Max(0d, elapsed.TotalSeconds) %
                                             workingLabel.Length;
 
             List<StatusSegment> segments = [];
@@ -418,27 +381,17 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         {
             int width = Math.Max(1, _terminal.WindowWidth - 1);
             IReadOnlyList<StatusSegment> visibleSegments = FitStatusSegments(segments, width);
-            int writtenCharacters = visibleSegments.Sum(static segment => segment.Text.Length);
+            string text = string.Concat(visibleSegments.Select(static segment => segment.Text));
+            string paddedText = text.Length < width
+                ? text.PadRight(width)
+                : text;
 
             try
             {
                 using IDisposable _ = _interactionGate.EnterScope();
                 _terminal.SetCursorPosition(0, _statusLineTop);
-
-                foreach (StatusSegment segment in visibleSegments)
-                {
-                    if (segment.Text.Length == 0)
-                    {
-                        continue;
-                    }
-
-                    _console.Write(segment.Text, segment.Style);
-                }
-
-                if (writtenCharacters < width)
-                {
-                    _console.Write(new string(' ', width - writtenCharacters), new Style(Color.Grey));
-                }
+                _terminal.Write(paddedText);
+                _terminal.SetCursorPosition(0, _statusLineTop);
 
                 return true;
             }
@@ -499,6 +452,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         private void WriteToolOutputs(ToolExecutionBatchResult toolExecutionResult)
         {
             List<ToolInvocationResult> fileWriteBatch = [];
+            bool hasWrittenToolOutput = false;
 
             foreach (ToolInvocationResult invocationResult in toolExecutionResult.Results)
             {
@@ -508,19 +462,27 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                     continue;
                 }
 
-                FlushFileWriteBatch(fileWriteBatch);
+                hasWrittenToolOutput = FlushFileWriteBatch(fileWriteBatch, hasWrittenToolOutput);
+
+                if (hasWrittenToolOutput)
+                {
+                    _outputTarget.WriteLine();
+                }
+
                 WriteToolOutput(invocationResult);
-                _outputTarget.WriteLine();
+                hasWrittenToolOutput = true;
             }
 
-            FlushFileWriteBatch(fileWriteBatch);
+            FlushFileWriteBatch(fileWriteBatch, hasWrittenToolOutput);
         }
 
-        private void FlushFileWriteBatch(List<ToolInvocationResult> fileWriteBatch)
+        private bool FlushFileWriteBatch(
+            List<ToolInvocationResult> fileWriteBatch,
+            bool hasWrittenToolOutput)
         {
             if (fileWriteBatch.Count == 0)
             {
-                return;
+                return hasWrittenToolOutput;
             }
 
             List<WorkspaceFileWriteResult> results = fileWriteBatch
@@ -533,12 +495,22 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             {
                 foreach (ToolInvocationResult invocationResult in fileWriteBatch)
                 {
+                    if (hasWrittenToolOutput)
+                    {
+                        _outputTarget.WriteLine();
+                    }
+
                     WriteGenericToolOutput(invocationResult);
-                    _outputTarget.WriteLine();
+                    hasWrittenToolOutput = true;
                 }
 
                 fileWriteBatch.Clear();
-                return;
+                return hasWrittenToolOutput;
+            }
+
+            if (hasWrittenToolOutput)
+            {
+                _outputTarget.WriteLine();
             }
 
             int totalAddedLineCount = results.Sum(static result => result.AddedLineCount);
@@ -596,8 +568,8 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                     CliOutputStyle.Muted);
             }
 
-            _outputTarget.WriteLine();
             fileWriteBatch.Clear();
+            return true;
         }
 
         private void WriteToolOutput(ToolInvocationResult invocationResult)

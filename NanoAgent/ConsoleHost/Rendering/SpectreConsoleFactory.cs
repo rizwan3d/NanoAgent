@@ -108,28 +108,58 @@ internal static class SpectreConsoleFactory
                 return;
             }
 
-            string normalized = value
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n');
+            StringBuilder segmentBuilder = new();
 
-            string[] lines = normalized.Split('\n', StringSplitOptions.None);
-            for (int index = 0; index < lines.Length; index++)
+            foreach (char character in value)
             {
-                if (lines[index].Length > 0)
+                switch (character)
                 {
-                    _terminal.Write(lines[index]);
-                }
+                    case '\r':
+                        FlushSegment(segmentBuilder);
+                        TryMoveToLineStart();
+                        break;
 
-                bool hasTrailingNewLine = index < lines.Length - 1;
-                if (hasTrailingNewLine)
-                {
-                    _terminal.WriteLine();
+                    case '\n':
+                        FlushSegment(segmentBuilder);
+                        _terminal.WriteLine();
+                        break;
+
+                    default:
+                        segmentBuilder.Append(character);
+                        break;
                 }
             }
+
+            FlushSegment(segmentBuilder);
 
             if (appendNewLine)
             {
                 _terminal.WriteLine();
+            }
+        }
+
+        private void FlushSegment(StringBuilder segmentBuilder)
+        {
+            if (segmentBuilder.Length == 0)
+            {
+                return;
+            }
+
+            _terminal.Write(segmentBuilder.ToString());
+            segmentBuilder.Clear();
+        }
+
+        private void TryMoveToLineStart()
+        {
+            try
+            {
+                _terminal.SetCursorPosition(0, _terminal.CursorTop);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+            }
+            catch (IOException)
+            {
             }
         }
     }

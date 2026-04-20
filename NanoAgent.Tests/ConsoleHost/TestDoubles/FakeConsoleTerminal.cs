@@ -12,6 +12,8 @@ internal sealed class FakeConsoleTerminal : IConsoleTerminal
 
     public ConsoleColor BackgroundColor { get; set; } = ConsoleColor.Black;
 
+    public int CursorLeft => _cursorLeft;
+
     public int CursorTop { get; private set; }
 
     public ConsoleColor ForegroundColor { get; set; } = ConsoleColor.Gray;
@@ -76,19 +78,34 @@ internal sealed class FakeConsoleTerminal : IConsoleTerminal
             return;
         }
 
-        string normalized = RemoveAnsiSequences(value)
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n');
+        StringBuilder segmentBuilder = new();
 
-        string[] segments = normalized.Split('\n', StringSplitOptions.None);
-        for (int index = 0; index < segments.Length; index++)
+        for (int index = 0; index < value.Length; index++)
         {
-            WriteSegment(segments[index]);
-            if (index < segments.Length - 1)
+            if (TryHandleAnsiSequence(value, ref index, segmentBuilder))
             {
-                WriteLine();
+                continue;
+            }
+
+            switch (value[index])
+            {
+                case '\r':
+                    FlushSegment(segmentBuilder);
+                    _cursorLeft = 0;
+                    break;
+
+                case '\n':
+                    FlushSegment(segmentBuilder);
+                    WriteLine();
+                    break;
+
+                default:
+                    segmentBuilder.Append(value[index]);
+                    break;
             }
         }
+
+        FlushSegment(segmentBuilder);
     }
 
     public void WriteLine()
@@ -150,43 +167,94 @@ internal sealed class FakeConsoleTerminal : IConsoleTerminal
         }
     }
 
+    private void FlushSegment(StringBuilder segmentBuilder)
+    {
+        if (segmentBuilder.Length == 0)
+        {
+            return;
+        }
+
+        WriteSegment(segmentBuilder.ToString());
+        segmentBuilder.Clear();
+    }
+
+    private bool TryHandleAnsiSequence(string value, ref int index, StringBuilder segmentBuilder)
+    {
+        if (value[index] != '\u001B' ||
+            index + 1 >= value.Length ||
+            value[index + 1] != '[')
+        {
+            return false;
+        }
+
+        int sequenceStart = index + 2;
+        int sequenceEnd = sequenceStart;
+
+        while (sequenceEnd < value.Length)
+        {
+            char sequenceCharacter = value[sequenceEnd];
+            if (sequenceCharacter >= '@' && sequenceCharacter <= '~')
+            {
+                break;
+            }
+
+            sequenceEnd++;
+        }
+
+        if (sequenceEnd >= value.Length)
+        {
+            index = value.Length - 1;
+            return true;
+        }
+
+        FlushSegment(segmentBuilder);
+
+        char command = value[sequenceEnd];
+        if (command == 'M')
+        {
+            string parameter = value.Substring(sequenceStart, sequenceEnd - sequenceStart);
+            int deleteLineCount = int.TryParse(parameter, out int parsedDeleteLineCount) && parsedDeleteLineCount > 0
+                ? parsedDeleteLineCount
+                : 1;
+            DeleteLines(deleteLineCount);
+        }
+
+        index = sequenceEnd;
+        return true;
+    }
+
+    private void DeleteLines(int count)
+    {
+        if (count <= 0)
+        {
+            return;
+        }
+
+        EnsureLine(CursorTop);
+
+        int linesToDelete = Math.Min(count, _lines.Count - CursorTop);
+        if (linesToDelete <= 0)
+        {
+            return;
+        }
+
+        _lines.RemoveRange(CursorTop, linesToDelete);
+
+        for (int index = 0; index < linesToDelete; index++)
+        {
+            _lines.Add(new ConsoleLine());
+        }
+
+        _cursorLeft = 0;
+        EnsureLine(CursorTop);
+    }
+
     private void EnsureLine(int lineIndex)
     {
         while (_lines.Count <= lineIndex)
         {
             _lines.Add(new ConsoleLine());
         }
-    }
-
-    private static string RemoveAnsiSequences(string value)
-    {
-        StringBuilder builder = new();
-        for (int index = 0; index < value.Length; index++)
-        {
-            char current = value[index];
-            if (current == '\u001B' &&
-                index + 1 < value.Length &&
-                value[index + 1] == '[')
-            {
-                index += 2;
-                while (index < value.Length)
-                {
-                    char sequenceCharacter = value[index];
-                    if (sequenceCharacter >= '@' && sequenceCharacter <= '~')
-                    {
-                        break;
-                    }
-
-                    index++;
-                }
-
-                continue;
-            }
-
-            builder.Append(current);
-        }
-
-        return builder.ToString();
     }
 
     private sealed class ConsoleLine

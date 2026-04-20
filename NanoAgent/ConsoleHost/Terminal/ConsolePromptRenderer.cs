@@ -16,29 +16,70 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
         _console = console;
     }
 
-    public int WriteInteractiveSelectionPrompt<T>(SelectionPromptRequest<T> request, int selectedIndex)
+    public InteractiveSelectionPromptLayout WriteInteractiveSelectionPrompt<T>(SelectionPromptRequest<T> request, int selectedIndex)
     {
+        EnsurePromptStartsOnNewLine();
         WriteHeading(request.Title, request.Description);
         _terminal.WriteLine(BuildInteractiveInstructions(request.AllowCancellation));
         _terminal.WriteLine();
 
-        int optionsTop = _terminal.CursorTop;
         WriteSelectionOptions(request.Options, selectedIndex);
-        return optionsTop;
+
+        int totalLineCount =
+            CountLogicalLines(request.Title) +
+            CountLogicalLines(request.Description) +
+            CountLogicalLines(BuildInteractiveInstructions(request.AllowCancellation)) +
+            1 +
+            request.Options.Count;
+        int promptBottom = _terminal.CursorTop;
+        int promptTop = Math.Max(0, promptBottom - totalLineCount);
+        int optionsTop = Math.Max(0, promptBottom - request.Options.Count);
+
+        return new InteractiveSelectionPromptLayout(
+            promptTop,
+            optionsTop,
+            totalLineCount);
     }
 
     public void RewriteSelectionOptions<T>(
         SelectionPromptRequest<T> request,
         int selectedIndex,
-        int optionsTop)
+        InteractiveSelectionPromptLayout layout)
     {
-        _terminal.SetCursorPosition(0, optionsTop);
+        if (!TrySetCursorPosition(0, layout.OptionsTop))
+        {
+            return;
+        }
+
         WriteSelectionOptions(request.Options, selectedIndex);
-        _terminal.SetCursorPosition(0, optionsTop + request.Options.Count);
+    }
+
+    public void ClearInteractiveSelectionPrompt(InteractiveSelectionPromptLayout layout)
+    {
+        if (TryDeleteInteractiveSelectionPrompt(layout))
+        {
+            return;
+        }
+
+        int width = Math.Max(1, GetLineWidth() - 1);
+
+        for (int offset = 0; offset < layout.TotalLineCount; offset++)
+        {
+            int top = layout.PromptTop + offset;
+            if (!TrySetCursorPosition(0, top))
+            {
+                break;
+            }
+
+            _console.Write(new string(' ', width));
+        }
+
+        TrySetCursorPosition(0, layout.PromptTop);
     }
 
     public void WriteFallbackSelectionPrompt<T>(SelectionPromptRequest<T> request)
     {
+        EnsurePromptStartsOnNewLine();
         WriteHeading(request.Title, request.Description);
 
         for (int index = 0; index < request.Options.Count; index++)
@@ -52,6 +93,7 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
 
     public void WriteSecretPrompt(SecretPromptRequest request)
     {
+        EnsurePromptStartsOnNewLine();
         WriteHeading(request.Label, request.Description);
         _terminal.Write("> ");
     }
@@ -85,6 +127,7 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
 
     public void WriteTextPrompt(TextPromptRequest request)
     {
+        EnsurePromptStartsOnNewLine();
         WriteHeading(request.Label, request.Description);
         if (!string.IsNullOrWhiteSpace(request.DefaultValue))
         {
@@ -129,6 +172,28 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
         return trimmed.PadRight(width);
     }
 
+    private void EnsurePromptStartsOnNewLine()
+    {
+        if (_terminal.CursorLeft != 0)
+        {
+            _terminal.WriteLine();
+        }
+    }
+
+    private static int CountLogicalLines(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return 0;
+        }
+
+        return value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None)
+            .Length;
+    }
+
     private void WriteHeading(string title, string? description)
     {
         _terminal.WriteLine(title);
@@ -149,11 +214,11 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
 
             if (isSelected)
             {
-                WriteStyledLine(line, new Style(Color.Black, Color.Grey));
+                WriteHighlightedInteractiveLine(line);
             }
             else
             {
-                _console.WriteLine(line);
+                _terminal.WriteLine(line);
             }
         }
     }
@@ -161,5 +226,64 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
     private void WriteStyledLine(string text, Style style)
     {
         _console.WriteLine(text, style);
+    }
+
+    private void WriteHighlightedInteractiveLine(string text)
+    {
+        ConsoleColor previousForeground = _terminal.ForegroundColor;
+        ConsoleColor previousBackground = _terminal.BackgroundColor;
+
+        try
+        {
+            _terminal.ForegroundColor = ConsoleColor.Black;
+            _terminal.BackgroundColor = ConsoleColor.Gray;
+            _terminal.WriteLine(text);
+        }
+        finally
+        {
+            _terminal.ForegroundColor = previousForeground;
+            _terminal.BackgroundColor = previousBackground;
+        }
+    }
+
+    private bool TrySetCursorPosition(int left, int top)
+    {
+        try
+        {
+            _terminal.SetCursorPosition(left, top);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
+    private bool TryDeleteInteractiveSelectionPrompt(InteractiveSelectionPromptLayout layout)
+    {
+        if (_terminal.IsOutputRedirected || layout.TotalLineCount <= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            _terminal.SetCursorPosition(0, layout.PromptTop);
+            _terminal.Write($"\u001b[{layout.TotalLineCount}M");
+            _terminal.SetCursorPosition(0, layout.PromptTop);
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
     }
 }

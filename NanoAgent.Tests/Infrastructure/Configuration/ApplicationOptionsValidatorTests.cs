@@ -144,4 +144,28 @@ public sealed class ApplicationOptionsValidatorTests
         result.Failed.Should().BeTrue();
         result.Failures.Should().Contain(failure => failure.Contains("RequestTimeoutSeconds"));
     }
+
+    [Fact]
+    public void Validate_Should_ReturnFailure_When_MaxToolRoundsPerTurnIsNotPositive()
+    {
+        ApplicationOptions options = new()
+        {
+            ProductName = "NanoAgent",
+            StorageDirectoryName = "NanoAgent",
+            Conversation = new ConversationOptions
+            {
+                MaxToolRoundsPerTurn = 0
+            },
+            Defaults = new ApplicationDefaultsOptions(),
+            ModelSelection = new ModelSelectionOptions
+            {
+                CacheDurationSeconds = 300
+            }
+        };
+
+        ValidateOptionsResult result = _sut.Validate(Options.DefaultName, options);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().Contain(failure => failure.Contains("MaxToolRoundsPerTurn"));
+    }
 }

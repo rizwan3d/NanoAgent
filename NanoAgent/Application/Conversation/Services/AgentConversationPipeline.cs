@@ -10,7 +10,6 @@ namespace NanoAgent.Application.Conversation.Services;
 
 internal sealed class AgentConversationPipeline : IConversationPipeline
 {
-    private const int MaxProviderRoundsPerTurn = 8;
     private readonly TimeProvider _timeProvider;
     private readonly ITokenEstimator _tokenEstimator;
     private readonly IApiKeySecretStore _secretStore;
@@ -89,7 +88,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             session.ProviderName,
             session.ActiveModelId);
 
-        for (int round = 0; round < MaxProviderRoundsPerTurn; round++)
+        for (int round = 0; round < settings.MaxToolRoundsPerTurn; round++)
         {
             ConversationProviderPayload providerPayload;
 
@@ -205,7 +204,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
 
         throw new ConversationResponseException(
-            "The provider requested too many sequential tool rounds without producing a final assistant message.");
+            $"The provider requested too many sequential tool rounds without producing a final assistant message. " +
+            $"Configured limit: {settings.MaxToolRoundsPerTurn} round(s).");
     }
 
     private ConversationTurnMetrics CreateMetrics(

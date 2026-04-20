@@ -4,6 +4,8 @@ internal interface IConsoleTerminal
 {
     ConsoleColor BackgroundColor { get; set; }
 
+    int CursorLeft { get; }
+
     int CursorTop { get; }
 
     ConsoleColor ForegroundColor { get; set; }

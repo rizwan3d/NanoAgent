@@ -8,6 +8,21 @@ internal sealed class ConsoleTerminal : IConsoleTerminal
         set => Console.BackgroundColor = value;
     }
 
+    public int CursorLeft
+    {
+        get
+        {
+            try
+            {
+                return Console.CursorLeft;
+            }
+            catch (IOException)
+            {
+                return 0;
+            }
+        }
+    }
+
     public int CursorTop => Console.CursorTop;
 
     public ConsoleColor ForegroundColor

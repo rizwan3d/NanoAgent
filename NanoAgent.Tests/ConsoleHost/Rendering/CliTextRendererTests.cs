@@ -11,7 +11,7 @@ public sealed class CliTextRendererTests
     {
         FakeConsoleTerminal terminal = new();
         var console = SpectreConsoleFactory.Create(terminal);
-        ConsoleCliOutputTarget outputTarget = new(console);
+        ConsoleCliOutputTarget outputTarget = new(terminal, console);
         CliTextRenderer sut = new(
             outputTarget,
             console,
@@ -55,7 +55,7 @@ public sealed class CliTextRendererTests
     {
         FakeConsoleTerminal terminal = new();
         var console = SpectreConsoleFactory.Create(terminal);
-        ConsoleCliOutputTarget outputTarget = new(console);
+        ConsoleCliOutputTarget outputTarget = new(terminal, console);
         CliTextRenderer sut = new(
             outputTarget,
             console,
@@ -82,7 +82,7 @@ public sealed class CliTextRendererTests
     {
         FakeConsoleTerminal terminal = new();
         var console = SpectreConsoleFactory.Create(terminal);
-        ConsoleCliOutputTarget outputTarget = new(console);
+        ConsoleCliOutputTarget outputTarget = new(terminal, console);
         CliTextRenderer sut = new(
             outputTarget,
             console,

@@ -37,6 +37,10 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
         {
             failures.Add($"{ApplicationOptions.SectionName}:Conversation:MaxHistoryTurns must be zero or greater.");
         }
+        else if (options.Conversation.MaxToolRoundsPerTurn <= 0)
+        {
+            failures.Add($"{ApplicationOptions.SectionName}:Conversation:MaxToolRoundsPerTurn must be greater than zero.");
+        }
 
         if (options.ModelSelection is null)
         {

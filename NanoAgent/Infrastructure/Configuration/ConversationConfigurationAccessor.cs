@@ -23,10 +23,12 @@ internal sealed class ConversationConfigurationAccessor : IConversationConfigura
             ? Timeout.InfiniteTimeSpan
             : TimeSpan.FromSeconds(conversation.RequestTimeoutSeconds);
         int maxHistoryTurns = Math.Max(0, conversation.MaxHistoryTurns);
+        int maxToolRoundsPerTurn = Math.Max(1, conversation.MaxToolRoundsPerTurn);
 
         return new ConversationSettings(
             systemPrompt,
             requestTimeout,
-            maxHistoryTurns);
+            maxHistoryTurns,
+            maxToolRoundsPerTurn);
     }
 }

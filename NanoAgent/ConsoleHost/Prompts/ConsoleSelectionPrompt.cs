@@ -49,59 +49,64 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
         using IDisposable _ = _interactionGate.EnterScope();
 
         int selectedIndex = request.DefaultIndex;
-        int optionsTop = _renderer.WriteInteractiveSelectionPrompt(request, selectedIndex);
+        InteractiveSelectionPromptLayout layout = _renderer.WriteInteractiveSelectionPrompt(request, selectedIndex);
 
-        while (true)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            ConsoleKeyInfo keyInfo = _terminal.ReadKey(intercept: true);
-            switch (keyInfo.Key)
+            while (true)
             {
-                case ConsoleKey.UpArrow:
-                    if (selectedIndex > 0)
-                    {
-                        selectedIndex--;
-                        _renderer.RewriteSelectionOptions(request, selectedIndex, optionsTop);
-                    }
+                cancellationToken.ThrowIfCancellationRequested();
 
-                    break;
+                ConsoleKeyInfo keyInfo = _terminal.ReadKey(intercept: true);
+                switch (keyInfo.Key)
+                {
+                    case ConsoleKey.UpArrow:
+                        if (selectedIndex > 0)
+                        {
+                            selectedIndex--;
+                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                        }
 
-                case ConsoleKey.DownArrow:
-                    if (selectedIndex < request.Options.Count - 1)
-                    {
-                        selectedIndex++;
-                        _renderer.RewriteSelectionOptions(request, selectedIndex, optionsTop);
-                    }
+                        break;
 
-                    break;
+                    case ConsoleKey.DownArrow:
+                        if (selectedIndex < request.Options.Count - 1)
+                        {
+                            selectedIndex++;
+                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                        }
 
-                case ConsoleKey.Home:
-                    if (selectedIndex != 0)
-                    {
-                        selectedIndex = 0;
-                        _renderer.RewriteSelectionOptions(request, selectedIndex, optionsTop);
-                    }
+                        break;
 
-                    break;
+                    case ConsoleKey.Home:
+                        if (selectedIndex != 0)
+                        {
+                            selectedIndex = 0;
+                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                        }
 
-                case ConsoleKey.End:
-                    if (selectedIndex != request.Options.Count - 1)
-                    {
-                        selectedIndex = request.Options.Count - 1;
-                        _renderer.RewriteSelectionOptions(request, selectedIndex, optionsTop);
-                    }
+                        break;
 
-                    break;
+                    case ConsoleKey.End:
+                        if (selectedIndex != request.Options.Count - 1)
+                        {
+                            selectedIndex = request.Options.Count - 1;
+                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                        }
 
-                case ConsoleKey.Enter:
-                    _terminal.WriteLine();
-                    return request.Options[selectedIndex].Value;
+                        break;
 
-                case ConsoleKey.Escape when request.AllowCancellation:
-                    _terminal.WriteLine();
-                    throw new PromptCancelledException();
+                    case ConsoleKey.Enter:
+                        return request.Options[selectedIndex].Value;
+
+                    case ConsoleKey.Escape when request.AllowCancellation:
+                        throw new PromptCancelledException();
+                }
             }
+        }
+        finally
+        {
+            _renderer.ClearInteractiveSelectionPrompt(layout);
         }
     }
 

@@ -2,11 +2,21 @@ using NanoAgent.Application.Models;
 
 namespace NanoAgent.ConsoleHost.Terminal;
 
+internal readonly record struct InteractiveSelectionPromptLayout(
+    int PromptTop,
+    int OptionsTop,
+    int TotalLineCount);
+
 internal interface IConsolePromptRenderer
 {
-    int WriteInteractiveSelectionPrompt<T>(SelectionPromptRequest<T> request, int selectedIndex);
+    InteractiveSelectionPromptLayout WriteInteractiveSelectionPrompt<T>(SelectionPromptRequest<T> request, int selectedIndex);
 
-    void RewriteSelectionOptions<T>(SelectionPromptRequest<T> request, int selectedIndex, int optionsTop);
+    void RewriteSelectionOptions<T>(
+        SelectionPromptRequest<T> request,
+        int selectedIndex,
+        InteractiveSelectionPromptLayout layout);
+
+    void ClearInteractiveSelectionPrompt(InteractiveSelectionPromptLayout layout);
 
     void WriteFallbackSelectionPrompt<T>(SelectionPromptRequest<T> request);
 

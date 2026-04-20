@@ -505,6 +505,171 @@ public sealed class AgentConversationPipelineTests
             .NotContain("Question one");
     }
 
+    [Fact]
+    public async Task ProcessAsync_Should_AllowLongerSequentialToolChains_When_MaxToolRoundsPerTurnIsRaised()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings(maxToolRoundsPerTurn: 16));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition("file_write")
+            ]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_tool_chain"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        MockSequence responseSequence = new();
+        for (int index = 1; index <= 10; index++)
+        {
+            int fileIndex = index;
+            responseMapper
+                .InSequence(responseSequence)
+                .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+                .Returns(new ConversationResponse(
+                    null,
+                    [new ConversationToolCall($"call_{fileIndex}", "file_write", $$"""{"path":"random_number_{{fileIndex}}.txt","content":"Random Number for File {{fileIndex}}"}""")],
+                    $"resp_tool_chain_{fileIndex}"));
+        }
+
+        responseMapper
+            .InSequence(responseSequence)
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Created all requested files.",
+                [],
+                "resp_tool_chain_final"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.IsAny<IReadOnlyList<ConversationToolCall>>(),
+                session,
+                It.IsAny<CancellationToken>()))
+            .Returns<IReadOnlyList<ConversationToolCall>, ReplSessionContext, CancellationToken>((calls, _, _) =>
+                Task.FromResult(new ToolExecutionBatchResult([
+                    new ToolInvocationResult(
+                        calls[0].Id,
+                        "file_write",
+                        ToolResultFactory.Success(
+                            $"Created {calls[0].Name}.",
+                            new ToolErrorPayload("ok", "ok"),
+                            ToolJsonContext.Default.ToolErrorPayload))
+                ])));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        ConversationTurnResult result = await sut.ProcessAsync(
+            "Write 10 files with random numbers.",
+            session,
+            CancellationToken.None);
+
+        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
+        result.ResponseText.Should().Be("Created all requested files.");
+        result.ToolExecutionResult.Should().NotBeNull();
+        result.ToolExecutionResult!.Results.Should().HaveCount(10);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_ThrowConfiguredLimit_When_ProviderExceedsMaxToolRoundsPerTurn()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings(maxToolRoundsPerTurn: 2));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition("file_write")
+            ]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_limit"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("call_limit", "file_write", """{"path":"index.html"}""")],
+                "resp_limit"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.IsAny<IReadOnlyList<ConversationToolCall>>(),
+                session,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "call_limit",
+                    "file_write",
+                    ToolResultFactory.Success(
+                        "Created index.html.",
+                        new ToolErrorPayload("ok", "ok"),
+                        ToolJsonContext.Default.ToolErrorPayload))
+            ]));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        Func<Task> action = () => sut.ProcessAsync(
+            "Keep writing files.",
+            session,
+            CancellationToken.None);
+
+        await action.Should().ThrowAsync<ConversationResponseException>()
+            .WithMessage("*Configured limit: 2 round(s).*");
+    }
+
     private static AgentConversationPipeline CreateSut(
         TimeProvider timeProvider,
         ITokenEstimator tokenEstimator,
@@ -548,12 +713,14 @@ public sealed class AgentConversationPipelineTests
 
     private static ConversationSettings CreateSettings(
         string? systemPrompt = null,
-        int maxHistoryTurns = 12)
+        int maxHistoryTurns = 12,
+        int maxToolRoundsPerTurn = 32)
     {
         return new ConversationSettings(
             systemPrompt,
             TimeSpan.FromSeconds(30),
-            maxHistoryTurns);
+            maxHistoryTurns,
+            maxToolRoundsPerTurn);
     }
 
     private sealed class RecordingConversationProgressSink : IConversationProgressSink

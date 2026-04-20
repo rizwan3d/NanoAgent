@@ -27,5 +27,6 @@ public sealed class ConversationConfigurationAccessorTests
 
         result.SystemPrompt.Should().Be("test prompt");
         result.RequestTimeout.Should().Be(Timeout.InfiniteTimeSpan);
+        result.MaxToolRoundsPerTurn.Should().Be(32);
     }
 }

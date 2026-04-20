@@ -4,10 +4,14 @@ namespace NanoAgent.ConsoleHost.Rendering;
 
 internal sealed class ConsoleCliOutputTarget : ICliOutputTarget
 {
+    private readonly Terminal.IConsoleTerminal _terminal;
     private readonly IAnsiConsole _console;
 
-    public ConsoleCliOutputTarget(IAnsiConsole console)
+    public ConsoleCliOutputTarget(
+        Terminal.IConsoleTerminal terminal,
+        IAnsiConsole console)
     {
+        _terminal = terminal;
         _console = console;
     }
 
@@ -16,7 +20,7 @@ internal sealed class ConsoleCliOutputTarget : ICliOutputTarget
 
     public void WriteLine()
     {
-        _console.WriteLine();
+        _terminal.WriteLine();
     }
 
     public void WriteLine(IReadOnlyList<CliOutputSegment> segments)
@@ -25,47 +29,51 @@ internal sealed class ConsoleCliOutputTarget : ICliOutputTarget
 
         if (segments.Count == 0)
         {
-            _console.WriteLine();
+            _terminal.WriteLine();
             return;
         }
 
-        if (!SupportsColor)
+        if (!SupportsColor || _terminal.IsOutputRedirected)
         {
             string plainText = string.Concat(segments.Select(static segment => segment.Text));
-            _console.WriteLine(plainText);
+            _terminal.WriteLine(plainText);
             return;
         }
 
         foreach (CliOutputSegment segment in segments)
         {
-            _console.Write(segment.Text, MapStyle(segment.Style));
+            _terminal.Write(BuildAnsiSequence(segment.Style));
+            _terminal.Write(segment.Text);
+            _terminal.Write("\u001b[0m");
         }
 
-        _console.WriteLine();
+        _terminal.WriteLine();
     }
 
-    private static Style MapStyle(CliOutputStyle style)
+    private static string BuildAnsiSequence(CliOutputStyle style)
     {
-        return style switch
+        string colorCode = style switch
         {
-            CliOutputStyle.AssistantLabel => new Style(Color.Aqua),
-            CliOutputStyle.AssistantText => new Style(Color.Grey),
-            CliOutputStyle.Heading => new Style(Color.White),
-            CliOutputStyle.Strong => new Style(Color.White, decoration: Decoration.Bold),
-            CliOutputStyle.Emphasis => new Style(Color.Aqua, decoration: Decoration.Italic),
-            CliOutputStyle.InlineCode => new Style(Color.Yellow),
-            CliOutputStyle.CodeFence => new Style(Color.Grey),
-            CliOutputStyle.CodeText => new Style(Color.Grey),
-            CliOutputStyle.DiffAddition => new Style(Color.Green),
-            CliOutputStyle.DiffRemoval => new Style(Color.Red),
-            CliOutputStyle.DiffHeader => new Style(Color.Aqua),
-            CliOutputStyle.DiffContext => new Style(Color.Grey),
-            CliOutputStyle.Warning => new Style(Color.Yellow),
-            CliOutputStyle.Error => new Style(Color.Red),
-            CliOutputStyle.Info => new Style(Color.Aqua),
-            CliOutputStyle.Muted => new Style(Color.Grey),
-            CliOutputStyle.Link => new Style(Color.Aqua, decoration: Decoration.Underline),
-            _ => Style.Plain
+            CliOutputStyle.AssistantLabel => "36",
+            CliOutputStyle.AssistantText => "90",
+            CliOutputStyle.Heading => "97",
+            CliOutputStyle.Strong => "97;1",
+            CliOutputStyle.Emphasis => "36;3",
+            CliOutputStyle.InlineCode => "33",
+            CliOutputStyle.CodeFence => "90",
+            CliOutputStyle.CodeText => "90",
+            CliOutputStyle.DiffAddition => "32",
+            CliOutputStyle.DiffRemoval => "31",
+            CliOutputStyle.DiffHeader => "36",
+            CliOutputStyle.DiffContext => "90",
+            CliOutputStyle.Warning => "33",
+            CliOutputStyle.Error => "31",
+            CliOutputStyle.Info => "36",
+            CliOutputStyle.Muted => "90",
+            CliOutputStyle.Link => "36;4",
+            _ => "0"
         };
+
+        return $"\u001b[{colorCode}m";
     }
 }

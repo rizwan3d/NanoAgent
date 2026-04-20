@@ -4,6 +4,8 @@ public sealed class ConversationOptions
 {
     public int MaxHistoryTurns { get; set; } = 12;
 
+    public int MaxToolRoundsPerTurn { get; set; } = 32;
+
     public int RequestTimeoutSeconds { get; set; }
 
     public string? SystemPrompt { get; set; } =

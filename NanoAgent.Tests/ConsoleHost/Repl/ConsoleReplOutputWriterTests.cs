@@ -218,7 +218,7 @@ public sealed class ConsoleReplOutputWriterTests
     }
 
     [Fact]
-    public async Task BeginResponseProgressAsync_Should_UpdateEstimatedTokenCount_When_RequestIsStillRunning()
+    public async Task BeginResponseProgressAsync_Should_KeepInitialEstimatedTokenCount_When_RequestIsStillRunning()
     {
         FakeConsoleTerminal terminal = new();
         ConsoleReplOutputWriter sut = CreateSut(terminal);
@@ -227,7 +227,7 @@ public sealed class ConsoleReplOutputWriterTests
         await Task.Delay(350);
 
         string output = GetPlainOutput(terminal.Output);
-        output.Should().MatchRegex(@".*2[5-9] tokens est\..*");
+        output.Should().Contain("24 tokens est.");
     }
 
     [Fact]
@@ -240,10 +240,54 @@ public sealed class ConsoleReplOutputWriterTests
         {
             await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
             await Task.Delay(350);
-            GetPlainOutput(terminal.Output).Should().MatchRegex(@".*1[5-9] tokens est\..*");
+            GetPlainOutput(terminal.Output).Should().Contain("14 tokens est.");
         };
 
         await action.Should().NotThrowAsync();
+    }
+
+    [Fact]
+    public async Task BeginResponseProgressAsync_Should_RenderStatusLine_WithoutAnsiControlSequences()
+    {
+        RawCaptureConsoleTerminal terminal = new();
+        ConsoleReplOutputWriter sut = CreateSut(terminal);
+
+        await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
+        await Task.Delay(350);
+
+        terminal.RawOutput.Should().Contain("Working");
+        terminal.RawOutput.Should().NotContain("\u001B[");
+    }
+
+    [Fact]
+    public async Task BeginResponseProgressAsync_Should_NotLeaveSpacerRows_BetweenSequentialToolRounds()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsoleReplOutputWriter sut = CreateSut(terminal);
+
+        await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
+
+        await progress.ReportToolResultsAsync(
+            CreateFileWriteBatchResult("call_1", "index.html", "<!DOCTYPE html>"),
+            CancellationToken.None);
+        await progress.ReportToolResultsAsync(
+            CreateFileWriteBatchResult("call_2", "style.css", "body {"),
+            CancellationToken.None);
+        await progress.ReportToolResultsAsync(
+            CreateFileWriteBatchResult("call_3", "script.js", "document.addEventListener('DOMContentLoaded', () => {"),
+            CancellationToken.None);
+
+        string output = GetPlainOutput(terminal.Output);
+
+        output.Should().Contain("\u2514 index.html (+1 -0)");
+        output.Should().Contain("\u2514 style.css (+1 -0)");
+        output.Should().Contain("\u2514 script.js (+1 -0)");
+        output.Should().NotContain(
+            $"{Environment.NewLine}{Environment.NewLine}\u2022 Edited 1 file (+1 -0){Environment.NewLine}  \u2514 style.css (+1 -0)",
+            "each new tool round should reuse the live status line row instead of leaving a blank spacer behind");
+        output.Should().NotContain(
+            $"{Environment.NewLine}{Environment.NewLine}\u2022 Edited 1 file (+1 -0){Environment.NewLine}  \u2514 script.js (+1 -0)",
+            "repeated tool rounds should stay compact");
     }
 
     private static string GetPlainOutput(string value)
@@ -254,6 +298,29 @@ public sealed class ConsoleReplOutputWriterTests
             string.Empty);
     }
 
+    private static ToolExecutionBatchResult CreateFileWriteBatchResult(
+        string toolCallId,
+        string path,
+        string previewText)
+    {
+        return new ToolExecutionBatchResult([
+            new ToolInvocationResult(
+                toolCallId,
+                "file_write",
+                ToolResultFactory.Success(
+                    $"Created {path}.",
+                    new WorkspaceFileWriteResult(
+                        path,
+                        false,
+                        previewText.Length,
+                        1,
+                        0,
+                        [new WorkspaceFileWritePreviewLine(1, "add", previewText)],
+                        0),
+                    ToolJsonContext.Default.WorkspaceFileWriteResult))
+        ]);
+    }
+
     private static ConsoleReplOutputWriter CreateSut(IConsoleTerminal terminal)
     {
         ConsoleRenderSettings settings = new()
@@ -262,7 +329,7 @@ public sealed class ConsoleReplOutputWriterTests
         };
 
         var console = SpectreConsoleFactory.Create(terminal);
-        ConsoleCliOutputTarget outputTarget = new(console);
+        ConsoleCliOutputTarget outputTarget = new(terminal, console);
 
         return new ConsoleReplOutputWriter(
             new MarkdownLikeCliMessageFormatter(),
@@ -287,6 +354,8 @@ public sealed class ConsoleReplOutputWriterTests
         }
 
         public ConsoleColor BackgroundColor { get; set; } = ConsoleColor.Black;
+
+        public int CursorLeft => _cursorLeft;
 
         public int CursorTop { get; private set; }
 
@@ -337,19 +406,34 @@ public sealed class ConsoleReplOutputWriterTests
                 return;
             }
 
-            string normalized = RemoveAnsiSequences(value)
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace('\r', '\n');
+            StringBuilder segmentBuilder = new();
 
-            string[] segments = normalized.Split('\n', StringSplitOptions.None);
-            for (int index = 0; index < segments.Length; index++)
+            for (int index = 0; index < value.Length; index++)
             {
-                WriteSegment(segments[index]);
-                if (index < segments.Length - 1)
+                if (TryHandleAnsiSequence(value, ref index, segmentBuilder))
                 {
-                    WriteLine();
+                    continue;
+                }
+
+                switch (value[index])
+                {
+                    case '\r':
+                        FlushSegment(segmentBuilder);
+                        _cursorLeft = 0;
+                        break;
+
+                    case '\n':
+                        FlushSegment(segmentBuilder);
+                        WriteLine();
+                        break;
+
+                    default:
+                        segmentBuilder.Append(value[index]);
+                        break;
                 }
             }
+
+            FlushSegment(segmentBuilder);
         }
 
         public void WriteLine()
@@ -415,6 +499,51 @@ public sealed class ConsoleReplOutputWriterTests
             }
         }
 
+        private void FlushSegment(StringBuilder segmentBuilder)
+        {
+            if (segmentBuilder.Length == 0)
+            {
+                return;
+            }
+
+            WriteSegment(segmentBuilder.ToString());
+            segmentBuilder.Clear();
+        }
+
+        private bool TryHandleAnsiSequence(string value, ref int index, StringBuilder segmentBuilder)
+        {
+            if (value[index] != '\u001B' ||
+                index + 1 >= value.Length ||
+                value[index + 1] != '[')
+            {
+                return false;
+            }
+
+            int sequenceStart = index + 2;
+            int sequenceEnd = sequenceStart;
+
+            while (sequenceEnd < value.Length)
+            {
+                char sequenceCharacter = value[sequenceEnd];
+                if (sequenceCharacter >= '@' && sequenceCharacter <= '~')
+                {
+                    break;
+                }
+
+                sequenceEnd++;
+            }
+
+            if (sequenceEnd >= value.Length)
+            {
+                index = value.Length - 1;
+                return true;
+            }
+
+            FlushSegment(segmentBuilder);
+            index = sequenceEnd;
+            return true;
+        }
+
         private void EnsureLine(int lineIndex)
         {
             while (_lines.Count <= lineIndex)
@@ -423,42 +552,82 @@ public sealed class ConsoleReplOutputWriterTests
             }
         }
 
-        private static string RemoveAnsiSequences(string value)
-        {
-            StringBuilder builder = new();
-            for (int index = 0; index < value.Length; index++)
-            {
-                char current = value[index];
-                if (current == '\u001B' &&
-                    index + 1 < value.Length &&
-                    value[index + 1] == '[')
-                {
-                    index += 2;
-                    while (index < value.Length)
-                    {
-                        char sequenceCharacter = value[index];
-                        if (sequenceCharacter >= '@' && sequenceCharacter <= '~')
-                        {
-                            break;
-                        }
-
-                        index++;
-                    }
-
-                    continue;
-                }
-
-                builder.Append(current);
-            }
-
-            return builder.ToString();
-        }
-
         private sealed class ConsoleLine
         {
             public bool HasTrailingNewLine { get; set; }
 
             public StringBuilder Text { get; } = new();
+        }
+    }
+
+    private sealed class RawCaptureConsoleTerminal : IConsoleTerminal
+    {
+        private readonly StringBuilder _rawOutput = new();
+        private int _cursorLeft;
+
+        public ConsoleColor BackgroundColor { get; set; } = ConsoleColor.Black;
+
+        public int CursorLeft => _cursorLeft;
+
+        public int CursorTop { get; private set; }
+
+        public ConsoleColor ForegroundColor { get; set; } = ConsoleColor.Gray;
+
+        public bool IsInputRedirected => false;
+
+        public bool IsOutputRedirected => false;
+
+        public bool KeyAvailable => false;
+
+        public int WindowHeight => 30;
+
+        public int WindowWidth => 120;
+
+        public string RawOutput => _rawOutput.ToString();
+
+        public ConsoleKeyInfo ReadKey(bool intercept)
+        {
+            throw new NotSupportedException();
+        }
+
+        public string? ReadLine()
+        {
+            throw new NotSupportedException();
+        }
+
+        public void ResetColor()
+        {
+        }
+
+        public void SetCursorPosition(int left, int top)
+        {
+            CursorTop = Math.Max(0, top);
+            _cursorLeft = Math.Max(0, left);
+            _rawOutput.Append($"<set:{left},{top}>");
+        }
+
+        public void Write(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return;
+            }
+
+            _rawOutput.Append(value);
+            _cursorLeft += value.Length;
+        }
+
+        public void WriteLine()
+        {
+            _rawOutput.AppendLine();
+            CursorTop++;
+            _cursorLeft = 0;
+        }
+
+        public void WriteLine(string value)
+        {
+            Write(value);
+            WriteLine();
         }
     }
 }
