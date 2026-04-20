@@ -188,6 +188,34 @@ public sealed class ConsoleReplOutputWriterTests
     }
 
     [Fact]
+    public async Task BeginResponseProgressAsync_Should_NotThrow_When_DirectoryListPayloadOmitsEntries()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsoleReplOutputWriter sut = CreateSut(terminal);
+
+        await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
+
+        Func<Task> action = async () =>
+        {
+            await progress.ReportToolResultsAsync(
+                new ToolExecutionBatchResult([
+                    new ToolInvocationResult(
+                        "call_1",
+                        "directory_list",
+                        ToolResult.Success(
+                            "Listed directory 'src'.",
+                            """{"Path":"src"}"""))
+                ]),
+                CancellationToken.None);
+        };
+
+        await action.Should().NotThrowAsync();
+        string output = GetPlainOutput(terminal.Output);
+        output.Should().Contain("Listed src");
+        output.Should().Contain("(empty)");
+    }
+
+    [Fact]
     public async Task BeginResponseProgressAsync_Should_UpdateEstimatedTokenCount_When_RequestIsStillRunning()
     {
         FakeConsoleTerminal terminal = new();

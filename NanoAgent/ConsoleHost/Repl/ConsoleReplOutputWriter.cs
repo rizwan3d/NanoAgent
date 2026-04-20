@@ -541,7 +541,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                     CliOutputStyle.Muted)
             ]);
 
-            foreach (WorkspaceFileWritePreviewLine previewLine in primaryResult.PreviewLines)
+            foreach (WorkspaceFileWritePreviewLine previewLine in primaryResult.PreviewLines ?? [])
             {
                 CliOutputStyle previewStyle = previewLine.Kind switch
                 {
@@ -653,7 +653,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             }
 
             WriteToolTitle($"Read {result.Path}", CliOutputStyle.Info);
-            WritePreviewBlock(result.Content, CliOutputStyle.CodeText);
+            WritePreviewBlock(result.Content ?? string.Empty, CliOutputStyle.CodeText);
             return true;
         }
 
@@ -671,11 +671,12 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             }
 
             WriteToolTitle($"Listed {result.Path}", CliOutputStyle.Info);
-            string listing = result.Entries.Count == 0
+            IReadOnlyList<WorkspaceDirectoryEntry> entries = result.Entries ?? [];
+            string listing = entries.Count == 0
                 ? "(empty)"
                 : string.Join(
                     Environment.NewLine,
-                    result.Entries.Select(static entry => $"{entry.EntryType}: {entry.Path}"));
+                    entries.Select(static entry => $"{entry.EntryType}: {entry.Path}"));
             WritePreviewBlock(listing, CliOutputStyle.AssistantText);
             return true;
         }
@@ -695,11 +696,12 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
 
             WriteToolTitle($"Searched {result.Path} for \"{result.Query}\"", CliOutputStyle.Info);
 
-            string preview = result.Matches.Count == 0
+            IReadOnlyList<WorkspaceTextSearchMatch> matches = result.Matches ?? [];
+            string preview = matches.Count == 0
                 ? "(no matches)"
                 : string.Join(
                     Environment.NewLine,
-                    result.Matches.Select(static match => $"{match.Path}:{match.LineNumber} {match.LineText}"));
+                    matches.Select(static match => $"{match.Path}:{match.LineNumber} {match.LineText}"));
 
             WritePreviewBlock(preview, CliOutputStyle.AssistantText);
             return true;
