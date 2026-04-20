@@ -48,8 +48,22 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ReplSessionContext session,
         CancellationToken cancellationToken)
     {
+        return await ProcessAsync(
+            input,
+            session,
+            NoOpConversationProgressSink.Instance,
+            cancellationToken);
+    }
+
+    public async Task<ConversationTurnResult> ProcessAsync(
+        string input,
+        ReplSessionContext session,
+        IConversationProgressSink progressSink,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(input);
         ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(progressSink);
         cancellationToken.ThrowIfCancellationRequested();
 
         string apiKey = await _secretStore.LoadAsync(cancellationToken)
@@ -64,6 +78,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         [
             ConversationRequestMessage.User(input.Trim())
         ];
+        List<ToolInvocationResult> executedToolResults = [];
         int totalCompletionTokens = 0;
         bool hasReportedCompletionTokens = false;
 
@@ -137,12 +152,21 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     _logger,
                     response.ToolCalls.Count);
 
+                await progressSink.ReportToolCallsStartedAsync(
+                    response.ToolCalls,
+                    cancellationToken);
+
                 ToolExecutionBatchResult toolExecutionResult = await _toolExecutionPipeline.ExecuteAsync(
                     response.ToolCalls,
                     session,
                     cancellationToken);
 
                 ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
+                executedToolResults.AddRange(toolExecutionResult.Results);
+
+                await progressSink.ReportToolResultsAsync(
+                    toolExecutionResult,
+                    cancellationToken);
 
                 messages.Add(ConversationRequestMessage.AssistantToolCalls(
                     response.ToolCalls,
@@ -168,6 +192,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             return ConversationTurnResult.AssistantMessage(
                 response.AssistantMessage,
+                executedToolResults.Count == 0
+                    ? null
+                    : new ToolExecutionBatchResult(executedToolResults.ToArray()),
                 CreateMetrics(
                     startedAt,
                     response.AssistantMessage,
@@ -213,5 +240,26 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return JsonSerializer.Serialize(
             payload,
             ConversationJsonContext.Default.ToolFeedbackPayload);
+    }
+
+    private sealed class NoOpConversationProgressSink : IConversationProgressSink
+    {
+        public static NoOpConversationProgressSink Instance { get; } = new();
+
+        public Task ReportToolCallsStartedAsync(
+            IReadOnlyList<ConversationToolCall> toolCalls,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task ReportToolResultsAsync(
+            ToolExecutionBatchResult toolExecutionResult,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
     }
 }

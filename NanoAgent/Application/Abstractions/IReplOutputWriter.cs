@@ -4,7 +4,7 @@ namespace NanoAgent.Application.Abstractions;
 
 public interface IReplOutputWriter
 {
-    ValueTask<IAsyncDisposable> BeginResponseProgressAsync(
+    ValueTask<IResponseProgress> BeginResponseProgressAsync(
         int estimatedOutputTokens,
         int completedSessionEstimatedOutputTokens,
         CancellationToken cancellationToken);

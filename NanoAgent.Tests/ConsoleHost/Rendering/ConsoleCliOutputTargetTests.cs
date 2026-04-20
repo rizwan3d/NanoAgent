@@ -14,7 +14,7 @@ public sealed class ConsoleCliOutputTargetTests
             IsOutputRedirected = true
         };
 
-        ConsoleCliOutputTarget sut = new(terminal);
+        ConsoleCliOutputTarget sut = new(SpectreConsoleFactory.Create(terminal));
 
         sut.WriteLine([
             new CliOutputSegment("assistant", CliOutputStyle.AssistantLabel),

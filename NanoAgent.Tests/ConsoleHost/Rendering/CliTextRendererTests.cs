@@ -1,4 +1,5 @@
 using NanoAgent.ConsoleHost.Rendering;
+using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
 
 namespace NanoAgent.Tests.ConsoleHost.Rendering;
@@ -6,17 +7,30 @@ namespace NanoAgent.Tests.ConsoleHost.Rendering;
 public sealed class CliTextRendererTests
 {
     [Fact]
-    public async Task RenderAsync_Should_RenderAssistantOutputWithDistinctStyles_When_MessageContainsCodeAndDiff()
+    public async Task RenderAsync_Should_RenderAssistantMarkdownWithSpectreWidgets_When_MessageContainsListsCodeAndQuotes()
     {
+        FakeConsoleTerminal terminal = new();
+        var console = SpectreConsoleFactory.Create(terminal);
+        ConsoleCliOutputTarget outputTarget = new(console);
+        CliTextRenderer sut = new(
+            outputTarget,
+            console,
+            new ConsoleRenderSettings
+            {
+                EnableAnimations = false
+            });
         MarkdownLikeCliMessageFormatter formatter = new();
-        RecordingCliOutputTarget outputTarget = new();
-        CliTextRenderer sut = new(outputTarget);
 
         CliRenderDocument document = formatter.Format(
             CliRenderMessageKind.Assistant,
             """
             ## Review
-            Use `dotnet test`.
+            Use `dotnet test` before shipping.
+
+            - Add regression coverage
+            - Update docs
+
+            > Watch the edge cases.
 
             ```diff
             + added
@@ -26,29 +40,30 @@ public sealed class CliTextRendererTests
 
         await sut.RenderAsync(document, CancellationToken.None);
 
-        outputTarget.Lines[0].Should().ContainSingle();
-        outputTarget.Lines[0][0].Text.Should().Be("assistant");
-        outputTarget.Lines[0][0].Style.Should().Be(CliOutputStyle.AssistantLabel);
-
-        outputTarget.Lines.SelectMany(static line => line).Should().Contain(segment =>
-            segment.Text.Contains("dotnet test", StringComparison.Ordinal) &&
-            segment.Style == CliOutputStyle.InlineCode);
-
-        outputTarget.Lines.SelectMany(static line => line).Should().Contain(segment =>
-            segment.Text.Contains("+ added", StringComparison.Ordinal) &&
-            segment.Style == CliOutputStyle.DiffAddition);
-
-        outputTarget.Lines.SelectMany(static line => line).Should().Contain(segment =>
-            segment.Text.Contains("- removed", StringComparison.Ordinal) &&
-            segment.Style == CliOutputStyle.DiffRemoval);
+        terminal.Output.Should().Contain("assistant");
+        terminal.Output.Should().Contain("Review");
+        terminal.Output.Should().Contain("• Add regression coverage");
+        terminal.Output.Should().Contain("• Update docs");
+        terminal.Output.Should().Contain("│ Watch the edge cases.");
+        terminal.Output.Should().Contain("diff");
+        terminal.Output.Should().Contain("+ added");
+        terminal.Output.Should().Contain("- removed");
     }
 
     [Fact]
     public async Task RenderAsync_Should_RenderWarningAndErrorPrefixes_When_DocumentIsStatusMessage()
     {
+        FakeConsoleTerminal terminal = new();
+        var console = SpectreConsoleFactory.Create(terminal);
+        ConsoleCliOutputTarget outputTarget = new(console);
+        CliTextRenderer sut = new(
+            outputTarget,
+            console,
+            new ConsoleRenderSettings
+            {
+                EnableAnimations = false
+            });
         MarkdownLikeCliMessageFormatter formatter = new();
-        RecordingCliOutputTarget outputTarget = new();
-        CliTextRenderer sut = new(outputTarget);
 
         await sut.RenderAsync(
             formatter.Format(CliRenderMessageKind.Warning, "Check the generated patch."),
@@ -58,27 +73,47 @@ public sealed class CliTextRendererTests
             formatter.Format(CliRenderMessageKind.Error, "The provider request failed."),
             CancellationToken.None);
 
-        outputTarget.Lines[0][0].Text.Should().Be("[warning] ");
-        outputTarget.Lines[0][0].Style.Should().Be(CliOutputStyle.Warning);
-
-        outputTarget.Lines[1][0].Text.Should().Be("[error] ");
-        outputTarget.Lines[1][0].Style.Should().Be(CliOutputStyle.Error);
+        terminal.Output.Should().Contain("[warning] Check the generated patch.");
+        terminal.Output.Should().Contain("[error] The provider request failed.");
     }
 
-    private sealed class RecordingCliOutputTarget : ICliOutputTarget
+    [Fact]
+    public async Task RenderAsync_Should_RenderMarkdownTable_When_MessageContainsPipeTableInsideMarkdownFence()
     {
-        public bool SupportsColor => true;
+        FakeConsoleTerminal terminal = new();
+        var console = SpectreConsoleFactory.Create(terminal);
+        ConsoleCliOutputTarget outputTarget = new(console);
+        CliTextRenderer sut = new(
+            outputTarget,
+            console,
+            new ConsoleRenderSettings
+            {
+                EnableAnimations = false
+            });
+        MarkdownLikeCliMessageFormatter formatter = new();
 
-        public List<IReadOnlyList<CliOutputSegment>> Lines { get; } = [];
+        CliRenderDocument document = formatter.Format(
+            CliRenderMessageKind.Assistant,
+            """
+            ```markdown
+            | Agent | Focus | Score |
+            | :---- | :---: | ----: |
+            | NanoAgent | Terminal UX | 92 |
+            | Worker | Patches | 87 |
+            ```
+            """);
 
-        public void WriteLine()
-        {
-            Lines.Add([]);
-        }
+        await sut.RenderAsync(document, CancellationToken.None);
 
-        public void WriteLine(IReadOnlyList<CliOutputSegment> segments)
-        {
-            Lines.Add(segments.ToArray());
-        }
+        terminal.Output.Should().Contain("assistant");
+        terminal.Output.Should().Contain("Agent");
+        terminal.Output.Should().Contain("Focus");
+        terminal.Output.Should().Contain("Score");
+        terminal.Output.Should().Contain("NanoAgent");
+        terminal.Output.Should().Contain("Terminal UX");
+        terminal.Output.Should().Contain("92");
+        terminal.Output.Should().Contain("\u256d");
+        terminal.Output.Should().NotContain("markdown");
+        terminal.Output.Should().NotContain("| Agent | Focus | Score |");
     }
 }

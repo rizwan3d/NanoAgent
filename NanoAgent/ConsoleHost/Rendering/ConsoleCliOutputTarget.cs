@@ -1,26 +1,22 @@
-using NanoAgent.ConsoleHost.Terminal;
+using Spectre.Console;
 
 namespace NanoAgent.ConsoleHost.Rendering;
 
 internal sealed class ConsoleCliOutputTarget : ICliOutputTarget
 {
-    private readonly IConsoleTerminal _terminal;
+    private readonly IAnsiConsole _console;
 
-    public ConsoleCliOutputTarget(IConsoleTerminal terminal)
+    public ConsoleCliOutputTarget(IAnsiConsole console)
     {
-        _terminal = terminal;
+        _console = console;
     }
 
     public bool SupportsColor =>
-        !_terminal.IsOutputRedirected &&
-        !string.Equals(
-            Environment.GetEnvironmentVariable("NO_COLOR"),
-            "1",
-            StringComparison.Ordinal);
+        _console.Profile.Capabilities.Ansi;
 
     public void WriteLine()
     {
-        _terminal.WriteLine();
+        _console.WriteLine();
     }
 
     public void WriteLine(IReadOnlyList<CliOutputSegment> segments)
@@ -29,59 +25,47 @@ internal sealed class ConsoleCliOutputTarget : ICliOutputTarget
 
         if (segments.Count == 0)
         {
-            _terminal.WriteLine();
+            _console.WriteLine();
             return;
         }
 
         if (!SupportsColor)
         {
             string plainText = string.Concat(segments.Select(static segment => segment.Text));
-            _terminal.WriteLine(plainText);
+            _console.WriteLine(plainText);
             return;
         }
 
-        ConsoleColor originalForeground = _terminal.ForegroundColor;
-        ConsoleColor originalBackground = _terminal.BackgroundColor;
-
-        try
+        foreach (CliOutputSegment segment in segments)
         {
-            foreach (CliOutputSegment segment in segments)
-            {
-                _terminal.ForegroundColor = MapForeground(segment.Style);
-                _terminal.Write(segment.Text);
-            }
+            _console.Write(segment.Text, MapStyle(segment.Style));
+        }
 
-            _terminal.WriteLine();
-        }
-        finally
-        {
-            _terminal.ForegroundColor = originalForeground;
-            _terminal.BackgroundColor = originalBackground;
-            _terminal.ResetColor();
-        }
+        _console.WriteLine();
     }
 
-    private static ConsoleColor MapForeground(CliOutputStyle style)
+    private static Style MapStyle(CliOutputStyle style)
     {
         return style switch
         {
-            CliOutputStyle.AssistantLabel => ConsoleColor.Cyan,
-            CliOutputStyle.AssistantText => ConsoleColor.Gray,
-            CliOutputStyle.Heading => ConsoleColor.White,
-            CliOutputStyle.Strong => ConsoleColor.White,
-            CliOutputStyle.Emphasis => ConsoleColor.DarkCyan,
-            CliOutputStyle.InlineCode => ConsoleColor.Yellow,
-            CliOutputStyle.CodeFence => ConsoleColor.DarkGray,
-            CliOutputStyle.CodeText => ConsoleColor.Gray,
-            CliOutputStyle.DiffAddition => ConsoleColor.Green,
-            CliOutputStyle.DiffRemoval => ConsoleColor.Red,
-            CliOutputStyle.DiffHeader => ConsoleColor.Cyan,
-            CliOutputStyle.DiffContext => ConsoleColor.DarkGray,
-            CliOutputStyle.Warning => ConsoleColor.Yellow,
-            CliOutputStyle.Error => ConsoleColor.Red,
-            CliOutputStyle.Info => ConsoleColor.Cyan,
-            CliOutputStyle.Muted => ConsoleColor.DarkGray,
-            _ => ConsoleColor.Gray
+            CliOutputStyle.AssistantLabel => new Style(Color.Aqua),
+            CliOutputStyle.AssistantText => new Style(Color.Grey),
+            CliOutputStyle.Heading => new Style(Color.White),
+            CliOutputStyle.Strong => new Style(Color.White, decoration: Decoration.Bold),
+            CliOutputStyle.Emphasis => new Style(Color.Aqua, decoration: Decoration.Italic),
+            CliOutputStyle.InlineCode => new Style(Color.Yellow),
+            CliOutputStyle.CodeFence => new Style(Color.Grey),
+            CliOutputStyle.CodeText => new Style(Color.Grey),
+            CliOutputStyle.DiffAddition => new Style(Color.Green),
+            CliOutputStyle.DiffRemoval => new Style(Color.Red),
+            CliOutputStyle.DiffHeader => new Style(Color.Aqua),
+            CliOutputStyle.DiffContext => new Style(Color.Grey),
+            CliOutputStyle.Warning => new Style(Color.Yellow),
+            CliOutputStyle.Error => new Style(Color.Red),
+            CliOutputStyle.Info => new Style(Color.Aqua),
+            CliOutputStyle.Muted => new Style(Color.Grey),
+            CliOutputStyle.Link => new Style(Color.Aqua, decoration: Decoration.Underline),
+            _ => Style.Plain
         };
     }
 }

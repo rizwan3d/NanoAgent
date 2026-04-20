@@ -48,6 +48,8 @@ public sealed class ConversationOptions
     - Use file_write only after you know the exact content you want to persist.
     - Use shell_command after meaningful code changes when a relevant validation command exists, such as build, test, or lint.
     - Use shell_command for runtime inspection only when that gives better evidence than static reading alone.
+    - Use shell_command for test/build/lint/git only, or when no dedicated tool exists.
+    - Batch reads whenever multiple files are likely relevant.
 
     When tool use is not required:
     - Pure explanation, design guidance, or conceptual comparison that does not depend on repository state.

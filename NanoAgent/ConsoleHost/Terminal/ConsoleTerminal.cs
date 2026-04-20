@@ -20,6 +20,21 @@ internal sealed class ConsoleTerminal : IConsoleTerminal
 
     public bool IsOutputRedirected => Console.IsOutputRedirected;
 
+    public int WindowHeight
+    {
+        get
+        {
+            try
+            {
+                return Console.WindowHeight;
+            }
+            catch (IOException)
+            {
+                return 24;
+            }
+        }
+    }
+
     public int WindowWidth
     {
         get

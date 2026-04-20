@@ -16,6 +16,13 @@ public sealed class MarkdownLikeCliMessageFormatterTests
             # Plan
             Run `dotnet test` before **shipping**.
 
+            - Add [docs](https://example.com/docs)
+            - Update the changelog
+
+            > Keep the release notes concise.
+
+            ---
+
             ```csharp
             Console.WriteLine("hello");
             ```
@@ -30,6 +37,9 @@ public sealed class MarkdownLikeCliMessageFormatterTests
         document.Blocks.Select(block => block.Kind).Should().Equal(
             CliRenderBlockKind.Heading,
             CliRenderBlockKind.Paragraph,
+            CliRenderBlockKind.List,
+            CliRenderBlockKind.Quote,
+            CliRenderBlockKind.Rule,
             CliRenderBlockKind.CodeBlock,
             CliRenderBlockKind.Diff);
 
@@ -41,8 +51,14 @@ public sealed class MarkdownLikeCliMessageFormatterTests
             segment.Style == CliInlineStyle.Strong &&
             segment.Text == "shipping");
 
-        document.Blocks[2].Language.Should().Be("csharp");
-        document.Blocks[3].Lines.Select(line => line.Kind).Should().Contain([
+        document.Blocks[2].IsOrderedList.Should().BeFalse();
+        document.Blocks[2].Lines[0].Segments.Should().Contain(segment =>
+            segment.Style == CliInlineStyle.Link &&
+            segment.Text == "docs" &&
+            segment.Target == "https://example.com/docs");
+
+        document.Blocks[5].Language.Should().Be("csharp");
+        document.Blocks[6].Lines.Select(line => line.Kind).Should().Contain([
             CliRenderLineKind.DiffAddition,
             CliRenderLineKind.DiffRemoval
         ]);
@@ -60,5 +76,34 @@ public sealed class MarkdownLikeCliMessageFormatterTests
         document.Blocks.Should().ContainSingle();
         document.Blocks[0].Kind.Should().Be(CliRenderBlockKind.Alert);
         document.Blocks[0].Lines[0].Segments[0].Text.Should().Contain("Warning:");
+    }
+
+    [Fact]
+    public void Format_Should_ParsePipeTableInsideMarkdownFence_When_MessageContainsMarkdownTable()
+    {
+        MarkdownLikeCliMessageFormatter sut = new();
+
+        CliRenderDocument document = sut.Format(
+            CliRenderMessageKind.Assistant,
+            """
+            ```markdown
+            | Agent | Focus | Score |
+            | :---- | :---: | ----: |
+            | NanoAgent | Terminal UX | 92 |
+            | Worker | Patches | 87 |
+            ```
+            """);
+
+        document.Blocks.Should().ContainSingle();
+        document.Blocks[0].Kind.Should().Be(CliRenderBlockKind.Table);
+        document.Blocks[0].HasHeaderRow.Should().BeTrue();
+        document.Blocks[0].TableColumnAlignments.Should().Equal(
+            CliTableColumnAlignment.Left,
+            CliTableColumnAlignment.Center,
+            CliTableColumnAlignment.Right);
+        document.Blocks[0].Lines.Should().HaveCount(3);
+        document.Blocks[0].Lines[0].Cells.Should().NotBeNull();
+        document.Blocks[0].Lines[0].Cells![0][0].Text.Should().Be("Agent");
+        document.Blocks[0].Lines[1].Cells![1][0].Text.Should().Be("Terminal UX");
     }
 }

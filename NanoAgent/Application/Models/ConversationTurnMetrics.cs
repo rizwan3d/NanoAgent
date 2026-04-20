@@ -37,7 +37,9 @@ public sealed class ConversationTurnMetrics
 
     public string ToDisplayText()
     {
-        return $"({FormatElapsed(Elapsed)} \u00B7 \u2193 {DisplayedEstimatedOutputTokens} tokens est.)";
+        return MetricDisplayFormatter.FormatEstimatedOutputMetric(
+            Elapsed,
+            DisplayedEstimatedOutputTokens);
     }
 
     public ConversationTurnMetrics WithSessionEstimatedOutputTokens(int sessionEstimatedOutputTokens)
@@ -46,11 +48,5 @@ public sealed class ConversationTurnMetrics
             Elapsed,
             EstimatedOutputTokens,
             sessionEstimatedOutputTokens);
-    }
-
-    private static string FormatElapsed(TimeSpan elapsed)
-    {
-        int roundedSeconds = Math.Max(1, (int)Math.Round(elapsed.TotalSeconds, MidpointRounding.AwayFromZero));
-        return $"{roundedSeconds}s";
     }
 }

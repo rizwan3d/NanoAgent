@@ -1,14 +1,19 @@
 using NanoAgent.Application.Models;
+using Spectre.Console;
 
 namespace NanoAgent.ConsoleHost.Terminal;
 
 internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
 {
     private readonly IConsoleTerminal _terminal;
+    private readonly IAnsiConsole _console;
 
-    public ConsolePromptRenderer(IConsoleTerminal terminal)
+    public ConsolePromptRenderer(
+        IConsoleTerminal terminal,
+        IAnsiConsole console)
     {
         _terminal = terminal;
+        _console = console;
     }
 
     public int WriteInteractiveSelectionPrompt<T>(SelectionPromptRequest<T> request, int selectedIndex)
@@ -64,18 +69,18 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
 
         if (_terminal.IsOutputRedirected)
         {
-            _terminal.WriteLine($"{prefix} {message}");
+            _console.WriteLine($"{prefix} {message}");
             return;
         }
 
-        (ConsoleColor foreground, ConsoleColor background) = kind switch
+        Style style = kind switch
         {
-            StatusMessageKind.Error => (ConsoleColor.White, ConsoleColor.DarkRed),
-            StatusMessageKind.Success => (ConsoleColor.Black, ConsoleColor.DarkGreen),
-            _ => (ConsoleColor.Black, ConsoleColor.DarkCyan)
+            StatusMessageKind.Error => new Style(Color.White, Color.Red),
+            StatusMessageKind.Success => new Style(Color.Black, Color.Green),
+            _ => new Style(Color.Black, Color.Aqua)
         };
 
-        WriteStyledLine($"{prefix} {message}", foreground, background);
+        WriteStyledLine($"{prefix} {message}", style);
     }
 
     public void WriteTextPrompt(TextPromptRequest request)
@@ -144,30 +149,17 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
 
             if (isSelected)
             {
-                WriteStyledLine(line, ConsoleColor.Black, ConsoleColor.Gray);
+                WriteStyledLine(line, new Style(Color.Black, Color.Grey));
             }
             else
             {
-                _terminal.WriteLine(line);
+                _console.WriteLine(line);
             }
         }
     }
 
-    private void WriteStyledLine(string text, ConsoleColor foreground, ConsoleColor background)
+    private void WriteStyledLine(string text, Style style)
     {
-        ConsoleColor originalForeground = _terminal.ForegroundColor;
-        ConsoleColor originalBackground = _terminal.BackgroundColor;
-
-        try
-        {
-            _terminal.ForegroundColor = foreground;
-            _terminal.BackgroundColor = background;
-            _terminal.WriteLine(text);
-        }
-        finally
-        {
-            _terminal.ForegroundColor = originalForeground;
-            _terminal.BackgroundColor = originalBackground;
-        }
+        _console.WriteLine(text, style);
     }
 }

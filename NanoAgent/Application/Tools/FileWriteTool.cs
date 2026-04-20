@@ -94,8 +94,8 @@ internal sealed class FileWriteTool : ITool
             cancellationToken);
 
         string renderText = result.OverwroteExistingFile
-            ? $"Updated {result.Path} with {result.CharacterCount} characters."
-            : $"Created {result.Path} with {result.CharacterCount} characters.";
+            ? $"Updated {result.Path} (+{result.AddedLineCount} -{result.RemovedLineCount})."
+            : $"Created {result.Path} (+{result.AddedLineCount} -{result.RemovedLineCount}).";
 
         return ToolResultFactory.Success(
             $"Wrote file '{result.Path}'.",

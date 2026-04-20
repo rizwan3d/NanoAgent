@@ -10,6 +10,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private const int MaxFileReadBytes = 262_144;
     private const int MaxSearchFileBytes = 262_144;
     private const int MaxSearchResults = 100;
+    private const int FileWritePreviewContextLines = 1;
+    private const int MaxFileWritePreviewLines = 8;
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
@@ -174,10 +176,19 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
         bool fileExists = File.Exists(fullPath);
+        string? previousContent = null;
         if (fileExists && !overwrite)
         {
             throw new InvalidOperationException(
                 $"File '{ToWorkspaceRelativePath(fullPath)}' already exists and overwrite is disabled.");
+        }
+
+        if (fileExists)
+        {
+            previousContent = await File.ReadAllTextAsync(
+                fullPath,
+                Encoding.UTF8,
+                cancellationToken);
         }
 
         string? directoryPath = Path.GetDirectoryName(fullPath);
@@ -192,10 +203,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             Encoding.UTF8,
             cancellationToken);
 
+        FileWritePreview preview = BuildFileWritePreview(previousContent, content);
+
         return new WorkspaceFileWriteResult(
             ToWorkspaceRelativePath(fullPath),
             fileExists,
-            content.Length);
+            content.Length,
+            preview.AddedLineCount,
+            preview.RemovedLineCount,
+            preview.Lines,
+            preview.RemainingPreviewLineCount);
     }
 
     private string ResolveWorkspacePath(
@@ -272,5 +289,277 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                path.EndsWith(Path.AltDirectorySeparatorChar)
             ? path
             : path + Path.DirectorySeparatorChar;
+    }
+
+    private static FileWritePreview BuildFileWritePreview(
+        string? previousContent,
+        string currentContent)
+    {
+        string[] previousLines = SplitLines(previousContent);
+        string[] currentLines = SplitLines(currentContent);
+        IReadOnlyList<DiffLine> diffLines = previousContent is null
+            ? currentLines
+                .Select((line, index) => new DiffLine(
+                    DiffLineKind.Addition,
+                    null,
+                    index + 1,
+                    line))
+                .ToArray()
+            : ComputeDiff(previousLines, currentLines);
+
+        int addedLineCount = diffLines.Count(static line => line.Kind == DiffLineKind.Addition);
+        int removedLineCount = diffLines.Count(static line => line.Kind == DiffLineKind.Removal);
+
+        if (diffLines.Count == 0)
+        {
+            return new FileWritePreview(0, 0, [], 0);
+        }
+
+        DiffLine[] previewDiffLines = SelectPreviewLines(diffLines)
+            .Take(MaxFileWritePreviewLines)
+            .ToArray();
+
+        WorkspaceFileWritePreviewLine[] previewLines = previewDiffLines
+            .Select(static line => new WorkspaceFileWritePreviewLine(
+                line.LineNumber ?? 0,
+                line.Kind switch
+                {
+                    DiffLineKind.Addition => "add",
+                    DiffLineKind.Removal => "remove",
+                    _ => "context"
+                },
+                line.Text))
+            .ToArray();
+
+        int remainingPreviewLineCount = Math.Max(
+            0,
+            SelectPreviewLines(diffLines).Count - previewLines.Length);
+
+        return new FileWritePreview(
+            addedLineCount,
+            removedLineCount,
+            previewLines,
+            remainingPreviewLineCount);
+    }
+
+    private static string[] SplitLines(string? content)
+    {
+        if (string.IsNullOrEmpty(content))
+        {
+            return [];
+        }
+
+        string[] rawLines = content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None);
+
+        if (rawLines.Length > 0 && rawLines[^1].Length == 0)
+        {
+            return rawLines[..^1];
+        }
+
+        return rawLines;
+    }
+
+    private static IReadOnlyList<DiffLine> ComputeDiff(
+        IReadOnlyList<string> previousLines,
+        IReadOnlyList<string> currentLines)
+    {
+        if (previousLines.Count == 0 && currentLines.Count == 0)
+        {
+            return [];
+        }
+
+        int max = previousLines.Count + currentLines.Count;
+        Dictionary<int, int> frontier = new() { [1] = 0 };
+        List<Dictionary<int, int>> trace = new();
+
+        for (int distance = 0; distance <= max; distance++)
+        {
+            trace.Add(new Dictionary<int, int>(frontier));
+
+            for (int diagonal = -distance; diagonal <= distance; diagonal += 2)
+            {
+                int x;
+                if (diagonal == -distance ||
+                    (diagonal != distance &&
+                     GetFrontierValue(frontier, diagonal - 1) < GetFrontierValue(frontier, diagonal + 1)))
+                {
+                    x = GetFrontierValue(frontier, diagonal + 1);
+                }
+                else
+                {
+                    x = GetFrontierValue(frontier, diagonal - 1) + 1;
+                }
+
+                int y = x - diagonal;
+
+                while (x < previousLines.Count &&
+                       y < currentLines.Count &&
+                       string.Equals(previousLines[x], currentLines[y], StringComparison.Ordinal))
+                {
+                    x++;
+                    y++;
+                }
+
+                frontier[diagonal] = x;
+
+                if (x >= previousLines.Count && y >= currentLines.Count)
+                {
+                    return Backtrack(trace, previousLines, currentLines);
+                }
+            }
+        }
+
+        return [];
+    }
+
+    private static IReadOnlyList<DiffLine> Backtrack(
+        IReadOnlyList<Dictionary<int, int>> trace,
+        IReadOnlyList<string> previousLines,
+        IReadOnlyList<string> currentLines)
+    {
+        List<DiffLine> lines = [];
+        int x = previousLines.Count;
+        int y = currentLines.Count;
+
+        for (int distance = trace.Count - 1; distance >= 0; distance--)
+        {
+            Dictionary<int, int> frontier = trace[distance];
+            int diagonal = x - y;
+
+            int previousDiagonal;
+            if (diagonal == -distance ||
+                (diagonal != distance &&
+                 GetFrontierValue(frontier, diagonal - 1) < GetFrontierValue(frontier, diagonal + 1)))
+            {
+                previousDiagonal = diagonal + 1;
+            }
+            else
+            {
+                previousDiagonal = diagonal - 1;
+            }
+
+            int previousX = GetFrontierValue(frontier, previousDiagonal);
+            int previousY = previousX - previousDiagonal;
+
+            while (x > previousX && y > previousY)
+            {
+                lines.Add(new DiffLine(
+                    DiffLineKind.Context,
+                    x,
+                    y,
+                    previousLines[x - 1]));
+                x--;
+                y--;
+            }
+
+            if (distance == 0)
+            {
+                break;
+            }
+
+            if (x == previousX)
+            {
+                lines.Add(new DiffLine(
+                    DiffLineKind.Addition,
+                    null,
+                    y,
+                    currentLines[y - 1]));
+                y--;
+            }
+            else
+            {
+                lines.Add(new DiffLine(
+                    DiffLineKind.Removal,
+                    x,
+                    null,
+                    previousLines[x - 1]));
+                x--;
+            }
+        }
+
+        lines.Reverse();
+        return lines;
+    }
+
+    private static int GetFrontierValue(
+        IReadOnlyDictionary<int, int> frontier,
+        int diagonal)
+    {
+        return frontier.TryGetValue(diagonal, out int value)
+            ? value
+            : 0;
+    }
+
+    private static IReadOnlyList<DiffLine> SelectPreviewLines(
+        IReadOnlyList<DiffLine> diffLines)
+    {
+        int firstChangedIndex = -1;
+        for (int index = 0; index < diffLines.Count; index++)
+        {
+            if (diffLines[index].Kind != DiffLineKind.Context)
+            {
+                firstChangedIndex = index;
+                break;
+            }
+        }
+
+        if (firstChangedIndex < 0)
+        {
+            return [];
+        }
+
+        int start = Math.Max(0, firstChangedIndex - FileWritePreviewContextLines);
+        int end = firstChangedIndex + 1;
+        int trailingContextCount = 0;
+
+        while (end < diffLines.Count)
+        {
+            if (diffLines[end].Kind == DiffLineKind.Context)
+            {
+                trailingContextCount++;
+                if (trailingContextCount > FileWritePreviewContextLines)
+                {
+                    break;
+                }
+            }
+            else
+            {
+                trailingContextCount = 0;
+            }
+
+            end++;
+        }
+
+        return diffLines
+            .Skip(start)
+            .Take(end - start)
+            .ToArray();
+    }
+
+    private readonly record struct FileWritePreview(
+        int AddedLineCount,
+        int RemovedLineCount,
+        WorkspaceFileWritePreviewLine[] Lines,
+        int RemainingPreviewLineCount);
+
+    private readonly record struct DiffLine(
+        DiffLineKind Kind,
+        int? OriginalLineNumber,
+        int? UpdatedLineNumber,
+        string Text)
+    {
+        public int? LineNumber => Kind == DiffLineKind.Removal
+            ? OriginalLineNumber
+            : UpdatedLineNumber;
+    }
+
+    private enum DiffLineKind
+    {
+        Context = 0,
+        Addition = 1,
+        Removal = 2
     }
 }

@@ -12,6 +12,8 @@ internal interface IConsoleTerminal
 
     bool IsOutputRedirected { get; }
 
+    int WindowHeight { get; }
+
     int WindowWidth { get; }
 
     ConsoleKeyInfo ReadKey(bool intercept);

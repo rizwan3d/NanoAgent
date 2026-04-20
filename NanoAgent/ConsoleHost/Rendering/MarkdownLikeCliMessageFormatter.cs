@@ -26,7 +26,7 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             if (IsFenceStart(line, out string? language))
             {
                 FlushParagraph(blocks, paragraphLines);
-                blocks.Add(ParseFencedBlock(lines, ref index, language));
+                blocks.AddRange(ParseFencedBlocks(lines, ref index, language));
                 continue;
             }
 
@@ -40,10 +40,38 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
                 continue;
             }
 
-            if (IsStandaloneDiffLine(line))
+            if (TryParseStandaloneDiff(lines, ref index, out CliRenderBlock? diffBlock))
             {
                 FlushParagraph(blocks, paragraphLines);
-                blocks.Add(ParseStandaloneDiff(lines, ref index));
+                blocks.Add(diffBlock!);
+                continue;
+            }
+
+            if (TryParseTable(lines, ref index, out CliRenderBlock? tableBlock))
+            {
+                FlushParagraph(blocks, paragraphLines);
+                blocks.Add(tableBlock!);
+                continue;
+            }
+
+            if (IsHorizontalRule(line))
+            {
+                FlushParagraph(blocks, paragraphLines);
+                blocks.Add(CreateRuleBlock());
+                continue;
+            }
+
+            if (TryParseListItem(line, out bool isOrderedList, out string? listItemText))
+            {
+                FlushParagraph(blocks, paragraphLines);
+                blocks.Add(ParseListBlock(lines, ref index, isOrderedList, listItemText!));
+                continue;
+            }
+
+            if (TryParseQuoteLine(line, out string? quoteText))
+            {
+                FlushParagraph(blocks, paragraphLines);
+                blocks.Add(ParseQuoteBlock(lines, ref index, quoteText!));
                 continue;
             }
 
@@ -105,7 +133,7 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
                 .ToArray());
     }
 
-    private static CliRenderBlock ParseFencedBlock(
+    private static IReadOnlyList<CliRenderBlock> ParseFencedBlocks(
         string[] lines,
         ref int index,
         string? language)
@@ -124,17 +152,84 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
         }
 
         bool isDiff = string.Equals(language, "diff", StringComparison.OrdinalIgnoreCase) ||
-                      contentLines.Any(static line => IsStandaloneDiffLine(line));
+                      contentLines.Any(static line => LooksLikeStandaloneDiffContent(line));
+
+        if (IsMarkdownLanguage(language) && contentLines.Count > 0)
+        {
+            return ParseAssistantMessage(string.Join('\n', contentLines));
+        }
 
         return isDiff
-            ? CreateDiffBlock(contentLines)
-            : CreateCodeBlock(contentLines, language);
+            ? [CreateDiffBlock(contentLines)]
+            : [CreateCodeBlock(contentLines, language)];
     }
 
-    private static CliRenderBlock ParseStandaloneDiff(
+    private static CliRenderBlock ParseListBlock(
         string[] lines,
-        ref int index)
+        ref int index,
+        bool isOrderedList,
+        string firstItemText)
     {
+        List<CliRenderLine> items =
+        [
+            new CliRenderLine(ParseInlineSegments(firstItemText))
+        ];
+
+        for (int nextIndex = index + 1; nextIndex < lines.Length; nextIndex++)
+        {
+            if (!TryParseListItem(lines[nextIndex], out bool currentIsOrderedList, out string? itemText) ||
+                currentIsOrderedList != isOrderedList)
+            {
+                break;
+            }
+
+            items.Add(new CliRenderLine(ParseInlineSegments(itemText!)));
+            index = nextIndex;
+        }
+
+        return new CliRenderBlock(
+            CliRenderBlockKind.List,
+            items,
+            isOrderedList: isOrderedList);
+    }
+
+    private static CliRenderBlock ParseQuoteBlock(
+        string[] lines,
+        ref int index,
+        string firstQuoteLine)
+    {
+        List<CliRenderLine> quoteLines =
+        [
+            new CliRenderLine(ParseInlineSegments(firstQuoteLine))
+        ];
+
+        for (int nextIndex = index + 1; nextIndex < lines.Length; nextIndex++)
+        {
+            if (!TryParseQuoteLine(lines[nextIndex], out string? quoteText))
+            {
+                break;
+            }
+
+            quoteLines.Add(new CliRenderLine(ParseInlineSegments(quoteText!)));
+            index = nextIndex;
+        }
+
+        return new CliRenderBlock(
+            CliRenderBlockKind.Quote,
+            quoteLines);
+    }
+
+    private static bool TryParseStandaloneDiff(
+        string[] lines,
+        ref int index,
+        out CliRenderBlock? block)
+    {
+        if (!LooksLikeDiffHeader(lines[index]))
+        {
+            block = null;
+            return false;
+        }
+
         List<string> diffLines = [];
 
         for (; index < lines.Length; index++)
@@ -146,7 +241,7 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
                 break;
             }
 
-            if (!IsStandaloneDiffLine(line))
+            if (!LooksLikeStandaloneDiffContent(line))
             {
                 index--;
                 break;
@@ -155,7 +250,56 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             diffLines.Add(line);
         }
 
-        return CreateDiffBlock(diffLines);
+        block = CreateDiffBlock(diffLines);
+        return true;
+    }
+
+    private static bool TryParseTable(
+        string[] lines,
+        ref int index,
+        out CliRenderBlock? block)
+    {
+        if (index + 1 >= lines.Length ||
+            !TrySplitTableRow(lines[index], out IReadOnlyList<string>? headerCells) ||
+            headerCells is null ||
+            !TryParseTableSeparator(lines[index + 1], headerCells.Count, out IReadOnlyList<CliTableColumnAlignment>? alignments) ||
+            alignments is null)
+        {
+            block = null;
+            return false;
+        }
+
+        List<CliRenderLine> rows =
+        [
+            CreateTableRow(headerCells)
+        ];
+
+        int lastConsumedLineIndex = index + 1;
+        for (int nextIndex = index + 2; nextIndex < lines.Length; nextIndex++)
+        {
+            if (string.IsNullOrWhiteSpace(lines[nextIndex]))
+            {
+                break;
+            }
+
+            if (!TrySplitTableRow(lines[nextIndex], out IReadOnlyList<string>? rowCells) ||
+                rowCells is null ||
+                rowCells.Count != headerCells.Count)
+            {
+                break;
+            }
+
+            rows.Add(CreateTableRow(rowCells));
+            lastConsumedLineIndex = nextIndex;
+        }
+
+        index = lastConsumedLineIndex;
+        block = new CliRenderBlock(
+            CliRenderBlockKind.Table,
+            rows,
+            hasHeaderRow: true,
+            tableColumnAlignments: alignments);
+        return true;
     }
 
     private static CliRenderBlock CreateCodeBlock(
@@ -188,6 +332,18 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             "diff");
     }
 
+    private static CliRenderLine CreateTableRow(IReadOnlyList<string> cells)
+    {
+        return new CliRenderLine(cells.Select(static cell => ParseInlineSegments(cell)).ToArray());
+    }
+
+    private static CliRenderBlock CreateRuleBlock()
+    {
+        return new CliRenderBlock(
+            CliRenderBlockKind.Rule,
+            [new CliRenderLine([new CliInlineSegment(string.Empty)])]);
+    }
+
     private static bool IsFenceStart(
         string line,
         out string? language)
@@ -204,6 +360,12 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             : trimmed[3..].Trim();
 
         return true;
+    }
+
+    private static bool IsMarkdownLanguage(string? language)
+    {
+        return string.Equals(language, "markdown", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(language, "md", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryParseHeading(
@@ -238,15 +400,165 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
         return !string.IsNullOrWhiteSpace(headingText);
     }
 
-    private static bool IsStandaloneDiffLine(string line)
+    private static bool TryParseListItem(
+        string line,
+        out bool isOrderedList,
+        out string? itemText)
     {
-        return line.StartsWith("+", StringComparison.Ordinal) ||
-               line.StartsWith("-", StringComparison.Ordinal) ||
-               line.StartsWith("@@", StringComparison.Ordinal) ||
+        string trimmed = line.TrimStart();
+        isOrderedList = false;
+        itemText = null;
+
+        if (trimmed.Length < 3)
+        {
+            return false;
+        }
+
+        if ((trimmed[0] == '-' || trimmed[0] == '*' || trimmed[0] == '+') &&
+            trimmed[1] == ' ')
+        {
+            itemText = trimmed[2..].Trim();
+            return !string.IsNullOrWhiteSpace(itemText);
+        }
+
+        int markerLength = 0;
+        while (markerLength < trimmed.Length && char.IsDigit(trimmed[markerLength]))
+        {
+            markerLength++;
+        }
+
+        if (markerLength == 0 ||
+            markerLength + 1 >= trimmed.Length ||
+            trimmed[markerLength] != '.' ||
+            trimmed[markerLength + 1] != ' ')
+        {
+            return false;
+        }
+
+        isOrderedList = true;
+        itemText = trimmed[(markerLength + 2)..].Trim();
+        return !string.IsNullOrWhiteSpace(itemText);
+    }
+
+    private static bool TryParseQuoteLine(
+        string line,
+        out string? quoteText)
+    {
+        string trimmed = line.TrimStart();
+        if (!trimmed.StartsWith('>'))
+        {
+            quoteText = null;
+            return false;
+        }
+
+        quoteText = trimmed.Length == 1
+            ? string.Empty
+            : trimmed[1] == ' '
+                ? trimmed[2..].Trim()
+                : trimmed[1..].Trim();
+
+        return true;
+    }
+
+    private static bool IsHorizontalRule(string line)
+    {
+        string trimmed = line.Trim();
+        return trimmed.Length >= 3 &&
+               trimmed.All(character => character == trimmed[0]) &&
+               (trimmed[0] == '-' || trimmed[0] == '*' || trimmed[0] == '_');
+    }
+
+    private static bool TrySplitTableRow(
+        string line,
+        out IReadOnlyList<string>? cells)
+    {
+        string trimmed = line.Trim();
+        if (trimmed.Length == 0 || !trimmed.Contains('|', StringComparison.Ordinal))
+        {
+            cells = null;
+            return false;
+        }
+
+        if (trimmed.StartsWith('|'))
+        {
+            trimmed = trimmed[1..];
+        }
+
+        if (trimmed.EndsWith('|'))
+        {
+            trimmed = trimmed[..^1];
+        }
+
+        string[] rawCells = trimmed
+            .Split('|')
+            .Select(static cell => cell.Trim())
+            .ToArray();
+
+        if (rawCells.Length == 0 || rawCells.All(string.IsNullOrWhiteSpace))
+        {
+            cells = null;
+            return false;
+        }
+
+        cells = rawCells;
+        return true;
+    }
+
+    private static bool TryParseTableSeparator(
+        string line,
+        int expectedColumnCount,
+        out IReadOnlyList<CliTableColumnAlignment>? alignments)
+    {
+        if (!TrySplitTableRow(line, out IReadOnlyList<string>? cells) ||
+            cells is null ||
+            cells.Count != expectedColumnCount)
+        {
+            alignments = null;
+            return false;
+        }
+
+        List<CliTableColumnAlignment> parsedAlignments = [];
+        foreach (string cell in cells)
+        {
+            string normalized = cell.Replace(" ", string.Empty, StringComparison.Ordinal);
+            int dashCount = normalized.Count(static character => character == '-');
+
+            if (dashCount < 3 ||
+                normalized.Any(static character => character is not ('-' or ':')))
+            {
+                alignments = null;
+                return false;
+            }
+
+            bool hasLeadingColon = normalized.StartsWith(':');
+            bool hasTrailingColon = normalized.EndsWith(':');
+
+            parsedAlignments.Add(hasLeadingColon && hasTrailingColon
+                ? CliTableColumnAlignment.Center
+                : hasTrailingColon
+                    ? CliTableColumnAlignment.Right
+                    : CliTableColumnAlignment.Left);
+        }
+
+        alignments = parsedAlignments;
+        return true;
+    }
+
+    private static bool LooksLikeDiffHeader(string line)
+    {
+        return line.StartsWith("@@", StringComparison.Ordinal) ||
                line.StartsWith("diff ", StringComparison.Ordinal) ||
                line.StartsWith("index ", StringComparison.Ordinal) ||
-               line.StartsWith("---", StringComparison.Ordinal) ||
-               line.StartsWith("+++", StringComparison.Ordinal);
+               line.StartsWith("--- ", StringComparison.Ordinal) ||
+               line.StartsWith("+++ ", StringComparison.Ordinal);
+    }
+
+    private static bool LooksLikeStandaloneDiffContent(string line)
+    {
+        return LooksLikeDiffHeader(line) ||
+               line.StartsWith("+", StringComparison.Ordinal) ||
+               line.StartsWith("-", StringComparison.Ordinal) ||
+               line.StartsWith(" ", StringComparison.Ordinal);
     }
 
     private static CliRenderLineKind GetDiffLineKind(string line)
@@ -263,11 +575,7 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             return CliRenderLineKind.DiffRemoval;
         }
 
-        if (line.StartsWith("@@", StringComparison.Ordinal) ||
-            line.StartsWith("diff ", StringComparison.Ordinal) ||
-            line.StartsWith("index ", StringComparison.Ordinal) ||
-            line.StartsWith("---", StringComparison.Ordinal) ||
-            line.StartsWith("+++", StringComparison.Ordinal))
+        if (LooksLikeDiffHeader(line))
         {
             return CliRenderLineKind.DiffHeader;
         }
@@ -289,6 +597,13 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
 
         while (index < text.Length)
         {
+            if (TryConsumeLink(text, index, out CliInlineSegment? linkSegment, out int linkLength))
+            {
+                segments.Add(linkSegment!);
+                index += linkLength;
+                continue;
+            }
+
             if (TryConsumeDelimited(text, index, "**", CliInlineStyle.Strong, out CliInlineSegment? strongSegment, out int strongLength))
             {
                 segments.Add(strongSegment!);
@@ -340,6 +655,51 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
         return MergePlainSegments(segments);
     }
 
+    private static bool TryConsumeLink(
+        string text,
+        int startIndex,
+        out CliInlineSegment? segment,
+        out int consumedLength)
+    {
+        if (startIndex >= text.Length || text[startIndex] != '[')
+        {
+            segment = null;
+            consumedLength = 0;
+            return false;
+        }
+
+        int closingLabelIndex = text.IndexOf(']', startIndex + 1);
+        if (closingLabelIndex <= startIndex + 1 ||
+            closingLabelIndex + 2 >= text.Length ||
+            text[closingLabelIndex + 1] != '(')
+        {
+            segment = null;
+            consumedLength = 0;
+            return false;
+        }
+
+        int closingTargetIndex = text.IndexOf(')', closingLabelIndex + 2);
+        if (closingTargetIndex <= closingLabelIndex + 2)
+        {
+            segment = null;
+            consumedLength = 0;
+            return false;
+        }
+
+        string label = text[(startIndex + 1)..closingLabelIndex];
+        string target = text[(closingLabelIndex + 2)..closingTargetIndex].Trim();
+        if (string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(target))
+        {
+            segment = null;
+            consumedLength = 0;
+            return false;
+        }
+
+        segment = new CliInlineSegment(label, CliInlineStyle.Link, target);
+        consumedLength = (closingTargetIndex + 1) - startIndex;
+        return true;
+    }
+
     private static bool TryConsumeDelimited(
         string text,
         int startIndex,
@@ -382,12 +742,14 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
         int nextStrong = text.IndexOf("**", startIndex, StringComparison.Ordinal);
         int nextCode = text.IndexOf('`', startIndex);
         int nextEmphasis = text.IndexOf('*', startIndex);
+        int nextLink = text.IndexOf('[', startIndex);
 
         int[] candidates =
         [
             nextStrong,
             nextCode,
-            nextEmphasis
+            nextEmphasis,
+            nextLink
         ];
 
         return candidates
@@ -404,7 +766,9 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
         {
             if (mergedSegments.Count > 0 &&
                 mergedSegments[^1].Style == CliInlineStyle.Plain &&
-                segment.Style == CliInlineStyle.Plain)
+                mergedSegments[^1].Target is null &&
+                segment.Style == CliInlineStyle.Plain &&
+                segment.Target is null)
             {
                 CliInlineSegment previousSegment = mergedSegments[^1];
                 mergedSegments[^1] = new CliInlineSegment(previousSegment.Text + segment.Text);

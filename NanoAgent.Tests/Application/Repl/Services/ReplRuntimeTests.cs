@@ -5,6 +5,7 @@ using NanoAgent.Domain.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NanoAgent.Application.Tools.Serialization;
 
 namespace NanoAgent.Tests.Application.Repl.Services;
 
@@ -180,6 +181,7 @@ public sealed class ReplRuntimeTests
             .Setup(pipeline => pipeline.ProcessAsync(
                 "help me plan this change",
                 session,
+                It.IsAny<IConversationProgressSink>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(ConversationTurnResult.AssistantMessage(
                 "Response ready",
@@ -201,11 +203,97 @@ public sealed class ReplRuntimeTests
         conversationPipeline.Verify(pipeline => pipeline.ProcessAsync(
             "help me plan this change",
             session,
+            It.IsAny<IConversationProgressSink>(),
             It.IsAny<CancellationToken>()), Times.Once);
         outputWriter.ProgressStarts.Should().ContainSingle().Which.Should().Be((5, 0));
         outputWriter.Responses.Should().ContainSingle().Which.Should().Be("Response ready");
-        outputWriter.ResponseMetrics.Should().ContainSingle().Which.Should().Be("(4s \u00B7 \u2193 14 tokens est.)");
+        outputWriter.ResponseMetrics.Should().ContainSingle().Which.Should().Be("(4s \u00B7 14 tokens est.)");
         session.TotalEstimatedOutputTokens.Should().Be(14);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_ShowToolCallsInRealtimeBeforeAssistantResponse_When_ConversationReportsProgress()
+    {
+        ReplSessionContext session = CreateSession();
+        QueueReplInputReader inputReader = new("create the app", "/exit");
+        RecordingReplOutputWriter outputWriter = new();
+        ParsedReplCommand exitCommand = new("/exit", "exit", string.Empty, []);
+
+        Mock<IReplCommandParser> commandParser = new(MockBehavior.Strict);
+        commandParser.Setup(parser => parser.Parse("/exit")).Returns(exitCommand);
+
+        Mock<IReplCommandDispatcher> commandDispatcher = new(MockBehavior.Strict);
+        commandDispatcher
+            .Setup(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ReplCommandResult.Exit());
+
+        ToolExecutionBatchResult toolExecutionResult = new([
+            new ToolInvocationResult(
+                "call_1",
+                "directory_list",
+                ToolResultFactory.Success(
+                    "Listed the directory.",
+                    new ToolErrorPayload("ok", "ok"),
+                    ToolJsonContext.Default.ToolErrorPayload,
+                    new ToolRenderPayload("Directory listing: .", "file: index.html"))),
+            new ToolInvocationResult(
+                "call_2",
+                "file_write",
+                ToolResultFactory.Success(
+                    "Wrote index.html.",
+                    new ToolErrorPayload("ok", "ok"),
+                    ToolJsonContext.Default.ToolErrorPayload,
+                    new ToolRenderPayload("File written: styles.css", "Created styles.css with 120 characters.")))
+        ]);
+
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        conversationPipeline
+            .Setup(pipeline => pipeline.ProcessAsync(
+                "create the app",
+                session,
+                It.IsAny<IConversationProgressSink>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<string, ReplSessionContext, IConversationProgressSink, CancellationToken>(async (_, _, progressSink, cancellationToken) =>
+            {
+                await progressSink.ReportToolCallsStartedAsync([
+                    new ConversationToolCall("call_1", "directory_list", "{}"),
+                    new ConversationToolCall("call_2", "file_write", """{"path":"index.html"}""")
+                ], cancellationToken);
+
+                await progressSink.ReportToolResultsAsync(
+                    toolExecutionResult,
+                    cancellationToken);
+
+                return ConversationTurnResult.AssistantMessage(
+                    "Created the requested files.",
+                    toolExecutionResult,
+                    new ConversationTurnMetrics(TimeSpan.FromSeconds(3), 12));
+            });
+
+        Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
+        tokenEstimator.Setup(estimator => estimator.Estimate("create the app")).Returns(4);
+
+        ReplRuntime sut = CreateSut(
+            inputReader,
+            outputWriter,
+            commandParser.Object,
+            commandDispatcher.Object,
+            conversationPipeline.Object,
+            tokenEstimator.Object);
+
+        await sut.RunAsync(session, CancellationToken.None);
+
+        outputWriter.ToolCalls.Should().ContainInOrder("directory_list", "file_write");
+        outputWriter.Events.Should().ContainInOrder(
+            "tool:directory_list",
+            "tool:file_write",
+            "tool-output:Directory listing: .",
+            "tool-output:File written: styles.css",
+            "response:Created the requested files.");
+        outputWriter.Responses.Should().ContainSingle().Which.Should().Be("Created the requested files.");
+        outputWriter.ToolOutputs.Should().ContainInOrder(
+            "Directory listing: .\nfile: index.html",
+            "File written: styles.css\nCreated styles.css with 120 characters.");
     }
 
     [Fact]
@@ -229,6 +317,7 @@ public sealed class ReplRuntimeTests
             .SetupSequence(pipeline => pipeline.ProcessAsync(
                 It.IsAny<string>(),
                 session,
+                It.IsAny<IConversationProgressSink>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(ConversationTurnResult.AssistantMessage(
                 "First response",
@@ -253,8 +342,8 @@ public sealed class ReplRuntimeTests
 
         outputWriter.ProgressStarts.Should().ContainInOrder((5, 0), (3, 14));
         outputWriter.ResponseMetrics.Should().ContainInOrder(
-            "(2s \u00B7 \u2193 14 tokens est.)",
-            "(3s \u00B7 \u2193 26 tokens est.)");
+            "(2s \u00B7 14 tokens est.)",
+            "(3s \u00B7 26 tokens est.)");
         session.TotalEstimatedOutputTokens.Should().Be(26);
     }
 
@@ -314,7 +403,7 @@ public sealed class ReplRuntimeTests
 
         Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
         conversationPipeline
-            .Setup(pipeline => pipeline.ProcessAsync("hello", session, It.IsAny<CancellationToken>()))
+            .Setup(pipeline => pipeline.ProcessAsync("hello", session, It.IsAny<IConversationProgressSink>(), It.IsAny<CancellationToken>()))
             .ThrowsAsync(new InvalidOperationException("boom"));
 
         Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
@@ -393,16 +482,22 @@ public sealed class ReplRuntimeTests
 
         public List<string> ResponseMetrics { get; } = [];
 
+        public List<string> ToolCalls { get; } = [];
+
+        public List<string> ToolOutputs { get; } = [];
+
+        public List<string> Events { get; } = [];
+
         public List<string> WarningMessages { get; } = [];
 
-        public ValueTask<IAsyncDisposable> BeginResponseProgressAsync(
+        public ValueTask<IResponseProgress> BeginResponseProgressAsync(
             int estimatedOutputTokens,
             int completedSessionEstimatedOutputTokens,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             ProgressStarts.Add((estimatedOutputTokens, completedSessionEstimatedOutputTokens));
-            return ValueTask.FromResult<IAsyncDisposable>(NoOpAsyncDisposable.Instance);
+            return ValueTask.FromResult<IResponseProgress>(new RecordingResponseProgress(this));
         }
 
         public Task WriteErrorAsync(string message, CancellationToken cancellationToken)
@@ -443,6 +538,7 @@ public sealed class ReplRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Responses.Add(message);
+            Events.Add($"response:{message}");
 
             if (metrics is not null)
             {
@@ -453,9 +549,47 @@ public sealed class ReplRuntimeTests
         }
     }
 
-    private sealed class NoOpAsyncDisposable : IAsyncDisposable
+    private sealed class RecordingResponseProgress : IResponseProgress
     {
-        public static NoOpAsyncDisposable Instance { get; } = new();
+        private readonly RecordingReplOutputWriter _owner;
+
+        public RecordingResponseProgress(RecordingReplOutputWriter owner)
+        {
+            _owner = owner;
+        }
+
+        public Task ReportToolCallsStartedAsync(
+            IReadOnlyList<ConversationToolCall> toolCalls,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            foreach (ConversationToolCall toolCall in toolCalls)
+            {
+                _owner.ToolCalls.Add(toolCall.Name);
+                _owner.Events.Add($"tool:{toolCall.Name}");
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task ReportToolResultsAsync(
+            ToolExecutionBatchResult toolExecutionResult,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            foreach (ToolInvocationResult invocationResult in toolExecutionResult.Results)
+            {
+                string output = invocationResult.ToDisplayText()
+                    .Replace("\r\n", "\n", StringComparison.Ordinal);
+
+                _owner.ToolOutputs.Add(output);
+                _owner.Events.Add($"tool-output:{output.Split('\n')[0]}");
+            }
+
+            return Task.CompletedTask;
+        }
 
         public ValueTask DisposeAsync()
         {

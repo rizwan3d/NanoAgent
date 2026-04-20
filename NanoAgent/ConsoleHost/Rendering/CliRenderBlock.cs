@@ -6,7 +6,10 @@ internal sealed class CliRenderBlock
         CliRenderBlockKind kind,
         IReadOnlyList<CliRenderLine> lines,
         string? language = null,
-        int headingLevel = 0)
+        int headingLevel = 0,
+        bool isOrderedList = false,
+        bool hasHeaderRow = false,
+        IReadOnlyList<CliTableColumnAlignment>? tableColumnAlignments = null)
     {
         ArgumentNullException.ThrowIfNull(lines);
 
@@ -23,13 +26,22 @@ internal sealed class CliRenderBlock
             ? null
             : language.Trim();
         HeadingLevel = headingLevel;
+        IsOrderedList = isOrderedList;
+        HasHeaderRow = hasHeaderRow;
+        TableColumnAlignments = tableColumnAlignments ?? [];
     }
 
+    public bool HasHeaderRow { get; }
+
     public int HeadingLevel { get; }
+
+    public bool IsOrderedList { get; }
 
     public CliRenderBlockKind Kind { get; }
 
     public string? Language { get; }
 
     public IReadOnlyList<CliRenderLine> Lines { get; }
+
+    public IReadOnlyList<CliTableColumnAlignment> TableColumnAlignments { get; }
 }

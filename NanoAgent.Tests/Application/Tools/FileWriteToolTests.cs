@@ -33,7 +33,14 @@ public sealed class FileWriteToolTests
                 "hello",
                 false,
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WorkspaceFileWriteResult("README.md", false, 5));
+            .ReturnsAsync(new WorkspaceFileWriteResult(
+                "README.md",
+                false,
+                5,
+                1,
+                0,
+                [new WorkspaceFileWritePreviewLine(1, "add", "hello")],
+                0));
 
         FileWriteTool sut = new(workspaceFileService.Object);
 

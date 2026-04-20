@@ -5,6 +5,7 @@ namespace NanoAgent.Application.Tools.Serialization;
 
 [JsonSerializable(typeof(ToolErrorPayload))]
 [JsonSerializable(typeof(WorkspaceFileReadResult))]
+[JsonSerializable(typeof(WorkspaceFileWritePreviewLine))]
 [JsonSerializable(typeof(WorkspaceFileWriteResult))]
 [JsonSerializable(typeof(WorkspaceDirectoryListResult))]
 [JsonSerializable(typeof(WorkspaceDirectoryEntry))]

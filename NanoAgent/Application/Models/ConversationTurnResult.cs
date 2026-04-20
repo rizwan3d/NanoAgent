@@ -40,10 +40,18 @@ public sealed class ConversationTurnResult
         string responseText,
         ConversationTurnMetrics? metrics = null)
     {
+        return AssistantMessage(responseText, null, metrics);
+    }
+
+    public static ConversationTurnResult AssistantMessage(
+        string responseText,
+        ToolExecutionBatchResult? toolExecutionResult,
+        ConversationTurnMetrics? metrics = null)
+    {
         return new ConversationTurnResult(
             ConversationTurnResultKind.AssistantMessage,
             responseText,
-            null,
+            toolExecutionResult,
             metrics);
     }
 

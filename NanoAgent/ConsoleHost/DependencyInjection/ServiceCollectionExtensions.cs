@@ -5,6 +5,7 @@ using NanoAgent.ConsoleHost.Repl;
 using NanoAgent.ConsoleHost.Rendering;
 using NanoAgent.ConsoleHost.Terminal;
 using Microsoft.Extensions.DependencyInjection;
+using Spectre.Console;
 
 namespace NanoAgent.ConsoleHost.DependencyInjection;
 
@@ -15,6 +16,21 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<IConsoleTerminal, ConsoleTerminal>();
+        services.AddSingleton<IAnsiConsole>(static serviceProvider =>
+            SpectreConsoleFactory.Create(serviceProvider.GetRequiredService<IConsoleTerminal>()));
+        services.AddSingleton(static serviceProvider =>
+        {
+            IConsoleTerminal terminal = serviceProvider.GetRequiredService<IConsoleTerminal>();
+
+            return new ConsoleRenderSettings
+            {
+                EnableAnimations = !terminal.IsOutputRedirected &&
+                    !string.Equals(
+                        Environment.GetEnvironmentVariable("NANOAGENT_DISABLE_ANIMATIONS"),
+                        "1",
+                        StringComparison.Ordinal)
+            };
+        });
         services.AddSingleton<IConsolePromptRenderer, ConsolePromptRenderer>();
         services.AddSingleton<IConsolePromptInputReader, ConsolePromptInputReader>();
         services.AddSingleton<ICliOutputTarget, ConsoleCliOutputTarget>();

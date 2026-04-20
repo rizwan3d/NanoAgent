@@ -165,14 +165,19 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
+        RecordingConversationProgressSink progressSink = new();
+
         ConversationTurnResult result = await sut.ProcessAsync(
             "Which models can I use?",
             Session,
+            progressSink,
             CancellationToken.None);
 
         result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
         result.ResponseText.Should().Be("I inspected the workspace and can create the requested files next.");
-        result.ToolExecutionResult.Should().BeNull();
+        result.ToolExecutionResult.Should().NotBeNull();
+        result.ToolExecutionResult!.Results.Should().ContainSingle();
+        result.ToolExecutionResult.Results[0].ToolName.Should().Be("directory_list");
         result.Metrics.Should().NotBeNull();
         followUpRequest.Should().NotBeNull();
         followUpRequest!.Messages.Should().HaveCount(3);
@@ -192,6 +197,10 @@ public sealed class AgentConversationPipelineTests
         toolFeedback.GetProperty("Render").GetProperty("Title").GetString().Should().Be("Directory listing: .");
         toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("ok");
         toolFeedback.GetProperty("Data").GetProperty("Message").GetString().Should().Be("ok");
+        progressSink.StartedToolBatches.Should().ContainSingle();
+        progressSink.StartedToolBatches[0].Should().ContainSingle(tool => tool.Name == "directory_list");
+        progressSink.CompletedToolBatches.Should().ContainSingle();
+        progressSink.CompletedToolBatches[0].Results.Should().ContainSingle(result => result.ToolName == "directory_list");
     }
 
     [Fact]
@@ -284,6 +293,9 @@ public sealed class AgentConversationPipelineTests
         result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
         result.ResponseText.Should().Be("The write failed because the tool arguments were incomplete.");
         followUpRequest.Should().NotBeNull();
+        result.ToolExecutionResult.Should().NotBeNull();
+        result.ToolExecutionResult!.Results.Should().ContainSingle();
+        result.ToolExecutionResult.Results[0].ToolName.Should().Be("file_write");
 
         using JsonDocument toolFeedbackDocument = JsonDocument.Parse(followUpRequest!.Messages[2].Content!);
         JsonElement toolFeedback = toolFeedbackDocument.RootElement;
@@ -393,5 +405,30 @@ public sealed class AgentConversationPipelineTests
             name,
             $"Description for {name}",
             schemaDocument.RootElement.Clone());
+    }
+
+    private sealed class RecordingConversationProgressSink : IConversationProgressSink
+    {
+        public List<IReadOnlyList<ConversationToolCall>> StartedToolBatches { get; } = [];
+
+        public List<ToolExecutionBatchResult> CompletedToolBatches { get; } = [];
+
+        public Task ReportToolCallsStartedAsync(
+            IReadOnlyList<ConversationToolCall> toolCalls,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StartedToolBatches.Add(toolCalls);
+            return Task.CompletedTask;
+        }
+
+        public Task ReportToolResultsAsync(
+            ToolExecutionBatchResult toolExecutionResult,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CompletedToolBatches.Add(toolExecutionResult);
+            return Task.CompletedTask;
+        }
     }
 }

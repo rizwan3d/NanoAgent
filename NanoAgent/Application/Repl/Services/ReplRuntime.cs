@@ -105,7 +105,7 @@ internal sealed class ReplRuntime : IReplRuntime
             {
                 int estimatedInputTokens = _tokenEstimator.Estimate(input);
                 ConversationTurnResult response;
-                await using (IAsyncDisposable progress = await _outputWriter.BeginResponseProgressAsync(
+                await using (IResponseProgress progress = await _outputWriter.BeginResponseProgressAsync(
                                  estimatedInputTokens,
                                  session.TotalEstimatedOutputTokens,
                                  cancellationToken))
@@ -113,6 +113,7 @@ internal sealed class ReplRuntime : IReplRuntime
                     response = await _conversationPipeline.ProcessAsync(
                         input,
                         session,
+                        progress,
                         cancellationToken);
                 }
 

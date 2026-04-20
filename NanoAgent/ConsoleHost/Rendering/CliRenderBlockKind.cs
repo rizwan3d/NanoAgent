@@ -6,5 +6,9 @@ internal enum CliRenderBlockKind
     Paragraph = 1,
     CodeBlock = 2,
     Diff = 3,
-    Alert = 4
+    Alert = 4,
+    Rule = 5,
+    List = 6,
+    Quote = 7,
+    Table = 8
 }

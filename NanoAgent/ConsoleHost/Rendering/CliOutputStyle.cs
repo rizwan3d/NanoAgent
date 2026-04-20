@@ -18,5 +18,6 @@ internal enum CliOutputStyle
     Warning = 13,
     Error = 14,
     Info = 15,
-    Muted = 16
+    Muted = 16,
+    Link = 17
 }

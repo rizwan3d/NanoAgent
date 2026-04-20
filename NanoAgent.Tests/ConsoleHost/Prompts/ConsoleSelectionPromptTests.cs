@@ -2,6 +2,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.ConsoleHost.Prompts;
+using NanoAgent.ConsoleHost.Rendering;
 using NanoAgent.ConsoleHost.Terminal;
 using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
@@ -18,7 +19,7 @@ public sealed class ConsoleSelectionPromptTests
         terminal.EnqueueKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
         terminal.EnqueueKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
 
-        ConsolePromptRenderer renderer = new(terminal);
+        ConsolePromptRenderer renderer = new(terminal, SpectreConsoleFactory.Create(terminal));
         Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
         ConsoleSelectionPrompt sut = new(terminal, renderer, statusMessageWriter.Object);
 
@@ -46,7 +47,7 @@ public sealed class ConsoleSelectionPromptTests
         };
         terminal.EnqueueLine(string.Empty);
 
-        ConsolePromptRenderer renderer = new(terminal);
+        ConsolePromptRenderer renderer = new(terminal, SpectreConsoleFactory.Create(terminal));
         Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
         ConsoleSelectionPrompt sut = new(terminal, renderer, statusMessageWriter.Object);
 
@@ -69,7 +70,7 @@ public sealed class ConsoleSelectionPromptTests
         FakeConsoleTerminal terminal = new();
         terminal.EnqueueKey(new ConsoleKeyInfo('\0', ConsoleKey.Escape, false, false, false));
 
-        ConsolePromptRenderer renderer = new(terminal);
+        ConsolePromptRenderer renderer = new(terminal, SpectreConsoleFactory.Create(terminal));
         Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
         ConsoleSelectionPrompt sut = new(terminal, renderer, statusMessageWriter.Object);
 

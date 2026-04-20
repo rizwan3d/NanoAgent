@@ -1,15 +1,26 @@
+using System.Text;
+using Spectre.Console;
+using Spectre.Console.Rendering;
+
 namespace NanoAgent.ConsoleHost.Rendering;
 
 internal sealed class CliTextRenderer : ICliTextRenderer
 {
     private readonly ICliOutputTarget _outputTarget;
+    private readonly IAnsiConsole _console;
+    private readonly ConsoleRenderSettings _settings;
 
-    public CliTextRenderer(ICliOutputTarget outputTarget)
+    public CliTextRenderer(
+        ICliOutputTarget outputTarget,
+        IAnsiConsole console,
+        ConsoleRenderSettings settings)
     {
         _outputTarget = outputTarget;
+        _console = console;
+        _settings = settings;
     }
 
-    public Task RenderAsync(
+    public async Task RenderAsync(
         CliRenderDocument document,
         CancellationToken cancellationToken)
     {
@@ -18,56 +29,51 @@ internal sealed class CliTextRenderer : ICliTextRenderer
 
         if (document.Kind == CliRenderMessageKind.Assistant)
         {
-            RenderAssistant(document);
+            await RenderAssistantAsync(document, cancellationToken).ConfigureAwait(false);
         }
         else
         {
             RenderStatus(document);
         }
-
-        return Task.CompletedTask;
     }
 
-    private void RenderAssistant(CliRenderDocument document)
+    private async Task RenderAssistantAsync(
+        CliRenderDocument document,
+        CancellationToken cancellationToken)
     {
-        _outputTarget.WriteLine([
-            new CliOutputSegment("assistant", CliOutputStyle.AssistantLabel)
-        ]);
+        _console.Write(new Markup("[bold aqua]assistant[/]"));
+        _console.WriteLine();
+        _console.WriteLine();
 
-        bool firstBlock = true;
-
-        foreach (CliRenderBlock block in document.Blocks)
+        for (int index = 0; index < document.Blocks.Count; index++)
         {
-            if (!firstBlock)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            _console.Write(CreateRenderable(document.Blocks[index]));
+            _console.WriteLine();
+
+            if (index < document.Blocks.Count - 1)
             {
-                _outputTarget.WriteLine();
+                _console.WriteLine();
+                await DelayIfAnimatedAsync(cancellationToken).ConfigureAwait(false);
             }
-
-            RenderAssistantBlock(block);
-            firstBlock = false;
         }
     }
 
-    private void RenderAssistantBlock(CliRenderBlock block)
+    private IRenderable CreateRenderable(CliRenderBlock block)
     {
-        switch (block.Kind)
+        return block.Kind switch
         {
-            case CliRenderBlockKind.Heading:
-                RenderHeading(block);
-                break;
-            case CliRenderBlockKind.CodeBlock:
-                RenderCodeBlock(block);
-                break;
-            case CliRenderBlockKind.Diff:
-                RenderDiff(block);
-                break;
-            case CliRenderBlockKind.Alert:
-                RenderAlertBlock(block, CliRenderMessageKind.Warning);
-                break;
-            default:
-                RenderParagraph(block);
-                break;
-        }
+            CliRenderBlockKind.Heading => CreateHeading(block),
+            CliRenderBlockKind.CodeBlock => CreateCodeBlock(block),
+            CliRenderBlockKind.Diff => CreateDiffBlock(block),
+            CliRenderBlockKind.Table => CreateTable(block),
+            CliRenderBlockKind.List => CreateList(block),
+            CliRenderBlockKind.Quote => CreateQuote(block),
+            CliRenderBlockKind.Rule => new Rule { Style = new Style(Color.Grey) },
+            CliRenderBlockKind.Alert => CreateAlert(block),
+            _ => CreateParagraph(block)
+        };
     }
 
     private void RenderStatus(CliRenderDocument document)
@@ -78,88 +84,219 @@ internal sealed class CliTextRenderer : ICliTextRenderer
         }
     }
 
-    private void RenderParagraph(CliRenderBlock block)
+    private static IRenderable CreateHeading(CliRenderBlock block)
     {
-        foreach (CliRenderLine line in block.Lines)
+        string titleMarkup = BuildMarkup(block.Lines[0], block.HeadingLevel <= 2 ? "bold white" : "white");
+
+        if (block.HeadingLevel <= 2)
         {
-            List<CliOutputSegment> outputSegments =
-            [
-                new CliOutputSegment("  ", CliOutputStyle.Muted)
-            ];
-
-            outputSegments.AddRange(MapLineSegments(line, CliOutputStyle.AssistantText));
-            _outputTarget.WriteLine(outputSegments);
-        }
-    }
-
-    private void RenderHeading(CliRenderBlock block)
-    {
-        foreach (CliRenderLine line in block.Lines)
-        {
-            List<CliOutputSegment> outputSegments =
-            [
-                new CliOutputSegment("  ", CliOutputStyle.Muted)
-            ];
-
-            outputSegments.AddRange(MapLineSegments(line, CliOutputStyle.Heading));
-            _outputTarget.WriteLine(outputSegments);
-
-            string underline = new string('-', Math.Max(8, GetContentLength(line.Segments)));
-            _outputTarget.WriteLine([
-                new CliOutputSegment("  ", CliOutputStyle.Muted),
-                new CliOutputSegment(underline, CliOutputStyle.Muted)
-            ]);
-        }
-    }
-
-    private void RenderCodeBlock(CliRenderBlock block)
-    {
-        string label = string.IsNullOrWhiteSpace(block.Language)
-            ? "[code]"
-            : $"[{block.Language}]";
-
-        _outputTarget.WriteLine([
-            new CliOutputSegment("  ", CliOutputStyle.Muted),
-            new CliOutputSegment(label, CliOutputStyle.CodeFence)
-        ]);
-
-        foreach (CliRenderLine line in block.Lines)
-        {
-            List<CliOutputSegment> outputSegments =
-            [
-                new CliOutputSegment("  | ", CliOutputStyle.CodeFence)
-            ];
-
-            outputSegments.AddRange(MapLineSegments(line, CliOutputStyle.CodeText));
-            _outputTarget.WriteLine(outputSegments);
-        }
-    }
-
-    private void RenderDiff(CliRenderBlock block)
-    {
-        _outputTarget.WriteLine([
-            new CliOutputSegment("  ", CliOutputStyle.Muted),
-            new CliOutputSegment("[diff]", CliOutputStyle.CodeFence)
-        ]);
-
-        foreach (CliRenderLine line in block.Lines)
-        {
-            CliOutputStyle baseStyle = line.Kind switch
+            return new Rule(titleMarkup)
             {
-                CliRenderLineKind.DiffAddition => CliOutputStyle.DiffAddition,
-                CliRenderLineKind.DiffRemoval => CliOutputStyle.DiffRemoval,
-                CliRenderLineKind.DiffHeader => CliOutputStyle.DiffHeader,
-                _ => CliOutputStyle.DiffContext
+                Justification = Justify.Left,
+                Style = block.HeadingLevel == 1
+                    ? new Style(Color.Aqua, decoration: Decoration.Bold)
+                    : new Style(Color.Blue)
+            };
+        }
+
+        return new Markup(titleMarkup);
+    }
+
+    private static IRenderable CreateParagraph(CliRenderBlock block)
+    {
+        return CreateRows(block.Lines.Select(static line => (IRenderable)new Markup(BuildMarkup(line, "grey"))));
+    }
+
+    private static IRenderable CreateList(CliRenderBlock block)
+    {
+        IEnumerable<IRenderable> rows = block.Lines.Select((line, index) =>
+        {
+            string markerMarkup = block.IsOrderedList
+                ? $"[aqua]{index + 1}.[/]"
+                : $"[aqua]{'\u2022'}[/]";
+
+            return (IRenderable)new Markup($"{markerMarkup} {BuildMarkup(line, "grey")}");
+        });
+
+        return CreateRows(rows);
+    }
+
+    private static IRenderable CreateQuote(CliRenderBlock block)
+    {
+        return CreateRows(block.Lines.Select(static line =>
+            (IRenderable)new Markup($"[grey]{'\u2502'}[/] {BuildMarkup(line, "italic grey")}")));
+    }
+
+    private static IRenderable CreateCodeBlock(CliRenderBlock block)
+    {
+        return CreatePanel(
+            CreateRows(block.Lines.Select(static line =>
+                (IRenderable)new Text(GetRawLineText(line), new Style(Color.Grey)))),
+            string.IsNullOrWhiteSpace(block.Language) ? "code" : block.Language!,
+            "grey",
+            new Style(Color.Grey),
+            BoxBorder.Rounded);
+    }
+
+    private static IRenderable CreateDiffBlock(CliRenderBlock block)
+    {
+        return CreatePanel(
+            CreateRows(block.Lines.Select(static line =>
+                (IRenderable)new Text(
+                    GetRawLineText(line),
+                    line.Kind switch
+                    {
+                        CliRenderLineKind.DiffAddition => new Style(Color.Green),
+                        CliRenderLineKind.DiffRemoval => new Style(Color.Red),
+                        CliRenderLineKind.DiffHeader => new Style(Color.Aqua),
+                        _ => new Style(Color.Grey)
+                    }))),
+            "diff",
+            "aqua",
+            new Style(Color.Aqua),
+            BoxBorder.Square);
+    }
+
+    private static IRenderable CreateTable(CliRenderBlock block)
+    {
+        Table table = new()
+        {
+            Border = TableBorder.Rounded,
+            BorderStyle = new Style(Color.Grey),
+            Expand = true,
+            ShowRowSeparators = false,
+            ShowHeaders = block.HasHeaderRow
+        };
+
+        CliRenderLine? headerRow = block.HasHeaderRow
+            ? block.Lines[0]
+            : null;
+
+        IReadOnlyList<IReadOnlyList<CliInlineSegment>> headerCells = headerRow?.Cells ??
+            block.Lines[0].Cells ??
+            [block.Lines[0].Segments];
+
+        for (int columnIndex = 0; columnIndex < headerCells.Count; columnIndex++)
+        {
+            TableColumn column = new(CreateCellRenderable(
+                headerCells[columnIndex],
+                isHeader: true))
+            {
+                Alignment = MapAlignment(block, columnIndex)
             };
 
-            List<CliOutputSegment> outputSegments =
-            [
-                new CliOutputSegment("  ", CliOutputStyle.Muted)
-            ];
-
-            outputSegments.AddRange(MapLineSegments(line, baseStyle));
-            _outputTarget.WriteLine(outputSegments);
+            table.AddColumn(column);
         }
+
+        IEnumerable<CliRenderLine> dataRows = block.HasHeaderRow
+            ? block.Lines.Skip(1)
+            : block.Lines;
+
+        foreach (CliRenderLine row in dataRows)
+        {
+            IReadOnlyList<IReadOnlyList<CliInlineSegment>> cells = row.Cells ?? [row.Segments];
+            IRenderable[] renderables = Enumerable.Range(0, headerCells.Count)
+                .Select(columnIndex => CreateCellRenderable(
+                    columnIndex < cells.Count ? cells[columnIndex] : [],
+                    isHeader: false))
+                .ToArray();
+
+            table.AddRow(renderables);
+        }
+
+        return table;
+    }
+
+    private static IRenderable CreateAlert(CliRenderBlock block)
+    {
+        return CreatePanel(
+            CreateRows(block.Lines.Select(static line =>
+                (IRenderable)new Markup(BuildMarkup(line, "yellow")))),
+            "note",
+            "yellow",
+            new Style(Color.Yellow),
+            BoxBorder.Rounded);
+    }
+
+    private static Panel CreatePanel(
+        IRenderable body,
+        string header,
+        string headerStyleMarkup,
+        Style borderStyle,
+        BoxBorder border)
+    {
+        Panel panel = new(body)
+        {
+            Border = border,
+            BorderStyle = borderStyle,
+            Expand = true,
+            Header = new PanelHeader(
+                $"[{headerStyleMarkup}]{Markup.Escape(header)}[/]",
+                Justify.Left)
+        };
+
+        return panel;
+    }
+
+    private static Rows CreateRows(IEnumerable<IRenderable> renderables)
+    {
+        return new Rows(renderables.ToArray());
+    }
+
+    private static IRenderable CreateCellRenderable(
+        IReadOnlyList<CliInlineSegment> segments,
+        bool isHeader)
+    {
+        return new Markup(BuildMarkup(
+            segments,
+            isHeader ? "bold white" : "grey"));
+    }
+
+    private static string BuildMarkup(
+        CliRenderLine line,
+        string baseStyle)
+    {
+        return BuildMarkup(line.Segments, baseStyle);
+    }
+
+    private static string BuildMarkup(
+        IReadOnlyList<CliInlineSegment> segments,
+        string baseStyle)
+    {
+        StringBuilder builder = new();
+
+        foreach (CliInlineSegment segment in segments)
+        {
+            builder.Append(segment.Style switch
+            {
+                CliInlineStyle.Strong => WrapMarkup(segment.Text, "bold white"),
+                CliInlineStyle.Emphasis => WrapMarkup(segment.Text, "italic aqua"),
+                CliInlineStyle.Code => WrapMarkup(segment.Text, "yellow"),
+                CliInlineStyle.Link => BuildLinkMarkup(segment),
+                _ => WrapMarkup(segment.Text, baseStyle)
+            });
+        }
+
+        return builder.Length == 0
+            ? WrapMarkup(string.Empty, baseStyle)
+            : builder.ToString();
+    }
+
+    private static Justify MapAlignment(
+        CliRenderBlock block,
+        int columnIndex)
+    {
+        if (columnIndex >= block.TableColumnAlignments.Count)
+        {
+            return Justify.Left;
+        }
+
+        return block.TableColumnAlignments[columnIndex] switch
+        {
+            CliTableColumnAlignment.Center => Justify.Center,
+            CliTableColumnAlignment.Right => Justify.Right,
+            _ => Justify.Left
+        };
     }
 
     private void RenderAlertBlock(
@@ -201,11 +338,24 @@ internal sealed class CliTextRenderer : ICliTextRenderer
         CliRenderLine line,
         CliOutputStyle baseStyle)
     {
-        return line.Segments
-            .Select(segment => new CliOutputSegment(
+        List<CliOutputSegment> outputSegments = [];
+
+        foreach (CliInlineSegment segment in line.Segments)
+        {
+            outputSegments.Add(new CliOutputSegment(
                 segment.Text,
-                MapInlineStyle(segment.Style, baseStyle)))
-            .ToArray();
+                MapInlineStyle(segment.Style, baseStyle)));
+
+            if (segment.Style == CliInlineStyle.Link &&
+                !string.IsNullOrWhiteSpace(segment.Target))
+            {
+                outputSegments.Add(new CliOutputSegment(
+                    $" ({segment.Target})",
+                    CliOutputStyle.Muted));
+            }
+        }
+
+        return outputSegments;
     }
 
     private static CliOutputStyle MapInlineStyle(
@@ -217,12 +367,42 @@ internal sealed class CliTextRenderer : ICliTextRenderer
             CliInlineStyle.Code => CliOutputStyle.InlineCode,
             CliInlineStyle.Strong => CliOutputStyle.Strong,
             CliInlineStyle.Emphasis => CliOutputStyle.Emphasis,
+            CliInlineStyle.Link => CliOutputStyle.Link,
             _ => baseStyle
         };
     }
 
-    private static int GetContentLength(IReadOnlyList<CliInlineSegment> segments)
+    private async Task DelayIfAnimatedAsync(CancellationToken cancellationToken)
     {
-        return segments.Sum(static segment => segment.Text.Length);
+        if (!_settings.EnableAnimations ||
+            !_outputTarget.SupportsColor ||
+            _settings.AssistantBlockDelay <= TimeSpan.Zero)
+        {
+            return;
+        }
+
+        await Task.Delay(_settings.AssistantBlockDelay, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static string BuildLinkMarkup(CliInlineSegment segment)
+    {
+        string labelMarkup = WrapMarkup(segment.Text, "underline aqua");
+
+        if (string.IsNullOrWhiteSpace(segment.Target))
+        {
+            return labelMarkup;
+        }
+
+        return $"{labelMarkup}[grey] ({Markup.Escape(segment.Target)})[/]";
+    }
+
+    private static string WrapMarkup(string text, string style)
+    {
+        return $"[{style}]{Markup.Escape(text)}[/]";
+    }
+
+    private static string GetRawLineText(CliRenderLine line)
+    {
+        return string.Concat(line.Segments.Select(static segment => segment.Text));
     }
 }

@@ -368,6 +368,11 @@
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
       },
+      "Spectre.Console": {
+        "type": "Transitive",
+        "resolved": "0.54.0",
+        "contentHash": "StDXCFayfy0yB1xzUHT2tgEpV1/HFTiS4JgsAQS49EYTfMixSwwucaQs/bIOCwXjWwIQTMuxjUIxcB5XsJkFJA=="
+      },
       "System.Diagnostics.EventLog": {
         "type": "Transitive",
         "resolved": "10.0.0",
@@ -413,14 +418,15 @@
           "xunit.extensibility.core": "[2.9.3]"
         }
       },
-      "NanoAgent": {
+      "nanoagent": {
         "type": "Project",
         "dependencies": {
           "Microsoft.Extensions.Configuration.Binder": "[10.0.0, )",
           "Microsoft.Extensions.Hosting": "[10.0.0, )",
           "Microsoft.Extensions.Http": "[10.0.0, )",
           "Microsoft.Extensions.Logging.Console": "[10.0.0, )",
-          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.0, )"
+          "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.0, )",
+          "Spectre.Console": "[0.54.0, )"
         }
       }
     }
