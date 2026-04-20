@@ -21,4 +21,19 @@ public sealed class UserDataPathProviderTests
         Path.GetFileName(logsDirectoryPath).Should().Be("logs");
         logsDirectoryPath.Should().Contain("NanoAgent");
     }
+
+    [Fact]
+    public void GetSectionsDirectoryPath_Should_ReturnStorageDirectorySectionsPath()
+    {
+        UserDataPathProvider sut = new(Options.Create(new ApplicationOptions
+        {
+            ProductName = "NanoAgent",
+            StorageDirectoryName = "NanoAgent"
+        }));
+
+        string sectionsDirectoryPath = sut.GetSectionsDirectoryPath();
+
+        Path.GetFileName(sectionsDirectoryPath).Should().Be("sections");
+        sectionsDirectoryPath.Should().Contain("NanoAgent");
+    }
 }

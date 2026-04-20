@@ -84,6 +84,11 @@ public sealed class DailyFileLoggerProviderTests : IDisposable
         {
             return _logsDirectoryPath;
         }
+
+        public string GetSectionsDirectoryPath()
+        {
+            return Path.Combine(_logsDirectoryPath, "..", "sections");
+        }
     }
 
     private sealed class FixedTimeProvider : TimeProvider

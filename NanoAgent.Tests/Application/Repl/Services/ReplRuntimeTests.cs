@@ -34,6 +34,7 @@ public sealed class ReplRuntimeTests
             .ReturnsAsync(ReplCommandResult.Exit());
 
         Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -42,6 +43,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             Mock.Of<ITokenEstimator>());
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -76,6 +78,7 @@ public sealed class ReplRuntimeTests
             .ReturnsAsync(ReplCommandResult.Exit());
 
         Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -84,6 +87,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             Mock.Of<ITokenEstimator>());
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -115,6 +119,7 @@ public sealed class ReplRuntimeTests
             .ReturnsAsync(ReplCommandResult.Exit());
 
         Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -123,6 +128,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             Mock.Of<ITokenEstimator>());
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -148,6 +154,7 @@ public sealed class ReplRuntimeTests
             .ReturnsAsync(ReplCommandResult.Exit());
 
         Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -156,6 +163,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             Mock.Of<ITokenEstimator>());
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -193,6 +201,12 @@ public sealed class ReplRuntimeTests
 
         Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
         tokenEstimator.Setup(estimator => estimator.Estimate("help me plan this change")).Returns(5);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "help me plan this change"));
+        replSectionService
+            .Setup(service => service.SaveIfDirtyAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -201,6 +215,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             tokenEstimator.Object);
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -277,6 +292,12 @@ public sealed class ReplRuntimeTests
 
         Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
         tokenEstimator.Setup(estimator => estimator.Estimate("create the app")).Returns(4);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "create the app"));
+        replSectionService
+            .Setup(service => service.SaveIfDirtyAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -285,6 +306,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             tokenEstimator.Object);
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -335,6 +357,14 @@ public sealed class ReplRuntimeTests
         Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
         tokenEstimator.Setup(estimator => estimator.Estimate("first question")).Returns(5);
         tokenEstimator.Setup(estimator => estimator.Estimate("second question")).Returns(3);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "first question"));
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "second question"));
+        replSectionService
+            .Setup(service => service.SaveIfDirtyAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -343,6 +373,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             tokenEstimator.Object);
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -377,6 +408,7 @@ public sealed class ReplRuntimeTests
             .ReturnsAsync(ReplCommandResult.Exit());
 
         Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -385,6 +417,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             Mock.Of<ITokenEstimator>());
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -420,6 +453,9 @@ public sealed class ReplRuntimeTests
 
         Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
         tokenEstimator.Setup(estimator => estimator.Estimate("hello")).Returns(2);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "hello"));
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -428,6 +464,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             tokenEstimator.Object);
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -461,6 +498,9 @@ public sealed class ReplRuntimeTests
 
         Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
         tokenEstimator.Setup(estimator => estimator.Estimate("hello")).Returns(2);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "hello"));
 
         ReplRuntime sut = CreateSut(
             inputReader,
@@ -469,6 +509,7 @@ public sealed class ReplRuntimeTests
             commandParser.Object,
             commandDispatcher.Object,
             conversationPipeline.Object,
+            replSectionService.Object,
             tokenEstimator.Object);
 
         await sut.RunAsync(session, CancellationToken.None);
@@ -479,6 +520,74 @@ public sealed class ReplRuntimeTests
         commandDispatcher.Verify(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()), Times.Once);
     }
 
+    [Fact]
+    public async Task RunAsync_Should_WriteResumeCommand_When_ExitCommandEndsTheSession()
+    {
+        ReplSessionContext session = CreateSession();
+        QueueReplInputReader inputReader = new("/exit");
+        RecordingReplOutputWriter outputWriter = new();
+        ParsedReplCommand exitCommand = new("/exit", "exit", string.Empty, []);
+
+        Mock<IReplCommandParser> commandParser = new(MockBehavior.Strict);
+        commandParser.Setup(parser => parser.Parse("/exit")).Returns(exitCommand);
+
+        Mock<IReplCommandDispatcher> commandDispatcher = new(MockBehavior.Strict);
+        commandDispatcher
+            .Setup(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ReplCommandResult.Exit());
+
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+
+        ReplRuntime sut = CreateSut(
+            inputReader,
+            outputWriter,
+            new NoOpReplInterruptMonitor(),
+            commandParser.Object,
+            commandDispatcher.Object,
+            conversationPipeline.Object,
+            replSectionService.Object,
+            Mock.Of<ITokenEstimator>());
+
+        await sut.RunAsync(session, CancellationToken.None);
+
+        outputWriter.InfoMessages.Should().Contain(message =>
+            message.Contains(session.SectionResumeCommand, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_WriteResumeCommand_When_HostCancellationStopsTheSession()
+    {
+        ReplSessionContext session = CreateSession();
+        BlockingReplInputReader inputReader = new();
+        RecordingReplOutputWriter outputWriter = new();
+
+        Mock<IReplCommandParser> commandParser = new(MockBehavior.Strict);
+        Mock<IReplCommandDispatcher> commandDispatcher = new(MockBehavior.Strict);
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+
+        ReplRuntime sut = CreateSut(
+            inputReader,
+            outputWriter,
+            new NoOpReplInterruptMonitor(),
+            commandParser.Object,
+            commandDispatcher.Object,
+            conversationPipeline.Object,
+            replSectionService.Object,
+            Mock.Of<ITokenEstimator>());
+
+        using CancellationTokenSource cancellationSource = new();
+        Task runTask = sut.RunAsync(session, cancellationSource.Token);
+        await Task.Delay(25);
+        cancellationSource.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
+
+        outputWriter.InfoMessages.Should().Contain(message =>
+            message.Contains(session.SectionResumeCommand, StringComparison.Ordinal));
+    }
+
     private static ReplRuntime CreateSut(
         IReplInputReader inputReader,
         IReplOutputWriter outputWriter,
@@ -486,6 +595,7 @@ public sealed class ReplRuntimeTests
         IReplCommandParser commandParser,
         IReplCommandDispatcher commandDispatcher,
         IConversationPipeline conversationPipeline,
+        IReplSectionService replSectionService,
         ITokenEstimator tokenEstimator)
     {
         return new ReplRuntime(
@@ -495,8 +605,24 @@ public sealed class ReplRuntimeTests
             commandParser,
             commandDispatcher,
             conversationPipeline,
+            replSectionService,
             tokenEstimator,
             NullLogger<ReplRuntime>.Instance);
+    }
+
+    private static Mock<IReplSectionService> CreateSectionServiceMock(ReplSessionContext session)
+    {
+        Mock<IReplSectionService> replSectionService = new(MockBehavior.Strict);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, It.IsAny<string>()));
+        replSectionService
+            .Setup(service => service.SaveIfDirtyAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        replSectionService
+            .Setup(service => service.StopAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        return replSectionService;
     }
 
     private static ReplSessionContext CreateSession()
@@ -521,6 +647,15 @@ public sealed class ReplRuntimeTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(_inputs.Count == 0 ? null : _inputs.Dequeue());
+        }
+    }
+
+    private sealed class BlockingReplInputReader : IReplInputReader
+    {
+        public async Task<string?> ReadLineAsync(CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return null;
         }
     }
 

@@ -8,6 +8,7 @@ internal sealed class UserDataPathProvider : IUserDataPathProvider
 {
     private const string ConfigurationFileName = "agent-profile.json";
     private const string LogsDirectoryName = "logs";
+    private const string SectionsDirectoryName = "sections";
 
     private readonly IOptions<ApplicationOptions> _options;
 
@@ -28,6 +29,13 @@ internal sealed class UserDataPathProvider : IUserDataPathProvider
         return Path.Combine(
             GetApplicationDirectoryPath(),
             LogsDirectoryName);
+    }
+
+    public string GetSectionsDirectoryPath()
+    {
+        return Path.Combine(
+            GetApplicationDirectoryPath(),
+            SectionsDirectoryName);
     }
 
     private string GetApplicationDirectoryPath()

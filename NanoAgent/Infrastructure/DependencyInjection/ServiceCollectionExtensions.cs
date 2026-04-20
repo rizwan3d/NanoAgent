@@ -23,6 +23,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(configuration);
 
         services.AddSingleton<IUserDataPathProvider, UserDataPathProvider>();
+        services.AddSingleton<IConversationSectionStore, JsonConversationSectionStore>();
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
