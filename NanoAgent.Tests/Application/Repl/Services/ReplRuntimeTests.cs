@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Repl.Services;
 using NanoAgent.Domain.Models;
@@ -518,6 +519,49 @@ public sealed class ReplRuntimeTests
         outputWriter.ErrorMessages.Should().ContainSingle(message =>
             message.Contains("conversation pipeline failed unexpectedly", StringComparison.OrdinalIgnoreCase));
         commandDispatcher.Verify(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_ShowSpecificConversationError_When_PipelineThrowsKnownConversationException()
+    {
+        ReplSessionContext session = CreateSession();
+        QueueReplInputReader inputReader = new("hello", "/exit");
+        RecordingReplOutputWriter outputWriter = new();
+        ParsedReplCommand exitCommand = new("/exit", "exit", string.Empty, []);
+
+        Mock<IReplCommandParser> commandParser = new(MockBehavior.Strict);
+        commandParser.Setup(parser => parser.Parse("/exit")).Returns(exitCommand);
+
+        Mock<IReplCommandDispatcher> commandDispatcher = new(MockBehavior.Strict);
+        commandDispatcher
+            .Setup(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ReplCommandResult.Exit());
+
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        conversationPipeline
+            .Setup(pipeline => pipeline.ProcessAsync("hello", session, It.IsAny<IConversationProgressSink>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConversationResponseException("The provider returned neither assistant content, a refusal, nor usable tool calls."));
+
+        Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
+        tokenEstimator.Setup(estimator => estimator.Estimate("hello")).Returns(2);
+        Mock<IReplSectionService> replSectionService = CreateSectionServiceMock(session);
+        replSectionService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "hello"));
+
+        ReplRuntime sut = CreateSut(
+            inputReader,
+            outputWriter,
+            new NoOpReplInterruptMonitor(),
+            commandParser.Object,
+            commandDispatcher.Object,
+            conversationPipeline.Object,
+            replSectionService.Object,
+            tokenEstimator.Object);
+
+        await sut.RunAsync(session, CancellationToken.None);
+
+        outputWriter.ErrorMessages.Should().ContainSingle(message =>
+            message.Contains("neither assistant content, a refusal, nor usable tool calls", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

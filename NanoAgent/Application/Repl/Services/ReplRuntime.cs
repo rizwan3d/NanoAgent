@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Logging;
 using NanoAgent.Application.Models;
 using Microsoft.Extensions.Logging;
@@ -164,6 +165,16 @@ internal sealed class ReplRuntime : IReplRuntime
 
                     await _outputWriter.WriteWarningAsync(
                         "Interrupted the current request. You can ask again or continue with a new prompt.",
+                        cancellationToken);
+                }
+                catch (Exception exception) when (exception is ConversationPipelineException or
+                                                  ConversationProviderException or
+                                                  ConversationResponseException)
+                {
+                    ApplicationLogMessages.ReplConversationFailed(_logger, exception);
+
+                    await _outputWriter.WriteErrorAsync(
+                        $"{exception.Message} You can try again or use /exit to leave the shell.",
                         cancellationToken);
                 }
                 catch (Exception exception)
