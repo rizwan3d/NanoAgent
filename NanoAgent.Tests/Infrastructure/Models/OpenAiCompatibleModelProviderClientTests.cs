@@ -4,6 +4,7 @@ using System.Text;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Models;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace NanoAgent.Tests.Infrastructure.Models;
 
@@ -20,7 +21,7 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleModelProviderClient sut = new(httpClient);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
 
         IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234"),
@@ -42,7 +43,7 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleModelProviderClient sut = new(httpClient);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
 
         IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
@@ -51,6 +52,13 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         handler.RequestUri.Should().Be(new Uri("https://provider.example.com/v1/models"));
         models.Select(model => model.Id).Should().Equal("gpt-5-mini");
+    }
+
+    private static OpenAiCompatibleModelProviderClient CreateSut(HttpClient httpClient)
+    {
+        return new OpenAiCompatibleModelProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleModelProviderClient>.Instance);
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

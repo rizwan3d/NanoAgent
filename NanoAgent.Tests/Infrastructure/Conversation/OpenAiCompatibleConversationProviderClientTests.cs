@@ -6,6 +6,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Conversation;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace NanoAgent.Tests.Infrastructure.Conversation;
 
@@ -27,7 +28,7 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleConversationProviderClient sut = new(httpClient);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
 
         ConversationProviderPayload payload = await sut.SendAsync(
             new ConversationProviderRequest(
@@ -68,7 +69,7 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleConversationProviderClient sut = new(httpClient);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
 
         ConversationProviderPayload payload = await sut.SendAsync(
             new ConversationProviderRequest(
@@ -113,7 +114,7 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleConversationProviderClient sut = new(httpClient);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
 
         string toolFeedbackJson = """
             {
@@ -163,6 +164,13 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             name,
             $"Description for {name}",
             schemaDocument.RootElement.Clone());
+    }
+
+    private static OpenAiCompatibleConversationProviderClient CreateSut(HttpClient httpClient)
+    {
+        return new OpenAiCompatibleConversationProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance);
     }
 
     private sealed class RecordingHandler : HttpMessageHandler

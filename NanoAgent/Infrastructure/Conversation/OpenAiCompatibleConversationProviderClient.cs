@@ -5,16 +5,21 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.OpenAi;
+using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.Conversation;
 
 internal sealed class OpenAiCompatibleConversationProviderClient : IConversationProviderClient
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<OpenAiCompatibleConversationProviderClient> _logger;
 
-    public OpenAiCompatibleConversationProviderClient(HttpClient httpClient)
+    public OpenAiCompatibleConversationProviderClient(
+        HttpClient httpClient,
+        ILogger<OpenAiCompatibleConversationProviderClient> logger)
     {
         _httpClient = httpClient;
+        _logger = logger;
     }
 
     public async Task<ConversationProviderPayload> SendAsync(
@@ -34,6 +39,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             OpenAiConversationJsonContext.Default.OpenAiChatCompletionRequest);
 
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
 
         using HttpResponseMessage response = await _httpClient.SendAsync(
             httpRequest,
@@ -41,6 +47,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             cancellationToken);
 
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -139,5 +146,33 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         return value.Length <= maxLength
             ? value
             : value[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
+    private void LogDebugApiRequest(
+        HttpMethod method,
+        Uri? requestUri,
+        string requestBody)
+    {
+#if DEBUG
+        _logger.LogInformation(
+            "OpenAI-compatible chat API request {Method} {RequestUri}: {RequestBody}",
+            method,
+            requestUri,
+            requestBody);
+#endif
+    }
+
+    private void LogDebugApiResponse(
+        System.Net.HttpStatusCode statusCode,
+        string? responseId,
+        string responseBody)
+    {
+#if DEBUG
+        _logger.LogInformation(
+            "OpenAI-compatible chat API response {StatusCode} {ResponseId}: {ResponseBody}",
+            (int)statusCode,
+            responseId ?? "(none)",
+            responseBody);
+#endif
     }
 }

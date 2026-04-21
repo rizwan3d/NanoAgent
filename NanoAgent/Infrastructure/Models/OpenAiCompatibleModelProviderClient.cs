@@ -4,16 +4,21 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.OpenAi;
+using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.Models;
 
 internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 {
     private readonly HttpClient _httpClient;
+    private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
-    public OpenAiCompatibleModelProviderClient(HttpClient httpClient)
+    public OpenAiCompatibleModelProviderClient(
+        HttpClient httpClient,
+        ILogger<OpenAiCompatibleModelProviderClient> logger)
     {
         _httpClient = httpClient;
+        _logger = logger;
     }
 
     public async Task<IReadOnlyList<AvailableModel>> GetAvailableModelsAsync(
@@ -27,28 +32,29 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         Uri baseUri = OpenAiBaseUriResolver.Resolve(providerProfile);
         using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        LogDebugApiRequest(request.Method, request.RequestUri);
 
         using HttpResponseMessage response = await _httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
 
+        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        LogDebugApiResponse(response.StatusCode, responseBody);
+
         if (!response.IsSuccessStatusCode)
         {
-            string errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            string detail = string.IsNullOrWhiteSpace(errorBody)
+            string detail = string.IsNullOrWhiteSpace(responseBody)
                 ? $"Provider returned HTTP {(int)response.StatusCode}."
-                : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(errorBody.Trim(), 200)}";
+                : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
 
             throw new ModelProviderException(
                 $"Unable to fetch models from the configured provider. {detail}");
         }
 
-        await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        ModelListResponse? payload = await JsonSerializer.DeserializeAsync(
-            responseStream,
-            ModelApiJsonContext.Default.ModelListResponse,
-            cancellationToken);
+        ModelListResponse? payload = JsonSerializer.Deserialize(
+            responseBody,
+            ModelApiJsonContext.Default.ModelListResponse);
 
         if (payload?.Data is null)
         {
@@ -65,5 +71,29 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         return value.Length <= maxLength
             ? value
             : value[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
+    private void LogDebugApiRequest(
+        HttpMethod method,
+        Uri? requestUri)
+    {
+#if DEBUG
+        _logger.LogInformation(
+            "OpenAI-compatible models API request {Method} {RequestUri}",
+            method,
+            requestUri);
+#endif
+    }
+
+    private void LogDebugApiResponse(
+        System.Net.HttpStatusCode statusCode,
+        string responseBody)
+    {
+#if DEBUG
+        _logger.LogInformation(
+            "OpenAI-compatible models API response {StatusCode}: {ResponseBody}",
+            (int)statusCode,
+            responseBody);
+#endif
     }
 }
