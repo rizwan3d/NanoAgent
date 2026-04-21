@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Serialization;
@@ -53,7 +52,7 @@ internal sealed class FileReadTool : ITool
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!TryGetRequiredString(context.Arguments, "path", out string? path))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "path", out string? path))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_path",
@@ -78,19 +77,4 @@ internal sealed class FileReadTool : ITool
                 result.Content));
     }
 
-    private static bool TryGetRequiredString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString()?.Trim();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        value = null;
-        return false;
-    }
 }

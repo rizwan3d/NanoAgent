@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
@@ -62,7 +61,7 @@ internal sealed class TextSearchTool : ITool
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!TryGetRequiredString(context.Arguments, "query", out string? query))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "query", out string? query))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_query",
@@ -77,8 +76,8 @@ internal sealed class TextSearchTool : ITool
         WorkspaceTextSearchResult result = await _workspaceFileService.SearchTextAsync(
             new WorkspaceTextSearchRequest(
                 safeQuery,
-                TryGetOptionalString(context.Arguments, "path"),
-                TryGetOptionalBoolean(context.Arguments, "caseSensitive", out bool caseSensitive) && caseSensitive),
+                ToolArguments.GetOptionalString(context.Arguments, "path"),
+                ToolArguments.GetBoolean(context.Arguments, "caseSensitive")),
             cancellationToken);
 
         string renderText = result.Matches.Count == 0
@@ -96,48 +95,4 @@ internal sealed class TextSearchTool : ITool
                 renderText));
     }
 
-    private static bool TryGetOptionalBoolean(
-        JsonElement arguments,
-        string propertyName,
-        out bool value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            value = property.GetBoolean();
-            return true;
-        }
-
-        value = default;
-        return false;
-    }
-
-    private static string? TryGetOptionalString(
-        JsonElement arguments,
-        string propertyName)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            return property.GetString()?.Trim();
-        }
-
-        return null;
-    }
-
-    private static bool TryGetRequiredString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString()?.Trim();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        value = null;
-        return false;
-    }
 }

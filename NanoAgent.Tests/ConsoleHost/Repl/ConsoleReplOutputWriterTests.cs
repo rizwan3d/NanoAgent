@@ -23,13 +23,14 @@ public sealed class ConsoleReplOutputWriterTests
         await sut.WriteShellHeaderAsync("NanoAgent", "gpt-oss-20b", CancellationToken.None);
 
         string output = GetPlainOutput(terminal.Output);
-        output.Should().Contain("NanoAgent");
+        output.Should().Contain("███╗   ██╗  █████╗  ███╗   ██╗  ██████╗");
+        output.Should().Contain("██████╗  ███████╗");
         output.Should().Contain("Model: gpt-oss-20b");
         output.Should().Contain("GitHub: github.com/rizwan3d/NanoAgent");
         output.Should().Contain("Sponsor: ALFAIN Technologies (PVT) Limited (https://alfain.co/)");
         output.Should().Contain("Press Ctrl+C or use /exit to quit.");
         output.Should().Contain("Press Esc while a response is running to interrupt the current request.");
-        output.Should().Contain(new string('\u2500', 53));
+        output.Should().Contain(new string('-', 53));
     }
 
     [Fact]
@@ -130,9 +131,9 @@ public sealed class ConsoleReplOutputWriterTests
 
         string output = GetPlainOutput(terminal.Output);
         output.Should().Contain("\u2022 Ran Get-ChildItem -Force");
-        output.Should().Contain("\u2514 . : File C:\\Users\\allga\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1 cannot be loaded because");
+        output.Should().Contain("- . : File C:\\Users\\allga\\Documents\\WindowsPowerShell\\Microsoft.PowerShell_profile.ps1 cannot be loaded because");
         output.Should().Contain("\u2022 Edited 2 files (+5 -1)");
-        output.Should().Contain("\u2514 index.html (+4 -0)");
+        output.Should().Contain("- index.html (+4 -0)");
         output.Should().Contain("1 +<!DOCTYPE html>");
         output.Should().Contain("\u2026 +1 more file");
     }
@@ -247,6 +248,35 @@ public sealed class ConsoleReplOutputWriterTests
     }
 
     [Fact]
+    public async Task BeginResponseProgressAsync_Should_NotThrow_When_CurrentTaskIsLastShortPlanItem()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsoleReplOutputWriter sut = CreateSut(terminal);
+
+        await using IResponseProgress progress = await sut.BeginResponseProgressAsync(14, 0, CancellationToken.None);
+
+        Func<Task> action = async () =>
+        {
+            await progress.ReportExecutionPlanAsync(
+                new ExecutionPlanProgress(
+                    [
+                        "Inspect the workspace.",
+                        "Update the README.",
+                        "Run tests."
+                    ],
+                    completedTaskCount: 2),
+                CancellationToken.None);
+        };
+
+        await action.Should().NotThrowAsync();
+        string output = GetPlainOutput(terminal.Output);
+        output.Should().Contain("Tasks: 2 done | 1 current | 0 remaining");
+        output.Should().Contain("[x] Inspect the workspace.");
+        output.Should().Contain("[x] Update the README.");
+        output.Should().Contain("[>] Run tests.");
+    }
+
+    [Fact]
     public async Task BeginResponseProgressAsync_Should_NotThrow_When_DirectoryListPayloadOmitsEntries()
     {
         FakeConsoleTerminal terminal = new();
@@ -336,14 +366,14 @@ public sealed class ConsoleReplOutputWriterTests
 
         string output = GetPlainOutput(terminal.Output);
 
-        output.Should().Contain("\u2514 index.html (+1 -0)");
-        output.Should().Contain("\u2514 style.css (+1 -0)");
-        output.Should().Contain("\u2514 script.js (+1 -0)");
+        output.Should().Contain("- index.html (+1 -0)");
+        output.Should().Contain("- style.css (+1 -0)");
+        output.Should().Contain("- script.js (+1 -0)");
         output.Should().NotContain(
-            $"{Environment.NewLine}{Environment.NewLine}\u2022 Edited 1 file (+1 -0){Environment.NewLine}  \u2514 style.css (+1 -0)",
+            $"{Environment.NewLine}{Environment.NewLine}\u2022 Edited 1 file (+1 -0){Environment.NewLine}  - style.css (+1 -0)",
             "each new tool round should reuse the live status line row instead of leaving a blank spacer behind");
         output.Should().NotContain(
-            $"{Environment.NewLine}{Environment.NewLine}\u2022 Edited 1 file (+1 -0){Environment.NewLine}  \u2514 script.js (+1 -0)",
+            $"{Environment.NewLine}{Environment.NewLine}\u2022 Edited 1 file (+1 -0){Environment.NewLine}  - script.js (+1 -0)",
             "repeated tool rounds should stay compact");
     }
 
@@ -390,7 +420,7 @@ public sealed class ConsoleReplOutputWriterTests
 
         return new ConsoleReplOutputWriter(
             new MarkdownLikeCliMessageFormatter(),
-            new CliTextRenderer(outputTarget, console, settings),
+            new CliTextRenderer(outputTarget, console),
             outputTarget,
             console,
             new ConsoleInteractionGate(),

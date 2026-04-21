@@ -1,7 +1,17 @@
+using Markdig;
+using Markdig.Extensions.Tables;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
+using MarkdigTable = Markdig.Extensions.Tables.Table;
+
 namespace NanoAgent.ConsoleHost.Rendering;
 
 internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
 {
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UsePipeTables()
+        .Build();
+
     public CliRenderDocument Format(
         CliRenderMessageKind kind,
         string message)
@@ -9,556 +19,359 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
 
         return kind == CliRenderMessageKind.Assistant
-            ? new CliRenderDocument(kind, ParseAssistantMessage(message))
+            ? new CliRenderDocument(kind, ParseBlocks(Markdown.Parse(message, MarkdownPipeline)))
             : new CliRenderDocument(kind, [CreateAlertBlock(message)]);
     }
 
-    private static IReadOnlyList<CliRenderBlock> ParseAssistantMessage(string message)
+    private static IReadOnlyList<CliRenderBlock> ParseBlocks(IEnumerable<Block> markdownBlocks)
     {
-        string[] lines = NormalizeLines(message);
         List<CliRenderBlock> blocks = [];
-        List<string> paragraphLines = [];
 
-        for (int index = 0; index < lines.Length; index++)
+        foreach (Block block in markdownBlocks)
         {
-            string line = lines[index];
-
-            if (IsFenceStart(line, out string? language))
+            switch (block)
             {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.AddRange(ParseFencedBlocks(lines, ref index, language));
-                continue;
-            }
+                case HeadingBlock heading:
+                    blocks.Add(new CliRenderBlock(
+                        CliRenderBlockKind.Heading,
+                        [CreateLine(heading.Inline)],
+                        headingLevel: heading.Level));
+                    break;
 
-            if (TryParseHeading(line, out int headingLevel, out string? headingText))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.Add(new CliRenderBlock(
-                    CliRenderBlockKind.Heading,
-                    [new CliRenderLine(ParseInlineSegments(headingText!))],
-                    headingLevel: headingLevel));
-                continue;
-            }
+                case ParagraphBlock paragraph:
+                    blocks.Add(new CliRenderBlock(
+                        CliRenderBlockKind.Paragraph,
+                        [CreateLine(paragraph.Inline)]));
+                    break;
 
-            if (TryParseStandaloneDiff(lines, ref index, out CliRenderBlock? diffBlock))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.Add(diffBlock!);
-                continue;
-            }
+                case ListBlock list:
+                    blocks.Add(CreateListBlock(list));
+                    break;
 
-            if (TryParseTable(lines, ref index, out CliRenderBlock? tableBlock))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.Add(tableBlock!);
-                continue;
-            }
+                case QuoteBlock quote:
+                    blocks.Add(CreateQuoteBlock(quote));
+                    break;
 
-            if (IsHorizontalRule(line))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.Add(CreateRuleBlock());
-                continue;
-            }
+                case ThematicBreakBlock:
+                    blocks.Add(new CliRenderBlock(
+                        CliRenderBlockKind.Rule,
+                        [new CliRenderLine([new CliInlineSegment(string.Empty)])]));
+                    break;
 
-            if (TryParseListItem(line, out bool isOrderedList, out string? listItemText))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.Add(ParseListBlock(lines, ref index, isOrderedList, listItemText!));
-                continue;
-            }
+                case MarkdigTable table:
+                    blocks.Add(CreateTableBlock(table));
+                    break;
 
-            if (TryParseQuoteLine(line, out string? quoteText))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                blocks.Add(ParseQuoteBlock(lines, ref index, quoteText!));
-                continue;
-            }
+                case FencedCodeBlock fencedCode:
+                    blocks.AddRange(CreateFencedCodeBlocks(fencedCode));
+                    break;
 
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                FlushParagraph(blocks, paragraphLines);
-                continue;
-            }
+                case CodeBlock code:
+                    blocks.Add(CreateCodeBlock(code, language: null));
+                    break;
 
-            paragraphLines.Add(line);
+                case ContainerBlock container:
+                    blocks.AddRange(ParseBlocks(container));
+                    break;
+            }
         }
 
-        FlushParagraph(blocks, paragraphLines);
-
-        if (blocks.Count == 0)
-        {
-            blocks.Add(CreateParagraphBlock([message.Trim()]));
-        }
-
-        return blocks;
+        return blocks.Count == 0
+            ? [CreateParagraphBlock(string.Empty)]
+            : blocks;
     }
 
     private static CliRenderBlock CreateAlertBlock(string message)
     {
-        string[] lines = NormalizeLines(message)
+        CliRenderLine[] lines = NormalizeLines(message)
             .Where(static line => !string.IsNullOrWhiteSpace(line))
+            .Select(static line => new CliRenderLine(ParseInlineSegments(line.Trim())))
             .ToArray();
-
-        if (lines.Length == 0)
-        {
-            lines = [message.Trim()];
-        }
 
         return new CliRenderBlock(
             CliRenderBlockKind.Alert,
-            lines.Select(static line => new CliRenderLine(ParseInlineSegments(line.Trim())))
-                .ToArray());
+            lines.Length == 0
+                ? [new CliRenderLine([new CliInlineSegment(message.Trim())])]
+                : lines);
     }
 
-    private static void FlushParagraph(
-        List<CliRenderBlock> blocks,
-        List<string> paragraphLines)
-    {
-        if (paragraphLines.Count == 0)
-        {
-            return;
-        }
-
-        blocks.Add(CreateParagraphBlock(paragraphLines));
-        paragraphLines.Clear();
-    }
-
-    private static CliRenderBlock CreateParagraphBlock(IReadOnlyList<string> paragraphLines)
+    private static CliRenderBlock CreateParagraphBlock(string text)
     {
         return new CliRenderBlock(
             CliRenderBlockKind.Paragraph,
-            paragraphLines
-                .Select(static line => new CliRenderLine(ParseInlineSegments(line.Trim())))
-                .ToArray());
+            [new CliRenderLine(ParseInlineSegments(text.Trim()))]);
     }
 
-    private static IReadOnlyList<CliRenderBlock> ParseFencedBlocks(
-        string[] lines,
-        ref int index,
-        string? language)
+    private static CliRenderBlock CreateListBlock(ListBlock list)
     {
-        List<string> contentLines = [];
+        List<CliRenderLine> items = [];
 
-        index++;
-        for (; index < lines.Length; index++)
+        foreach (Block itemBlock in list)
         {
-            if (lines[index].Trim() == "```")
+            if (itemBlock is not ListItemBlock item)
             {
-                break;
+                continue;
             }
 
-            contentLines.Add(lines[index]);
-        }
-
-        bool isDiff = string.Equals(language, "diff", StringComparison.OrdinalIgnoreCase) ||
-                      contentLines.Any(static line => LooksLikeStandaloneDiffContent(line));
-
-        if (IsMarkdownLanguage(language) && contentLines.Count > 0)
-        {
-            return ParseAssistantMessage(string.Join('\n', contentLines));
-        }
-
-        return isDiff
-            ? [CreateDiffBlock(contentLines)]
-            : [CreateCodeBlock(contentLines, language)];
-    }
-
-    private static CliRenderBlock ParseListBlock(
-        string[] lines,
-        ref int index,
-        bool isOrderedList,
-        string firstItemText)
-    {
-        List<CliRenderLine> items =
-        [
-            new CliRenderLine(ParseInlineSegments(firstItemText))
-        ];
-
-        for (int nextIndex = index + 1; nextIndex < lines.Length; nextIndex++)
-        {
-            if (!TryParseListItem(lines[nextIndex], out bool currentIsOrderedList, out string? itemText) ||
-                currentIsOrderedList != isOrderedList)
-            {
-                break;
-            }
-
-            items.Add(new CliRenderLine(ParseInlineSegments(itemText!)));
-            index = nextIndex;
+            items.Add(CreateListItemLine(item));
         }
 
         return new CliRenderBlock(
             CliRenderBlockKind.List,
-            items,
-            isOrderedList: isOrderedList);
+            items.Count == 0
+                ? [new CliRenderLine([new CliInlineSegment(string.Empty)])]
+                : items,
+            isOrderedList: list.IsOrdered);
     }
 
-    private static CliRenderBlock ParseQuoteBlock(
-        string[] lines,
-        ref int index,
-        string firstQuoteLine)
+    private static CliRenderLine CreateListItemLine(ListItemBlock item)
     {
-        List<CliRenderLine> quoteLines =
-        [
-            new CliRenderLine(ParseInlineSegments(firstQuoteLine))
-        ];
+        ParagraphBlock? paragraph = item.OfType<ParagraphBlock>().FirstOrDefault();
+        return paragraph?.Inline is null
+            ? new CliRenderLine(ParseInlineSegments(FlattenBlocks(item)))
+            : CreateLine(paragraph.Inline);
+    }
 
-        for (int nextIndex = index + 1; nextIndex < lines.Length; nextIndex++)
-        {
-            if (!TryParseQuoteLine(lines[nextIndex], out string? quoteText))
-            {
-                break;
-            }
-
-            quoteLines.Add(new CliRenderLine(ParseInlineSegments(quoteText!)));
-            index = nextIndex;
-        }
+    private static CliRenderBlock CreateQuoteBlock(QuoteBlock quote)
+    {
+        string[] lines = NormalizeLines(FlattenBlocks(quote))
+            .Where(static line => !string.IsNullOrWhiteSpace(line))
+            .ToArray();
 
         return new CliRenderBlock(
             CliRenderBlockKind.Quote,
-            quoteLines);
+            lines.Length == 0
+                ? [new CliRenderLine([new CliInlineSegment(string.Empty)])]
+                : lines.Select(static line => new CliRenderLine(ParseInlineSegments(line.Trim()))).ToArray());
     }
 
-    private static bool TryParseStandaloneDiff(
-        string[] lines,
-        ref int index,
-        out CliRenderBlock? block)
+    private static IReadOnlyList<CliRenderBlock> CreateFencedCodeBlocks(FencedCodeBlock block)
     {
-        if (!LooksLikeDiffHeader(lines[index]))
+        string language = block.Info?.Trim() ?? string.Empty;
+        string text = GetBlockText(block);
+
+        if (IsMarkdownLanguage(language) && !string.IsNullOrWhiteSpace(text))
         {
-            block = null;
-            return false;
+            return ParseBlocks(Markdown.Parse(text, MarkdownPipeline));
         }
 
-        List<string> diffLines = [];
-
-        for (; index < lines.Length; index++)
-        {
-            string line = lines[index];
-            if (string.IsNullOrWhiteSpace(line))
-            {
-                index--;
-                break;
-            }
-
-            if (!LooksLikeStandaloneDiffContent(line))
-            {
-                index--;
-                break;
-            }
-
-            diffLines.Add(line);
-        }
-
-        block = CreateDiffBlock(diffLines);
-        return true;
-    }
-
-    private static bool TryParseTable(
-        string[] lines,
-        ref int index,
-        out CliRenderBlock? block)
-    {
-        if (index + 1 >= lines.Length ||
-            !TrySplitTableRow(lines[index], out IReadOnlyList<string>? headerCells) ||
-            headerCells is null ||
-            !TryParseTableSeparator(lines[index + 1], headerCells.Count, out IReadOnlyList<CliTableColumnAlignment>? alignments) ||
-            alignments is null)
-        {
-            block = null;
-            return false;
-        }
-
-        List<CliRenderLine> rows =
-        [
-            CreateTableRow(headerCells)
-        ];
-
-        int lastConsumedLineIndex = index + 1;
-        for (int nextIndex = index + 2; nextIndex < lines.Length; nextIndex++)
-        {
-            if (string.IsNullOrWhiteSpace(lines[nextIndex]))
-            {
-                break;
-            }
-
-            if (!TrySplitTableRow(lines[nextIndex], out IReadOnlyList<string>? rowCells) ||
-                rowCells is null ||
-                rowCells.Count != headerCells.Count)
-            {
-                break;
-            }
-
-            rows.Add(CreateTableRow(rowCells));
-            lastConsumedLineIndex = nextIndex;
-        }
-
-        index = lastConsumedLineIndex;
-        block = new CliRenderBlock(
-            CliRenderBlockKind.Table,
-            rows,
-            hasHeaderRow: true,
-            tableColumnAlignments: alignments);
-        return true;
+        return [IsDiffBlock(language, text)
+            ? CreateDiffBlock(text)
+            : CreateCodeBlock(block, language)];
     }
 
     private static CliRenderBlock CreateCodeBlock(
-        IReadOnlyList<string> lines,
+        LeafBlock block,
         string? language)
     {
-        IReadOnlyList<CliRenderLine> renderLines = lines.Count == 0
-            ? [new CliRenderLine([new CliInlineSegment(string.Empty)])]
-            : lines.Select(static line => new CliRenderLine([new CliInlineSegment(line)]))
-                .ToArray();
+        CliRenderLine[] lines = NormalizeLines(GetBlockText(block))
+            .Select(static line => new CliRenderLine([new CliInlineSegment(line)]))
+            .ToArray();
 
         return new CliRenderBlock(
             CliRenderBlockKind.CodeBlock,
-            renderLines,
+            lines.Length == 0
+                ? [new CliRenderLine([new CliInlineSegment(string.Empty)])]
+                : lines,
             language);
     }
 
-    private static CliRenderBlock CreateDiffBlock(IReadOnlyList<string> lines)
+    private static CliRenderBlock CreateDiffBlock(string text)
     {
-        IReadOnlyList<CliRenderLine> renderLines = lines.Count == 0
-            ? [new CliRenderLine([new CliInlineSegment(string.Empty)], CliRenderLineKind.DiffContext)]
-            : lines.Select(static line => new CliRenderLine(
-                    [new CliInlineSegment(line)],
-                    GetDiffLineKind(line)))
-                .ToArray();
+        CliRenderLine[] lines = NormalizeLines(text)
+            .Select(static line => new CliRenderLine(
+                [new CliInlineSegment(line)],
+                GetDiffLineKind(line)))
+            .ToArray();
 
         return new CliRenderBlock(
             CliRenderBlockKind.Diff,
-            renderLines,
+            lines.Length == 0
+                ? [new CliRenderLine([new CliInlineSegment(string.Empty)], CliRenderLineKind.DiffContext)]
+                : lines,
             "diff");
     }
 
-    private static CliRenderLine CreateTableRow(IReadOnlyList<string> cells)
+    private static CliRenderBlock CreateTableBlock(MarkdigTable table)
     {
-        return new CliRenderLine(cells.Select(static cell => ParseInlineSegments(cell)).ToArray());
-    }
-
-    private static CliRenderBlock CreateRuleBlock()
-    {
-        return new CliRenderBlock(
-            CliRenderBlockKind.Rule,
-            [new CliRenderLine([new CliInlineSegment(string.Empty)])]);
-    }
-
-    private static bool IsFenceStart(
-        string line,
-        out string? language)
-    {
-        string trimmed = line.Trim();
-        if (!trimmed.StartsWith("```", StringComparison.Ordinal))
+        List<CliRenderLine> rows = [];
+        foreach (Block rowBlock in table)
         {
-            language = null;
-            return false;
+            if (rowBlock is not TableRow row)
+            {
+                continue;
+            }
+
+            rows.Add(new CliRenderLine(row
+                .OfType<TableCell>()
+                .Select(CreateCellSegments)
+                .ToArray()));
         }
 
-        language = trimmed.Length == 3
-            ? null
-            : trimmed[3..].Trim();
-
-        return true;
+        return new CliRenderBlock(
+            CliRenderBlockKind.Table,
+            rows.Count == 0
+                ? [new CliRenderLine([new CliInlineSegment(string.Empty)])]
+                : rows,
+            hasHeaderRow: rows.Count > 0,
+            tableColumnAlignments: table.ColumnDefinitions
+                .Select(static column => column.Alignment switch
+                {
+                    TableColumnAlign.Center => CliTableColumnAlignment.Center,
+                    TableColumnAlign.Right => CliTableColumnAlignment.Right,
+                    _ => CliTableColumnAlignment.Left
+                })
+                .ToArray());
     }
 
-    private static bool IsMarkdownLanguage(string? language)
+    private static IReadOnlyList<CliInlineSegment> CreateCellSegments(TableCell cell)
+    {
+        ParagraphBlock? paragraph = cell.OfType<ParagraphBlock>().FirstOrDefault();
+        return paragraph?.Inline is null
+            ? ParseInlineSegments(FlattenBlocks(cell))
+            : ParseInlineSegments(paragraph.Inline);
+    }
+
+    private static CliRenderLine CreateLine(ContainerInline? inline)
+    {
+        return new CliRenderLine(ParseInlineSegments(inline));
+    }
+
+    private static IReadOnlyList<CliInlineSegment> ParseInlineSegments(ContainerInline? inline)
+    {
+        if (inline is null)
+        {
+            return [new CliInlineSegment(string.Empty)];
+        }
+
+        List<CliInlineSegment> segments = [];
+        AppendInlineSegments(inline, CliInlineStyle.Plain, segments);
+        return MergePlainSegments(segments);
+    }
+
+    private static IReadOnlyList<CliInlineSegment> ParseInlineSegments(string text)
+    {
+        MarkdownDocument document = Markdown.Parse(text, MarkdownPipeline);
+        ParagraphBlock? paragraph = document.OfType<ParagraphBlock>().FirstOrDefault();
+        return paragraph?.Inline is null
+            ? [new CliInlineSegment(text)]
+            : ParseInlineSegments(paragraph.Inline);
+    }
+
+    private static void AppendInlineSegments(
+        Inline inline,
+        CliInlineStyle style,
+        List<CliInlineSegment> segments)
+    {
+        switch (inline)
+        {
+            case LiteralInline literal:
+                segments.Add(new CliInlineSegment(literal.Content.ToString(), style));
+                break;
+
+            case CodeInline code:
+                segments.Add(new CliInlineSegment(code.Content, CliInlineStyle.Code));
+                break;
+
+            case LineBreakInline:
+                segments.Add(new CliInlineSegment(Environment.NewLine, style));
+                break;
+
+            case LinkInline { IsImage: false } link:
+                segments.Add(new CliInlineSegment(
+                    FlattenInlines(link),
+                    CliInlineStyle.Link,
+                    link.Url));
+                break;
+
+            case EmphasisInline emphasis:
+                AppendContainerInlineSegments(
+                    emphasis,
+                    emphasis.DelimiterCount >= 2 ? CliInlineStyle.Strong : CliInlineStyle.Emphasis,
+                    segments);
+                break;
+
+            case ContainerInline container:
+                AppendContainerInlineSegments(container, style, segments);
+                break;
+        }
+    }
+
+    private static void AppendContainerInlineSegments(
+        ContainerInline inline,
+        CliInlineStyle style,
+        List<CliInlineSegment> segments)
+    {
+        for (Inline? child = inline.FirstChild; child is not null; child = child.NextSibling)
+        {
+            AppendInlineSegments(child, style, segments);
+        }
+    }
+
+    private static string FlattenBlocks(ContainerBlock block)
+    {
+        return string.Join(
+            Environment.NewLine,
+            block.Select(FlattenBlock)
+                .Where(static text => !string.IsNullOrWhiteSpace(text)));
+    }
+
+    private static string FlattenBlock(Block block)
+    {
+        return block switch
+        {
+            LeafBlock { Inline: not null } leaf => FlattenInlines(leaf.Inline),
+            LeafBlock leaf => GetBlockText(leaf),
+            ContainerBlock container => FlattenBlocks(container),
+            _ => string.Empty
+        };
+    }
+
+    private static string FlattenInlines(ContainerInline inline)
+    {
+        List<CliInlineSegment> segments = [];
+        AppendContainerInlineSegments(inline, CliInlineStyle.Plain, segments);
+        return string.Concat(segments.Select(static segment => segment.Text));
+    }
+
+    private static string GetBlockText(LeafBlock block)
+    {
+        return block.Lines.ToString()
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .TrimEnd('\n', '\r');
+    }
+
+    private static string[] NormalizeLines(string text)
+    {
+        return text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None);
+    }
+
+    private static bool IsMarkdownLanguage(string language)
     {
         return string.Equals(language, "markdown", StringComparison.OrdinalIgnoreCase) ||
                string.Equals(language, "md", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool TryParseHeading(
-        string line,
-        out int headingLevel,
-        out string? headingText)
+    private static bool IsDiffBlock(
+        string language,
+        string text)
     {
-        string trimmed = line.Trim();
-        headingLevel = 0;
-        headingText = null;
-
-        if (trimmed.Length < 2 || trimmed[0] != '#')
-        {
-            return false;
-        }
-
-        while (headingLevel < trimmed.Length &&
-               trimmed[headingLevel] == '#')
-        {
-            headingLevel++;
-        }
-
-        if (headingLevel == 0 ||
-            headingLevel > 6 ||
-            headingLevel >= trimmed.Length ||
-            trimmed[headingLevel] != ' ')
-        {
-            return false;
-        }
-
-        headingText = trimmed[(headingLevel + 1)..].Trim();
-        return !string.IsNullOrWhiteSpace(headingText);
+        return string.Equals(language, "diff", StringComparison.OrdinalIgnoreCase) ||
+               NormalizeLines(text).Any(static line => LooksLikeDiffLine(line));
     }
 
-    private static bool TryParseListItem(
-        string line,
-        out bool isOrderedList,
-        out string? itemText)
-    {
-        string trimmed = line.TrimStart();
-        isOrderedList = false;
-        itemText = null;
-
-        if (trimmed.Length < 3)
-        {
-            return false;
-        }
-
-        if ((trimmed[0] == '-' || trimmed[0] == '*' || trimmed[0] == '+') &&
-            trimmed[1] == ' ')
-        {
-            itemText = trimmed[2..].Trim();
-            return !string.IsNullOrWhiteSpace(itemText);
-        }
-
-        int markerLength = 0;
-        while (markerLength < trimmed.Length && char.IsDigit(trimmed[markerLength]))
-        {
-            markerLength++;
-        }
-
-        if (markerLength == 0 ||
-            markerLength + 1 >= trimmed.Length ||
-            trimmed[markerLength] != '.' ||
-            trimmed[markerLength + 1] != ' ')
-        {
-            return false;
-        }
-
-        isOrderedList = true;
-        itemText = trimmed[(markerLength + 2)..].Trim();
-        return !string.IsNullOrWhiteSpace(itemText);
-    }
-
-    private static bool TryParseQuoteLine(
-        string line,
-        out string? quoteText)
-    {
-        string trimmed = line.TrimStart();
-        if (!trimmed.StartsWith('>'))
-        {
-            quoteText = null;
-            return false;
-        }
-
-        quoteText = trimmed.Length == 1
-            ? string.Empty
-            : trimmed[1] == ' '
-                ? trimmed[2..].Trim()
-                : trimmed[1..].Trim();
-
-        return true;
-    }
-
-    private static bool IsHorizontalRule(string line)
-    {
-        string trimmed = line.Trim();
-        return trimmed.Length >= 3 &&
-               trimmed.All(character => character == trimmed[0]) &&
-               (trimmed[0] == '-' || trimmed[0] == '*' || trimmed[0] == '_');
-    }
-
-    private static bool TrySplitTableRow(
-        string line,
-        out IReadOnlyList<string>? cells)
-    {
-        string trimmed = line.Trim();
-        if (trimmed.Length == 0 || !trimmed.Contains('|', StringComparison.Ordinal))
-        {
-            cells = null;
-            return false;
-        }
-
-        if (trimmed.StartsWith('|'))
-        {
-            trimmed = trimmed[1..];
-        }
-
-        if (trimmed.EndsWith('|'))
-        {
-            trimmed = trimmed[..^1];
-        }
-
-        string[] rawCells = trimmed
-            .Split('|')
-            .Select(static cell => cell.Trim())
-            .ToArray();
-
-        if (rawCells.Length == 0 || rawCells.All(string.IsNullOrWhiteSpace))
-        {
-            cells = null;
-            return false;
-        }
-
-        cells = rawCells;
-        return true;
-    }
-
-    private static bool TryParseTableSeparator(
-        string line,
-        int expectedColumnCount,
-        out IReadOnlyList<CliTableColumnAlignment>? alignments)
-    {
-        if (!TrySplitTableRow(line, out IReadOnlyList<string>? cells) ||
-            cells is null ||
-            cells.Count != expectedColumnCount)
-        {
-            alignments = null;
-            return false;
-        }
-
-        List<CliTableColumnAlignment> parsedAlignments = [];
-        foreach (string cell in cells)
-        {
-            string normalized = cell.Replace(" ", string.Empty, StringComparison.Ordinal);
-            int dashCount = normalized.Count(static character => character == '-');
-
-            if (dashCount < 3 ||
-                normalized.Any(static character => character is not ('-' or ':')))
-            {
-                alignments = null;
-                return false;
-            }
-
-            bool hasLeadingColon = normalized.StartsWith(':');
-            bool hasTrailingColon = normalized.EndsWith(':');
-
-            parsedAlignments.Add(hasLeadingColon && hasTrailingColon
-                ? CliTableColumnAlignment.Center
-                : hasTrailingColon
-                    ? CliTableColumnAlignment.Right
-                    : CliTableColumnAlignment.Left);
-        }
-
-        alignments = parsedAlignments;
-        return true;
-    }
-
-    private static bool LooksLikeDiffHeader(string line)
+    private static bool LooksLikeDiffLine(string line)
     {
         return line.StartsWith("@@", StringComparison.Ordinal) ||
                line.StartsWith("diff ", StringComparison.Ordinal) ||
                line.StartsWith("index ", StringComparison.Ordinal) ||
                line.StartsWith("--- ", StringComparison.Ordinal) ||
-               line.StartsWith("+++ ", StringComparison.Ordinal);
-    }
-
-    private static bool LooksLikeStandaloneDiffContent(string line)
-    {
-        return LooksLikeDiffHeader(line) ||
+               line.StartsWith("+++ ", StringComparison.Ordinal) ||
                line.StartsWith("+", StringComparison.Ordinal) ||
-               line.StartsWith("-", StringComparison.Ordinal) ||
-               line.StartsWith(" ", StringComparison.Ordinal);
+               line.StartsWith("-", StringComparison.Ordinal);
     }
 
     private static CliRenderLineKind GetDiffLineKind(string line)
@@ -575,187 +388,13 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             return CliRenderLineKind.DiffRemoval;
         }
 
-        if (LooksLikeDiffHeader(line))
-        {
-            return CliRenderLineKind.DiffHeader;
-        }
-
-        return CliRenderLineKind.DiffContext;
-    }
-
-    private static string[] NormalizeLines(string message)
-    {
-        return message
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Split('\n');
-    }
-
-    private static IReadOnlyList<CliInlineSegment> ParseInlineSegments(string text)
-    {
-        List<CliInlineSegment> segments = [];
-        int index = 0;
-
-        while (index < text.Length)
-        {
-            if (TryConsumeLink(text, index, out CliInlineSegment? linkSegment, out int linkLength))
-            {
-                segments.Add(linkSegment!);
-                index += linkLength;
-                continue;
-            }
-
-            if (TryConsumeDelimited(text, index, "**", CliInlineStyle.Strong, out CliInlineSegment? strongSegment, out int strongLength))
-            {
-                segments.Add(strongSegment!);
-                index += strongLength;
-                continue;
-            }
-
-            if (TryConsumeDelimited(text, index, "`", CliInlineStyle.Code, out CliInlineSegment? codeSegment, out int codeLength))
-            {
-                segments.Add(codeSegment!);
-                index += codeLength;
-                continue;
-            }
-
-            if (TryConsumeDelimited(text, index, "*", CliInlineStyle.Emphasis, out CliInlineSegment? emphasisSegment, out int emphasisLength))
-            {
-                segments.Add(emphasisSegment!);
-                index += emphasisLength;
-                continue;
-            }
-
-            int nextMarker = FindNextMarker(text, index);
-            if (nextMarker == index)
-            {
-                segments.Add(new CliInlineSegment(text[index].ToString()));
-                index++;
-                continue;
-            }
-
-            string chunk = nextMarker < 0
-                ? text[index..]
-                : text[index..nextMarker];
-
-            if (!string.IsNullOrEmpty(chunk))
-            {
-                segments.Add(new CliInlineSegment(chunk));
-            }
-
-            index = nextMarker < 0
-                ? text.Length
-                : nextMarker;
-        }
-
-        if (segments.Count == 0)
-        {
-            segments.Add(new CliInlineSegment(text));
-        }
-
-        return MergePlainSegments(segments);
-    }
-
-    private static bool TryConsumeLink(
-        string text,
-        int startIndex,
-        out CliInlineSegment? segment,
-        out int consumedLength)
-    {
-        if (startIndex >= text.Length || text[startIndex] != '[')
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        int closingLabelIndex = text.IndexOf(']', startIndex + 1);
-        if (closingLabelIndex <= startIndex + 1 ||
-            closingLabelIndex + 2 >= text.Length ||
-            text[closingLabelIndex + 1] != '(')
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        int closingTargetIndex = text.IndexOf(')', closingLabelIndex + 2);
-        if (closingTargetIndex <= closingLabelIndex + 2)
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        string label = text[(startIndex + 1)..closingLabelIndex];
-        string target = text[(closingLabelIndex + 2)..closingTargetIndex].Trim();
-        if (string.IsNullOrWhiteSpace(label) || string.IsNullOrWhiteSpace(target))
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        segment = new CliInlineSegment(label, CliInlineStyle.Link, target);
-        consumedLength = (closingTargetIndex + 1) - startIndex;
-        return true;
-    }
-
-    private static bool TryConsumeDelimited(
-        string text,
-        int startIndex,
-        string delimiter,
-        CliInlineStyle style,
-        out CliInlineSegment? segment,
-        out int consumedLength)
-    {
-        if (!text.AsSpan(startIndex).StartsWith(delimiter, StringComparison.Ordinal))
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        int innerStart = startIndex + delimiter.Length;
-        int closingIndex = text.IndexOf(delimiter, innerStart, StringComparison.Ordinal);
-        if (closingIndex <= innerStart)
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        string innerText = text[innerStart..closingIndex];
-        if (string.IsNullOrEmpty(innerText))
-        {
-            segment = null;
-            consumedLength = 0;
-            return false;
-        }
-
-        segment = new CliInlineSegment(innerText, style);
-        consumedLength = (closingIndex + delimiter.Length) - startIndex;
-        return true;
-    }
-
-    private static int FindNextMarker(string text, int startIndex)
-    {
-        int nextStrong = text.IndexOf("**", startIndex, StringComparison.Ordinal);
-        int nextCode = text.IndexOf('`', startIndex);
-        int nextEmphasis = text.IndexOf('*', startIndex);
-        int nextLink = text.IndexOf('[', startIndex);
-
-        int[] candidates =
-        [
-            nextStrong,
-            nextCode,
-            nextEmphasis,
-            nextLink
-        ];
-
-        return candidates
-            .Where(static index => index >= 0)
-            .DefaultIfEmpty(-1)
-            .Min();
+        return line.StartsWith("@@", StringComparison.Ordinal) ||
+               line.StartsWith("diff ", StringComparison.Ordinal) ||
+               line.StartsWith("index ", StringComparison.Ordinal) ||
+               line.StartsWith("--- ", StringComparison.Ordinal) ||
+               line.StartsWith("+++ ", StringComparison.Ordinal)
+            ? CliRenderLineKind.DiffHeader
+            : CliRenderLineKind.DiffContext;
     }
 
     private static IReadOnlyList<CliInlineSegment> MergePlainSegments(IReadOnlyList<CliInlineSegment> segments)
@@ -772,13 +411,14 @@ internal sealed class MarkdownLikeCliMessageFormatter : ICliMessageFormatter
             {
                 CliInlineSegment previousSegment = mergedSegments[^1];
                 mergedSegments[^1] = new CliInlineSegment(previousSegment.Text + segment.Text);
+                continue;
             }
-            else
-            {
-                mergedSegments.Add(segment);
-            }
+
+            mergedSegments.Add(segment);
         }
 
-        return mergedSegments;
+        return mergedSegments.Count == 0
+            ? [new CliInlineSegment(string.Empty)]
+            : mergedSegments;
     }
 }

@@ -144,7 +144,7 @@ public sealed class ConsoleSelectionPromptTests
     public async Task PromptAsync_Should_ClearInteractivePromptLines_BeforeLaterOutputReusesThem()
     {
         FakeConsoleTerminal terminal = new();
-        terminal.Write("Working 55s · 229 tokens est.  Esc to interrupt");
+        terminal.Write("Working 55s - 229 tokens est.  Esc to interrupt");
         int statusTop = terminal.CursorTop;
         terminal.EnqueueKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
 
@@ -167,7 +167,7 @@ public sealed class ConsoleSelectionPromptTests
 
         terminal.SetCursorPosition(0, statusTop);
         terminal.WriteLine("Edited 1 file (+23 -0)");
-        terminal.WriteLine("  └ index.html (+23 -0)");
+        terminal.WriteLine("  - index.html (+23 -0)");
         terminal.WriteLine("     1 +<!DOCTYPE html>");
 
         selectedValue.Should().Be("allow-once");
@@ -182,8 +182,8 @@ public sealed class ConsoleSelectionPromptTests
     {
         FakeConsoleTerminal terminal = new();
         terminal.WriteLine("Edited 1 file (+23 -0)");
-        terminal.WriteLine("  └ index.html (+23 -0)");
-        terminal.Write("Working 55s · 229 tokens est.  Esc to interrupt");
+        terminal.WriteLine("  - index.html (+23 -0)");
+        terminal.Write("Working 55s - 229 tokens est.  Esc to interrupt");
         terminal.EnqueueKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
 
         ConsolePromptRenderer renderer = new(terminal, SpectreConsoleFactory.Create(terminal));
@@ -204,7 +204,7 @@ public sealed class ConsoleSelectionPromptTests
         string selectedValue = await sut.PromptAsync(request, CancellationToken.None);
 
         terminal.WriteLine("Edited 1 file (+110 -0)");
-        terminal.WriteLine("  └ style.css (+110 -0)");
+        terminal.WriteLine("  - style.css (+110 -0)");
 
         selectedValue.Should().Be("allow-once");
         terminal.Output.Should().Contain("Edited 1 file (+23 -0)");

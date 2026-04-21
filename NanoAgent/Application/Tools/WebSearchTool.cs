@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
@@ -58,7 +57,7 @@ internal sealed class WebSearchTool : ITool
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!TryGetRequiredString(context.Arguments, "query", out string? query))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "query", out string? query))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_query",
@@ -69,7 +68,7 @@ internal sealed class WebSearchTool : ITool
         }
 
         int maxResults = DefaultMaxResults;
-        if (TryGetOptionalInteger(context.Arguments, "maxResults", out int parsedMaxResults))
+        if (ToolArguments.TryGetInt32(context.Arguments, "maxResults", out int parsedMaxResults))
         {
             if (parsedMaxResults is < MinMaxResults or > MaxMaxResults)
             {
@@ -109,35 +108,4 @@ internal sealed class WebSearchTool : ITool
                 renderText));
     }
 
-    private static bool TryGetOptionalInteger(
-        JsonElement arguments,
-        string propertyName,
-        out int value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.Number &&
-            property.TryGetInt32(out value))
-        {
-            return true;
-        }
-
-        value = default;
-        return false;
-    }
-
-    private static bool TryGetRequiredString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString()?.Trim();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        value = null;
-        return false;
-    }
 }

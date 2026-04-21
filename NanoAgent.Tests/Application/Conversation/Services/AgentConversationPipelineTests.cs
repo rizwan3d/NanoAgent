@@ -118,6 +118,278 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_RetryEmptyStopResponseOnce_When_MapperMarksResponseRetryable()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition("file_read"),
+                CreateToolDefinition("file_write"),
+                CreateToolDefinition("shell_command")
+            ]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Throws(new ConversationResponseException(
+                "The provider returned neither assistant content, a refusal, nor usable tool calls. Finish reason: stop.",
+                isRetryableEmptyResponse: true))
+            .Returns(new ConversationResponse(
+                """
+                Objective
+                - Plan the refactor first.
+
+                Plan
+                1. Inspect the affected files.
+                2. Apply the refactor.
+                """,
+                [],
+                "resp_2"))
+            .Returns(new ConversationResponse(
+                "Implemented the refactor.",
+                [],
+                "resp_3"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        ConversationTurnResult result = await sut.ProcessAsync(
+            "Implement the next refactor.",
+            session,
+            CancellationToken.None);
+
+        result.ResponseText.Should().Be("Implemented the refactor.");
+        requests.Should().HaveCount(3);
+        requests[0].SystemPrompt.Should().NotContain("previous provider response was empty");
+        requests[1].SystemPrompt.Should().Contain("previous provider response was empty");
+        requests[1].SystemPrompt.Should().Contain("Base prompt");
+        requests[1].SystemPrompt.Should().Contain("You are NanoAgent in Planning Mode.");
+        requests[1].Messages.Should().HaveCount(1);
+        requests[1].Messages[0].Content.Should().Be("Implement the next refactor.");
+        requests[2].SystemPrompt.Should().NotContain("previous provider response was empty");
+        session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory[1].Content.Should().Be("Implemented the refactor.");
+        toolExecutionPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_ReturnFallbackMessage_When_PlanningOnlyEmptyStopRetryAlsoReturnsEmpty()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition("file_read"),
+                CreateToolDefinition("file_write"),
+                CreateToolDefinition("shell_command")
+            ]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Throws(new ConversationResponseException(
+                "The provider returned neither assistant content, a refusal, nor usable tool calls. Finish reason: stop.",
+                isRetryableEmptyResponse: true))
+            .Throws(new ConversationResponseException(
+                "The provider returned neither assistant content, a refusal, nor usable tool calls. Finish reason: stop.",
+                isRetryableEmptyResponse: true));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        ConversationTurnResult result = await sut.ProcessAsync(
+            "Help me plan this refactor.",
+            session,
+            CancellationToken.None);
+
+        result.ResponseText.Should().Contain("did not receive a usable response");
+        result.ResponseText.Should().Contain("provider ended normally");
+        requests.Should().HaveCount(2);
+        requests[1].SystemPrompt.Should().Contain("previous provider response was empty");
+        session.ConversationHistory.Should().BeEmpty();
+        session.PendingExecutionPlan.Should().BeNull();
+        toolExecutionPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_RunExecution_When_PlanningEmptyStopRetryAlsoReturnsEmpty()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition("file_read"),
+                CreateToolDefinition("file_write"),
+                CreateToolDefinition("shell_command")
+            ]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Throws(new ConversationResponseException(
+                "The provider returned neither assistant content, a refusal, nor usable tool calls. Finish reason: stop.",
+                isRetryableEmptyResponse: true))
+            .Throws(new ConversationResponseException(
+                "The provider returned neither assistant content, a refusal, nor usable tool calls. Finish reason: stop.",
+                isRetryableEmptyResponse: true))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("exec_call_1", "file_write", """{ "path": "random-01.txt", "content": "42" }""")],
+                "resp_3"))
+            .Returns(new ConversationResponse(
+                "Created ten random-number files.",
+                [],
+                "resp_4"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.Is<IReadOnlyList<ConversationToolCall>>(calls =>
+                    calls.Count == 1 &&
+                    calls[0].Name == "file_write"),
+                session,
+                ConversationExecutionPhase.Execution,
+                It.Is<IReadOnlySet<string>>(names => names.Contains("file_write")),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "exec_call_1",
+                    "file_write",
+                    ToolResultFactory.Success(
+                        "Created random-01.txt.",
+                        new ToolErrorPayload("ok", "ok"),
+                        ToolJsonContext.Default.ToolErrorPayload,
+                        new ToolRenderPayload("File write complete", "random-01.txt")))]));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        ConversationTurnResult result = await sut.ProcessAsync(
+            "Write random number to 10 different files using write tool.",
+            session,
+            CancellationToken.None);
+
+        result.ResponseText.Should().Be("Created ten random-number files.");
+        result.ToolExecutionResult.Should().NotBeNull();
+        result.ToolExecutionResult!.Results.Should().ContainSingle(item => item.ToolName == "file_write");
+        requests.Should().HaveCount(4);
+        requests[2].SystemPrompt.Should().Contain("EXECUTION PHASE IS ACTIVE.");
+        requests[2].SystemPrompt.Should().Contain("minimal plan was synthesized");
+        requests[2].SystemPrompt.Should().Contain("Write random number to 10 different files using write tool.");
+        requests[2].AvailableTools.Select(static tool => tool.Name).Should().Contain("file_write");
+        requests[2].Messages.Should().HaveCount(2);
+        requests[2].Messages[0].Content.Should().Be("Write random number to 10 different files using write tool.");
+        requests[2].Messages[1].Role.Should().Be("assistant");
+        requests[2].Messages[1].Content.Should().Contain("minimal plan was synthesized");
+        session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory[1].Content.Should().Be("Created ten random-number files.");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_SavePlanWithoutExecuting_When_UserRequestsPlanningOnly()
     {
         ReplSessionContext session = CreateSession();

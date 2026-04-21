@@ -14,11 +14,7 @@ public sealed class CliTextRendererTests
         ConsoleCliOutputTarget outputTarget = new(terminal, console);
         CliTextRenderer sut = new(
             outputTarget,
-            console,
-            new ConsoleRenderSettings
-            {
-                EnableAnimations = false
-            });
+            console);
         MarkdownLikeCliMessageFormatter formatter = new();
 
         CliRenderDocument document = formatter.Format(
@@ -58,11 +54,7 @@ public sealed class CliTextRendererTests
         ConsoleCliOutputTarget outputTarget = new(terminal, console);
         CliTextRenderer sut = new(
             outputTarget,
-            console,
-            new ConsoleRenderSettings
-            {
-                EnableAnimations = false
-            });
+            console);
         MarkdownLikeCliMessageFormatter formatter = new();
 
         await sut.RenderAsync(
@@ -85,11 +77,7 @@ public sealed class CliTextRendererTests
         ConsoleCliOutputTarget outputTarget = new(terminal, console);
         CliTextRenderer sut = new(
             outputTarget,
-            console,
-            new ConsoleRenderSettings
-            {
-                EnableAnimations = false
-            });
+            console);
         MarkdownLikeCliMessageFormatter formatter = new();
 
         CliRenderDocument document = formatter.Format(

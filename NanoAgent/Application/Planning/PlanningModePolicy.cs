@@ -1,4 +1,3 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
@@ -374,7 +373,7 @@ internal static class PlanningModePolicy
         }
 
         if (permissionPolicy.Shell is not null &&
-            TryGetOptionalString(
+            ToolArguments.TryGetNonEmptyString(
                 context.Arguments,
                 permissionPolicy.Shell.CommandArgumentName,
                 out string? commandText) &&
@@ -432,22 +431,6 @@ internal static class PlanningModePolicy
             context.ToolName,
             [context.ToolName],
             subjects ?? []);
-    }
-
-    private static bool TryGetOptionalString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString()?.Trim();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        value = null;
-        return false;
     }
 
     private static bool TryExtractStep(
@@ -508,14 +491,14 @@ internal static class PlanningModePolicy
             return false;
         }
 
-        if (ContainsShellControlSyntax(normalizedCommand))
+        if (ShellCommandText.ContainsControlSyntax(normalizedCommand))
         {
             denialReason =
                 $"The automatic planning phase only allows simple inspection commands. '{normalizedCommand}' is execution-only.";
             return false;
         }
 
-        string[] tokens = Tokenize(normalizedCommand);
+        string[] tokens = ShellCommandText.Tokenize(normalizedCommand);
         if (tokens.Length == 0)
         {
             denialReason =
@@ -523,7 +506,7 @@ internal static class PlanningModePolicy
             return false;
         }
 
-        string commandName = NormalizeCommandToken(tokens[0]);
+        string commandName = ShellCommandText.NormalizeCommandToken(tokens[0]);
         if (string.IsNullOrWhiteSpace(commandName))
         {
             denialReason =
@@ -555,57 +538,4 @@ internal static class PlanningModePolicy
         return false;
     }
 
-    private static bool ContainsShellControlSyntax(string commandText)
-    {
-        return commandText.Contains('|') ||
-               commandText.Contains(';') ||
-               commandText.Contains("&&", StringComparison.Ordinal) ||
-               commandText.Contains("||", StringComparison.Ordinal) ||
-               commandText.Contains('>') ||
-               commandText.Contains('<') ||
-               commandText.Contains("$(", StringComparison.Ordinal) ||
-               commandText.Contains('`');
-    }
-
-    private static string[] Tokenize(string commandText)
-    {
-        MatchCollection matches = Regex.Matches(
-            commandText,
-            "\"[^\"]*\"|'[^']*'|\\S+");
-
-        if (matches.Count == 0)
-        {
-            return [];
-        }
-
-        List<string> tokens = new(matches.Count);
-        foreach (Match match in matches)
-        {
-            string value = match.Value.Trim();
-            if ((value.StartsWith('"') && value.EndsWith('"')) ||
-                (value.StartsWith('\'') && value.EndsWith('\'')))
-            {
-                value = value[1..^1];
-            }
-
-            if (!string.IsNullOrWhiteSpace(value))
-            {
-                tokens.Add(value);
-            }
-        }
-
-        return tokens.ToArray();
-    }
-
-    private static string NormalizeCommandToken(string token)
-    {
-        string trimmedToken = token.Trim();
-        if (string.IsNullOrWhiteSpace(trimmedToken))
-        {
-            return string.Empty;
-        }
-
-        string fileName = Path.GetFileName(trimmedToken.Replace('/', Path.DirectorySeparatorChar));
-        return Path.GetFileNameWithoutExtension(fileName);
-    }
 }

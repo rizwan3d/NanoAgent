@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
@@ -62,7 +61,7 @@ internal sealed class FileWriteTool : ITool
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!TryGetRequiredString(context.Arguments, "path", out string? path))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "path", out string? path))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_path",
@@ -72,7 +71,7 @@ internal sealed class FileWriteTool : ITool
                     "Provide a non-empty 'path' string."));
         }
 
-        if (!TryGetRequiredString(context.Arguments, "content", out string? content))
+        if (!ToolArguments.TryGetString(context.Arguments, "content", out string? content, trim: false))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_content",
@@ -85,9 +84,7 @@ internal sealed class FileWriteTool : ITool
         string safePath = path!;
         string safeContent = content!;
 
-        bool overwrite = TryGetOptionalBoolean(context.Arguments, "overwrite", out bool overwriteValue)
-            ? overwriteValue
-            : true;
+        bool overwrite = ToolArguments.GetBoolean(context.Arguments, "overwrite", defaultValue: true);
 
         WorkspaceFileWriteExecutionResult executionResult = await _workspaceFileService.WriteFileWithTrackingAsync(
             safePath,
@@ -110,35 +107,4 @@ internal sealed class FileWriteTool : ITool
                 renderText));
     }
 
-    private static bool TryGetOptionalBoolean(
-        JsonElement arguments,
-        string propertyName,
-        out bool value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            value = property.GetBoolean();
-            return true;
-        }
-
-        value = default;
-        return false;
-    }
-
-    private static bool TryGetRequiredString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString();
-            return value is not null;
-        }
-
-        value = null;
-        return false;
-    }
 }

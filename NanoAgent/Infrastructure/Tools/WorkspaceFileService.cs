@@ -1,9 +1,9 @@
 using System.Text;
-using System.Text.Json;
+using DiffPlex.DiffBuilder;
+using DiffPlex.DiffBuilder.Model;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
-using NanoAgent.Infrastructure.Secrets;
 
 namespace NanoAgent.Infrastructure.Tools;
 
@@ -17,15 +17,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private const int FileWritePreviewContextLines = 1;
     private const int MaxFileWritePreviewLines = 8;
 
-    private readonly IProcessRunner _processRunner;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
-    public WorkspaceFileService(
-        IWorkspaceRootProvider workspaceRootProvider,
-        IProcessRunner processRunner)
+    public WorkspaceFileService(IWorkspaceRootProvider workspaceRootProvider)
     {
         _workspaceRootProvider = workspaceRootProvider;
-        _processRunner = processRunner;
     }
 
     public async Task<WorkspaceApplyPatchResult> ApplyPatchAsync(
@@ -180,14 +176,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: true, fileRequired: false);
-        WorkspaceDirectoryEntry[] entries = await TryListDirectoryWithShellAsync(
-            fullPath,
-            recursive,
-            cancellationToken) ?? ListDirectoryManaged(fullPath, recursive);
-
         return new WorkspaceDirectoryListResult(
             ToWorkspaceRelativePath(fullPath),
-            entries);
+            ListDirectoryManaged(fullPath, recursive));
     }
 
     public async Task<WorkspaceFileReadResult> ReadFileAsync(
@@ -204,11 +195,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 $"File '{ToWorkspaceRelativePath(fullPath)}' exceeds the maximum readable size of {MaxFileReadBytes} bytes.");
         }
 
-        string content = await TryReadFileWithShellAsync(fullPath, cancellationToken) ??
-                         await File.ReadAllTextAsync(
-                             fullPath,
-                             Encoding.UTF8,
-                             cancellationToken);
+        string content = await File.ReadAllTextAsync(
+            fullPath,
+            Encoding.UTF8,
+            cancellationToken);
 
         return new WorkspaceFileReadResult(
             ToWorkspaceRelativePath(fullPath),
@@ -224,15 +214,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
-        IReadOnlyList<string> matches = await TrySearchFilesWithShellAsync(
-            request,
-            fullPath,
-            cancellationToken) ?? SearchFilesManaged(request, fullPath);
-
         return new WorkspaceFileSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            matches);
+            SearchFilesManaged(request, fullPath));
     }
 
     public async Task<WorkspaceTextSearchResult> SearchTextAsync(
@@ -243,15 +228,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
-        IReadOnlyList<WorkspaceTextSearchMatch> matches = await TrySearchTextWithShellAsync(
-            request,
-            fullPath,
-            cancellationToken) ?? await SearchTextManagedAsync(fullPath, request, cancellationToken);
-
         return new WorkspaceTextSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            matches);
+            await SearchTextManagedAsync(fullPath, request, cancellationToken));
     }
 
     public async Task<WorkspaceFileWriteResult> WriteFileAsync(
@@ -579,388 +559,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return matches;
     }
 
-    private async Task<WorkspaceDirectoryEntry[]?> TryListDirectoryWithShellAsync(
-        string fullPath,
-        bool recursive,
-        CancellationToken cancellationToken)
-    {
-        ProcessExecutionResult? result = await TryRunWorkspaceShellAsync(
-            BuildListDirectoryCommand(fullPath, recursive),
-            cancellationToken);
-
-        if (result is null || result.ExitCode != 0)
-        {
-            return null;
-        }
-
-        IEnumerable<string> paths = NormalizeOutputLines(result.StandardOutput);
-        if (!recursive)
-        {
-            paths = paths.Where(path => IsDirectChild(fullPath, path));
-        }
-
-        return paths
-            .Distinct(GetPathComparer())
-            .Take(MaxDirectoryEntries)
-            .Select(path => new WorkspaceDirectoryEntry(
-                ToWorkspaceRelativePath(path),
-                Directory.Exists(path) ? "directory" : "file"))
-            .ToArray();
-    }
-
-    private async Task<string?> TryReadFileWithShellAsync(
-        string fullPath,
-        CancellationToken cancellationToken)
-    {
-        ProcessExecutionResult? result = await TryRunWorkspaceShellAsync(
-            BuildReadFileCommand(fullPath),
-            cancellationToken);
-
-        return result is { ExitCode: 0 }
-            ? result.StandardOutput
-            : null;
-    }
-
-    private async Task<IReadOnlyList<string>?> TrySearchFilesWithShellAsync(
-        WorkspaceFileSearchRequest request,
-        string fullPath,
-        CancellationToken cancellationToken)
-    {
-        if (File.Exists(fullPath))
-        {
-            return SearchFilesManaged(request, fullPath);
-        }
-
-        ProcessExecutionResult? result = await TryRunWorkspaceShellAsync(
-            BuildSearchFilesCommand(fullPath, request),
-            cancellationToken);
-
-        if (result is null)
-        {
-            return null;
-        }
-
-        if (!OperatingSystem.IsWindows() && result.ExitCode == 1)
-        {
-            return [];
-        }
-
-        if (result.ExitCode != 0)
-        {
-            return null;
-        }
-
-        return NormalizeOutputLines(result.StandardOutput)
-            .Distinct(GetPathComparer())
-            .Select(path => ToWorkspaceRelativePath(path))
-            .Take(MaxFileSearchResults)
-            .ToArray();
-    }
-
-    private async Task<IReadOnlyList<WorkspaceTextSearchMatch>?> TrySearchTextWithShellAsync(
-        WorkspaceTextSearchRequest request,
-        string fullPath,
-        CancellationToken cancellationToken)
-    {
-        ProcessExecutionResult? result = await TryRunWorkspaceShellAsync(
-            BuildTextSearchCommand(fullPath, request),
-            cancellationToken);
-
-        if (result is null)
-        {
-            return null;
-        }
-
-        if (!OperatingSystem.IsWindows() && result.ExitCode == 1)
-        {
-            return [];
-        }
-
-        if (result.ExitCode != 0)
-        {
-            return null;
-        }
-
-        return OperatingSystem.IsWindows()
-            ? ParsePowerShellSearchMatches(result.StandardOutput)
-            : ParseGrepSearchMatches(result.StandardOutput);
-    }
-
-    private async Task<ProcessExecutionResult?> TryRunWorkspaceShellAsync(
-        string command,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await RunWorkspaceShellAsync(command, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private Task<ProcessExecutionResult> RunWorkspaceShellAsync(
-        string command,
-        CancellationToken cancellationToken)
-    {
-        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        ProcessExecutionRequest request = OperatingSystem.IsWindows()
-            ? new ProcessExecutionRequest(
-                "powershell",
-                ["-NoProfile", "-NonInteractive", "-Command", command],
-                WorkingDirectory: workspaceRoot)
-            : new ProcessExecutionRequest(
-                "/bin/bash",
-                ["-lc", command],
-                WorkingDirectory: workspaceRoot);
-
-        return _processRunner.RunAsync(request, cancellationToken);
-    }
-
-    private static string BuildListDirectoryCommand(
-        string fullPath,
-        bool recursive)
-    {
-        return OperatingSystem.IsWindows()
-            ? $"Get-ChildItem -LiteralPath '{EscapePowerShellSingleQuotedString(fullPath)}' -Force{(recursive ? " -Recurse" : string.Empty)} | Sort-Object FullName | Select-Object -ExpandProperty FullName"
-            : $"find '{EscapeBashSingleQuotedString(fullPath)}' -mindepth 1 | sort";
-    }
-
-    private static string BuildReadFileCommand(string fullPath)
-    {
-        return OperatingSystem.IsWindows()
-            ? $"Get-Content -LiteralPath '{EscapePowerShellSingleQuotedString(fullPath)}' -Raw"
-            : $"cat -- '{EscapeBashSingleQuotedString(fullPath)}'";
-    }
-
-    private static string BuildSearchFilesCommand(
-        string fullPath,
-        WorkspaceFileSearchRequest request)
-    {
-        return OperatingSystem.IsWindows()
-            ? BuildPowerShellFileSearchCommand(fullPath, request)
-            : BuildBashFileSearchCommand(fullPath, request);
-    }
-
-    private static string BuildTextSearchCommand(
-        string fullPath,
-        WorkspaceTextSearchRequest request)
-    {
-        return OperatingSystem.IsWindows()
-            ? BuildPowerShellTextSearchCommand(fullPath, request)
-            : BuildBashTextSearchCommand(fullPath, request);
-    }
-
-    private static string BuildPowerShellFileSearchCommand(
-        string fullPath,
-        WorkspaceFileSearchRequest request)
-    {
-        string comparison = request.CaseSensitive ? "Ordinal" : "OrdinalIgnoreCase";
-        string escapedPath = EscapePowerShellSingleQuotedString(fullPath);
-        string escapedQuery = EscapePowerShellSingleQuotedString(request.Query);
-
-        return $$"""
-            $root = [System.IO.Path]::GetFullPath('{{escapedPath}}')
-            $comparison = [System.StringComparison]::{{comparison}}
-            Get-ChildItem -LiteralPath $root -File -Recurse -Force |
-            Where-Object {
-              $relative = [System.IO.Path]::GetRelativePath($root, $_.FullName)
-              $relative.IndexOf('{{escapedQuery}}', $comparison) -ge 0
-            } |
-            Sort-Object FullName |
-            Select-Object -First {{MaxFileSearchResults}} |
-            Select-Object -ExpandProperty FullName
-            """;
-    }
-
-    private static string BuildBashFileSearchCommand(
-        string fullPath,
-        WorkspaceFileSearchRequest request)
-    {
-        string ignoreCaseFlag = request.CaseSensitive ? string.Empty : "-i ";
-        return $"find '{EscapeBashSingleQuotedString(fullPath)}' -type f | sort | grep {ignoreCaseFlag}-F -- '{EscapeBashSingleQuotedString(request.Query)}' | head -n {MaxFileSearchResults}";
-    }
-
-    private static string BuildPowerShellTextSearchCommand(
-        string fullPath,
-        WorkspaceTextSearchRequest request)
-    {
-        string escapedPath = EscapePowerShellSingleQuotedString(fullPath);
-        string escapedQuery = EscapePowerShellSingleQuotedString(request.Query);
-        string caseSensitive = request.CaseSensitive ? "$true" : "$false";
-
-        if (File.Exists(fullPath))
-        {
-            return $$"""
-                $matches = if ((Get-Item -LiteralPath '{{escapedPath}}').Length -le {{MaxSearchFileBytes}}) {
-                  @(Select-String -LiteralPath '{{escapedPath}}' -SimpleMatch -Pattern '{{escapedQuery}}' -CaseSensitive:{{caseSensitive}})
-                }
-                else {
-                  @()
-                }
-                @($matches | Select-Object -First {{MaxSearchResults}} Path, LineNumber, Line) | ConvertTo-Json -Compress
-                """;
-        }
-
-        return $$"""
-            $matches = @(
-              Get-ChildItem -LiteralPath '{{escapedPath}}' -File -Recurse -Force |
-              Where-Object { $_.Length -le {{MaxSearchFileBytes}} } |
-              Select-String -SimpleMatch -Pattern '{{escapedQuery}}' -CaseSensitive:{{caseSensitive}}
-            )
-            @($matches | Select-Object -First {{MaxSearchResults}} Path, LineNumber, Line) | ConvertTo-Json -Compress
-            """;
-    }
-
-    private static string BuildBashTextSearchCommand(
-        string fullPath,
-        WorkspaceTextSearchRequest request)
-    {
-        string ignoreCaseFlag = request.CaseSensitive ? string.Empty : "-i ";
-        string flags = $"-n -I -F {ignoreCaseFlag}".Trim();
-        string escapedQuery = EscapeBashSingleQuotedString(request.Query);
-        string escapedPath = EscapeBashSingleQuotedString(fullPath);
-
-        return File.Exists(fullPath)
-            ? $"grep {flags} -- '{escapedQuery}' '{escapedPath}' | head -n {MaxSearchResults}"
-            : $"grep -R {flags} -- '{escapedQuery}' '{escapedPath}' | head -n {MaxSearchResults}";
-    }
-
-    private IReadOnlyList<WorkspaceTextSearchMatch> ParsePowerShellSearchMatches(string output)
-    {
-        if (string.IsNullOrWhiteSpace(output))
-        {
-            return [];
-        }
-
-        using JsonDocument document = JsonDocument.Parse(output);
-        JsonElement root = document.RootElement;
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            return root.EnumerateArray()
-                .Select(CreatePowerShellSearchMatch)
-                .Where(static match => match is not null)
-                .Cast<WorkspaceTextSearchMatch>()
-                .ToArray();
-        }
-
-        WorkspaceTextSearchMatch? singleMatch = CreatePowerShellSearchMatch(root);
-        return singleMatch is null ? [] : [singleMatch];
-    }
-
-    private WorkspaceTextSearchMatch? CreatePowerShellSearchMatch(JsonElement element)
-    {
-        if (element.ValueKind != JsonValueKind.Object ||
-            !element.TryGetProperty("Path", out JsonElement pathElement) ||
-            !element.TryGetProperty("LineNumber", out JsonElement lineNumberElement) ||
-            !element.TryGetProperty("Line", out JsonElement lineElement) ||
-            pathElement.ValueKind != JsonValueKind.String ||
-            !lineNumberElement.TryGetInt32(out int lineNumber) ||
-            lineElement.ValueKind != JsonValueKind.String)
-        {
-            return null;
-        }
-
-        return new WorkspaceTextSearchMatch(
-            ToWorkspaceRelativePath(pathElement.GetString() ?? string.Empty),
-            lineNumber,
-            (lineElement.GetString() ?? string.Empty).Trim());
-    }
-
-    private IReadOnlyList<WorkspaceTextSearchMatch> ParseGrepSearchMatches(string output)
-    {
-        List<WorkspaceTextSearchMatch> matches = [];
-
-        foreach (string line in NormalizeOutputLines(output))
-        {
-            if (!TryParseGrepOutputLine(line, out string? path, out int lineNumber, out string? lineText))
-            {
-                continue;
-            }
-
-            string safePath = path!;
-            string normalizedPath = Path.IsPathRooted(safePath)
-                ? ToWorkspaceRelativePath(safePath)
-                : safePath.Replace('\\', '/');
-
-            matches.Add(new WorkspaceTextSearchMatch(
-                normalizedPath,
-                lineNumber,
-                lineText!.Trim()));
-        }
-
-        return matches;
-    }
-
-    private static bool TryParseGrepOutputLine(
-        string value,
-        out string? path,
-        out int lineNumber,
-        out string? lineText)
-    {
-        for (int index = 0; index < value.Length; index++)
-        {
-            if (value[index] != ':')
-            {
-                continue;
-            }
-
-            int nextColonIndex = value.IndexOf(':', index + 1);
-            if (nextColonIndex < 0)
-            {
-                break;
-            }
-
-            ReadOnlySpan<char> lineNumberSpan = value.AsSpan(index + 1, nextColonIndex - index - 1);
-            if (!int.TryParse(lineNumberSpan, out lineNumber))
-            {
-                continue;
-            }
-
-            path = value[..index];
-            lineText = value[(nextColonIndex + 1)..];
-            return true;
-        }
-
-        path = null;
-        lineNumber = 0;
-        lineText = null;
-        return false;
-    }
-
-    private static IEnumerable<string> NormalizeOutputLines(string output)
-    {
-        return output
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(static line => line.Trim())
-            .Where(static line => !string.IsNullOrWhiteSpace(line));
-    }
-
-    private static bool IsDirectChild(
-        string parentPath,
-        string candidatePath)
-    {
-        string? candidateParent = Path.GetDirectoryName(candidatePath);
-        return candidateParent is not null &&
-               string.Equals(
-                   Path.GetFullPath(candidateParent),
-                   Path.GetFullPath(parentPath),
-                   GetPathComparison());
-    }
-
-    private static StringComparer GetPathComparer()
-    {
-        return OperatingSystem.IsWindows()
-            ? StringComparer.OrdinalIgnoreCase
-            : StringComparer.Ordinal;
-    }
-
     private string ResolveWorkspacePath(
         string? requestedPath,
         bool directoryRequired,
@@ -1035,16 +633,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                path.EndsWith(Path.AltDirectorySeparatorChar)
             ? path
             : path + Path.DirectorySeparatorChar;
-    }
-
-    private static string EscapePowerShellSingleQuotedString(string value)
-    {
-        return value.Replace("'", "''", StringComparison.Ordinal);
-    }
-
-    private static string EscapeBashSingleQuotedString(string value)
-    {
-        return value.Replace("'", "'\"'\"'", StringComparison.Ordinal);
     }
 
     private static void EnsureParentDirectory(string fullPath)
@@ -1371,37 +959,36 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string? previousContent,
         string currentContent)
     {
-        string[] previousLines = SplitLines(previousContent);
         string[] currentLines = SplitLines(currentContent);
-        IReadOnlyList<DiffLine> diffLines = previousContent is null
+        IReadOnlyList<PreviewDiffLine> diffLines = previousContent is null
             ? currentLines
-                .Select((line, index) => new DiffLine(
-                    DiffLineKind.Addition,
-                    null,
+                .Select((line, index) => new PreviewDiffLine(
+                    ChangeType.Inserted,
                     index + 1,
                     line))
                 .ToArray()
-            : ComputeDiff(previousLines, currentLines);
+            : CreatePreviewDiffLines(previousContent, currentContent);
 
-        int addedLineCount = diffLines.Count(static line => line.Kind == DiffLineKind.Addition);
-        int removedLineCount = diffLines.Count(static line => line.Kind == DiffLineKind.Removal);
+        int addedLineCount = diffLines.Count(static line => line.Kind == ChangeType.Inserted);
+        int removedLineCount = diffLines.Count(static line => line.Kind == ChangeType.Deleted);
 
         if (diffLines.Count == 0)
         {
             return new FileWritePreview(0, 0, [], 0);
         }
 
-        DiffLine[] previewDiffLines = SelectPreviewLines(diffLines)
+        IReadOnlyList<PreviewDiffLine> selectedPreviewLines = SelectPreviewLines(diffLines);
+        PreviewDiffLine[] previewDiffLines = selectedPreviewLines
             .Take(MaxFileWritePreviewLines)
             .ToArray();
 
         WorkspaceFileWritePreviewLine[] previewLines = previewDiffLines
             .Select(static line => new WorkspaceFileWritePreviewLine(
-                line.LineNumber ?? 0,
+                line.LineNumber,
                 line.Kind switch
                 {
-                    DiffLineKind.Addition => "add",
-                    DiffLineKind.Removal => "remove",
+                    ChangeType.Inserted => "add",
+                    ChangeType.Deleted => "remove",
                     _ => "context"
                 },
                 line.Text))
@@ -1409,13 +996,47 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         int remainingPreviewLineCount = Math.Max(
             0,
-            SelectPreviewLines(diffLines).Count - previewLines.Length);
+            selectedPreviewLines.Count - previewLines.Length);
 
         return new FileWritePreview(
             addedLineCount,
             removedLineCount,
             previewLines,
             remainingPreviewLineCount);
+    }
+
+    private static IReadOnlyList<PreviewDiffLine> CreatePreviewDiffLines(
+        string previousContent,
+        string currentContent)
+    {
+        DiffPaneModel diff = InlineDiffBuilder.Diff(previousContent, currentContent);
+        List<PreviewDiffLine> lines = new(diff.Lines.Count);
+        int oldLineNumber = 0;
+        int newLineNumber = 0;
+
+        foreach (DiffPiece piece in diff.Lines)
+        {
+            switch (piece.Type)
+            {
+                case ChangeType.Deleted:
+                    oldLineNumber++;
+                    lines.Add(new PreviewDiffLine(piece.Type, oldLineNumber, piece.Text));
+                    break;
+
+                case ChangeType.Inserted:
+                    newLineNumber++;
+                    lines.Add(new PreviewDiffLine(piece.Type, newLineNumber, piece.Text));
+                    break;
+
+                default:
+                    oldLineNumber++;
+                    newLineNumber++;
+                    lines.Add(new PreviewDiffLine(piece.Type, newLineNumber, piece.Text));
+                    break;
+            }
+        }
+
+        return lines;
     }
 
     private static string[] SplitLines(string? content)
@@ -1438,144 +1059,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return rawLines;
     }
 
-    private static IReadOnlyList<DiffLine> ComputeDiff(
-        IReadOnlyList<string> previousLines,
-        IReadOnlyList<string> currentLines)
-    {
-        if (previousLines.Count == 0 && currentLines.Count == 0)
-        {
-            return [];
-        }
-
-        int max = previousLines.Count + currentLines.Count;
-        Dictionary<int, int> frontier = new() { [1] = 0 };
-        List<Dictionary<int, int>> trace = [];
-
-        for (int distance = 0; distance <= max; distance++)
-        {
-            trace.Add(new Dictionary<int, int>(frontier));
-
-            for (int diagonal = -distance; diagonal <= distance; diagonal += 2)
-            {
-                int x;
-                if (diagonal == -distance ||
-                    (diagonal != distance &&
-                     GetFrontierValue(frontier, diagonal - 1) < GetFrontierValue(frontier, diagonal + 1)))
-                {
-                    x = GetFrontierValue(frontier, diagonal + 1);
-                }
-                else
-                {
-                    x = GetFrontierValue(frontier, diagonal - 1) + 1;
-                }
-
-                int y = x - diagonal;
-
-                while (x < previousLines.Count &&
-                       y < currentLines.Count &&
-                       string.Equals(previousLines[x], currentLines[y], StringComparison.Ordinal))
-                {
-                    x++;
-                    y++;
-                }
-
-                frontier[diagonal] = x;
-
-                if (x >= previousLines.Count && y >= currentLines.Count)
-                {
-                    return Backtrack(trace, previousLines, currentLines);
-                }
-            }
-        }
-
-        return [];
-    }
-
-    private static IReadOnlyList<DiffLine> Backtrack(
-        IReadOnlyList<Dictionary<int, int>> trace,
-        IReadOnlyList<string> previousLines,
-        IReadOnlyList<string> currentLines)
-    {
-        List<DiffLine> lines = [];
-        int x = previousLines.Count;
-        int y = currentLines.Count;
-
-        for (int distance = trace.Count - 1; distance >= 0; distance--)
-        {
-            Dictionary<int, int> frontier = trace[distance];
-            int diagonal = x - y;
-
-            int previousDiagonal;
-            if (diagonal == -distance ||
-                (diagonal != distance &&
-                 GetFrontierValue(frontier, diagonal - 1) < GetFrontierValue(frontier, diagonal + 1)))
-            {
-                previousDiagonal = diagonal + 1;
-            }
-            else
-            {
-                previousDiagonal = diagonal - 1;
-            }
-
-            int previousX = GetFrontierValue(frontier, previousDiagonal);
-            int previousY = previousX - previousDiagonal;
-
-            while (x > previousX && y > previousY)
-            {
-                lines.Add(new DiffLine(
-                    DiffLineKind.Context,
-                    x,
-                    y,
-                    previousLines[x - 1]));
-                x--;
-                y--;
-            }
-
-            if (distance == 0)
-            {
-                break;
-            }
-
-            if (x == previousX)
-            {
-                lines.Add(new DiffLine(
-                    DiffLineKind.Addition,
-                    null,
-                    y,
-                    currentLines[y - 1]));
-                y--;
-            }
-            else
-            {
-                lines.Add(new DiffLine(
-                    DiffLineKind.Removal,
-                    x,
-                    null,
-                    previousLines[x - 1]));
-                x--;
-            }
-        }
-
-        lines.Reverse();
-        return lines;
-    }
-
-    private static int GetFrontierValue(
-        IReadOnlyDictionary<int, int> frontier,
-        int diagonal)
-    {
-        return frontier.TryGetValue(diagonal, out int value)
-            ? value
-            : 0;
-    }
-
-    private static IReadOnlyList<DiffLine> SelectPreviewLines(
-        IReadOnlyList<DiffLine> diffLines)
+    private static IReadOnlyList<PreviewDiffLine> SelectPreviewLines(
+        IReadOnlyList<PreviewDiffLine> diffLines)
     {
         int firstChangedIndex = -1;
         for (int index = 0; index < diffLines.Count; index++)
         {
-            if (diffLines[index].Kind != DiffLineKind.Context)
+            if (diffLines[index].Kind is ChangeType.Inserted or ChangeType.Deleted)
             {
                 firstChangedIndex = index;
                 break;
@@ -1593,7 +1083,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         while (end < diffLines.Count)
         {
-            if (diffLines[end].Kind == DiffLineKind.Context)
+            if (diffLines[end].Kind is not (ChangeType.Inserted or ChangeType.Deleted))
             {
                 trailingContextCount++;
                 if (trailingContextCount > FileWritePreviewContextLines)
@@ -1652,21 +1142,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         WorkspaceFileWritePreviewLine[] Lines,
         int RemainingPreviewLineCount);
 
-    private readonly record struct DiffLine(
-        DiffLineKind Kind,
-        int? OriginalLineNumber,
-        int? UpdatedLineNumber,
-        string Text)
-    {
-        public int? LineNumber => Kind == DiffLineKind.Removal
-            ? OriginalLineNumber
-            : UpdatedLineNumber;
-    }
-
-    private enum DiffLineKind
-    {
-        Context = 0,
-        Addition = 1,
-        Removal = 2
-    }
+    private readonly record struct PreviewDiffLine(
+        ChangeType Kind,
+        int LineNumber,
+        string Text);
 }

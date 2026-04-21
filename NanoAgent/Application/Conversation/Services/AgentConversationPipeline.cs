@@ -11,6 +11,14 @@ namespace NanoAgent.Application.Conversation.Services;
 
 internal sealed class AgentConversationPipeline : IConversationPipeline
 {
+    private const int EmptyResponseRetryLimit = 1;
+    private const string EmptyResponseFallbackMessage =
+        "I did not receive a usable response from the provider after retrying. " +
+        "The provider ended normally but returned no assistant content or tool calls. Please try again.";
+    private const string EmptyResponseRetryInstruction =
+        "The previous provider response was empty even though it ended normally. " +
+        "Return a non-empty assistant message or call an available tool.";
+
     private readonly TimeProvider _timeProvider;
     private readonly ITokenEstimator _tokenEstimator;
     private readonly IApiKeySecretStore _secretStore;
@@ -126,6 +134,21 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             executionPlanTracker: null,
             cancellationToken);
 
+        if (planningResult.IsProviderEmptyResponseFallback)
+        {
+            if (PlanningModePolicy.ShouldStayInPlanningMode(normalizedInput))
+            {
+                return CreatePhaseResultTurnResult(
+                    startedAt,
+                    planningResult,
+                    CreateBatchResult(planningResult.ExecutedToolResults),
+                    GetCompletionTokens(planningResult));
+            }
+
+            planningResult = planningResult.WithAssistantMessage(
+                CreateFallbackPlanningSummary(normalizedInput));
+        }
+
         ExecutionPlanTracker? executionPlanTracker = ExecutionPlanTracker.Create(
             PlanningModePolicy.ExtractPlanTasks(planningResult.AssistantMessage));
         if (executionPlanTracker is not null)
@@ -181,6 +204,17 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             executionPlanTracker,
             cancellationToken);
 
+        if (executionResult.IsProviderEmptyResponseFallback)
+        {
+            return CreatePhaseResultTurnResult(
+                startedAt,
+                executionResult,
+                CombineToolExecutionResults(
+                    planningResult.ExecutedToolResults,
+                    executionResult.ExecutedToolResults),
+                CombineCompletionTokens(planningResult, executionResult));
+        }
+
         if (executionPlanTracker is not null)
         {
             await progressSink.ReportExecutionPlanAsync(
@@ -192,12 +226,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         session.ClearPendingExecutionPlan();
         session.AddConversationTurn(normalizedInput, executionResult.AssistantMessage);
 
-        int? completionTokens = null;
-        if (planningResult.HasReportedCompletionTokens || executionResult.HasReportedCompletionTokens)
-        {
-            completionTokens = planningResult.TotalCompletionTokens + executionResult.TotalCompletionTokens;
-        }
-
         ToolExecutionBatchResult? toolExecutionResult = CombineToolExecutionResults(
             planningResult.ExecutedToolResults,
             executionResult.ExecutedToolResults);
@@ -208,7 +236,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CreateMetrics(
                 startedAt,
                 executionResult.AssistantMessage,
-                completionTokens));
+                CombineCompletionTokens(planningResult, executionResult)));
     }
 
     private async Task<ConversationTurnResult> ExecuteApprovedPlanAsync(
@@ -258,6 +286,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             executionPlanTracker,
             cancellationToken);
 
+        if (executionResult.IsProviderEmptyResponseFallback)
+        {
+            return CreatePhaseResultTurnResult(
+                startedAt,
+                executionResult,
+                CreateBatchResult(executionResult.ExecutedToolResults),
+                GetCompletionTokens(executionResult));
+        }
+
         if (executionPlanTracker is not null)
         {
             await progressSink.ReportExecutionPlanAsync(
@@ -275,9 +312,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CreateMetrics(
                 startedAt,
                 executionResult.AssistantMessage,
-                executionResult.HasReportedCompletionTokens
-                    ? executionResult.TotalCompletionTokens
-                    : null));
+                GetCompletionTokens(executionResult)));
     }
 
     private ConversationTurnMetrics CreateMetrics(
@@ -290,6 +325,59 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             ? completionTokens.Value
             : _tokenEstimator.Estimate(responseText);
         return new ConversationTurnMetrics(elapsed, estimatedOutputTokens);
+    }
+
+    private ConversationTurnResult CreatePhaseResultTurnResult(
+        DateTimeOffset startedAt,
+        PhaseExecutionResult phaseResult,
+        ToolExecutionBatchResult? toolExecutionResult,
+        int? completionTokens)
+    {
+        return ConversationTurnResult.AssistantMessage(
+            phaseResult.AssistantMessage,
+            toolExecutionResult,
+            CreateMetrics(
+                startedAt,
+                phaseResult.AssistantMessage,
+                completionTokens));
+    }
+
+    private static string CreateEmptyResponseRetrySystemPrompt(string? systemPrompt)
+    {
+        return string.IsNullOrWhiteSpace(systemPrompt)
+            ? EmptyResponseRetryInstruction
+            : $"{systemPrompt.Trim()}{Environment.NewLine}{Environment.NewLine}{EmptyResponseRetryInstruction}";
+    }
+
+    private static string CreateFallbackPlanningSummary(string normalizedInput)
+    {
+        return $"""
+            Objective
+            - {normalizedInput}
+
+            Plan
+            1. Complete the user's request using the available tools.
+            2. Validate the result when practical.
+
+            Risks / unknowns
+            - The provider returned an empty planning response, so this minimal plan was synthesized by NanoAgent.
+            """;
+    }
+
+    private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)
+    {
+        return phaseResult.HasReportedCompletionTokens
+            ? phaseResult.TotalCompletionTokens
+            : null;
+    }
+
+    private static int? CombineCompletionTokens(
+        PhaseExecutionResult first,
+        PhaseExecutionResult second)
+    {
+        return first.HasReportedCompletionTokens || second.HasReportedCompletionTokens
+            ? first.TotalCompletionTokens + second.TotalCompletionTokens
+            : null;
     }
 
     private static string CreateToolFeedbackContent(ToolInvocationResult invocationResult)
@@ -338,55 +426,23 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         for (int round = 0; round < settings.MaxToolRoundsPerTurn; round++)
         {
-            ConversationProviderPayload providerPayload;
+            ConversationResponse? response = await SendAndMapResponseAsync(
+                apiKey,
+                session,
+                messages,
+                systemPrompt,
+                availableTools,
+                settings,
+                timeoutSource,
+                cancellationToken);
 
-            try
+            if (response is null)
             {
-                providerPayload = await _providerClient.SendAsync(
-                    new ConversationProviderRequest(
-                        session.ProviderProfile,
-                        apiKey,
-                        session.ActiveModelId,
-                        messages,
-                        systemPrompt,
-                        availableTools),
-                    timeoutSource.Token);
-            }
-            catch (ConversationProviderException)
-            {
-                throw;
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
-            {
-                throw new ConversationProviderException(
-                    $"The conversation request timed out after {settings.RequestTimeout.TotalSeconds:0} seconds.");
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                throw new ConversationProviderException(
-                    "The configured provider failed while processing the conversation request.",
-                    exception);
-            }
-
-            ConversationResponse response;
-
-            try
-            {
-                response = _responseMapper.Map(providerPayload);
-            }
-            catch (ConversationResponseException)
-            {
-                throw;
-            }
-            catch (Exception exception)
-            {
-                throw new ConversationResponseException(
-                    "The provider response could not be normalized into the internal conversation model.",
-                    exception);
+                return CreateEmptyResponseFallback(
+                    messages,
+                    executedToolResults,
+                    totalCompletionTokens,
+                    hasReportedCompletionTokens);
             }
 
             if (response.CompletionTokens is > 0)
@@ -458,6 +514,116 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         throw new ConversationResponseException(
             $"The provider requested too many sequential tool rounds without producing a final assistant message. " +
             $"Configured limit: {settings.MaxToolRoundsPerTurn} round(s).");
+    }
+
+    private async Task<ConversationResponse?> SendAndMapResponseAsync(
+        string apiKey,
+        ReplSessionContext session,
+        IReadOnlyList<ConversationRequestMessage> messages,
+        string? systemPrompt,
+        IReadOnlyList<ToolDefinition> availableTools,
+        ConversationSettings settings,
+        CancellationTokenSource timeoutSource,
+        CancellationToken cancellationToken)
+    {
+        string? requestSystemPrompt = systemPrompt;
+
+        for (int attempt = 0; attempt <= EmptyResponseRetryLimit; attempt++)
+        {
+            ConversationProviderPayload providerPayload = await SendProviderRequestAsync(
+                apiKey,
+                session,
+                messages,
+                requestSystemPrompt,
+                availableTools,
+                settings,
+                timeoutSource,
+                cancellationToken);
+
+            try
+            {
+                return _responseMapper.Map(providerPayload);
+            }
+            catch (ConversationResponseException exception)
+                when (exception.IsRetryableEmptyResponse && attempt < EmptyResponseRetryLimit)
+            {
+                requestSystemPrompt = CreateEmptyResponseRetrySystemPrompt(systemPrompt);
+            }
+            catch (ConversationResponseException exception) when (exception.IsRetryableEmptyResponse)
+            {
+                return null;
+            }
+            catch (ConversationResponseException)
+            {
+                throw;
+            }
+            catch (Exception exception)
+            {
+                throw new ConversationResponseException(
+                    "The provider response could not be normalized into the internal conversation model.",
+                    exception);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<ConversationProviderPayload> SendProviderRequestAsync(
+        string apiKey,
+        ReplSessionContext session,
+        IReadOnlyList<ConversationRequestMessage> messages,
+        string? systemPrompt,
+        IReadOnlyList<ToolDefinition> availableTools,
+        ConversationSettings settings,
+        CancellationTokenSource timeoutSource,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _providerClient.SendAsync(
+                new ConversationProviderRequest(
+                    session.ProviderProfile,
+                    apiKey,
+                    session.ActiveModelId,
+                    messages.ToArray(),
+                    systemPrompt,
+                    availableTools),
+                timeoutSource.Token);
+        }
+        catch (ConversationProviderException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
+        {
+            throw new ConversationProviderException(
+                $"The conversation request timed out after {settings.RequestTimeout.TotalSeconds:0} seconds.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new ConversationProviderException(
+                "The configured provider failed while processing the conversation request.",
+                exception);
+        }
+    }
+
+    private static PhaseExecutionResult CreateEmptyResponseFallback(
+        IReadOnlyList<ConversationRequestMessage> messages,
+        IReadOnlyList<ToolInvocationResult> executedToolResults,
+        int totalCompletionTokens,
+        bool hasReportedCompletionTokens)
+    {
+        return new PhaseExecutionResult(
+            EmptyResponseFallbackMessage,
+            messages,
+            executedToolResults,
+            totalCompletionTokens,
+            hasReportedCompletionTokens,
+            isProviderEmptyResponseFallback: true);
     }
 
     private static ToolExecutionBatchResult? CombineToolExecutionResults(
@@ -570,7 +736,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             IReadOnlyList<ConversationRequestMessage> messages,
             IReadOnlyList<ToolInvocationResult> executedToolResults,
             int totalCompletionTokens,
-            bool hasReportedCompletionTokens)
+            bool hasReportedCompletionTokens,
+            bool isProviderEmptyResponseFallback = false)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(assistantMessage);
             ArgumentNullException.ThrowIfNull(messages);
@@ -581,6 +748,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             ExecutedToolResults = executedToolResults.ToArray();
             TotalCompletionTokens = totalCompletionTokens;
             HasReportedCompletionTokens = hasReportedCompletionTokens;
+            IsProviderEmptyResponseFallback = isProviderEmptyResponseFallback;
         }
 
         public string AssistantMessage { get; }
@@ -589,8 +757,20 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         public bool HasReportedCompletionTokens { get; }
 
+        public bool IsProviderEmptyResponseFallback { get; }
+
         public IReadOnlyList<ConversationRequestMessage> Messages { get; }
 
         public int TotalCompletionTokens { get; }
+
+        public PhaseExecutionResult WithAssistantMessage(string assistantMessage)
+        {
+            return new PhaseExecutionResult(
+                assistantMessage,
+                Messages,
+                ExecutedToolResults,
+                TotalCompletionTokens,
+                HasReportedCompletionTokens);
+        }
     }
 }

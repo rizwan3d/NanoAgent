@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Serialization;
@@ -56,9 +55,8 @@ internal sealed class DirectoryListTool : ITool
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        string? path = TryGetOptionalString(context.Arguments, "path");
-        bool recursive = TryGetOptionalBoolean(context.Arguments, "recursive", out bool recursiveValue) &&
-                         recursiveValue;
+        string? path = ToolArguments.GetOptionalString(context.Arguments, "path");
+        bool recursive = ToolArguments.GetBoolean(context.Arguments, "recursive");
 
         Application.Tools.Models.WorkspaceDirectoryListResult result = await _workspaceFileService.ListDirectoryAsync(
             path,
@@ -82,32 +80,4 @@ internal sealed class DirectoryListTool : ITool
                 renderText));
     }
 
-    private static bool TryGetOptionalBoolean(
-        JsonElement arguments,
-        string propertyName,
-        out bool value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind is JsonValueKind.True or JsonValueKind.False)
-        {
-            value = property.GetBoolean();
-            return true;
-        }
-
-        value = default;
-        return false;
-    }
-
-    private static string? TryGetOptionalString(
-        JsonElement arguments,
-        string propertyName)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            return property.GetString()?.Trim();
-        }
-
-        return null;
-    }
 }

@@ -1,4 +1,3 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
@@ -52,7 +51,7 @@ internal sealed class ApplyPatchTool : ITool
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!TryGetRequiredString(context.Arguments, "patch", out string? patch))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "patch", out string? patch, trim: false))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_patch",
@@ -102,19 +101,4 @@ internal sealed class ApplyPatchTool : ITool
                 renderText));
     }
 
-    private static bool TryGetRequiredString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        value = null;
-        return false;
-    }
 }

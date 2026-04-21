@@ -74,7 +74,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         if (toolCalls.Count == 0 && assistantMessage is null)
         {
             throw new ConversationResponseException(
-                CreateEmptyResponseMessage(firstChoice, responseId));
+                CreateEmptyResponseMessage(firstChoice, responseId),
+                isRetryableEmptyResponse: IsRetryableEmptyStopResponse(firstChoice));
         }
 
         return new ConversationResponse(
@@ -99,6 +100,14 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         return "The provider returned neither assistant content, a refusal, nor usable tool calls." +
                finishReasonSuffix +
                idSuffix;
+    }
+
+    private static bool IsRetryableEmptyStopResponse(OpenAiChatCompletionChoice? choice)
+    {
+        return string.Equals(
+            NormalizeText(choice?.FinishReason),
+            "stop",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string CreateToolCallId(string? rawId, string? responseId, int ordinal)

@@ -46,7 +46,12 @@ internal static class Program
             optional: true,
             reloadOnChange: false);
 
-        builder.ConfigureConsoleHost();
+        builder.Logging.ClearProviders();
+        builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
+        builder.Services.Configure<ConsoleLifetimeOptions>(static options =>
+        {
+            options.SuppressStatusMessages = true;
+        });
 
         builder.Services
             .AddApplication()

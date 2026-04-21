@@ -1,8 +1,8 @@
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Planning;
+using NanoAgent.Application.Tools;
 
 namespace NanoAgent.Application.Permissions;
 
@@ -304,7 +304,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         FilePathPermissionRule rule,
         List<string> subjects)
     {
-        if (!TryGetOptionalString(context.Arguments, rule.ArgumentName, out string? requestedPath))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, rule.ArgumentName, out string? requestedPath))
         {
             return PermissionEvaluationResult.Allowed();
         }
@@ -345,7 +345,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         PatchPermissionPolicy patchPolicy,
         List<string> subjects)
     {
-        if (!TryGetOptionalString(context.Arguments, patchPolicy.PatchArgumentName, out string? patchText))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, patchPolicy.PatchArgumentName, out string? patchText))
         {
             return PermissionEvaluationResult.Allowed();
         }
@@ -416,13 +416,12 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         ShellCommandPermissionPolicy shellPolicy,
         List<string> subjects)
     {
-        if (!TryGetOptionalString(context.Arguments, shellPolicy.CommandArgumentName, out string? commandText))
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, shellPolicy.CommandArgumentName, out string? commandText))
         {
             return PermissionEvaluationResult.Allowed();
         }
 
-        string? commandName = ExtractCommandName(commandText!);
-        if (string.IsNullOrWhiteSpace(commandName))
+        if (!ShellCommandText.TryGetCommandName(commandText!, out string commandName))
         {
             return PermissionEvaluationResult.Denied(
                 "invalid_shell_command",
@@ -450,66 +449,10 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         WebRequestPermissionPolicy webRequestPolicy,
         List<string> subjects)
     {
-        if (TryGetOptionalString(context.Arguments, webRequestPolicy.RequestArgumentName, out string? requestValue))
+        if (ToolArguments.TryGetNonEmptyString(context.Arguments, webRequestPolicy.RequestArgumentName, out string? requestValue))
         {
             subjects.Add(requestValue!);
         }
-    }
-
-    private static string? ExtractCommandName(string commandText)
-    {
-        ReadOnlySpan<char> value = commandText.AsSpan().TrimStart();
-        if (value.IsEmpty)
-        {
-            return null;
-        }
-
-        char firstCharacter = value[0];
-        if (firstCharacter is '"' or '\'')
-        {
-            int closingQuoteIndex = value[1..].IndexOf(firstCharacter);
-            if (closingQuoteIndex < 0)
-            {
-                return null;
-            }
-
-            return NormalizeCommandToken(value.Slice(1, closingQuoteIndex).ToString());
-        }
-
-        int separatorIndex = value.IndexOfAny(" \t\r\n".AsSpan());
-        string token = separatorIndex < 0
-            ? value.ToString()
-            : value[..separatorIndex].ToString();
-
-        return NormalizeCommandToken(token);
-    }
-
-    private static string NormalizeCommandToken(string token)
-    {
-        string trimmedToken = token.Trim();
-        if (string.IsNullOrWhiteSpace(trimmedToken))
-        {
-            return string.Empty;
-        }
-
-        string fileName = Path.GetFileName(trimmedToken.Replace('/', Path.DirectorySeparatorChar));
-        return Path.GetFileNameWithoutExtension(fileName);
-    }
-
-    private static bool TryGetOptionalString(
-        JsonElement arguments,
-        string propertyName,
-        out string? value)
-    {
-        if (arguments.TryGetProperty(propertyName, out JsonElement property) &&
-            property.ValueKind == JsonValueKind.String)
-        {
-            value = property.GetString()?.Trim();
-            return !string.IsNullOrWhiteSpace(value);
-        }
-
-        value = null;
-        return false;
     }
 
     private static string ResolveWithinWorkspace(

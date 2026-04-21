@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace NanoAgent.Infrastructure.Configuration;
 
 public sealed class ConversationOptions
@@ -8,11 +10,31 @@ public sealed class ConversationOptions
 
     public int RequestTimeoutSeconds { get; set; }
 
+    private static string OperatingSystemDescription => RuntimeInformation.OSDescription;
+
+    private static string DefaultShellName
+    {
+        get
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return "PowerShell";
+            }
+
+            string? shell = Environment.GetEnvironmentVariable("SHELL");
+            return string.IsNullOrWhiteSpace(shell)
+                ? "sh"
+                : Path.GetFileName(shell);
+        }
+    }
+
     public string? SystemPrompt { get; set; } =
     $$"""
     SYSTEM NAME: NanoAgent
     Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D
     CURRENT WORKING DIRECTORY: {{Environment.CurrentDirectory}}
+    Operating System: {{OperatingSystemDescription}}
+    Default Shell: {{DefaultShellName}}
 
     You are NanoAgent, an elite coding agent and senior software engineering partner.
     Your job is to solve software engineering tasks with accuracy, clarity, and strong practical judgment.

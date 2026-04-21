@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
@@ -74,8 +74,6 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                 completedSessionEstimatedOutputTokens));
     }
 
-
-
     public async Task WriteShellHeaderAsync(
         string applicationName,
         string modelName,
@@ -108,7 +106,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         await DelayIfAnimatedAsync(cancellationToken).ConfigureAwait(false);
         _outputTarget.WriteLine([
             new CliOutputSegment("  ", CliOutputStyle.Muted),
-            new CliOutputSegment(new string('\u2500', HeaderDividerWidth), CliOutputStyle.CodeFence)
+            new CliOutputSegment(new string('-', HeaderDividerWidth), CliOutputStyle.CodeFence)
         ]);
         await DelayIfAnimatedAsync(cancellationToken).ConfigureAwait(false);
         _outputTarget.WriteLine([
@@ -130,29 +128,29 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         (string Nano, string Agent)[] wordmark =
         [
             (
-            "███╗   ██╗  █████╗  ███╗   ██╗  ██████╗",
-            "  █████╗   ██████╗  ███████╗  ███╗   ██╗  ████████╗"
-        ),
-        (
-            "████╗  ██║ ██╔══██╗ ████╗  ██║ ██╔═══██╗",
-            " ██╔══██╗ ██╔════╝  ██╔════╝  ████╗  ██║  ╚══██╔══╝"
-        ),
-        (
-            "██╔██╗ ██║ ███████║ ██╔██╗ ██║ ██║   ██║",
-            " ███████║ ██║  ███╗ █████╗    ██╔██╗ ██║     ██║"
-        ),
-        (
-            "██║╚██╗██║ ██╔══██║ ██║╚██╗██║ ██║   ██║",
-            " ██╔══██║ ██║   ██║ ██╔══╝    ██║╚██╗██║     ██║"
-        ),
-        (
-            "██║ ╚████║ ██║  ██║ ██║ ╚████║ ╚██████╔╝",
-            " ██║  ██║ ╚██████╔╝ ███████╗  ██║ ╚████║     ██║"
-        ),
-        (
-            "╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝  ╚═════╝",
-            "  ╚═╝  ╚═╝  ╚═════╝  ╚══════╝  ╚═╝  ╚═══╝     ╚═╝"
-        )
+                "███╗   ██╗  █████╗  ███╗   ██╗  ██████╗",
+                "  █████╗   ██████╗  ███████╗  ███╗   ██╗  ████████╗"
+            ),
+            (
+                "████╗  ██║ ██╔══██╗ ████╗  ██║ ██╔═══██╗",
+                " ██╔══██╗ ██╔════╝  ██╔════╝  ████╗  ██║  ╚══██╔══╝"
+            ),
+            (
+                "██╔██╗ ██║ ███████║ ██╔██╗ ██║ ██║   ██║",
+                " ███████║ ██║  ███╗ █████╗    ██╔██╗ ██║     ██║"
+            ),
+            (
+                "██║╚██╗██║ ██╔══██║ ██║╚██╗██║ ██║   ██║",
+                " ██╔══██║ ██║   ██║ ██╔══╝    ██║╚██╗██║     ██║"
+            ),
+            (
+                "██║ ╚████║ ██║  ██║ ██║ ╚████║ ╚██████╔╝",
+                " ██║  ██║ ╚██████╔╝ ███████╗  ██║ ╚████║     ██║"
+            ),
+            (
+                "╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝  ╚═════╝",
+                "  ╚═╝  ╚═╝  ╚═════╝  ╚══════╝  ╚═╝  ╚═══╝     ╚═╝"
+            )
         ];
 
         for (int i = 0; i < wordmark.Length; i++)
@@ -374,26 +372,15 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
 
         private string BuildStatusLine(TimeSpan elapsed)
         {
-            const string workingLabel = "Working";
             string[] spinnerFrames = ["|", "/", "-", "\\"];
             int spinnerFrameIndex = (int)Math.Max(0d, elapsed.TotalSeconds) %
                                     spinnerFrames.Length;
-            int highlightedCharacterIndex = (int)Math.Max(0d, elapsed.TotalSeconds) %
-                                            workingLabel.Length;
 
-            List<string> segments = [];
-            segments.Add(spinnerFrames[spinnerFrameIndex]);
-            segments.Add(" ");
-
-            for (int index = 0; index < workingLabel.Length; index++)
-            {
-                segments.Add(workingLabel[index].ToString());
-            }
-
-            segments.Add($" {MetricDisplayFormatter.FormatEstimatedOutputMetric(elapsed, CalculateRealtimeEstimate(elapsed))}");
-            segments.Add("  Esc to interrupt");
-
-            return string.Concat(segments);
+            return string.Concat(
+                spinnerFrames[spinnerFrameIndex],
+                " Working ",
+                MetricDisplayFormatter.FormatEstimatedOutputMetric(elapsed, CalculateRealtimeEstimate(elapsed)),
+                "  Esc to interrupt");
         }
 
         private IReadOnlyList<string> BuildStatusBlockLines(TimeSpan elapsed)
@@ -415,11 +402,12 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             ExecutionPlanProgress progress = _executionPlanProgress;
             int taskCount = progress.Tasks.Count;
             int currentTaskIndex = progress.CurrentTaskIndex;
+            int latestStartIndex = Math.Max(0, taskCount - maxVisibleTasks);
             int startIndex = currentTaskIndex switch
             {
-                < 0 => Math.Max(0, taskCount - maxVisibleTasks),
+                < 0 => latestStartIndex,
                 <= 1 => 0,
-                _ => Math.Min(taskCount - maxVisibleTasks, currentTaskIndex - 1)
+                _ => Math.Min(latestStartIndex, currentTaskIndex - 1)
             };
             int endIndexExclusive = Math.Min(taskCount, startIndex + maxVisibleTasks);
 
@@ -588,7 +576,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
 
             WorkspaceFileWriteResult primaryResult = results[0];
             _outputTarget.WriteLine([
-                new CliOutputSegment("  └ ", CliOutputStyle.Muted),
+                new CliOutputSegment("  - ", CliOutputStyle.Muted),
                 new CliOutputSegment(primaryResult.Path, CliOutputStyle.InlineCode),
                 new CliOutputSegment(
                     $" (+{primaryResult.AddedLineCount} -{primaryResult.RemovedLineCount})",
@@ -817,7 +805,7 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
             bool isFirstLine)
         {
             _outputTarget.WriteLine([
-                new CliOutputSegment(isFirstLine ? "  └ " : "    ", CliOutputStyle.Muted),
+                new CliOutputSegment(isFirstLine ? "  - " : "    ", CliOutputStyle.Muted),
                 new CliOutputSegment(text, style)
             ]);
         }
@@ -828,19 +816,6 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
                 new CliOutputSegment("    ", CliOutputStyle.Muted),
                 new CliOutputSegment(text, style)
             ]);
-        }
-
-        private bool TryWriteTrailingNewLine()
-        {
-            try
-            {
-                _terminal.WriteLine();
-                return true;
-            }
-            catch (IOException)
-            {
-                return false;
-            }
         }
 
         private int CalculateRealtimeEstimate(TimeSpan elapsed)

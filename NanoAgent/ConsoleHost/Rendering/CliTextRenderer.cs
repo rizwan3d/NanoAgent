@@ -8,16 +8,13 @@ internal sealed class CliTextRenderer : ICliTextRenderer
 {
     private readonly ICliOutputTarget _outputTarget;
     private readonly IAnsiConsole _console;
-    private readonly ConsoleRenderSettings _settings;
 
     public CliTextRenderer(
         ICliOutputTarget outputTarget,
-        IAnsiConsole console,
-        ConsoleRenderSettings settings)
+        IAnsiConsole console)
     {
         _outputTarget = outputTarget;
         _console = console;
-        _settings = settings;
     }
 
     public async Task RenderAsync(
@@ -43,21 +40,20 @@ internal sealed class CliTextRenderer : ICliTextRenderer
     {
         _console.Write(new Markup("[bold aqua]assistant[/]"));
         _console.WriteLine();
-        _console.WriteLine();
 
         for (int index = 0; index < document.Blocks.Count; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            _console.Write(CreateRenderable(document.Blocks[index]));
-            _console.WriteLine();
-
-            if (index < document.Blocks.Count - 1)
+            if (index > 0)
             {
                 _console.WriteLine();
-                await DelayIfAnimatedAsync(cancellationToken).ConfigureAwait(false);
             }
+
+            _console.Write(CreateRenderable(document.Blocks[index]));
         }
+
+        _console.WriteLine();
     }
 
     private IRenderable CreateRenderable(CliRenderBlock block)
@@ -370,18 +366,6 @@ internal sealed class CliTextRenderer : ICliTextRenderer
             CliInlineStyle.Link => CliOutputStyle.Link,
             _ => baseStyle
         };
-    }
-
-    private async Task DelayIfAnimatedAsync(CancellationToken cancellationToken)
-    {
-        if (!_settings.EnableAnimations ||
-            !_outputTarget.SupportsColor ||
-            _settings.AssistantBlockDelay <= TimeSpan.Zero)
-        {
-            return;
-        }
-
-        await Task.Delay(_settings.AssistantBlockDelay, cancellationToken).ConfigureAwait(false);
     }
 
     private static string BuildLinkMarkup(CliInlineSegment segment)

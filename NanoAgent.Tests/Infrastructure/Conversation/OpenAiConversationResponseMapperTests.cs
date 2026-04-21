@@ -187,6 +187,36 @@ public sealed class OpenAiConversationResponseMapperTests
             null));
 
         action.Should().Throw<ConversationResponseException>()
-            .WithMessage("*neither assistant content, a refusal, nor usable tool calls*");
+            .WithMessage("*neither assistant content, a refusal, nor usable tool calls*")
+            .Which.IsRetryableEmptyResponse.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Map_Should_MarkEmptyStopResponseAsRetryable_When_ResponseHasNoUsableOutput()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        Action action = () => sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAi,
+            """
+            {
+              "id": "resp_empty",
+              "choices": [
+                {
+                  "finish_reason": "stop",
+                  "message": {
+                    "content": null
+                  }
+                }
+              ]
+            }
+            """,
+            null));
+
+        ConversationResponseException exception = action.Should()
+            .Throw<ConversationResponseException>()
+            .WithMessage("*Finish reason: stop*Response id: resp_empty*")
+            .Which;
+        exception.IsRetryableEmptyResponse.Should().BeTrue();
     }
 }

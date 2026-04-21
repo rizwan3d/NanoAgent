@@ -1,16 +1,13 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
-using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Tools;
-using NanoAgent.Tests.Infrastructure.Secrets.TestDoubles;
 using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 
 public sealed class WorkspaceFileServiceTests : IDisposable
 {
-    private readonly FakeProcessRunner _processRunner = new();
     private readonly string _workspaceRoot;
 
     public WorkspaceFileServiceTests()
@@ -69,54 +66,44 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadFileAsync_Should_UseShellBackedRead_When_CommandSucceeds()
+    public async Task ReadFileAsync_Should_ReadFileContent()
     {
         WorkspaceFileService sut = CreateSut();
         string filePath = Path.Combine(_workspaceRoot, "README.md");
 
-        await File.WriteAllTextAsync(filePath, "disk", CancellationToken.None);
-        _processRunner.EnqueueResult(new ProcessExecutionResult(0, "shell", string.Empty));
+        await File.WriteAllTextAsync(filePath, "hello", CancellationToken.None);
 
         WorkspaceFileReadResult result = await sut.ReadFileAsync(
             "README.md",
             CancellationToken.None);
 
-        result.Content.Should().Be("shell");
-        _processRunner.Requests.Should().ContainSingle();
+        result.Content.Should().Be("hello");
     }
 
     [Fact]
-    public async Task SearchFilesAsync_Should_ReturnShellMatches_AsWorkspaceRelativePaths()
+    public async Task SearchFilesAsync_Should_ReturnMatchingWorkspaceRelativePaths()
     {
         WorkspaceFileService sut = CreateSut();
         string srcDirectory = Path.Combine(_workspaceRoot, "src");
         Directory.CreateDirectory(srcDirectory);
         string programPath = Path.Combine(srcDirectory, "Program.cs");
         await File.WriteAllTextAsync(programPath, "class Program {}", CancellationToken.None);
-
-        _processRunner.EnqueueResult(new ProcessExecutionResult(
-            0,
-            programPath,
-            string.Empty));
 
         WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
             new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
             CancellationToken.None);
 
         result.Matches.Should().Equal("src/Program.cs");
-        _processRunner.Requests.Should().ContainSingle();
     }
 
     [Fact]
-    public async Task SearchTextAsync_Should_NormalizeShellMatches_ToWorkspaceRelativePaths()
+    public async Task SearchTextAsync_Should_ReturnMatchingWorkspaceRelativePaths()
     {
         WorkspaceFileService sut = CreateSut();
         string srcDirectory = Path.Combine(_workspaceRoot, "src");
         Directory.CreateDirectory(srcDirectory);
         string programPath = Path.Combine(srcDirectory, "Program.cs");
         await File.WriteAllTextAsync(programPath, "class Program {}", CancellationToken.None);
-
-        _processRunner.EnqueueResult(CreateSearchTextResult(programPath));
 
         WorkspaceTextSearchResult result = await sut.SearchTextAsync(
             new WorkspaceTextSearchRequest("Program", "src", CaseSensitive: false),
@@ -210,30 +197,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
     private WorkspaceFileService CreateSut()
     {
-        return new WorkspaceFileService(
-            new StubWorkspaceRootProvider(_workspaceRoot),
-            _processRunner);
-    }
-
-    private static ProcessExecutionResult CreateSearchTextResult(string absolutePath)
-    {
-        if (OperatingSystem.IsWindows())
-        {
-            string json = $$"""
-                [{"Path":"{{EscapeJson(absolutePath)}}","LineNumber":1,"Line":"class Program {}"}]
-                """;
-            return new ProcessExecutionResult(0, json, string.Empty);
-        }
-
-        return new ProcessExecutionResult(
-            0,
-            $"{absolutePath}:1:class Program {{}}",
-            string.Empty);
-    }
-
-    private static string EscapeJson(string value)
-    {
-        return value.Replace("\\", "\\\\", StringComparison.Ordinal);
+        return new WorkspaceFileService(new StubWorkspaceRootProvider(_workspaceRoot));
     }
 
     private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
