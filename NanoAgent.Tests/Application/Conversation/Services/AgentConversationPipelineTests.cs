@@ -90,9 +90,14 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("planning_mode");
         requests[0].SystemPrompt.Should().Contain("installed build tools");
         requests[0].SystemPrompt.Should().Contain("separate verified facts from assumptions or open questions");
+        requests[0].SystemPrompt.Should().Contain("Verified facts, Assumptions / open questions");
+        requests[0].SystemPrompt.Should().Contain("compare approaches");
+        requests[0].SystemPrompt.Should().Contain("Avoid low-quality plans such as");
         requests[0].SystemPrompt.Should().Contain("npm create vite@latest");
         requests[0].SystemPrompt.Should().Contain("fully specified, non-interactive commands");
         requests[0].SystemPrompt.Should().Contain("one task at a time");
+        requests[0].SystemPrompt.Should().Contain("finish the requested implementation when practical");
+        requests[0].SystemPrompt.Should().Contain("do not stop at analysis if you can safely continue");
         requests[0].SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
         requests[0].SystemPrompt.Should().NotContain("EXECUTION PHASE IS ACTIVE.");
         requests[0].AvailableTools.Select(static tool => tool.Name)
@@ -180,6 +185,8 @@ public sealed class AgentConversationPipelineTests
 
         requests.Should().ContainSingle();
         requests[0].SystemPrompt.Should().Contain("Active agent profile: plan.");
+        requests[0].SystemPrompt.Should().Contain("evidence-based implementation plan");
+        requests[0].SystemPrompt.Should().Contain("Do not patch, write files, install dependencies");
         requests[0].AvailableTools.Select(static tool => tool.Name)
             .Should()
             .Equal(
@@ -258,6 +265,8 @@ public sealed class AgentConversationPipelineTests
         requests.Should().HaveCount(2);
         requests[0].SystemPrompt.Should().NotContain("previous provider response was empty");
         requests[1].SystemPrompt.Should().Contain("previous provider response was empty");
+        requests[1].SystemPrompt.Should().Contain("materially advances the work");
+        requests[1].SystemPrompt.Should().Contain("Do not return empty content");
         requests[1].SystemPrompt.Should().Contain("planning_mode");
         requests[1].Messages.Should().HaveCount(1);
         requests[1].Messages[0].Content.Should().Be("Implement the next refactor.");
@@ -331,6 +340,7 @@ public sealed class AgentConversationPipelineTests
         result.ResponseText.Should().Contain("provider ended normally");
         requests.Should().HaveCount(2);
         requests[1].SystemPrompt.Should().Contain("previous provider response was empty");
+        requests[1].SystemPrompt.Should().Contain("another tool-less empty response");
         session.ConversationHistory.Should().BeEmpty();
         session.PendingExecutionPlan.Should().BeNull();
         toolExecutionPipeline.VerifyNoOtherCalls();
@@ -415,6 +425,9 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("planning_mode");
         requests[0].SystemPrompt.Should().Contain("immediate next step first");
         requests[0].SystemPrompt.Should().Contain("high-quality ordered task list");
+        requests[0].SystemPrompt.Should().Contain("Verified facts, Assumptions / open questions");
+        requests[0].SystemPrompt.Should().Contain("recommend the best path");
+        requests[0].SystemPrompt.Should().Contain("Avoid low-quality plans such as");
         requests[0].SystemPrompt.Should().Contain("scaffold stays non-interactive");
         requests[0].SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
         session.PendingExecutionPlan.Should().BeNull();
@@ -513,6 +526,8 @@ public sealed class AgentConversationPipelineTests
         requests.Should().HaveCount(1);
         requests[0].SystemPrompt.Should().Contain("APPROVED EXECUTION PHASE IS ACTIVE.");
         requests[0].SystemPrompt.Should().Contain("one task at a time");
+        requests[0].SystemPrompt.Should().Contain("Keep the immediate next step explicit");
+        requests[0].SystemPrompt.Should().Contain("revise it deliberately instead of following it blindly");
         requests[0].SystemPrompt.Should().Contain("1. Inspect the affected files.");
         requests[0].SystemPrompt.Should().Contain("use fully specified, non-interactive commands");
         requests[0].Messages.Should().HaveCount(3);

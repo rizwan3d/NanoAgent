@@ -71,5 +71,25 @@ public sealed class BuiltInAgentProfileResolverTests
     {
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("fully specified, non-interactive commands");
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("project name, template or preset, and any confirmation flags");
+        BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("finish the requested implementation when practical");
+        BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("do not stop at analysis if you can safely continue");
+    }
+
+    [Fact]
+    public void PlanProfile_Should_DescribeEvidenceBasedReadOnlyPlanning()
+    {
+        BuiltInAgentProfiles.Plan.SystemPrompt.Should().Contain("evidence-based implementation plan");
+        BuiltInAgentProfiles.Plan.SystemPrompt.Should().Contain("separate verified facts from assumptions or open questions");
+        BuiltInAgentProfiles.Plan.SystemPrompt.Should().Contain("immediate next step explicit");
+        BuiltInAgentProfiles.Plan.SystemPrompt.Should().Contain("Do not patch, write files, install dependencies");
+    }
+
+    [Fact]
+    public void ReviewProfile_Should_DescribeFindingsFirstReviewBehavior()
+    {
+        BuiltInAgentProfiles.Review.SystemPrompt.Should().Contain("Prioritize findings first");
+        BuiltInAgentProfiles.Review.SystemPrompt.Should().Contain("include file or line references when practical");
+        BuiltInAgentProfiles.Review.SystemPrompt.Should().Contain("say so explicitly");
+        BuiltInAgentProfiles.Review.SystemPrompt.Should().Contain("testing gaps");
     }
 }

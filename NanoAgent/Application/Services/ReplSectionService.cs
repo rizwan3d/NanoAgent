@@ -11,13 +11,15 @@ internal sealed class ReplSectionService : IReplSectionService
 {
     private const string SectionTitlePrompt =
         """
-        You are naming a coding session.
-        Create a concise title from the user's first prompt.
+        You are generating a short title for a coding session from the user's first prompt.
+        Capture the main engineering task, bug, feature, or subsystem in a human-readable way.
+        Prefer specific nouns and verbs from the request; avoid generic fillers like Help, Task, Request, or Session.
         Requirements:
         - 2 to 6 words
         - plain text only
         - no quotes
         - no trailing punctuation
+        - no markdown, labels, or explanations
         Respond with the title only.
         """;
 

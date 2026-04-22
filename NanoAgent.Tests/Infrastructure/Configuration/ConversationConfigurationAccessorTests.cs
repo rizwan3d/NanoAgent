@@ -48,6 +48,12 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("pending`, `in_progress`, and `completed");
         result.SystemPrompt.Should().Contain("check installed build tools, compilers, SDKs, package managers, or runtimes");
         result.SystemPrompt.Should().Contain("dotnet --info");
+        result.SystemPrompt.Should().Contain("Collaboration style:");
+        result.SystemPrompt.Should().Contain("Never make the user do work that you can do with the available tools");
+        result.SystemPrompt.Should().Contain("Make reasonable assumptions when the safest path is clear");
+        result.SystemPrompt.Should().Contain("Persist until the task is handled end-to-end when practical");
+        result.SystemPrompt.Should().Contain("Communication style:");
+        result.SystemPrompt.Should().Contain("If the user asks for a review, prioritize findings first");
         result.SystemPrompt.Should().Contain("project scaffolding, dependency restore/install");
         result.SystemPrompt.Should().Contain("dotnet build");
         result.SystemPrompt.Should().Contain("npm test");
@@ -69,9 +75,16 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("update_plan: {\"plan\"");
         result.SystemPrompt.Should().Contain("Execution discipline:");
         result.SystemPrompt.Should().Contain("work through it one task at a time");
+        result.SystemPrompt.Should().Contain("Codebase hygiene and safety:");
+        result.SystemPrompt.Should().Contain("Do not revert unrelated changes you discover in the workspace");
+        result.SystemPrompt.Should().Contain("Prefer non-interactive commands whenever possible");
+        result.SystemPrompt.Should().Contain("If validation could not be run, say so explicitly");
         result.SystemPrompt.Should().Contain("High-quality plan example:");
         result.SystemPrompt.Should().Contain("Low-quality plan example:");
         result.SystemPrompt.Should().Contain("Never produce a low-quality plan");
+        result.SystemPrompt.Should().Contain("Delivery standards:");
+        result.SystemPrompt.Should().Contain("Finish with the clearest useful answer, not the longest one");
+        result.SystemPrompt.Should().Contain("Do not tell the user to copy, save, or paste files");
         result.SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
         result.SystemPrompt.Should().NotContain("Do not write files.");
     }

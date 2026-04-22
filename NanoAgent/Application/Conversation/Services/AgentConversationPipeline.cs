@@ -19,8 +19,13 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         "I did not receive a usable response from the provider after retrying. " +
         "The provider ended normally but returned no assistant content or tool calls. Please try again.";
     private const string EmptyResponseRetryInstruction =
-        "The previous provider response was empty even though it ended normally. " +
-        "Return a non-empty assistant message or call an available tool.";
+        """
+        The previous provider response was empty even though it ended normally.
+        Continue the same task and return either:
+        - a non-empty assistant message that materially advances the work, or
+        - a valid call to an available tool
+        Do not return empty content, whitespace, or another tool-less empty response.
+        """;
 
     private readonly TimeProvider _timeProvider;
     private readonly ITokenEstimator _tokenEstimator;

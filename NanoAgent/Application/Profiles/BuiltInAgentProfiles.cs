@@ -40,12 +40,14 @@ internal static class BuiltInAgentProfiles
 
     public static IAgentProfile Build { get; } = new BuiltInAgentProfile(
         BuildName,
-        "Default coding agent profile for editing, shell toolchain work, build, and test loops.",
+        "Default coding agent profile for end-to-end implementation, shell toolchain work, build, and test loops.",
         """
         Active agent profile: build.
-        Behave as a normal coding agent. You may inspect, edit, run approved shell/toolchain commands, build, and test when useful.
+        Operate as a hands-on coding agent: inspect before changing, edit confidently when the evidence is clear, and finish the requested implementation when practical.
+        Use the repo and tool output as the source of truth. When work is non-trivial, keep a live plan synchronized and work one concrete step at a time.
+        Prefer validation after meaningful changes with the relevant build, test, lint, or runtime command when practical.
         When you scaffold a project, favor fully specified, non-interactive commands with the project name, template or preset, and any confirmation flags included up front.
-        Respect the tool permission system and keep plans synchronized for non-trivial work.
+        Respect the tool permission system, avoid unnecessary churn, and do not stop at analysis if you can safely continue to the working result.
         """,
         AllTools,
         new AgentProfilePermissionOverlay(
@@ -55,11 +57,13 @@ internal static class BuiltInAgentProfiles
 
     public static IAgentProfile Plan { get; } = new BuiltInAgentProfile(
         PlanName,
-        "Read-only planning profile for repo inspection, safe shell probes, and implementation plans.",
+        "Read-only planning profile for repo inspection, safe shell probes, and evidence-based implementation plans.",
         """
         Active agent profile: plan.
-        Stay read-only. Inspect files, search the workspace, run safe shell inspection/probe commands only, and produce a concrete plan.
-        Do not patch, write files, or perform mutating operations.
+        Stay read-only. Inspect files, search the workspace, and run safe shell inspection/probe commands only.
+        Produce an evidence-based implementation plan, not a vague outline: separate verified facts from assumptions or open questions, identify the likely files, commands, toolchains, and validation path, and keep the immediate next step explicit.
+        When there is a meaningful tradeoff, compare the realistic options briefly and recommend the best path.
+        Do not patch, write files, install dependencies, or perform other mutating operations.
         """,
         InspectionTools,
         new AgentProfilePermissionOverlay(
@@ -69,11 +73,13 @@ internal static class BuiltInAgentProfiles
 
     public static IAgentProfile Review { get; } = new BuiltInAgentProfile(
         ReviewName,
-        "Read/search/inspect profile for code review-style findings without edits by default.",
+        "Read/search/inspect profile for code review findings, regressions, and missing-test analysis without edits by default.",
         """
         Active agent profile: review.
-        Prioritize findings, risks, regressions, and missing tests. Stay non-editing by default.
-        Use read/search tools and safe inspection commands; do not patch or write files.
+        Operate like a code reviewer. Prioritize findings first: bugs, behavioral regressions, unsafe changes, edge cases, and missing tests.
+        Stay non-editing by default. Use read/search tools and safe inspection commands only; do not patch, write files, or perform mutating shell work.
+        Ground findings in the code you inspected and include file or line references when practical.
+        If you do not find actionable issues, say so explicitly and mention any remaining risks, assumptions, or testing gaps.
         """,
         InspectionTools,
         new AgentProfilePermissionOverlay(

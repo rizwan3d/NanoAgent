@@ -46,6 +46,7 @@ public sealed class ReplSectionServiceTests
             .Setup(client => client.SendAsync(
                 It.Is<ConversationProviderRequest>(request =>
                     request.ModelId == "gpt-5-mini" &&
+                    request.SystemPrompt!.Contains("Capture the main engineering task, bug, feature, or subsystem") &&
                     request.Messages.Count == 1 &&
                     request.Messages[0].Content == "build a todo app" &&
                     request.AvailableTools.Count == 0),

@@ -140,7 +140,10 @@ internal static class PlanningModePolicy
         Execution plan for the current request:
         - Use the approved plan below as the task list.
         - Execute the work one task at a time using available tools when needed.
+        - Keep the immediate next step explicit while you work.
+        - Keep the visible plan synchronized with update_plan when the task spans multiple meaningful steps.
         - When scaffold tooling is part of the plan, use fully specified, non-interactive commands that include the destination name, template or preset, and confirmation flags up front instead of waiting for interactive prompts.
+        - If repo evidence shows the approved plan is incomplete, unsafe, or too large, revise it deliberately instead of following it blindly.
         - Finish or deliberately revise the current task before moving to the next one.
         - Finish the requested work when practical.
         - In your final response, include:
@@ -162,13 +165,19 @@ internal static class PlanningModePolicy
         - During execution, use `shell_command` for real toolchain work when it materially advances the task: scaffold projects, restore or install dependencies, run code generation, build, test, lint, format, or inspect runtime behavior.
         - For project scaffolding commands such as `npm create vite@latest`, include the project name, template or preset, and any supported confirmation flags in the initial command so the scaffold stays non-interactive.
         - Prefer repo-native validation commands such as `dotnet build`, `dotnet test`, `npm test`, `npm run build`, `python -m pytest`, `cargo test`, `go test ./...`, `mvn test`, or `gradle test` when those toolchains are present.
+        - When you produce a plan, prefer Codex-style sections such as: Objective, Verified facts, Assumptions / open questions, Relevant files / areas, Environment / toolchain, Candidate approaches, Recommended approach, Immediate next step, Plan, Validation, Risks / unknowns.
         - A Codex-style plan should:
           - restate the objective clearly
+          - start from verified repo evidence, not guesses
           - separate verified facts from assumptions or open questions
           - identify the relevant files, modules, commands, toolchains, or subsystems
+          - briefly compare approaches when there is a meaningful choice and recommend one
+          - keep the immediate next step explicit
           - give a high-quality ordered task list with the immediate next step first
           - include concrete validation commands and key risks
           - recommend the best path when multiple approaches exist
+        - Follow the `planning_mode` tool output closely when it is available: use its guidance and suggested sections as the plan-writing contract for the current task.
+        - Avoid low-quality plans such as: "look at the code", "make the change", "test it". Those are too vague unless you ground them in actual files, commands, and risks.
         - After planning, execute the resulting task list one task at a time instead of jumping across unfinished work.
         - Keep the live plan synchronized as work progresses: mark finished steps completed, keep the current step in_progress, and revise the list when evidence changes the safest path.
         - If the user asked only for a plan, respond with the plan and stop.
