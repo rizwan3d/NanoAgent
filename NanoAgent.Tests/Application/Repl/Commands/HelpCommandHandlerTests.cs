@@ -25,5 +25,7 @@ public sealed class HelpCommandHandlerTests
         result.ExitRequested.Should().BeFalse();
         result.Message.Should().Contain("Active agent profile: plan");
         result.Message.Should().Contain("/profile <name>");
+        result.Message.Should().Contain("/thinking [effort|default]");
+        result.Message.Should().Contain("--thinking <effort>");
     }
 }

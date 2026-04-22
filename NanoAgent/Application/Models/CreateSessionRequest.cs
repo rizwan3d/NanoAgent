@@ -6,4 +6,5 @@ public sealed record CreateSessionRequest(
     AgentProviderProfile ProviderProfile,
     string ActiveModelId,
     IReadOnlyList<string> AvailableModelIds,
-    string? ProfileName = null);
+    string? ProfileName = null,
+    string? ReasoningEffort = null);

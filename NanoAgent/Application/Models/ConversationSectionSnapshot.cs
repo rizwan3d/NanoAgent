@@ -16,7 +16,8 @@ public sealed class ConversationSectionSnapshot
         IReadOnlyList<ConversationSectionTurn> turns,
         int totalEstimatedOutputTokens,
         PendingExecutionPlan? pendingExecutionPlan = null,
-        string? agentProfileName = null)
+        string? agentProfileName = null,
+        string? reasoningEffort = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -54,6 +55,7 @@ public sealed class ConversationSectionSnapshot
         AvailableModelIds = normalizedAvailableModelIds;
         CreatedAtUtc = createdAtUtc;
         ProviderProfile = providerProfile;
+        ReasoningEffort = ReasoningEffortOptions.NormalizeOrNull(reasoningEffort);
         SectionId = sectionId.Trim();
         Title = title.Trim();
         TotalEstimatedOutputTokens = totalEstimatedOutputTokens;
@@ -75,6 +77,8 @@ public sealed class ConversationSectionSnapshot
     public AgentProviderProfile ProviderProfile { get; }
 
     public PendingExecutionPlan? PendingExecutionPlan { get; }
+
+    public string? ReasoningEffort { get; }
 
     public string SectionId { get; }
 

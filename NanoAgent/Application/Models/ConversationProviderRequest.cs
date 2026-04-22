@@ -8,4 +8,5 @@ public sealed record ConversationProviderRequest(
     string ModelId,
     IReadOnlyList<ConversationRequestMessage> Messages,
     string? SystemPrompt,
-    IReadOnlyList<ToolDefinition> AvailableTools);
+    IReadOnlyList<ToolDefinition> AvailableTools,
+    string? ReasoningEffort = null);

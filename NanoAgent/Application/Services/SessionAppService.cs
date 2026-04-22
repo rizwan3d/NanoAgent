@@ -29,13 +29,16 @@ internal sealed class SessionAppService : ISessionAppService
 
         IAgentProfile profile = _profileResolver.Resolve(request.ProfileName);
 
-        return await _sectionService.CreateNewAsync(
+        ReplSessionContext session = await _sectionService.CreateNewAsync(
             ApplicationIdentity.ProductName,
             request.ProviderProfile,
             request.ActiveModelId,
             request.AvailableModelIds,
             profile,
             cancellationToken);
+
+        ApplyReasoningEffort(session, request.ReasoningEffort);
+        return session;
     }
 
     public void EnsureTitleGenerationStarted(
@@ -72,11 +75,14 @@ internal sealed class SessionAppService : ISessionAppService
             ? null
             : _profileResolver.Resolve(request.ProfileName);
 
-        return await _sectionService.ResumeAsync(
+        ReplSessionContext session = await _sectionService.ResumeAsync(
             ApplicationIdentity.ProductName,
             request.SessionId,
             profileOverride,
             cancellationToken);
+
+        ApplyReasoningEffort(session, request.ReasoningEffortOverride);
+        return session;
     }
 
     public Task SaveIfDirtyAsync(
@@ -91,5 +97,17 @@ internal sealed class SessionAppService : ISessionAppService
         CancellationToken cancellationToken)
     {
         return _sectionService.StopAsync(session, cancellationToken);
+    }
+
+    private static void ApplyReasoningEffort(
+        ReplSessionContext session,
+        string? reasoningEffort)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningEffort))
+        {
+            return;
+        }
+
+        session.SetReasoningEffort(reasoningEffort);
     }
 }

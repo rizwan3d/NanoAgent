@@ -41,6 +41,10 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
         ReplSessionContext session;
         string? requestedSectionId = NormalizeRequestedSectionId(_configuration["section"]);
         string? requestedProfileName = NormalizeRequestedProfileName(_configuration["profile"]);
+        string? requestedReasoningEffort = NormalizeRequestedReasoningEffort(
+            _configuration["thinking"] ??
+            _configuration["reasoning"] ??
+            _configuration["reasoning-effort"]);
 
         if (requestedSectionId is null)
         {
@@ -56,7 +60,8 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
                     result.Profile,
                     modelResult.SelectedModelId,
                     modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
-                    requestedProfileName),
+                    requestedProfileName,
+                    requestedReasoningEffort ?? result.ReasoningEffort),
                 cancellationToken);
         }
         else
@@ -64,7 +69,8 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
             session = await _sessionAppService.ResumeAsync(
                 new ResumeSessionRequest(
                     requestedSectionId,
-                    requestedProfileName),
+                    requestedProfileName,
+                    requestedReasoningEffort),
                 cancellationToken);
         }
 
@@ -90,5 +96,10 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
         return string.IsNullOrWhiteSpace(profileName)
             ? null
             : profileName.Trim();
+    }
+
+    private static string? NormalizeRequestedReasoningEffort(string? reasoningEffort)
+    {
+        return ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
     }
 }

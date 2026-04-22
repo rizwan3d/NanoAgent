@@ -112,6 +112,32 @@ public sealed class ReplSessionContextTests
         snapshot.AgentProfileName.Should().Be(BuiltInAgentProfiles.PlanName);
     }
 
+    [Fact]
+    public void SetReasoningEffort_Should_UpdateThinkingEffort_AndPersistItInSnapshot()
+    {
+        ReplSessionContext session = CreateSession();
+
+        bool changed = session.SetReasoningEffort("HIGH");
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(DateTimeOffset.UtcNow.AddMinutes(1));
+
+        changed.Should().BeTrue();
+        session.ReasoningEffort.Should().Be("high");
+        session.IsPersistedStateDirty.Should().BeTrue();
+        snapshot.ReasoningEffort.Should().Be("high");
+    }
+
+    [Fact]
+    public void ClearReasoningEffort_Should_ResetThinkingEffortToProviderDefault()
+    {
+        ReplSessionContext session = CreateSession();
+        session.SetReasoningEffort("medium");
+
+        bool changed = session.ClearReasoningEffort();
+
+        changed.Should().BeTrue();
+        session.ReasoningEffort.Should().BeNull();
+    }
+
     private static ReplSessionContext CreateSession()
     {
         return new ReplSessionContext(

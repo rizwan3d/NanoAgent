@@ -59,7 +59,7 @@ public sealed class ShellCommandServiceTests : IDisposable
             new StubWorkspaceRootProvider(_workspaceRoot));
 
         await sut.ExecuteAsync(
-            new ShellCommandExecutionRequest("mkdir todo && cd todo && npm i"),
+            new ShellCommandExecutionRequest("mkdir todo && cd todo && npm i", null),
             CancellationToken.None);
 
         processRunner.Requests.Should().ContainSingle();

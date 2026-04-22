@@ -47,7 +47,7 @@ public sealed class AgentApplicationRunnerTests
                     request.ProviderProfile == onboardingResult.Profile &&
                     request.ActiveModelId == "gpt-5-mini" &&
                     request.AvailableModelIds.SequenceEqual(new[] { "gpt-5-mini" }) &&
-                    request.ProfileName is null),
+                    request.ProfileName == null),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -130,6 +130,66 @@ public sealed class AgentApplicationRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_CreateNewSectionWithRequestedThinkingEffort_When_ThinkingArgumentIsProvided()
+    {
+        OnboardingResult onboardingResult = new(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            false);
+        ModelDiscoveryResult modelDiscoveryResult = new(
+            [new AvailableModel("gpt-5.4")],
+            "gpt-5.4",
+            ModelSelectionSource.FirstReturnedModel,
+            ConfiguredDefaultModelStatus.NotConfigured,
+            null,
+            false);
+        ReplSessionContext createdSession = new(
+            "NanoAgent",
+            onboardingResult.Profile,
+            "gpt-5.4",
+            ["gpt-5.4"],
+            reasoningEffort: "high");
+
+        Mock<IFirstRunOnboardingService> onboardingService = new(MockBehavior.Strict);
+        onboardingService
+            .Setup(service => service.EnsureOnboardedAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(onboardingResult);
+
+        Mock<IModelDiscoveryService> modelDiscoveryService = new(MockBehavior.Strict);
+        modelDiscoveryService
+            .Setup(service => service.DiscoverAndSelectAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(modelDiscoveryResult);
+
+        Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
+        sessionAppService
+            .Setup(service => service.CreateAsync(
+                It.Is<CreateSessionRequest>(request =>
+                    request.ProviderProfile == onboardingResult.Profile &&
+                    request.ActiveModelId == "gpt-5.4" &&
+                    request.ProfileName == null &&
+                    request.ReasoningEffort == "high"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(createdSession);
+
+        Mock<IReplRuntime> replRuntime = new(MockBehavior.Strict);
+        replRuntime
+            .Setup(runtime => runtime.RunAsync(createdSession, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        AgentApplicationRunner sut = new(
+            onboardingService.Object,
+            modelDiscoveryService.Object,
+            sessionAppService.Object,
+            replRuntime.Object,
+            BuildConfiguration(thinkingEffort: "HIGH"),
+            NullLogger<AgentApplicationRunner>.Instance);
+
+        await sut.RunAsync(CancellationToken.None);
+
+        sessionAppService.VerifyAll();
+        replRuntime.VerifyAll();
+    }
+
+    [Fact]
     public async Task RunAsync_Should_ResumeRequestedSection_When_SectionArgumentIsProvided()
     {
         string sectionId = Guid.NewGuid().ToString("D");
@@ -158,7 +218,7 @@ public sealed class AgentApplicationRunnerTests
             .Setup(service => service.ResumeAsync(
                 It.Is<ResumeSessionRequest>(request =>
                     request.SessionId == sectionId &&
-                    request.ProfileName is null),
+                    request.ProfileName == null),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(resumedSession);
 
@@ -186,7 +246,8 @@ public sealed class AgentApplicationRunnerTests
 
     private static IConfiguration BuildConfiguration(
         string? sectionId = null,
-        string? profileName = null)
+        string? profileName = null,
+        string? thinkingEffort = null)
     {
         Dictionary<string, string?> values = [];
         if (!string.IsNullOrWhiteSpace(sectionId))
@@ -197,6 +258,11 @@ public sealed class AgentApplicationRunnerTests
         if (!string.IsNullOrWhiteSpace(profileName))
         {
             values["profile"] = profileName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(thinkingEffort))
+        {
+            values["thinking"] = thinkingEffort;
         }
 
         return new ConfigurationBuilder()

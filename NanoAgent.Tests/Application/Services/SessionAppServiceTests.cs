@@ -90,6 +90,46 @@ public sealed class SessionAppServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_Should_ApplyRequestedThinkingEffort()
+    {
+        BuiltInAgentProfileResolver profileResolver = new();
+        AgentProviderProfile providerProfile = new(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1");
+        ReplSessionContext createdSession = new(
+            "NanoAgent",
+            providerProfile,
+            "gpt-5.4",
+            ["gpt-5.4"]);
+
+        Mock<IReplSectionService> sectionService = new(MockBehavior.Strict);
+        sectionService
+            .Setup(service => service.CreateNewAsync(
+                "NanoAgent",
+                providerProfile,
+                "gpt-5.4",
+                It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5.4" })),
+                It.Is<IAgentProfile>(profile => profile.Name == "build"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(createdSession);
+
+        SessionAppService sut = new(
+            profileResolver,
+            Mock.Of<IConversationSectionStore>(),
+            sectionService.Object);
+
+        ReplSessionContext result = await sut.CreateAsync(
+            new CreateSessionRequest(
+                providerProfile,
+                "gpt-5.4",
+                ["gpt-5.4"],
+                ReasoningEffort: "medium"),
+            CancellationToken.None);
+
+        result.ReasoningEffort.Should().Be("medium");
+        result.IsPersistedStateDirty.Should().BeTrue();
+        sectionService.VerifyAll();
+    }
+
+    [Fact]
     public async Task CreateAsync_Should_FailClearly_When_ProfileNameIsInvalid()
     {
         SessionAppService sut = new(
@@ -144,7 +184,7 @@ public sealed class SessionAppServiceTests
         ReplSessionContext result = await sut.ResumeAsync(
             new ResumeSessionRequest(
                 sectionId,
-                profileName: null),
+                ProfileName: null),
             CancellationToken.None);
 
         result.AgentProfile.Name.Should().Be("review");

@@ -35,6 +35,7 @@ public sealed class ConfigCommandHandlerTests
         result.Message.Should().Contain("Base URL: https://provider.example.com/v1");
         result.Message.Should().Contain("Configuration file:");
         result.Message.Should().Contain("Agent profile: review");
+        result.Message.Should().Contain("Thinking effort: provider default");
         result.Message.Should().Contain("Active model: openai/gpt-oss-20b");
     }
 
@@ -60,5 +61,27 @@ public sealed class ConfigCommandHandlerTests
         result.Message.Should().Contain("Provider: Google AI Studio");
         result.Message.Should().Contain("Base URL: https://generativelanguage.googleapis.com/v1beta/openai");
         result.Message.Should().Contain("Active model: gemini-2.5-flash");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ShowThinkingEffort_When_Configured()
+    {
+        Mock<IUserDataPathProvider> pathProvider = new(MockBehavior.Strict);
+        pathProvider
+            .Setup(provider => provider.GetConfigurationFilePath())
+            .Returns("C:\\Users\\test\\AppData\\Roaming\\NanoAgent\\agent-profile.json");
+
+        ConfigCommandHandler sut = new(pathProvider.Object);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "gpt-5.4",
+            ["gpt-5.4"],
+            reasoningEffort: "high");
+
+        ReplCommandResult result = await sut.ExecuteAsync(
+            new ReplCommandContext("config", string.Empty, [], "/config", session),
+            CancellationToken.None);
+
+        result.Message.Should().Contain("Thinking effort: high");
     }
 }

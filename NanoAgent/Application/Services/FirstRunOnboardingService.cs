@@ -77,7 +77,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 $"Using existing provider configuration: {existingProfile.ProviderKind.ToDisplayName()}.",
                 cancellationToken);
 
-            return new OnboardingResult(existingProfile, WasOnboardedDuringCurrentRun: false);
+            return new OnboardingResult(
+                existingProfile,
+                WasOnboardedDuringCurrentRun: false,
+                ReasoningEffortOptions.NormalizeOrNull(existingConfiguration?.ReasoningEffort));
         }
 
         if (existingProfile is not null || !string.IsNullOrWhiteSpace(existingApiKey))

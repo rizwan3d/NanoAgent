@@ -100,7 +100,8 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         return new OpenAiChatCompletionRequest(
             request.ModelId,
             messages,
-            tools);
+            tools,
+            request.ReasoningEffort);
     }
 
     private static OpenAiChatCompletionRequestMessage MapMessage(ConversationRequestMessage message)

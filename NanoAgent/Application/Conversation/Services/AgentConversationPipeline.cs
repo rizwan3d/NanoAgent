@@ -584,7 +584,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     session.ActiveModelId,
                     messages.ToArray(),
                     systemPrompt,
-                    availableTools),
+                    availableTools,
+                    session.ReasoningEffort),
                 timeoutSource.Token);
         }
         catch (ConversationProviderException)

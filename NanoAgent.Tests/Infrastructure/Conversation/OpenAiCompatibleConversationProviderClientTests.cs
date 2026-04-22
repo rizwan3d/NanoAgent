@@ -135,6 +135,38 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_SerializeReasoningEffort_When_RequestProvidesThinkingEffort()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_reasoning",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Done."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAi, null),
+                "test-key",
+                "gpt-5.4",
+                [ConversationRequestMessage.User("Think carefully.")],
+                "You are helpful.",
+                [],
+                "high"),
+            CancellationToken.None);
+
+        handler.RequestBody.Should().Contain("\"reasoning_effort\":\"high\"");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PreserveStructuredToolFeedbackJson_When_ToolMessagesContainStatusMetadata()
     {
         RecordingHandler handler = new("""

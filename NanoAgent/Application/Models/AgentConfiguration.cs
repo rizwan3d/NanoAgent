@@ -4,4 +4,5 @@ namespace NanoAgent.Application.Models;
 
 public sealed record AgentConfiguration(
     AgentProviderProfile ProviderProfile,
-    string? PreferredModelId);
+    string? PreferredModelId,
+    string? ReasoningEffort = null);

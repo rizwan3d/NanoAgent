@@ -87,7 +87,8 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
             await _configurationStore.SaveAsync(
                 new AgentConfiguration(
                     providerProfile,
-                    selection.SelectedModelId),
+                    selection.SelectedModelId,
+                    configuration.ReasoningEffort),
                 cancellationToken);
         }
 

@@ -46,7 +46,8 @@ internal sealed class UseModelCommandHandler : IReplCommandHandler
             await _configurationStore.SaveAsync(
                 new AgentConfiguration(
                     context.Session.ProviderProfile,
-                    result.ResolvedModelId),
+                    result.ResolvedModelId,
+                    context.Session.ReasoningEffort),
                 cancellationToken);
         }
 

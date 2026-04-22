@@ -20,8 +20,15 @@ public sealed class ReplSessionContext
         AgentProviderProfile providerProfile,
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
-        IAgentProfile? agentProfile = null)
-        : this(DefaultApplicationName, providerProfile, activeModelId, availableModelIds, agentProfile: agentProfile)
+        IAgentProfile? agentProfile = null,
+        string? reasoningEffort = null)
+        : this(
+            DefaultApplicationName,
+            providerProfile,
+            activeModelId,
+            availableModelIds,
+            agentProfile: agentProfile,
+            reasoningEffort: reasoningEffort)
     {
     }
 
@@ -38,7 +45,8 @@ public sealed class ReplSessionContext
         IReadOnlyList<ConversationSectionTurn>? conversationTurns = null,
         PendingExecutionPlan? pendingExecutionPlan = null,
         bool isResumedSection = false,
-        IAgentProfile? agentProfile = null)
+        IAgentProfile? agentProfile = null,
+        string? reasoningEffort = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -77,6 +85,7 @@ public sealed class ReplSessionContext
         }
 
         ActiveModelId = normalizedActiveModelId;
+        ReasoningEffort = ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
         SectionId = NormalizeSectionId(sectionId);
         SectionTitle = NormalizeSectionTitle(sectionTitle);
         SectionCreatedAtUtc = sectionCreatedAtUtc ?? DateTimeOffset.UtcNow;
@@ -115,6 +124,8 @@ public sealed class ReplSessionContext
     public AgentProviderProfile ProviderProfile { get; }
 
     public string ProviderName => ProviderProfile.ProviderKind.ToDisplayName();
+
+    public string? ReasoningEffort { get; private set; }
 
     public bool HasGeneratedSectionTitle =>
         !string.Equals(SectionTitle, DefaultSectionTitle, StringComparison.Ordinal);
@@ -200,6 +211,24 @@ public sealed class ReplSessionContext
         IsPersistedStateDirty = true;
     }
 
+    public bool SetReasoningEffort(string? reasoningEffort)
+    {
+        string? normalizedReasoningEffort = ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
+        if (string.Equals(ReasoningEffort, normalizedReasoningEffort, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        ReasoningEffort = normalizedReasoningEffort;
+        IsPersistedStateDirty = true;
+        return true;
+    }
+
+    public bool ClearReasoningEffort()
+    {
+        return SetReasoningEffort(null);
+    }
+
     public void SetAgentProfile(IAgentProfile agentProfile)
     {
         ArgumentNullException.ThrowIfNull(agentProfile);
@@ -281,7 +310,8 @@ public sealed class ReplSessionContext
             turns,
             TotalEstimatedOutputTokens,
             PendingExecutionPlan,
-            AgentProfile.Name);
+            AgentProfile.Name,
+            ReasoningEffort);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)

@@ -107,7 +107,8 @@ public sealed class ReplSectionServiceTests
             new PendingExecutionPlan(
                 "plan the todo app",
                 "Plan\n1. Inspect\n2. Implement\n3. Validate",
-                ["Inspect", "Implement", "Validate"]));
+                ["Inspect", "Implement", "Validate"]),
+            reasoningEffort: "high");
 
         Mock<IConversationSectionStore> sectionStore = new(MockBehavior.Strict);
         sectionStore
@@ -137,6 +138,7 @@ public sealed class ReplSectionServiceTests
         session.ActiveModelId.Should().Be("gpt-5-mini");
         session.AvailableModelIds.Should().Equal("gpt-5-mini", "gpt-4.1");
         session.TotalEstimatedOutputTokens.Should().Be(19);
+        session.ReasoningEffort.Should().Be("high");
         session.ConversationHistory.Should().HaveCount(2);
         session.ConversationHistory[0].Content.Should().Be("first prompt");
         session.ConversationHistory[1].Content.Should().Be("first reply");

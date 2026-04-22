@@ -26,7 +26,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         JsonAgentConfigurationStore sut = new(pathProvider);
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.GoogleAiStudio, null),
-            "gemini-2.5-flash");
+            "gemini-2.5-flash",
+            "high");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);

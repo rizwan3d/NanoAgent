@@ -21,7 +21,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
         const string HelpText =
             "Available commands:\n" +
             "/allow <tool-or-tag> [pattern] - Add a session-scoped allow override.\n" +
-            "/config - Show the current provider, session, config path, active profile, and active model.\n" +
+            "/config - Show the current provider, session, config path, active profile, thinking, and active model.\n" +
             "/deny <tool-or-tag> [pattern] - Add a session-scoped deny override.\n" +
             "/exit - Exit the interactive shell.\n" +
             "/help - List the available shell commands and their usage.\n" +
@@ -30,9 +30,10 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/rules - List the effective permission rules in evaluation order.\n" +
+            "/thinking [effort|default] - Show or set thinking effort: none, minimal, low, medium, high, or xhigh.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model for subsequent prompts.\n\n" +
-            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile, or use /profile <name> to switch inside an active session.";
+            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile. Use --thinking <effort> to choose initial thinking effort, or use /profile <name> and /thinking <effort> inside an active session.";
 
         return Task.FromResult(ReplCommandResult.Continue(
             $"Active agent profile: {context.Session.AgentProfile.Name}\n\n{HelpText}"));

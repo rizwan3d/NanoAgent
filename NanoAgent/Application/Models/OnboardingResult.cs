@@ -4,4 +4,5 @@ namespace NanoAgent.Application.Models;
 
 public sealed record OnboardingResult(
     AgentProviderProfile Profile,
-    bool WasOnboardedDuringCurrentRun);
+    bool WasOnboardedDuringCurrentRun,
+    string? ReasoningEffort = null);

@@ -93,7 +93,8 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
 
             return new AgentConfiguration(
                 normalizedProfile,
-                NormalizeModelId(configuration.PreferredModelId));
+                NormalizeModelId(configuration.PreferredModelId),
+                ReasoningEffortOptions.NormalizeOrNull(configuration.ReasoningEffort));
         }
         catch (JsonException)
         {

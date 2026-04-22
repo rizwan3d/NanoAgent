@@ -6,7 +6,9 @@ namespace NanoAgent.Infrastructure.Conversation;
 internal sealed record OpenAiChatCompletionRequest(
     [property: JsonPropertyName("model")] string Model,
     [property: JsonPropertyName("messages")] IReadOnlyList<OpenAiChatCompletionRequestMessage> Messages,
-    [property: JsonPropertyName("tools")] IReadOnlyList<OpenAiChatCompletionToolDefinition> Tools);
+    [property: JsonPropertyName("tools")] IReadOnlyList<OpenAiChatCompletionToolDefinition> Tools,
+    [property: JsonPropertyName("reasoning_effort")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ReasoningEffort = null);
 
 internal sealed record OpenAiChatCompletionRequestMessage(
     [property: JsonPropertyName("role")] string Role,

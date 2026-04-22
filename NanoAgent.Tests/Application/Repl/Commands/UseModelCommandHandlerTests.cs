@@ -75,6 +75,31 @@ public sealed class UseModelCommandHandlerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_PreserveThinkingEffort_When_ModelSwitchIsPersisted()
+    {
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "qwen/qwen3-coder-30b",
+            ["qwen/qwen3-coder-30b", "openai/gpt-oss-20b"],
+            reasoningEffort: "high");
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(session.ProviderProfile, "openai/gpt-oss-20b", "high"),
+                It.IsAny<CancellationToken>()))
+            .Returns(() => Task.CompletedTask);
+        UseModelCommandHandler sut = new(new ModelActivationService(), configurationStore.Object);
+
+        ReplCommandResult result = await sut.ExecuteAsync(
+            new ReplCommandContext("use", "openai/gpt-oss-20b", ["openai/gpt-oss-20b"], "/use openai/gpt-oss-20b", session),
+            CancellationToken.None);
+
+        result.Message.Should().Be("Active model switched to 'openai/gpt-oss-20b'.");
+        session.ReasoningEffort.Should().Be("high");
+        configurationStore.VerifyAll();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ReturnError_When_ModelDoesNotExist()
     {
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
