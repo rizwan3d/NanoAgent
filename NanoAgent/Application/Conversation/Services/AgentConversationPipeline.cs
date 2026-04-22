@@ -82,8 +82,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "Conversation cannot start because the API key is missing.");
 
         ConversationSettings settings = _configurationAccessor.GetSettings();
-        IReadOnlyList<ToolDefinition> allToolDefinitions = _toolRegistry.GetToolDefinitions();
-        IReadOnlySet<string> availableToolNames = allToolDefinitions
+        string? profileSystemPrompt = CreateProfileSystemPrompt(settings.SystemPrompt, session);
+        IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
+        IReadOnlySet<string> availableToolNames = availableToolDefinitions
             .Select(static definition => definition.Name)
             .ToHashSet(StringComparer.Ordinal);
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -100,7 +101,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 progressSink,
                 settings,
                 apiKey,
-                allToolDefinitions,
+                availableToolDefinitions,
                 availableToolNames,
                 timeoutSource,
                 startedAt,
@@ -122,8 +123,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             apiKey,
             session,
             messages,
-            PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(settings.SystemPrompt),
-            allToolDefinitions,
+            PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(profileSystemPrompt),
+            availableToolDefinitions,
             availableToolNames,
             ConversationExecutionPhase.Execution,
             progressSink,
@@ -189,7 +190,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             session,
             executionMessages,
             PlanningModePolicy.CreateExecutionSystemPrompt(
-                settings.SystemPrompt,
+                CreateProfileSystemPrompt(settings.SystemPrompt, session),
                 pendingPlan.PlanningSummary),
             allToolDefinitions,
             executionToolNames,
@@ -261,6 +262,33 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return string.IsNullOrWhiteSpace(systemPrompt)
             ? EmptyResponseRetryInstruction
             : $"{systemPrompt.Trim()}{Environment.NewLine}{Environment.NewLine}{EmptyResponseRetryInstruction}";
+    }
+
+    private IReadOnlyList<ToolDefinition> GetProfileToolDefinitions(ReplSessionContext session)
+    {
+        IReadOnlySet<string> enabledTools = session.AgentProfile.EnabledTools;
+
+        return _toolRegistry.GetToolDefinitions()
+            .Where(definition => enabledTools.Contains(definition.Name))
+            .ToArray();
+    }
+
+    private static string? CreateProfileSystemPrompt(
+        string? basePrompt,
+        ReplSessionContext session)
+    {
+        string? contribution = session.AgentProfile.SystemPromptContribution;
+        if (string.IsNullOrWhiteSpace(contribution))
+        {
+            return basePrompt;
+        }
+
+        if (string.IsNullOrWhiteSpace(basePrompt))
+        {
+            return contribution.Trim();
+        }
+
+        return $"{basePrompt.Trim()}{Environment.NewLine}{Environment.NewLine}{contribution.Trim()}";
     }
 
     private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)

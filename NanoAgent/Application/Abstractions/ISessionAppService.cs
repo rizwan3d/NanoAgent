@@ -3,36 +3,27 @@ using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Abstractions;
 
-public interface IReplSectionService
+public interface ISessionAppService
 {
     Task<ReplSessionContext> CreateNewAsync(
         string applicationName,
         AgentProviderProfile providerProfile,
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
-        CancellationToken cancellationToken);
-
-    Task<ReplSessionContext> CreateNewAsync(
-        string applicationName,
-        AgentProviderProfile providerProfile,
-        string activeModelId,
-        IReadOnlyList<string> availableModelIds,
-        IAgentProfile agentProfile,
+        string? profileName,
         CancellationToken cancellationToken);
 
     void EnsureTitleGenerationStarted(
         ReplSessionContext session,
         string firstUserPrompt);
 
-    Task<ReplSessionContext> ResumeAsync(
-        string applicationName,
-        string sectionId,
+    Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
         CancellationToken cancellationToken);
 
     Task<ReplSessionContext> ResumeAsync(
         string applicationName,
         string sectionId,
-        IAgentProfile? profileOverride,
+        string? profileName,
         CancellationToken cancellationToken);
 
     Task SaveIfDirtyAsync(

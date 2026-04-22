@@ -26,6 +26,14 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         ArgumentNullException.ThrowIfNull(permissionPolicy);
         ArgumentNullException.ThrowIfNull(context);
 
+        PermissionEvaluationResult? profileResult = PlanningModePolicy.EvaluateProfileRestrictions(
+            permissionPolicy,
+            context.ToolExecutionContext);
+        if (profileResult is not null)
+        {
+            return profileResult;
+        }
+
         PermissionEvaluationResult? planningModeResult = PlanningModePolicy.EvaluateRestrictions(
             permissionPolicy,
             context.ToolExecutionContext);

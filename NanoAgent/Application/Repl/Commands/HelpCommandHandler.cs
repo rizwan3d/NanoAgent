@@ -26,10 +26,12 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/help - List the available shell commands and their usage.\n" +
             "/models - Show the available models in the current session.\n" +
             "/permissions - Show the current permission summary and override guidance.\n" +
+            "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/rules - List the effective permission rules in evaluation order.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
-            "/use <model> - Switch the active model for subsequent prompts.";
+            "/use <model> - Switch the active model for subsequent prompts.\n\n" +
+            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile, or use /profile <name> to switch inside an active session.";
 
         return Task.FromResult(ReplCommandResult.Continue(HelpText));
     }

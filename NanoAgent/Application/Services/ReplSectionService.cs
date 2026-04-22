@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Profiles;
 using Microsoft.Extensions.Logging;
 using NanoAgent.Domain.Models;
 
@@ -54,10 +55,28 @@ internal sealed class ReplSectionService : IReplSectionService
         IReadOnlyList<string> availableModelIds,
         CancellationToken cancellationToken)
     {
+        return await CreateNewAsync(
+            applicationName,
+            providerProfile,
+            activeModelId,
+            availableModelIds,
+            BuiltInAgentProfiles.Build,
+            cancellationToken);
+    }
+
+    public async Task<ReplSessionContext> CreateNewAsync(
+        string applicationName,
+        AgentProviderProfile providerProfile,
+        string activeModelId,
+        IReadOnlyList<string> availableModelIds,
+        IAgentProfile agentProfile,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
         ArgumentException.ThrowIfNullOrWhiteSpace(activeModelId);
         ArgumentNullException.ThrowIfNull(availableModelIds);
+        ArgumentNullException.ThrowIfNull(agentProfile);
 
         DateTimeOffset now = _timeProvider.GetUtcNow();
         ReplSessionContext session = new(
@@ -66,7 +85,8 @@ internal sealed class ReplSectionService : IReplSectionService
             activeModelId,
             availableModelIds,
             sectionCreatedAtUtc: now,
-            sectionUpdatedAtUtc: now);
+            sectionUpdatedAtUtc: now,
+            agentProfile: agentProfile);
 
         await _sectionStore.SaveAsync(
             session.CreateSectionSnapshot(now),
@@ -109,6 +129,19 @@ internal sealed class ReplSectionService : IReplSectionService
         string sectionId,
         CancellationToken cancellationToken)
     {
+        return await ResumeAsync(
+            applicationName,
+            sectionId,
+            profileOverride: null,
+            cancellationToken);
+    }
+
+    public async Task<ReplSessionContext> ResumeAsync(
+        string applicationName,
+        string sectionId,
+        IAgentProfile? profileOverride,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
 
@@ -130,7 +163,8 @@ internal sealed class ReplSectionService : IReplSectionService
             snapshot.TotalEstimatedOutputTokens,
             snapshot.Turns,
             snapshot.PendingExecutionPlan,
-            isResumedSection: true);
+            isResumedSection: true,
+            agentProfile: profileOverride ?? BuiltInAgentProfiles.Resolve(snapshot.AgentProfileName));
 
         if (!session.HasGeneratedSectionTitle &&
             session.TryGetFirstUserPrompt(out string? firstUserPrompt) &&

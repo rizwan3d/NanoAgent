@@ -15,8 +15,8 @@ internal sealed class ReplRuntime : IReplRuntime
     private readonly IReplInterruptMonitor _interruptMonitor;
     private readonly IReplCommandParser _commandParser;
     private readonly IReplCommandDispatcher _commandDispatcher;
-    private readonly IConversationPipeline _conversationPipeline;
-    private readonly IReplSectionService _replSectionService;
+    private readonly IAgentTurnService _agentTurnService;
+    private readonly ISessionAppService _sessionAppService;
     private readonly ITokenEstimator _tokenEstimator;
     private readonly ILogger<ReplRuntime> _logger;
 
@@ -26,8 +26,8 @@ internal sealed class ReplRuntime : IReplRuntime
         IReplInterruptMonitor interruptMonitor,
         IReplCommandParser commandParser,
         IReplCommandDispatcher commandDispatcher,
-        IConversationPipeline conversationPipeline,
-        IReplSectionService replSectionService,
+        IAgentTurnService agentTurnService,
+        ISessionAppService sessionAppService,
         ITokenEstimator tokenEstimator,
         ILogger<ReplRuntime> logger)
     {
@@ -36,8 +36,8 @@ internal sealed class ReplRuntime : IReplRuntime
         _interruptMonitor = interruptMonitor;
         _commandParser = commandParser;
         _commandDispatcher = commandDispatcher;
-        _conversationPipeline = conversationPipeline;
-        _replSectionService = replSectionService;
+        _agentTurnService = agentTurnService;
+        _sessionAppService = sessionAppService;
         _tokenEstimator = tokenEstimator;
         _logger = logger;
     }
@@ -50,7 +50,7 @@ internal sealed class ReplRuntime : IReplRuntime
 
         await _outputWriter.WriteShellHeaderAsync(
             session.ApplicationName,
-            session.ActiveModelId,
+            $"{session.ActiveModelId} [{session.AgentProfile.Name}]",
             cancellationToken);
         try
         {
@@ -100,7 +100,7 @@ internal sealed class ReplRuntime : IReplRuntime
                     }
 
                     await WriteCommandFeedbackAsync(commandResult, cancellationToken);
-                    await _replSectionService.SaveIfDirtyAsync(session, cancellationToken);
+                    await _sessionAppService.SaveIfDirtyAsync(session, cancellationToken);
 
                     if (commandResult.ExitRequested)
                     {
@@ -110,7 +110,7 @@ internal sealed class ReplRuntime : IReplRuntime
                     continue;
                 }
 
-                _replSectionService.EnsureTitleGenerationStarted(session, input);
+                _sessionAppService.EnsureTitleGenerationStarted(session, input);
                 CancellationTokenSource? requestCancellationSource = null;
 
                 try
@@ -128,7 +128,7 @@ internal sealed class ReplRuntime : IReplRuntime
                                          session.TotalEstimatedOutputTokens,
                                          cancellationToken))
                         {
-                            response = await _conversationPipeline.ProcessAsync(
+                            response = await _agentTurnService.ProcessTurnAsync(
                                 input,
                                 session,
                                 progress,
@@ -151,7 +151,7 @@ internal sealed class ReplRuntime : IReplRuntime
                             cancellationToken);
                     }
 
-                    await _replSectionService.SaveIfDirtyAsync(session, cancellationToken);
+                    await _sessionAppService.SaveIfDirtyAsync(session, cancellationToken);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -229,7 +229,7 @@ internal sealed class ReplRuntime : IReplRuntime
     {
         try
         {
-            await _replSectionService.StopAsync(session, CancellationToken.None);
+            await _sessionAppService.StopAsync(session, CancellationToken.None);
         }
         catch (Exception exception)
         {

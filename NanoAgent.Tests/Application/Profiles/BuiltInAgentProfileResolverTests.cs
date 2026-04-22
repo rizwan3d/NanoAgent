@@ -1,0 +1,68 @@
+using NanoAgent.Application.Models;
+using NanoAgent.Application.Profiles;
+using NanoAgent.Application.Tools;
+using FluentAssertions;
+
+namespace NanoAgent.Tests.Application.Profiles;
+
+public sealed class BuiltInAgentProfileResolverTests
+{
+    [Fact]
+    public void Resolve_Should_ReturnBuildProfile_When_NameIsMissing()
+    {
+        BuiltInAgentProfileResolver sut = new();
+
+        sut.Resolve(null).Name.Should().Be(BuiltInAgentProfiles.BuildName);
+    }
+
+    [Theory]
+    [InlineData("build")]
+    [InlineData("plan")]
+    [InlineData("review")]
+    public void Resolve_Should_ReturnBuiltInProfile_When_NameMatches(string profileName)
+    {
+        BuiltInAgentProfileResolver sut = new();
+
+        sut.Resolve(profileName).Name.Should().Be(profileName);
+    }
+
+    [Fact]
+    public void Resolve_Should_FailClearly_When_ProfileNameIsUnknown()
+    {
+        BuiltInAgentProfileResolver sut = new();
+
+        Action action = () => sut.Resolve("ops");
+
+        action.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Unknown agent profile 'ops'*build*plan*review*");
+    }
+
+    [Fact]
+    public void ListProfiles_Should_ReturnAllBuiltInProfiles()
+    {
+        BuiltInAgentProfileResolver sut = new();
+
+        sut.ListProfiles()
+            .Select(static profile => profile.Name)
+            .Should()
+            .Equal("build", "plan", "review");
+    }
+
+    [Fact]
+    public void PlanAndReviewProfiles_Should_NotEnableWriteTools()
+    {
+        BuiltInAgentProfileResolver sut = new();
+
+        foreach (string profileName in new[] { "plan", "review" })
+        {
+            var profile = sut.Resolve(profileName);
+
+            profile.EnabledTools.Should().NotContain(AgentToolNames.ApplyPatch);
+            profile.EnabledTools.Should().NotContain(AgentToolNames.FileWrite);
+            profile.EnabledTools.Should().Contain(AgentToolNames.ShellCommand);
+            profile.PermissionOverlay.EditMode.Should().Be(AgentProfileEditMode.ReadOnly);
+            profile.PermissionOverlay.ShellMode.Should().Be(AgentProfileShellMode.SafeInspectionOnly);
+        }
+    }
+}

@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Services;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
@@ -85,6 +86,7 @@ public sealed class AgentConversationPipelineTests
         result.Metrics.Should().NotBeNull();
         requests.Should().HaveCount(1);
         requests[0].SystemPrompt.Should().Contain("Base prompt");
+        requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
         requests[0].SystemPrompt.Should().Contain("planning_mode");
         requests[0].SystemPrompt.Should().Contain("installed build tools");
         requests[0].SystemPrompt.Should().Contain("separate verified facts from assumptions or open questions");
@@ -106,6 +108,86 @@ public sealed class AgentConversationPipelineTests
         session.ConversationHistory[1].Content.Should().Be("Implemented the refactor.");
         session.PendingExecutionPlan.Should().BeNull();
         toolExecutionPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_FilterAvailableTools_When_ProfileIsReadOnly()
+    {
+        ReplSessionContext session = CreateSession(BuiltInAgentProfiles.Plan);
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition(AgentToolNames.ApplyPatch),
+                CreateToolDefinition(AgentToolNames.DirectoryList),
+                CreateToolDefinition(AgentToolNames.FileRead),
+                CreateToolDefinition(AgentToolNames.FileWrite),
+                CreateToolDefinition(AgentToolNames.ShellCommand),
+                CreateToolDefinition(AgentToolNames.TextSearch)
+            ]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_1"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Here is the plan.",
+                [],
+                "resp_1"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await sut.ProcessAsync(
+            "Plan this safely.",
+            session,
+            CancellationToken.None);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Active agent profile: plan.");
+        requests[0].AvailableTools.Select(static tool => tool.Name)
+            .Should()
+            .Equal(
+                AgentToolNames.DirectoryList,
+                AgentToolNames.FileRead,
+                AgentToolNames.ShellCommand,
+                AgentToolNames.TextSearch);
+        requests[0].AvailableTools.Select(static tool => tool.Name)
+            .Should()
+            .NotContain([AgentToolNames.ApplyPatch, AgentToolNames.FileWrite]);
     }
 
     [Fact]
@@ -1034,12 +1116,13 @@ public sealed class AgentConversationPipelineTests
             schemaDocument.RootElement.Clone());
     }
 
-    private static ReplSessionContext CreateSession()
+    private static ReplSessionContext CreateSession(IAgentProfile? agentProfile = null)
     {
         return new ReplSessionContext(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "gpt-5-mini",
-            ["gpt-5-mini", "gpt-4.1"]);
+            ["gpt-5-mini", "gpt-4.1"],
+            agentProfile);
     }
 
     private static ConversationSettings CreateSettings(

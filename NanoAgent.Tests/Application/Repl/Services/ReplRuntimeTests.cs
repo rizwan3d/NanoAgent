@@ -52,7 +52,7 @@ public sealed class ReplRuntimeTests
         commandDispatcher.Verify(dispatcher => dispatcher.DispatchAsync(helpCommand, session, It.IsAny<CancellationToken>()), Times.Once);
         commandDispatcher.Verify(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()), Times.Once);
         conversationPipeline.VerifyNoOtherCalls();
-        outputWriter.HeaderMessages.Should().ContainSingle().Which.Should().Be("NanoAgent|gpt-oss-20b");
+        outputWriter.HeaderMessages.Should().ContainSingle().Which.Should().Be("NanoAgent|gpt-oss-20b [build]");
         outputWriter.InfoMessages.Should().Contain("Available commands");
     }
 
@@ -230,6 +230,64 @@ public sealed class ReplRuntimeTests
         outputWriter.Responses.Should().ContainSingle().Which.Should().Be("Response ready");
         outputWriter.ResponseMetrics.Should().ContainSingle().Which.Should().Be("(4s \u00B7 14 tokens est.)");
         session.TotalEstimatedOutputTokens.Should().Be(14);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_ProcessPromptTurnsThroughAgentTurnAppService()
+    {
+        ReplSessionContext session = CreateSession();
+        QueueReplInputReader inputReader = new("help me plan this change", "/exit");
+        RecordingReplOutputWriter outputWriter = new();
+        ParsedReplCommand exitCommand = new("/exit", "exit", string.Empty, []);
+
+        Mock<IReplCommandParser> commandParser = new(MockBehavior.Strict);
+        commandParser.Setup(parser => parser.Parse("/exit")).Returns(exitCommand);
+
+        Mock<IReplCommandDispatcher> commandDispatcher = new(MockBehavior.Strict);
+        commandDispatcher
+            .Setup(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ReplCommandResult.Exit());
+
+        Mock<IAgentTurnService> agentTurnService = new(MockBehavior.Strict);
+        agentTurnService
+            .Setup(service => service.ProcessTurnAsync(
+                "help me plan this change",
+                session,
+                It.IsAny<IConversationProgressSink>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ConversationTurnResult.AssistantMessage(
+                "Response ready",
+                new ConversationTurnMetrics(TimeSpan.FromSeconds(4), 14)));
+
+        Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
+        sessionAppService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, "help me plan this change"));
+        sessionAppService
+            .Setup(service => service.SaveIfDirtyAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        sessionAppService
+            .Setup(service => service.StopAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
+        tokenEstimator.Setup(estimator => estimator.Estimate("help me plan this change")).Returns(5);
+
+        ReplRuntime sut = new(
+            inputReader,
+            outputWriter,
+            new NoOpReplInterruptMonitor(),
+            commandParser.Object,
+            commandDispatcher.Object,
+            agentTurnService.Object,
+            sessionAppService.Object,
+            tokenEstimator.Object,
+            NullLogger<ReplRuntime>.Instance);
+
+        await sut.RunAsync(session, CancellationToken.None);
+
+        agentTurnService.VerifyAll();
+        sessionAppService.VerifyAll();
+        outputWriter.Responses.Should().ContainSingle().Which.Should().Be("Response ready");
     }
 
     [Fact]
@@ -648,10 +706,90 @@ public sealed class ReplRuntimeTests
             interruptMonitor,
             commandParser,
             commandDispatcher,
-            conversationPipeline,
-            replSectionService,
+            new ConversationPipelineAgentTurnService(conversationPipeline),
+            new ReplSectionSessionAppService(replSectionService),
             tokenEstimator,
             NullLogger<ReplRuntime>.Instance);
+    }
+
+    private sealed class ConversationPipelineAgentTurnService : IAgentTurnService
+    {
+        private readonly IConversationPipeline _conversationPipeline;
+
+        public ConversationPipelineAgentTurnService(IConversationPipeline conversationPipeline)
+        {
+            _conversationPipeline = conversationPipeline;
+        }
+
+        public Task<ConversationTurnResult> ProcessTurnAsync(
+            string input,
+            ReplSessionContext session,
+            IConversationProgressSink progressSink,
+            CancellationToken cancellationToken)
+        {
+            return _conversationPipeline.ProcessAsync(
+                input,
+                session,
+                progressSink,
+                cancellationToken);
+        }
+    }
+
+    private sealed class ReplSectionSessionAppService : ISessionAppService
+    {
+        private readonly IReplSectionService _replSectionService;
+
+        public ReplSectionSessionAppService(IReplSectionService replSectionService)
+        {
+            _replSectionService = replSectionService;
+        }
+
+        public Task<ReplSessionContext> CreateNewAsync(
+            string applicationName,
+            AgentProviderProfile providerProfile,
+            string activeModelId,
+            IReadOnlyList<string> availableModelIds,
+            string? profileName,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public void EnsureTitleGenerationStarted(
+            ReplSessionContext session,
+            string firstUserPrompt)
+        {
+            _replSectionService.EnsureTitleGenerationStarted(session, firstUserPrompt);
+        }
+
+        public Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<ConversationSectionSnapshot>>([]);
+        }
+
+        public Task<ReplSessionContext> ResumeAsync(
+            string applicationName,
+            string sectionId,
+            string? profileName,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task SaveIfDirtyAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            return _replSectionService.SaveIfDirtyAsync(session, cancellationToken);
+        }
+
+        public Task StopAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            return _replSectionService.StopAsync(session, cancellationToken);
+        }
     }
 
     private static Mock<IReplSectionService> CreateSectionServiceMock(ReplSessionContext session)

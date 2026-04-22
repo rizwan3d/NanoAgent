@@ -40,13 +40,14 @@ public sealed class AgentApplicationRunnerTests
             .Setup(service => service.DiscoverAndSelectAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(modelDiscoveryResult);
 
-        Mock<IReplSectionService> replSectionService = new(MockBehavior.Strict);
-        replSectionService
+        Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
+        sessionAppService
             .Setup(service => service.CreateNewAsync(
                 "NanoAgent",
                 onboardingResult.Profile,
                 "gpt-5-mini",
                 It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
+                null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -58,14 +59,73 @@ public sealed class AgentApplicationRunnerTests
         AgentApplicationRunner sut = new(
             onboardingService.Object,
             modelDiscoveryService.Object,
-            replSectionService.Object,
+            sessionAppService.Object,
             replRuntime.Object,
             BuildConfiguration(),
             NullLogger<AgentApplicationRunner>.Instance);
 
         await sut.RunAsync(CancellationToken.None);
 
-        replSectionService.VerifyAll();
+        sessionAppService.VerifyAll();
+        replRuntime.VerifyAll();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_CreateNewSectionWithRequestedProfile_When_ProfileArgumentIsProvided()
+    {
+        OnboardingResult onboardingResult = new(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            false);
+        ModelDiscoveryResult modelDiscoveryResult = new(
+            [new AvailableModel("gpt-5-mini")],
+            "gpt-5-mini",
+            ModelSelectionSource.FirstReturnedModel,
+            ConfiguredDefaultModelStatus.NotConfigured,
+            null,
+            false);
+        ReplSessionContext createdSession = new(
+            "NanoAgent",
+            onboardingResult.Profile,
+            "gpt-5-mini",
+            ["gpt-5-mini"]);
+
+        Mock<IFirstRunOnboardingService> onboardingService = new(MockBehavior.Strict);
+        onboardingService
+            .Setup(service => service.EnsureOnboardedAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(onboardingResult);
+
+        Mock<IModelDiscoveryService> modelDiscoveryService = new(MockBehavior.Strict);
+        modelDiscoveryService
+            .Setup(service => service.DiscoverAndSelectAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(modelDiscoveryResult);
+
+        Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
+        sessionAppService
+            .Setup(service => service.CreateNewAsync(
+                "NanoAgent",
+                onboardingResult.Profile,
+                "gpt-5-mini",
+                It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
+                "review",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(createdSession);
+
+        Mock<IReplRuntime> replRuntime = new(MockBehavior.Strict);
+        replRuntime
+            .Setup(runtime => runtime.RunAsync(createdSession, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        AgentApplicationRunner sut = new(
+            onboardingService.Object,
+            modelDiscoveryService.Object,
+            sessionAppService.Object,
+            replRuntime.Object,
+            BuildConfiguration(profileName: "review"),
+            NullLogger<AgentApplicationRunner>.Instance);
+
+        await sut.RunAsync(CancellationToken.None);
+
+        sessionAppService.VerifyAll();
         replRuntime.VerifyAll();
     }
 
@@ -93,11 +153,12 @@ public sealed class AgentApplicationRunnerTests
             .ReturnsAsync(onboardingResult);
 
         Mock<IModelDiscoveryService> modelDiscoveryService = new(MockBehavior.Strict);
-        Mock<IReplSectionService> replSectionService = new(MockBehavior.Strict);
-        replSectionService
+        Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
+        sessionAppService
             .Setup(service => service.ResumeAsync(
                 "NanoAgent",
                 sectionId,
+                null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(resumedSession);
 
@@ -109,7 +170,7 @@ public sealed class AgentApplicationRunnerTests
         AgentApplicationRunner sut = new(
             onboardingService.Object,
             modelDiscoveryService.Object,
-            replSectionService.Object,
+            sessionAppService.Object,
             replRuntime.Object,
             BuildConfiguration(sectionId),
             NullLogger<AgentApplicationRunner>.Instance);
@@ -119,16 +180,23 @@ public sealed class AgentApplicationRunnerTests
         modelDiscoveryService.Verify(
             service => service.DiscoverAndSelectAsync(It.IsAny<CancellationToken>()),
             Times.Never);
-        replSectionService.VerifyAll();
+        sessionAppService.VerifyAll();
         replRuntime.VerifyAll();
     }
 
-    private static IConfiguration BuildConfiguration(string? sectionId = null)
+    private static IConfiguration BuildConfiguration(
+        string? sectionId = null,
+        string? profileName = null)
     {
         Dictionary<string, string?> values = [];
         if (!string.IsNullOrWhiteSpace(sectionId))
         {
             values["section"] = sectionId;
+        }
+
+        if (!string.IsNullOrWhiteSpace(profileName))
+        {
+            values["profile"] = profileName;
         }
 
         return new ConfigurationBuilder()

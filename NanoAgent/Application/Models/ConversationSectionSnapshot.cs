@@ -1,3 +1,4 @@
+using NanoAgent.Application.Profiles;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Models;
@@ -14,7 +15,8 @@ public sealed class ConversationSectionSnapshot
         IReadOnlyList<string> availableModelIds,
         IReadOnlyList<ConversationSectionTurn> turns,
         int totalEstimatedOutputTokens,
-        PendingExecutionPlan? pendingExecutionPlan = null)
+        PendingExecutionPlan? pendingExecutionPlan = null,
+        string? agentProfileName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -46,6 +48,9 @@ public sealed class ConversationSectionSnapshot
         }
 
         ActiveModelId = normalizedActiveModelId;
+        AgentProfileName = string.IsNullOrWhiteSpace(agentProfileName)
+            ? BuiltInAgentProfiles.BuildName
+            : agentProfileName.Trim();
         AvailableModelIds = normalizedAvailableModelIds;
         CreatedAtUtc = createdAtUtc;
         ProviderProfile = providerProfile;
@@ -60,6 +65,8 @@ public sealed class ConversationSectionSnapshot
     }
 
     public string ActiveModelId { get; }
+
+    public string AgentProfileName { get; }
 
     public IReadOnlyList<string> AvailableModelIds { get; }
 

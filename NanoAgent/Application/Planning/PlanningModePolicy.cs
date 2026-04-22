@@ -243,6 +243,43 @@ internal static class PlanningModePolicy
         return null;
     }
 
+    public static PermissionEvaluationResult? EvaluateProfileRestrictions(
+        ToolPermissionPolicy permissionPolicy,
+        ToolExecutionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(permissionPolicy);
+        ArgumentNullException.ThrowIfNull(context);
+
+        AgentProfilePermissionOverlay overlay = context.Session.AgentProfile.PermissionOverlay;
+
+        if (overlay.EditMode == AgentProfileEditMode.ReadOnly &&
+            IsWriteLikeTool(permissionPolicy))
+        {
+            return PermissionEvaluationResult.Denied(
+                "profile_readonly_write_blocked",
+                $"Agent profile '{context.Session.AgentProfile.Name}' is read-only and cannot modify files. Tool '{context.ToolName}' is only available in an editing profile.",
+                PermissionMode.Deny,
+                CreateRequest(context));
+        }
+
+        if (overlay.ShellMode == AgentProfileShellMode.SafeInspectionOnly &&
+            permissionPolicy.Shell is not null &&
+            ToolArguments.TryGetNonEmptyString(
+                context.Arguments,
+                permissionPolicy.Shell.CommandArgumentName,
+                out string? commandText) &&
+            !IsSafePlanningShellCommand(commandText!, out string denialReason))
+        {
+            return PermissionEvaluationResult.Denied(
+                "profile_shell_blocked",
+                $"Agent profile '{context.Session.AgentProfile.Name}' only allows safe inspection shell commands. {denialReason}",
+                PermissionMode.Deny,
+                CreateRequest(context, [commandText!]));
+        }
+
+        return null;
+    }
+
     private static string? AppendInstructions(
         string? basePrompt,
         string instructions)

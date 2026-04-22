@@ -8,6 +8,9 @@ public interface IConversationSectionStore
         string sectionId,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+        CancellationToken cancellationToken);
+
     Task SaveAsync(
         ConversationSectionSnapshot snapshot,
         CancellationToken cancellationToken);

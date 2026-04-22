@@ -1,3 +1,5 @@
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Models;
@@ -17,8 +19,9 @@ public sealed class ReplSessionContext
     public ReplSessionContext(
         AgentProviderProfile providerProfile,
         string activeModelId,
-        IReadOnlyList<string> availableModelIds)
-        : this(DefaultApplicationName, providerProfile, activeModelId, availableModelIds)
+        IReadOnlyList<string> availableModelIds,
+        IAgentProfile? agentProfile = null)
+        : this(DefaultApplicationName, providerProfile, activeModelId, availableModelIds, agentProfile: agentProfile)
     {
     }
 
@@ -34,7 +37,8 @@ public sealed class ReplSessionContext
         int totalEstimatedOutputTokens = 0,
         IReadOnlyList<ConversationSectionTurn>? conversationTurns = null,
         PendingExecutionPlan? pendingExecutionPlan = null,
-        bool isResumedSection = false)
+        bool isResumedSection = false,
+        IAgentProfile? agentProfile = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -47,6 +51,7 @@ public sealed class ReplSessionContext
         }
 
         ApplicationName = applicationName.Trim();
+        AgentProfile = agentProfile ?? BuiltInAgentProfiles.Build;
         ProviderProfile = providerProfile;
         AvailableModelIds = availableModelIds
             .Where(static modelId => !string.IsNullOrWhiteSpace(modelId))
@@ -100,6 +105,10 @@ public sealed class ReplSessionContext
     public string ApplicationName { get; }
 
     public string ActiveModelId { get; private set; }
+
+    public IAgentProfile AgentProfile { get; private set; }
+
+    public string AgentProfileName => AgentProfile.Name;
 
     public IReadOnlyList<string> AvailableModelIds { get; }
 
@@ -189,6 +198,19 @@ public sealed class ReplSessionContext
         IsPersistedStateDirty = true;
     }
 
+    public void SetAgentProfile(IAgentProfile agentProfile)
+    {
+        ArgumentNullException.ThrowIfNull(agentProfile);
+
+        if (string.Equals(AgentProfile.Name, agentProfile.Name, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        AgentProfile = agentProfile;
+        IsPersistedStateDirty = true;
+    }
+
     public int AddEstimatedOutputTokens(int estimatedOutputTokens)
     {
         if (estimatedOutputTokens < 0)
@@ -256,7 +278,8 @@ public sealed class ReplSessionContext
             AvailableModelIds,
             turns,
             TotalEstimatedOutputTokens,
-            PendingExecutionPlan);
+            PendingExecutionPlan,
+            AgentProfile.Name);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)

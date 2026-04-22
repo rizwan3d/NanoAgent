@@ -12,7 +12,7 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
 {
     private readonly IFirstRunOnboardingService _onboardingService;
     private readonly IModelDiscoveryService _modelDiscoveryService;
-    private readonly IReplSectionService _replSectionService;
+    private readonly ISessionAppService _sessionAppService;
     private readonly IReplRuntime _replRuntime;
     private readonly IConfiguration _configuration;
     private readonly ILogger<AgentApplicationRunner> _logger;
@@ -20,14 +20,14 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
     public AgentApplicationRunner(
         IFirstRunOnboardingService onboardingService,
         IModelDiscoveryService modelDiscoveryService,
-        IReplSectionService replSectionService,
+        ISessionAppService sessionAppService,
         IReplRuntime replRuntime,
         IConfiguration configuration,
         ILogger<AgentApplicationRunner> logger)
     {
         _onboardingService = onboardingService;
         _modelDiscoveryService = modelDiscoveryService;
-        _replSectionService = replSectionService;
+        _sessionAppService = sessionAppService;
         _replRuntime = replRuntime;
         _configuration = configuration;
         _logger = logger;
@@ -40,6 +40,7 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
         OnboardingResult result = await _onboardingService.EnsureOnboardedAsync(cancellationToken);
         ReplSessionContext session;
         string? requestedSectionId = NormalizeRequestedSectionId(_configuration["section"]);
+        string? requestedProfileName = NormalizeRequestedProfileName(_configuration["profile"]);
 
         if (requestedSectionId is null)
         {
@@ -50,18 +51,20 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
                 modelResult.SelectedModelId,
                 modelResult.SelectionSource.ToString());
 
-            session = await _replSectionService.CreateNewAsync(
+            session = await _sessionAppService.CreateNewAsync(
                 ApplicationIdentity.ProductName,
                 result.Profile,
                 modelResult.SelectedModelId,
                 modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
+                requestedProfileName,
                 cancellationToken);
         }
         else
         {
-            session = await _replSectionService.ResumeAsync(
+            session = await _sessionAppService.ResumeAsync(
                 ApplicationIdentity.ProductName,
                 requestedSectionId,
+                requestedProfileName,
                 cancellationToken);
         }
 
@@ -80,5 +83,12 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
         return string.IsNullOrWhiteSpace(sectionId)
             ? null
             : sectionId.Trim();
+    }
+
+    private static string? NormalizeRequestedProfileName(string? profileName)
+    {
+        return string.IsNullOrWhiteSpace(profileName)
+            ? null
+            : profileName.Trim();
     }
 }

@@ -1,6 +1,8 @@
 using System.Text.Json;
+using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 
@@ -131,6 +133,59 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
             new PermissionEvaluationContext(CreateContext("""{ "command": "npm test" }""")));
 
         result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyWriteTools_When_ProfileIsReadOnly()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new StubPermissionConfigurationAccessor());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["edit"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Write,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "path": "src/app.cs" }""",
+                CreateSession(BuiltInAgentProfiles.Review))));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("profile_readonly_write_blocked");
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyMutatingShellCommands_When_ProfileAllowsSafeInspectionOnly()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new StubPermissionConfigurationAccessor());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["dotnet", "npm", "git"]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "command": "dotnet test" }""",
+                CreateSession(BuiltInAgentProfiles.Plan))));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("profile_shell_blocked");
     }
 
     [Fact]
@@ -378,12 +433,13 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
             executionPhase);
     }
 
-    private static ReplSessionContext CreateSession()
+    private static ReplSessionContext CreateSession(IAgentProfile? agentProfile = null)
     {
         return new ReplSessionContext(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5-mini",
-            ["gpt-5-mini"]);
+            ["gpt-5-mini"],
+            agentProfile);
     }
 
     private sealed class StubWorkspaceRootProvider : global::NanoAgent.Application.Abstractions.IWorkspaceRootProvider

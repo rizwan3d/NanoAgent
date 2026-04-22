@@ -4,6 +4,7 @@ using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Repl.Commands;
 using NanoAgent.Application.Repl.Parsing;
 using NanoAgent.Application.Repl.Services;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Services;
@@ -23,6 +24,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IReplRuntime, ReplRuntime>();
         services.AddSingleton<IReplCommandParser, ReplCommandParser>();
         services.AddSingleton<IReplCommandDispatcher, ReplCommandDispatcher>();
+        services.AddSingleton<IAgentProfileResolver, BuiltInAgentProfileResolver>();
+        services.AddSingleton<IAgentTurnService, AgentTurnService>();
+        services.AddSingleton<ISessionAppService, SessionAppService>();
         services.AddSingleton<IConversationPipeline, AgentConversationPipeline>();
         services.AddSingleton<IPermissionParser, ToolPermissionParser>();
         services.AddSingleton<IPermissionEvaluator, ToolPermissionEvaluator>();
@@ -46,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ModelsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, PermissionsCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, ProfileCommandHandler>();
         services.AddSingleton<IReplCommandHandler, UndoCommandHandler>();
         services.AddSingleton<IReplCommandHandler, RedoCommandHandler>();
         services.AddSingleton<IReplCommandHandler, RulesCommandHandler>();

@@ -45,6 +45,34 @@ internal sealed class JsonConversationSectionStore : IConversationSectionStore
         }
     }
 
+    public async Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+        CancellationToken cancellationToken)
+    {
+        string directoryPath = _pathProvider.GetSectionsDirectoryPath();
+        if (!Directory.Exists(directoryPath))
+        {
+            return [];
+        }
+
+        List<ConversationSectionSnapshot> snapshots = [];
+
+        foreach (string filePath in Directory.EnumerateFiles(directoryPath, "*.json"))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string sectionId = Path.GetFileNameWithoutExtension(filePath);
+            ConversationSectionSnapshot? snapshot = await LoadAsync(sectionId, cancellationToken);
+            if (snapshot is not null)
+            {
+                snapshots.Add(snapshot);
+            }
+        }
+
+        return snapshots
+            .OrderByDescending(static snapshot => snapshot.UpdatedAtUtc)
+            .ToArray();
+    }
+
     public async Task SaveAsync(
         ConversationSectionSnapshot snapshot,
         CancellationToken cancellationToken)

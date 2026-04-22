@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 
@@ -96,6 +97,19 @@ public sealed class ReplSessionContextTests
 
         session.HasPendingExecutionPlan.Should().BeFalse();
         session.PendingExecutionPlan.Should().BeNull();
+    }
+
+    [Fact]
+    public void SetAgentProfile_Should_UpdateProfile_AndPersistUpdatedProfileName()
+    {
+        ReplSessionContext session = CreateSession();
+
+        session.SetAgentProfile(BuiltInAgentProfiles.Plan);
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(DateTimeOffset.UtcNow.AddMinutes(1));
+
+        session.AgentProfile.Name.Should().Be(BuiltInAgentProfiles.PlanName);
+        session.IsPersistedStateDirty.Should().BeTrue();
+        snapshot.AgentProfileName.Should().Be(BuiltInAgentProfiles.PlanName);
     }
 
     private static ReplSessionContext CreateSession()
