@@ -4,5 +4,5 @@ public interface IAgentProfileResolver
 {
     IAgentProfile Resolve(string? profileName);
 
-    IReadOnlyList<IAgentProfile> ListProfiles();
+    IReadOnlyList<IAgentProfile> List();
 }

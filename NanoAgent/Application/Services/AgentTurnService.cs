@@ -12,16 +12,16 @@ internal sealed class AgentTurnService : IAgentTurnService
         _conversationPipeline = conversationPipeline;
     }
 
-    public Task<ConversationTurnResult> ProcessTurnAsync(
-        string input,
-        ReplSessionContext session,
-        IConversationProgressSink progressSink,
+    public Task<ConversationTurnResult> RunTurnAsync(
+        AgentTurnRequest request,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(request);
+
         return _conversationPipeline.ProcessAsync(
-            input,
-            session,
-            progressSink,
+            request.UserInput,
+            request.Session,
+            request.ProgressSink,
             cancellationToken);
     }
 }

@@ -277,7 +277,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         string? basePrompt,
         ReplSessionContext session)
     {
-        string? contribution = session.AgentProfile.SystemPromptContribution;
+        string? contribution = session.AgentProfile.SystemPrompt;
         if (string.IsNullOrWhiteSpace(contribution))
         {
             return basePrompt;

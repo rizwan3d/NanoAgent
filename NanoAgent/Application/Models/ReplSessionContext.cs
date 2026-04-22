@@ -135,6 +135,8 @@ public sealed class ReplSessionContext
 
     public string SectionId { get; }
 
+    public string SessionId => SectionId;
+
     public string SectionTitle { get; private set; }
 
     public DateTimeOffset SectionUpdatedAtUtc { get; private set; }

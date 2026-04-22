@@ -42,12 +42,12 @@ public sealed class AgentApplicationRunnerTests
 
         Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
         sessionAppService
-            .Setup(service => service.CreateNewAsync(
-                "NanoAgent",
-                onboardingResult.Profile,
-                "gpt-5-mini",
-                It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
-                null,
+            .Setup(service => service.CreateAsync(
+                It.Is<CreateSessionRequest>(request =>
+                    request.ProviderProfile == onboardingResult.Profile &&
+                    request.ActiveModelId == "gpt-5-mini" &&
+                    request.AvailableModelIds.SequenceEqual(new[] { "gpt-5-mini" }) &&
+                    request.ProfileName is null),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -101,12 +101,12 @@ public sealed class AgentApplicationRunnerTests
 
         Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
         sessionAppService
-            .Setup(service => service.CreateNewAsync(
-                "NanoAgent",
-                onboardingResult.Profile,
-                "gpt-5-mini",
-                It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
-                "review",
+            .Setup(service => service.CreateAsync(
+                It.Is<CreateSessionRequest>(request =>
+                    request.ProviderProfile == onboardingResult.Profile &&
+                    request.ActiveModelId == "gpt-5-mini" &&
+                    request.AvailableModelIds.SequenceEqual(new[] { "gpt-5-mini" }) &&
+                    request.ProfileName == "review"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -156,9 +156,9 @@ public sealed class AgentApplicationRunnerTests
         Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
         sessionAppService
             .Setup(service => service.ResumeAsync(
-                "NanoAgent",
-                sectionId,
-                null,
+                It.Is<ResumeSessionRequest>(request =>
+                    request.SessionId == sectionId &&
+                    request.ProfileName is null),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(resumedSession);
 

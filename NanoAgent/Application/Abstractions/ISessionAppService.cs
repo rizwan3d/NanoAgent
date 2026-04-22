@@ -1,29 +1,21 @@
 using NanoAgent.Application.Models;
-using NanoAgent.Domain.Models;
-
 namespace NanoAgent.Application.Abstractions;
 
 public interface ISessionAppService
 {
-    Task<ReplSessionContext> CreateNewAsync(
-        string applicationName,
-        AgentProviderProfile providerProfile,
-        string activeModelId,
-        IReadOnlyList<string> availableModelIds,
-        string? profileName,
+    Task<ReplSessionContext> CreateAsync(
+        CreateSessionRequest request,
         CancellationToken cancellationToken);
 
     void EnsureTitleGenerationStarted(
         ReplSessionContext session,
         string firstUserPrompt);
 
-    Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+    Task<IReadOnlyList<SessionSummary>> ListAsync(
         CancellationToken cancellationToken);
 
     Task<ReplSessionContext> ResumeAsync(
-        string applicationName,
-        string sectionId,
-        string? profileName,
+        ResumeSessionRequest request,
         CancellationToken cancellationToken);
 
     Task SaveIfDirtyAsync(

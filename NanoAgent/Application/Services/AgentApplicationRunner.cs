@@ -51,20 +51,20 @@ internal sealed class AgentApplicationRunner : IApplicationRunner
                 modelResult.SelectedModelId,
                 modelResult.SelectionSource.ToString());
 
-            session = await _sessionAppService.CreateNewAsync(
-                ApplicationIdentity.ProductName,
-                result.Profile,
-                modelResult.SelectedModelId,
-                modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
-                requestedProfileName,
+            session = await _sessionAppService.CreateAsync(
+                new CreateSessionRequest(
+                    result.Profile,
+                    modelResult.SelectedModelId,
+                    modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
+                    requestedProfileName),
                 cancellationToken);
         }
         else
         {
             session = await _sessionAppService.ResumeAsync(
-                ApplicationIdentity.ProductName,
-                requestedSectionId,
-                requestedProfileName,
+                new ResumeSessionRequest(
+                    requestedSectionId,
+                    requestedProfileName),
                 cancellationToken);
         }
 

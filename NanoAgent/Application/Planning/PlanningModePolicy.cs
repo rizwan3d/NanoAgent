@@ -252,7 +252,7 @@ internal static class PlanningModePolicy
         ArgumentNullException.ThrowIfNull(permissionPolicy);
         ArgumentNullException.ThrowIfNull(context);
 
-        AgentProfilePermissionOverlay overlay = context.Session.AgentProfile.PermissionOverlay;
+        AgentProfilePermissionOverlay overlay = context.Session.AgentProfile.PermissionIntent;
 
         if (overlay.EditMode == AgentProfileEditMode.ReadOnly &&
             IsWriteLikeTool(permissionPolicy))

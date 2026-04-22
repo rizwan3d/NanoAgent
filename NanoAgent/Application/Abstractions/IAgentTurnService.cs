@@ -4,9 +4,7 @@ namespace NanoAgent.Application.Abstractions;
 
 public interface IAgentTurnService
 {
-    Task<ConversationTurnResult> ProcessTurnAsync(
-        string input,
-        ReplSessionContext session,
-        IConversationProgressSink progressSink,
+    Task<ConversationTurnResult> RunTurnAsync(
+        AgentTurnRequest request,
         CancellationToken cancellationToken);
 }

@@ -128,10 +128,11 @@ internal sealed class ReplRuntime : IReplRuntime
                                          session.TotalEstimatedOutputTokens,
                                          cancellationToken))
                         {
-                            response = await _agentTurnService.ProcessTurnAsync(
-                                input,
-                                session,
-                                progress,
+                            response = await _agentTurnService.RunTurnAsync(
+                                new AgentTurnRequest(
+                                    session,
+                                    input,
+                                    progress),
                                 requestCancellationSource.Token);
                         }
                     }

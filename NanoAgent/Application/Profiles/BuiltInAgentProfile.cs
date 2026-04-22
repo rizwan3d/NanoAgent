@@ -8,31 +8,31 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
     public BuiltInAgentProfile(
         string name,
         string description,
-        string? systemPromptContribution,
+        string? systemPrompt,
         IReadOnlySet<string> enabledTools,
-        AgentProfilePermissionOverlay permissionOverlay)
+        AgentProfilePermissionOverlay permissionIntent)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(description);
         ArgumentNullException.ThrowIfNull(enabledTools);
-        ArgumentNullException.ThrowIfNull(permissionOverlay);
+        ArgumentNullException.ThrowIfNull(permissionIntent);
 
         Name = name.Trim();
         Description = description.Trim();
-        SystemPromptContribution = string.IsNullOrWhiteSpace(systemPromptContribution)
+        SystemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
             ? null
-            : systemPromptContribution.Trim();
+            : systemPrompt.Trim();
         EnabledTools = enabledTools;
-        PermissionOverlay = permissionOverlay;
+        PermissionIntent = permissionIntent;
     }
 
     public string Name { get; }
 
     public string Description { get; }
 
-    public string? SystemPromptContribution { get; }
+    public string? SystemPrompt { get; }
 
     public IReadOnlySet<string> EnabledTools { get; }
 
-    public AgentProfilePermissionOverlay PermissionOverlay { get; }
+    public AgentProfilePermissionOverlay PermissionIntent { get; }
 }

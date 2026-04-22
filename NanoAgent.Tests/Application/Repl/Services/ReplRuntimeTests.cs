@@ -250,10 +250,12 @@ public sealed class ReplRuntimeTests
 
         Mock<IAgentTurnService> agentTurnService = new(MockBehavior.Strict);
         agentTurnService
-            .Setup(service => service.ProcessTurnAsync(
-                "help me plan this change",
-                session,
-                It.IsAny<IConversationProgressSink>(),
+            .Setup(service => service.RunTurnAsync(
+                It.Is<AgentTurnRequest>(request =>
+                    ReferenceEquals(request.Session, session) &&
+                    request.SessionId == session.SessionId &&
+                    request.ProfileName == session.AgentProfileName &&
+                    request.UserInput == "help me plan this change"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(ConversationTurnResult.AssistantMessage(
                 "Response ready",
@@ -721,16 +723,14 @@ public sealed class ReplRuntimeTests
             _conversationPipeline = conversationPipeline;
         }
 
-        public Task<ConversationTurnResult> ProcessTurnAsync(
-            string input,
-            ReplSessionContext session,
-            IConversationProgressSink progressSink,
+        public Task<ConversationTurnResult> RunTurnAsync(
+            AgentTurnRequest request,
             CancellationToken cancellationToken)
         {
             return _conversationPipeline.ProcessAsync(
-                input,
-                session,
-                progressSink,
+                request.UserInput,
+                request.Session,
+                request.ProgressSink,
                 cancellationToken);
         }
     }
@@ -744,12 +744,8 @@ public sealed class ReplRuntimeTests
             _replSectionService = replSectionService;
         }
 
-        public Task<ReplSessionContext> CreateNewAsync(
-            string applicationName,
-            AgentProviderProfile providerProfile,
-            string activeModelId,
-            IReadOnlyList<string> availableModelIds,
-            string? profileName,
+        public Task<ReplSessionContext> CreateAsync(
+            CreateSessionRequest request,
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
@@ -762,16 +758,14 @@ public sealed class ReplRuntimeTests
             _replSectionService.EnsureTitleGenerationStarted(session, firstUserPrompt);
         }
 
-        public Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+        public Task<IReadOnlyList<SessionSummary>> ListAsync(
             CancellationToken cancellationToken)
         {
-            return Task.FromResult<IReadOnlyList<ConversationSectionSnapshot>>([]);
+            return Task.FromResult<IReadOnlyList<SessionSummary>>([]);
         }
 
         public Task<ReplSessionContext> ResumeAsync(
-            string applicationName,
-            string sectionId,
-            string? profileName,
+            ResumeSessionRequest request,
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();

@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Repl.Commands;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
@@ -21,16 +22,19 @@ public sealed class ConfigCommandHandlerTests
         ReplSessionContext session = new(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "openai/gpt-oss-20b",
-            ["openai/gpt-oss-20b"]);
+            ["openai/gpt-oss-20b"],
+            agentProfile: BuiltInAgentProfiles.Review);
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext("config", string.Empty, [], "/config", session),
             CancellationToken.None);
 
         result.ExitRequested.Should().BeFalse();
+        result.Message.Should().Contain($"Session: {session.SessionId}");
         result.Message.Should().Contain("Provider: OpenAI-compatible provider");
         result.Message.Should().Contain("Base URL: https://provider.example.com/v1");
         result.Message.Should().Contain("Configuration file:");
+        result.Message.Should().Contain("Agent profile: review");
         result.Message.Should().Contain("Active model: openai/gpt-oss-20b");
     }
 }

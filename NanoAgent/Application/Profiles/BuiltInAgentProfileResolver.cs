@@ -4,7 +4,7 @@ namespace NanoAgent.Application.Profiles;
 
 internal sealed class BuiltInAgentProfileResolver : IAgentProfileResolver
 {
-    public IReadOnlyList<IAgentProfile> ListProfiles()
+    public IReadOnlyList<IAgentProfile> List()
     {
         return BuiltInAgentProfiles.All;
     }

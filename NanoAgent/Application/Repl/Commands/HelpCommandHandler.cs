@@ -15,12 +15,13 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
         ReplCommandContext context,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
         const string HelpText =
             "Available commands:\n" +
             "/allow <tool-or-tag> [pattern] - Add a session-scoped allow override.\n" +
-            "/config - Show the current provider, config path, and active model.\n" +
+            "/config - Show the current provider, session, config path, active profile, and active model.\n" +
             "/deny <tool-or-tag> [pattern] - Add a session-scoped deny override.\n" +
             "/exit - Exit the interactive shell.\n" +
             "/help - List the available shell commands and their usage.\n" +
@@ -33,6 +34,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/use <model> - Switch the active model for subsequent prompts.\n\n" +
             "Start with --profile build, --profile plan, or --profile review to choose the initial session profile, or use /profile <name> to switch inside an active session.";
 
-        return Task.FromResult(ReplCommandResult.Continue(HelpText));
+        return Task.FromResult(ReplCommandResult.Continue(
+            $"Active agent profile: {context.Session.AgentProfile.Name}\n\n{HelpText}"));
     }
 }

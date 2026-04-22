@@ -16,7 +16,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
 
     public string CommandName => "config";
 
-    public string Description => "Show provider, config-path, and active-model details.";
+    public string Description => "Show provider, config-path, active-profile, and active-model details.";
 
     public string Usage => "/config";
 
@@ -33,6 +33,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
 
         string message =
             "Current configuration:\n" +
+            $"Session: {context.Session.SessionId}\n" +
             $"Provider: {context.Session.ProviderName}\n" +
             $"Base URL: {baseUrl}\n" +
             $"Configuration file: {_userDataPathProvider.GetConfigurationFilePath()}\n" +

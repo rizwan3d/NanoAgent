@@ -8,9 +8,9 @@ public interface IAgentProfile
 
     string Description { get; }
 
-    string? SystemPromptContribution { get; }
+    string? SystemPrompt { get; }
 
     IReadOnlySet<string> EnabledTools { get; }
 
-    AgentProfilePermissionOverlay PermissionOverlay { get; }
+    AgentProfilePermissionOverlay PermissionIntent { get; }
 }

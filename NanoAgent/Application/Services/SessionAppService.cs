@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure.Configuration;
 
 namespace NanoAgent.Application.Services;
 
@@ -20,21 +21,19 @@ internal sealed class SessionAppService : ISessionAppService
         _sectionService = sectionService;
     }
 
-    public async Task<ReplSessionContext> CreateNewAsync(
-        string applicationName,
-        AgentProviderProfile providerProfile,
-        string activeModelId,
-        IReadOnlyList<string> availableModelIds,
-        string? profileName,
+    public async Task<ReplSessionContext> CreateAsync(
+        CreateSessionRequest request,
         CancellationToken cancellationToken)
     {
-        IAgentProfile profile = _profileResolver.Resolve(profileName);
+        ArgumentNullException.ThrowIfNull(request);
+
+        IAgentProfile profile = _profileResolver.Resolve(request.ProfileName);
 
         return await _sectionService.CreateNewAsync(
-            applicationName,
-            providerProfile,
-            activeModelId,
-            availableModelIds,
+            ApplicationIdentity.ProductName,
+            request.ProviderProfile,
+            request.ActiveModelId,
+            request.AvailableModelIds,
             profile,
             cancellationToken);
     }
@@ -46,25 +45,36 @@ internal sealed class SessionAppService : ISessionAppService
         _sectionService.EnsureTitleGenerationStarted(session, firstUserPrompt);
     }
 
-    public async Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+    public async Task<IReadOnlyList<SessionSummary>> ListAsync(
         CancellationToken cancellationToken)
     {
-        return await _sectionStore.ListAsync(cancellationToken);
+        IReadOnlyList<ConversationSectionSnapshot> snapshots = await _sectionStore.ListAsync(cancellationToken);
+
+        return snapshots
+            .Select(static snapshot => new SessionSummary(
+                snapshot.SectionId,
+                snapshot.Title,
+                snapshot.CreatedAtUtc,
+                snapshot.UpdatedAtUtc,
+                snapshot.ProviderProfile.ProviderKind.ToDisplayName(),
+                snapshot.ActiveModelId,
+                snapshot.AgentProfileName))
+            .ToArray();
     }
 
     public async Task<ReplSessionContext> ResumeAsync(
-        string applicationName,
-        string sectionId,
-        string? profileName,
+        ResumeSessionRequest request,
         CancellationToken cancellationToken)
     {
-        IAgentProfile? profileOverride = string.IsNullOrWhiteSpace(profileName)
+        ArgumentNullException.ThrowIfNull(request);
+
+        IAgentProfile? profileOverride = string.IsNullOrWhiteSpace(request.ProfileName)
             ? null
-            : _profileResolver.Resolve(profileName);
+            : _profileResolver.Resolve(request.ProfileName);
 
         return await _sectionService.ResumeAsync(
-            applicationName,
-            sectionId,
+            ApplicationIdentity.ProductName,
+            request.SessionId,
             profileOverride,
             cancellationToken);
     }

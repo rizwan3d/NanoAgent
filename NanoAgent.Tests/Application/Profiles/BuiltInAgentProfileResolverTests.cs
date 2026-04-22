@@ -39,11 +39,11 @@ public sealed class BuiltInAgentProfileResolverTests
     }
 
     [Fact]
-    public void ListProfiles_Should_ReturnAllBuiltInProfiles()
+    public void List_Should_ReturnAllBuiltInProfiles()
     {
         BuiltInAgentProfileResolver sut = new();
 
-        sut.ListProfiles()
+        sut.List()
             .Select(static profile => profile.Name)
             .Should()
             .Equal("build", "plan", "review");
@@ -61,15 +61,15 @@ public sealed class BuiltInAgentProfileResolverTests
             profile.EnabledTools.Should().NotContain(AgentToolNames.ApplyPatch);
             profile.EnabledTools.Should().NotContain(AgentToolNames.FileWrite);
             profile.EnabledTools.Should().Contain(AgentToolNames.ShellCommand);
-            profile.PermissionOverlay.EditMode.Should().Be(AgentProfileEditMode.ReadOnly);
-            profile.PermissionOverlay.ShellMode.Should().Be(AgentProfileShellMode.SafeInspectionOnly);
+            profile.PermissionIntent.EditMode.Should().Be(AgentProfileEditMode.ReadOnly);
+            profile.PermissionIntent.ShellMode.Should().Be(AgentProfileShellMode.SafeInspectionOnly);
         }
     }
 
     [Fact]
     public void BuildProfile_Should_DescribeNonInteractiveScaffoldingBehavior()
     {
-        BuiltInAgentProfiles.Build.SystemPromptContribution.Should().Contain("fully specified, non-interactive commands");
-        BuiltInAgentProfiles.Build.SystemPromptContribution.Should().Contain("project name, template or preset, and any confirmation flags");
+        BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("fully specified, non-interactive commands");
+        BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("project name, template or preset, and any confirmation flags");
     }
 }

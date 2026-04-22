@@ -25,7 +25,7 @@ internal sealed class ProfileCommandHandler : IReplCommandHandler
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        IReadOnlyList<IAgentProfile> availableProfiles = _profileResolver.ListProfiles();
+        IReadOnlyList<IAgentProfile> availableProfiles = _profileResolver.List();
         if (string.IsNullOrWhiteSpace(context.ArgumentText))
         {
             return Task.FromResult(ReplCommandResult.Continue(
@@ -33,10 +33,12 @@ internal sealed class ProfileCommandHandler : IReplCommandHandler
         }
 
         string requestedProfileName = context.ArgumentText.Trim();
-        IAgentProfile? requestedProfile = availableProfiles.FirstOrDefault(profile =>
-            string.Equals(profile.Name, requestedProfileName, StringComparison.OrdinalIgnoreCase));
-
-        if (requestedProfile is null)
+        IAgentProfile requestedProfile;
+        try
+        {
+            requestedProfile = _profileResolver.Resolve(requestedProfileName);
+        }
+        catch (ArgumentException)
         {
             return Task.FromResult(ReplCommandResult.Continue(
                 $"Unknown agent profile '{requestedProfileName}'. Available profiles: {string.Join(", ", availableProfiles.Select(static profile => profile.Name))}.",
