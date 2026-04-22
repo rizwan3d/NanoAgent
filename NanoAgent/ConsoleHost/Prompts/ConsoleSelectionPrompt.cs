@@ -36,6 +36,11 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
             throw new ArgumentOutOfRangeException(nameof(request), "Default index must reference a valid option.");
         }
 
+        if (request.AutoSelectAfter < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(request), "Auto-select timeout cannot be negative.");
+        }
+
         if (!SupportsInteractiveSelection())
         {
             return Task.FromException<T>(
@@ -50,13 +55,38 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
         using IDisposable _ = _interactionGate.EnterScope();
 
         int selectedIndex = request.DefaultIndex;
-        InteractiveSelectionPromptLayout layout = _renderer.WriteInteractiveSelectionPrompt(request, selectedIndex);
+        DateTimeOffset? autoSelectAt = request.AutoSelectAfter is { } autoSelectAfter
+            ? DateTimeOffset.UtcNow.Add(autoSelectAfter)
+            : null;
+        int? remainingAutoSelectSeconds = autoSelectAt is null
+            ? null
+            : GetRemainingAutoSelectSeconds(autoSelectAt.Value);
+        InteractiveSelectionPromptLayout layout = _renderer.WriteInteractiveSelectionPrompt(
+            request,
+            selectedIndex,
+            remainingAutoSelectSeconds);
 
         try
         {
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+
+                if (TryAutoSelectDefault(
+                    request,
+                    autoSelectAt,
+                    layout,
+                    ref remainingAutoSelectSeconds,
+                    out T autoSelectedValue))
+                {
+                    return autoSelectedValue;
+                }
+
+                if (autoSelectAt is not null && !_terminal.KeyAvailable)
+                {
+                    Thread.Sleep(GetInputPollDelay(autoSelectAt.Value));
+                    continue;
+                }
 
                 ConsoleKeyInfo keyInfo = _terminal.ReadKey(intercept: true);
                 switch (keyInfo.Key)
@@ -109,6 +139,67 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
         {
             _renderer.ClearInteractiveSelectionPrompt(layout);
         }
+    }
+
+    private bool TryAutoSelectDefault<T>(
+        SelectionPromptRequest<T> request,
+        DateTimeOffset? autoSelectAt,
+        InteractiveSelectionPromptLayout layout,
+        ref int? remainingAutoSelectSeconds,
+        out T selectedValue)
+    {
+        selectedValue = default!;
+        if (autoSelectAt is null)
+        {
+            return false;
+        }
+
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        if (now >= autoSelectAt.Value)
+        {
+            selectedValue = request.Options[request.DefaultIndex].Value;
+            return true;
+        }
+
+        int currentRemainingSeconds = GetRemainingAutoSelectSeconds(autoSelectAt.Value, now);
+        if (remainingAutoSelectSeconds != currentRemainingSeconds)
+        {
+            remainingAutoSelectSeconds = currentRemainingSeconds;
+            _renderer.RewriteSelectionDefaultLine(request, layout, currentRemainingSeconds);
+        }
+
+        return false;
+    }
+
+    private static int GetRemainingAutoSelectSeconds(DateTimeOffset autoSelectAt)
+    {
+        return GetRemainingAutoSelectSeconds(autoSelectAt, DateTimeOffset.UtcNow);
+    }
+
+    private static int GetRemainingAutoSelectSeconds(
+        DateTimeOffset autoSelectAt,
+        DateTimeOffset now)
+    {
+        TimeSpan remaining = autoSelectAt - now;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return 0;
+        }
+
+        return Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+    }
+
+    private static TimeSpan GetInputPollDelay(DateTimeOffset autoSelectAt)
+    {
+        TimeSpan remaining = autoSelectAt - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        return remaining < TimeSpan.FromMilliseconds(100)
+            ? remaining
+            : TimeSpan.FromMilliseconds(100);
     }
 
     private bool SupportsInteractiveSelection()

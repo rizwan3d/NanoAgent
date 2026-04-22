@@ -25,6 +25,8 @@ public sealed class SelectionPermissionApprovalPromptTests
             CancellationToken.None);
 
         selectionPrompt.LastRequest!.Title.Should().Be("Approve file write?");
+        selectionPrompt.LastRequest.DefaultIndex.Should().Be(0);
+        selectionPrompt.LastRequest.AutoSelectAfter.Should().Be(TimeSpan.FromSeconds(10));
         selectionPrompt.LastRequest.Description.Should().Contain("Tool: file_write");
         selectionPrompt.LastRequest.Description.Should().Contain("File path: src/App.js");
     }

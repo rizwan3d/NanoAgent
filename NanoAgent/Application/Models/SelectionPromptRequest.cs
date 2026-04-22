@@ -5,4 +5,5 @@ public sealed record SelectionPromptRequest<T>(
     IReadOnlyList<SelectionPromptOption<T>> Options,
     string? Description = null,
     int DefaultIndex = 0,
-    bool AllowCancellation = true);
+    bool AllowCancellation = true,
+    TimeSpan? AutoSelectAfter = null);

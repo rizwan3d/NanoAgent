@@ -25,31 +25,48 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
         _console = console;
     }
 
-    public InteractiveSelectionPromptLayout WriteInteractiveSelectionPrompt<T>(SelectionPromptRequest<T> request, int selectedIndex)
+    public InteractiveSelectionPromptLayout WriteInteractiveSelectionPrompt<T>(
+        SelectionPromptRequest<T> request,
+        int selectedIndex,
+        int? remainingAutoSelectSeconds = null)
     {
         string instructions = BuildInteractiveInstructions(request.AllowCancellation);
+        string? defaultLine = BuildDefaultLine(request, remainingAutoSelectSeconds);
 
         EnsurePromptStartsOnNewLine();
         WriteHeading(request.Title, request.Description);
+        if (defaultLine is not null)
+        {
+            WriteStyledLine(defaultLine, InstructionStyle);
+        }
+
         WriteStyledLine(instructions, InstructionStyle);
         _terminal.WriteLine();
 
         WriteSelectionOptions(request.Options, selectedIndex);
 
-        int totalLineCount =
+        int headingLineCount =
             CountLogicalLines(request.Title) +
-            CountLogicalLines(request.Description) +
+            CountLogicalLines(request.Description);
+        int defaultLineCount = defaultLine is null ? 0 : 1;
+        int totalLineCount =
+            headingLineCount +
+            defaultLineCount +
             CountLogicalLines(instructions) +
             1 +
             request.Options.Count;
         int promptBottom = _terminal.CursorTop;
         int promptTop = Math.Max(0, promptBottom - totalLineCount);
         int optionsTop = Math.Max(0, promptBottom - request.Options.Count);
+        int defaultLineTop = defaultLine is null
+            ? -1
+            : promptTop + headingLineCount;
 
         return new InteractiveSelectionPromptLayout(
             promptTop,
             optionsTop,
-            totalLineCount);
+            totalLineCount,
+            defaultLineTop);
     }
 
     public void RewriteSelectionOptions<T>(
@@ -63,6 +80,26 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
         }
 
         WriteSelectionOptions(request.Options, selectedIndex);
+    }
+
+    public void RewriteSelectionDefaultLine<T>(
+        SelectionPromptRequest<T> request,
+        InteractiveSelectionPromptLayout layout,
+        int remainingAutoSelectSeconds)
+    {
+        if (layout.DefaultLineTop < 0 ||
+            !TrySetCursorPosition(0, layout.DefaultLineTop))
+        {
+            return;
+        }
+
+        string? defaultLine = BuildDefaultLine(request, remainingAutoSelectSeconds);
+        if (defaultLine is null)
+        {
+            return;
+        }
+
+        WriteStyledLine(PadLine(defaultLine), InstructionStyle);
     }
 
     public void ClearInteractiveSelectionPrompt(InteractiveSelectionPromptLayout layout)
@@ -141,6 +178,19 @@ internal sealed class ConsolePromptRenderer : IConsolePromptRenderer
         return allowCancellation
             ? "Use Up/Down to move, Enter to confirm, Esc to cancel."
             : "Use Up/Down to move and Enter to confirm.";
+    }
+
+    private static string? BuildDefaultLine<T>(
+        SelectionPromptRequest<T> request,
+        int? remainingAutoSelectSeconds)
+    {
+        if (remainingAutoSelectSeconds is null)
+        {
+            return null;
+        }
+
+        SelectionPromptOption<T> defaultOption = request.Options[request.DefaultIndex];
+        return $"Default ({remainingAutoSelectSeconds.Value}s): {defaultOption.Label}";
     }
 
     private static string FormatInteractiveOption<T>(SelectionPromptOption<T> option, bool isSelected)

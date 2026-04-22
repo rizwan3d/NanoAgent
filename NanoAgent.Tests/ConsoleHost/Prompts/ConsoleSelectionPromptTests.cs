@@ -78,6 +78,26 @@ public sealed class ConsoleSelectionPromptTests
     }
 
     [Fact]
+    public async Task PromptAsync_Should_ReturnDefaultValue_When_AutoSelectTimeoutExpires()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsoleSelectionPrompt sut = CreateSut(terminal);
+
+        SelectionPromptRequest<string> request = new(
+            "Approve file write?",
+            [
+                new SelectionPromptOption<string>("Allow once", "allow-once"),
+                new SelectionPromptOption<string>("Deny once", "deny-once")
+            ],
+            DefaultIndex: 0,
+            AutoSelectAfter: TimeSpan.Zero);
+
+        string selectedValue = await sut.PromptAsync(request, CancellationToken.None);
+
+        selectedValue.Should().Be("allow-once");
+    }
+
+    [Fact]
     public async Task PromptAsync_Should_NotThrow_When_RewriteEndsPastConsoleBuffer()
     {
         FakeConsoleTerminal innerTerminal = new();
@@ -225,6 +245,30 @@ public sealed class ConsoleSelectionPromptTests
         CountOccurrences(output, "Deny once").Should().Be(1);
         CountOccurrences(output, "Deny for NanoAgent").Should().Be(1);
         CountOccurrences(output, "> Allow once").Should().Be(1);
+    }
+
+    [Fact]
+    public void RewriteSelectionDefaultLine_Should_ShowUpdatedAutoSelectTimer()
+    {
+        FakeConsoleTerminal terminal = new();
+        ConsolePromptRenderer renderer = new(terminal, SpectreConsoleFactory.Create(terminal));
+
+        SelectionPromptRequest<string> request = new(
+            "Approve file write?",
+            [
+                new SelectionPromptOption<string>("Allow once", "allow-once"),
+                new SelectionPromptOption<string>("Deny once", "deny-once")
+            ],
+            DefaultIndex: 0,
+            AutoSelectAfter: TimeSpan.FromSeconds(10));
+
+        InteractiveSelectionPromptLayout layout = renderer.WriteInteractiveSelectionPrompt(
+            request,
+            selectedIndex: 0,
+            remainingAutoSelectSeconds: 10);
+        renderer.RewriteSelectionDefaultLine(request, layout, remainingAutoSelectSeconds: 9);
+
+        terminal.Output.Should().Contain("Default (9s): Allow once");
     }
 
     private static int CountOccurrences(string value, string pattern)

@@ -39,8 +39,9 @@ internal sealed class SelectionPermissionApprovalPrompt : IPermissionApprovalPro
                     "Remember a deny override for this exact pattern on the current agent.")
             ],
             PermissionRequestDisplayFormatter.BuildPromptDescription(request),
-            DefaultIndex: 2,
-            AllowCancellation: true);
+            DefaultIndex: 0,
+            AllowCancellation: true,
+            AutoSelectAfter: TimeSpan.FromSeconds(10));
 
         return _selectionPrompt.PromptAsync(selectionRequest, cancellationToken);
     }
