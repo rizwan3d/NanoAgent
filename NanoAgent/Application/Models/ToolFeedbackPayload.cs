@@ -11,7 +11,7 @@ public sealed class ToolFeedbackPayload
         int consecutiveFailureCount,
         string message,
         JsonElement data,
-        ToolFeedbackRenderPayload? render = null)
+        ToolRenderPayload? render = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
@@ -33,7 +33,7 @@ public sealed class ToolFeedbackPayload
 
     public string Message { get; }
 
-    public ToolFeedbackRenderPayload? Render { get; }
+    public ToolRenderPayload? Render { get; }
 
     public ToolResultStatus Status { get; }
 

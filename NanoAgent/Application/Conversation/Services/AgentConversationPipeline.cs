@@ -313,12 +313,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         using JsonDocument dataDocument = JsonDocument.Parse(invocationResult.Result.JsonResult);
 
-        ToolFeedbackRenderPayload? render = invocationResult.Result.RenderPayload is null
-            ? null
-            : new ToolFeedbackRenderPayload(
-                invocationResult.Result.RenderPayload.Title,
-                invocationResult.Result.RenderPayload.Text);
-
         ToolFeedbackPayload payload = new(
             invocationResult.ToolName,
             invocationResult.Result.Status,
@@ -326,7 +320,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             consecutiveFailureCount,
             invocationResult.Result.Message,
             dataDocument.RootElement.Clone(),
-            render);
+            invocationResult.Result.RenderPayload);
 
         return JsonSerializer.Serialize(
             payload,
