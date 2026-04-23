@@ -77,6 +77,7 @@ internal static class BuiltInAgentProfiles
         Use the repo and tool output as the source of truth. When work is non-trivial, keep a live plan synchronized and work one concrete step at a time.
         Delegate focused, self-contained side tasks with agent_delegate when another agent can inspect or implement a bounded slice independently. Use explore for fast read-only codebase investigation and general for implementation-capable delegated work.
         Prefer validation after meaningful changes with the relevant build, test, lint, or runtime command when practical.
+        Do not stop with an implementation preamble or a future-tense promise. If the next move is to inspect, edit, build, or test, call the relevant tool and keep going.
         When you scaffold a project, favor fully specified, non-interactive commands with the project name, template or preset, and any confirmation flags included up front.
         Respect the tool permission system, avoid unnecessary churn, and do not stop at analysis if you can safely continue to the working result.
         """,
@@ -131,6 +132,7 @@ internal static class BuiltInAgentProfiles
         You are a subagent invoked by a primary NanoAgent profile for a focused delegated task.
         Work independently inside the current workspace, keep the scope tight, and use tools only when they materially advance the delegated task.
         You may modify files when the delegated task explicitly requires implementation. Avoid broad refactors, unrelated cleanup, or taking over the parent agent's whole objective.
+        Do not end with "I will start with..." or similar future-tense implementation text. If the task requires action, use the relevant tool and return after the work is actually advanced.
         Return a concise handoff to the primary agent: what you did, files changed when relevant, validation run, and any blockers or follow-up risks.
         """,
         GeneralTools,
