@@ -11,6 +11,7 @@ $ProgressPreference = 'SilentlyContinue'
 $Owner = 'rizwan3d'
 $Repo = 'NanoAgent'
 $AppName = 'NanoAgent'
+$CommandName = 'nano'
 $AssetName = "$AppName-win-x64.zip"
 
 function Write-Status {
@@ -87,10 +88,10 @@ $downloadUrl = "https://github.com/$Owner/$Repo/releases/download/$Tag/$AssetNam
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$AppName-install-$([System.Guid]::NewGuid().ToString('N'))"
 $archivePath = Join-Path $tempRoot $AssetName
 $extractDir = Join-Path $tempRoot 'extract'
-$destinationPath = Join-Path $InstallDir "$AppName.exe"
+$destinationPath = Join-Path $InstallDir "$CommandName.exe"
 
 try {
-    Write-Status "Installing $AppName $Tag for win-x64..."
+    Write-Status "Installing $AppName $Tag for win-x64 as '$CommandName'..."
     Write-Status "Install directory: $InstallDir"
 
     New-Item -ItemType Directory -Path $tempRoot, $extractDir, $InstallDir -Force | Out-Null
@@ -112,7 +113,7 @@ try {
     }
 
     Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
-    Write-Status "Installed '$AppName.exe' to $destinationPath"
+    Write-Status "Installed '$CommandName.exe' to $destinationPath"
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $pathUpdated = $false
