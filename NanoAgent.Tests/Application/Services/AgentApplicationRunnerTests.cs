@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Services;
+using NanoAgent.Presentation.Abstractions;
+using NanoAgent.Presentation.Cli.Hosting;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;

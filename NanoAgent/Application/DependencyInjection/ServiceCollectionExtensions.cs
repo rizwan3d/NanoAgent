@@ -1,9 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Services;
 using NanoAgent.Application.Permissions;
-using NanoAgent.Application.Repl.Commands;
-using NanoAgent.Application.Repl.Parsing;
-using NanoAgent.Application.Repl.Services;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
 using NanoAgent.Application.Tools;
@@ -20,10 +17,6 @@ public static class ServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddScoped<IApplicationRunner, AgentApplicationRunner>();
-        services.AddSingleton<IReplRuntime, ReplRuntime>();
-        services.AddSingleton<IReplCommandParser, ReplCommandParser>();
-        services.AddSingleton<IReplCommandDispatcher, ReplCommandDispatcher>();
         services.AddSingleton<IAgentProfileResolver, BuiltInAgentProfileResolver>();
         services.AddSingleton<IAgentTurnService, AgentTurnService>();
         services.AddSingleton<ISessionAppService, SessionAppService>();
@@ -45,19 +38,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, UpdatePlanTool>();
         services.AddSingleton<ITool, WebRunTool>();
         services.AddSingleton<ITool, ShellCommandTool>();
-        services.AddSingleton<IReplCommandHandler, AllowCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ConfigCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, DenyCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ModelsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, PermissionsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ProfileCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ThinkingCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, UndoCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, RedoCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, RulesCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, UseModelCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ExitCommandHandler>();
         services.AddSingleton<IModelDiscoveryService, ModelDiscoveryService>();
         services.AddSingleton<IFirstRunOnboardingService, FirstRunOnboardingService>();
         services.AddSingleton<IOnboardingInputValidator, OnboardingInputValidator>();

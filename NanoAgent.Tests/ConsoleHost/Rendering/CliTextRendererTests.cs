@@ -1,4 +1,4 @@
-using NanoAgent.ConsoleHost.Rendering;
+using NanoAgent.Presentation.Cli.Rendering;
 using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
 
@@ -38,9 +38,9 @@ public sealed class CliTextRendererTests
 
         terminal.Output.Should().Contain("assistant");
         terminal.Output.Should().Contain("Review");
-        terminal.Output.Should().Contain("• Add regression coverage");
-        terminal.Output.Should().Contain("• Update docs");
-        terminal.Output.Should().Contain("│ Watch the edge cases.");
+        terminal.Output.Should().Contain("\u2022 Add regression coverage");
+        terminal.Output.Should().Contain("\u2022 Update docs");
+        terminal.Output.Should().Contain("\u2502 Watch the edge cases.");
         terminal.Output.Should().Contain("diff");
         terminal.Output.Should().Contain("+ added");
         terminal.Output.Should().Contain("- removed");

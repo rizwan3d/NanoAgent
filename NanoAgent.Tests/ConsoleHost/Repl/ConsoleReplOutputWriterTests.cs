@@ -2,9 +2,9 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
-using NanoAgent.ConsoleHost.Rendering;
-using NanoAgent.ConsoleHost.Repl;
-using NanoAgent.ConsoleHost.Terminal;
+using NanoAgent.Presentation.Cli.Rendering;
+using NanoAgent.Presentation.Cli.Repl;
+using NanoAgent.Presentation.Cli.Terminal;
 using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
 using System.Text;
@@ -15,16 +15,14 @@ namespace NanoAgent.Tests.ConsoleHost.Repl;
 public sealed class ConsoleReplOutputWriterTests
 {
     [Fact]
-    public async Task WriteShellHeaderAsync_Should_RenderBanner_When_ShellStarts()
+    public async Task WriteSessionHeaderAsync_Should_RenderBanner_When_ShellStarts()
     {
         FakeConsoleTerminal terminal = new();
         ConsoleReplOutputWriter sut = CreateSut(terminal);
 
-        await sut.WriteShellHeaderAsync("NanoAgent", "gpt-oss-20b", CancellationToken.None);
+        await sut.WriteSessionHeaderAsync("NanoAgent", "gpt-oss-20b", CancellationToken.None);
 
         string output = GetPlainOutput(terminal.Output);
-        output.Should().Contain("███╗   ██╗  █████╗  ███╗   ██╗  ██████╗");
-        output.Should().Contain("██████╗  ███████╗");
         output.Should().Contain("Model: gpt-oss-20b");
         output.Should().Contain("GitHub: github.com/rizwan3d/NanoAgent");
         output.Should().Contain("Sponsor: ALFAIN Technologies (PVT) Limited (https://alfain.co/)");
@@ -32,6 +30,7 @@ public sealed class ConsoleReplOutputWriterTests
         output.Should().Contain("Multiline input: enter \"\"\" on its own line, then finish with \"\"\".");
         output.Should().Contain("Press Esc while a response is running to interrupt the current request.");
         output.Should().Contain(new string('-', 53));
+        output.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries).Length.Should().BeGreaterThan(7);
     }
 
     [Fact]

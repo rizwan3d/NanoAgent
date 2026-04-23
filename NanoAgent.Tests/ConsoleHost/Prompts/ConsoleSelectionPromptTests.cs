@@ -1,8 +1,8 @@
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.ConsoleHost.Prompts;
-using NanoAgent.ConsoleHost.Rendering;
-using NanoAgent.ConsoleHost.Terminal;
+using NanoAgent.Presentation.Cli.Prompts;
+using NanoAgent.Presentation.Cli.Rendering;
+using NanoAgent.Presentation.Cli.Terminal;
 using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
 using System.Text;

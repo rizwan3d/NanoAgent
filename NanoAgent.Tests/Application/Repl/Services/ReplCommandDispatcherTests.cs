@@ -1,7 +1,8 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Repl.Commands;
-using NanoAgent.Application.Repl.Services;
+using NanoAgent.Presentation.Abstractions;
+using NanoAgent.Presentation.Repl.Commands;
+using NanoAgent.Presentation.Repl.Services;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 

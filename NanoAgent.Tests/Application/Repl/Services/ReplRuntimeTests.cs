@@ -1,7 +1,8 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Repl.Services;
+using NanoAgent.Presentation.Abstractions;
+using NanoAgent.Presentation.Repl.Services;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -1004,7 +1005,7 @@ public sealed class ReplRuntimeTests
             return Task.CompletedTask;
         }
 
-        public Task WriteShellHeaderAsync(
+        public Task WriteSessionHeaderAsync(
             string applicationName,
             string modelName,
             CancellationToken cancellationToken)

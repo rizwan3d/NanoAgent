@@ -1,4 +1,4 @@
-using NanoAgent.ConsoleHost.Rendering;
+using NanoAgent.Presentation.Cli.Rendering;
 using FluentAssertions;
 
 namespace NanoAgent.Tests.ConsoleHost.Rendering;

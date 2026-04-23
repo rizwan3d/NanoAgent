@@ -1,7 +1,8 @@
 using NanoAgent.Application.DependencyInjection;
-using NanoAgent.ConsoleHost.DependencyInjection;
-using NanoAgent.ConsoleHost.Hosting;
-using NanoAgent.ConsoleHost.Logging;
+using NanoAgent.Presentation.DependencyInjection;
+using NanoAgent.Presentation.Cli.DependencyInjection;
+using NanoAgent.Presentation.Cli.Hosting;
+using NanoAgent.Presentation.Cli.Logging;
 using NanoAgent.Infrastructure.DependencyInjection;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,8 +56,9 @@ internal static class Program
 
         builder.Services
             .AddApplication()
+            .AddPresentation()
             .AddInfrastructure(builder.Configuration)
-            .AddConsoleHost();
+            .AddCliPresentation();
 
         return builder.Build();
     }

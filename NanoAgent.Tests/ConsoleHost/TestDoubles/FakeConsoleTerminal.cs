@@ -1,5 +1,5 @@
 using System.Text;
-using NanoAgent.ConsoleHost.Terminal;
+using NanoAgent.Presentation.Cli.Terminal;
 
 namespace NanoAgent.Tests.ConsoleHost.TestDoubles;
 

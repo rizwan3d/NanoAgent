@@ -1,5 +1,5 @@
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Repl.Commands;
+using NanoAgent.Presentation.Repl.Commands;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 

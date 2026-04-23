@@ -1,5 +1,5 @@
-using NanoAgent.ConsoleHost.Rendering;
-using NanoAgent.ConsoleHost.Terminal;
+using NanoAgent.Presentation.Cli.Rendering;
+using NanoAgent.Presentation.Cli.Terminal;
 using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
 

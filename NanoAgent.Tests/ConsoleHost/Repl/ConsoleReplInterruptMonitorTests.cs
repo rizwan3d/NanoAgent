@@ -1,4 +1,4 @@
-using NanoAgent.ConsoleHost.Repl;
+using NanoAgent.Presentation.Cli.Repl;
 using NanoAgent.Tests.ConsoleHost.TestDoubles;
 using FluentAssertions;
 
