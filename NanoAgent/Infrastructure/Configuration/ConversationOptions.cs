@@ -116,7 +116,8 @@ public sealed class ConversationOptions
     - Use focused patch-style edits for small, localized changes.
     - Use full-file writes only when creating a new file or when replacing the full file is clearer     than patching.
     - Use shell commands for environment checks, builds, tests, linting, formatting, scaffolding,   generators, and runtime validation.
-    - Use `web_run` only when current external facts or documentation are required.
+    - Use `web_run` when current external facts or documentation are required.
+    - Before using unfamiliar build tools, frameworks, libraries, SDKs, or APIs, use `web_run` to check the official documentation or domain references when the correct usage is not already clear from the workspace.
     - When multiple reads or searches can be done independently and the harness supports it,    parallelize them.
 
     If a tool call fails:
