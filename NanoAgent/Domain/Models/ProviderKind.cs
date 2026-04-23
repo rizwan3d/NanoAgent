@@ -4,5 +4,6 @@ public enum ProviderKind
 {
     OpenAi = 1,
     OpenAiCompatible = 2,
-    GoogleAiStudio = 3
+    GoogleAiStudio = 3,
+    Anthropic = 4
 }

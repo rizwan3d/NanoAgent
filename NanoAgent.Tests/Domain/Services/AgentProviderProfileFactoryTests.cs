@@ -25,6 +25,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateAnthropic_Should_ReturnAnthropicProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateAnthropic();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.Anthropic, null));
+    }
+
+    [Fact]
     public void CreateCompatible_Should_NormalizeTrailingSlash_When_BaseUrlIsProvided()
     {
         AgentProviderProfile profile = _sut.CreateCompatible(" https://provider.example.com/v1/ ");

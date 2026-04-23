@@ -35,6 +35,22 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(configuration);
     }
 
+    [Fact]
+    public async Task SaveAsync_ThenLoadAsync_Should_RoundTripAnthropicConfiguration()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+        AgentConfiguration configuration = new(
+            new AgentProviderProfile(ProviderKind.Anthropic, null),
+            "claude-sonnet-4-6",
+            "high");
+
+        await sut.SaveAsync(configuration, CancellationToken.None);
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(configuration);
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempRoot))

@@ -10,6 +10,8 @@ namespace NanoAgent.Infrastructure.Models;
 
 internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 {
+    private const string AnthropicVersion = "2023-06-01";
+
     private readonly HttpClient _httpClient;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
@@ -31,7 +33,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 
         Uri baseUri = OpenAiBaseUriResolver.Resolve(providerProfile);
         using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        ApplyAuthenticationHeaders(request, providerProfile.ProviderKind, apiKey);
         LogDebugApiRequest(request.Method, request.RequestUri);
 
         using HttpResponseMessage response = await _httpClient.SendAsync(
@@ -66,6 +68,22 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             .Select(item => new AvailableModel(item.Id))
             .ToArray();
     }
+
+    private static void ApplyAuthenticationHeaders(
+        HttpRequestMessage request,
+        ProviderKind providerKind,
+        string apiKey)
+    {
+        if (providerKind == ProviderKind.Anthropic)
+        {
+            request.Headers.Add("x-api-key", apiKey);
+            request.Headers.Add("anthropic-version", AnthropicVersion);
+            return;
+        }
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+    }
+
     private static string Truncate(string value, int maxLength)
     {
         return value.Length <= maxLength

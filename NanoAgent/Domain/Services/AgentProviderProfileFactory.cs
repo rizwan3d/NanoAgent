@@ -15,6 +15,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateAnthropic()
+    {
+        return new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateCompatible(string baseUrl)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);

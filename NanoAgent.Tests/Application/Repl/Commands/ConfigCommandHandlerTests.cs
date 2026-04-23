@@ -64,6 +64,30 @@ public sealed class ConfigCommandHandlerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ShowAnthropicBaseUrl_When_AnthropicProviderIsConfigured()
+    {
+        Mock<IUserDataPathProvider> pathProvider = new(MockBehavior.Strict);
+        pathProvider
+            .Setup(provider => provider.GetConfigurationFilePath())
+            .Returns("C:\\Users\\test\\AppData\\Roaming\\NanoAgent\\agent-profile.json");
+
+        ConfigCommandHandler sut = new(pathProvider.Object);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.Anthropic, null),
+            "claude-sonnet-4-6",
+            ["claude-sonnet-4-6"],
+            agentProfile: BuiltInAgentProfiles.Build);
+
+        ReplCommandResult result = await sut.ExecuteAsync(
+            new ReplCommandContext("config", string.Empty, [], "/config", session),
+            CancellationToken.None);
+
+        result.Message.Should().Contain("Provider: Anthropic");
+        result.Message.Should().Contain("Base URL: https://api.anthropic.com/v1");
+        result.Message.Should().Contain("Active model: claude-sonnet-4-6");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ShowThinkingEffort_When_Configured()
     {
         Mock<IUserDataPathProvider> pathProvider = new(MockBehavior.Strict);

@@ -134,9 +134,15 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
 
     private static string? TryGetResponseId(HttpResponseMessage response)
     {
-        if (response.Headers.TryGetValues("x-request-id", out IEnumerable<string>? requestIds))
+        return TryGetFirstHeaderValue(response, "x-request-id")
+            ?? TryGetFirstHeaderValue(response, "request-id");
+    }
+
+    private static string? TryGetFirstHeaderValue(HttpResponseMessage response, string name)
+    {
+        if (response.Headers.TryGetValues(name, out IEnumerable<string>? values))
         {
-            return requestIds.FirstOrDefault();
+            return values.FirstOrDefault();
         }
 
         return null;

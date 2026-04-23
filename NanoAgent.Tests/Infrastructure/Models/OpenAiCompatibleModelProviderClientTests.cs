@@ -76,6 +76,31 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         models.Select(model => model.Id).Should().Equal("gemini-2.5-flash");
     }
 
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestAnthropicModelsEndpointWithAnthropicHeaders_When_AnthropicProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "claude-sonnet-4-6" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.Anthropic, null),
+            "test-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.anthropic.com/v1/models"));
+        handler.AuthorizationHeader.Should().BeNull();
+        handler.AnthropicApiKeyHeader.Should().Be("test-key");
+        handler.AnthropicVersionHeader.Should().Be("2023-06-01");
+        models.Select(model => model.Id).Should().Equal("claude-sonnet-4-6");
+    }
+
     private static OpenAiCompatibleModelProviderClient CreateSut(HttpClient httpClient)
     {
         return new OpenAiCompatibleModelProviderClient(
@@ -94,11 +119,24 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         public Uri? RequestUri { get; private set; }
 
+        public string? AuthorizationHeader { get; private set; }
+
+        public string? AnthropicApiKeyHeader { get; private set; }
+
+        public string? AnthropicVersionHeader { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             RequestUri = request.RequestUri;
+            AuthorizationHeader = request.Headers.Authorization?.ToString();
+            AnthropicApiKeyHeader = request.Headers.TryGetValues("x-api-key", out IEnumerable<string>? apiKeyValues)
+                ? apiKeyValues.FirstOrDefault()
+                : null;
+            AnthropicVersionHeader = request.Headers.TryGetValues("anthropic-version", out IEnumerable<string>? versionValues)
+                ? versionValues.FirstOrDefault()
+                : null;
 
             HttpResponseMessage response = new(HttpStatusCode.OK)
             {
