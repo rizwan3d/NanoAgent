@@ -192,7 +192,13 @@ jobs:
             commit_lines="$(git log HEAD --pretty=format:'- %s (%h)' --no-merges)"
           fi
 
-          package_lines="$(find "$GITHUB_WORKSPACE/artifacts/release" -type f -name '*.zip' -printf -- '- %f\n' | sort)"
+          package_lines="$(
+            find "$GITHUB_WORKSPACE/artifacts/release" -type f -name '*.zip' |
+              sort |
+              while IFS= read -r package_path; do
+                printf -- '- %s\n' "$(basename "$package_path")"
+              done
+          )"
 
           {
             echo "# NanoAgent $RELEASE_TAG"
