@@ -19,7 +19,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.SearchFiles => "Approve file search?",
             AgentToolNames.ShellCommand => "Approve shell command?",
             AgentToolNames.TextSearch => "Approve text search?",
-            AgentToolNames.WebSearch => "Approve web request?",
+            AgentToolNames.WebRun => "Approve web request?",
             _ => $"Approve {request.ToolName}?"
         };
     }
@@ -45,7 +45,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.SearchFiles => "search path",
             AgentToolNames.ShellCommand => "run command",
             AgentToolNames.TextSearch => "search text in path",
-            AgentToolNames.WebSearch => "send request",
+            AgentToolNames.WebRun => "send request",
             _ => "access target"
         };
 
@@ -100,6 +100,11 @@ internal static class PermissionRequestDisplayFormatter
             case AgentToolNames.FileWrite:
                 singularLabel = "File path";
                 pluralLabel = "File paths";
+                break;
+
+            case AgentToolNames.WebRun:
+                singularLabel = "Web target";
+                pluralLabel = "Web targets";
                 break;
 
             default:

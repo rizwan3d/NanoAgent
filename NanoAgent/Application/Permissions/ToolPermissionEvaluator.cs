@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
@@ -501,10 +502,67 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         WebRequestPermissionPolicy webRequestPolicy,
         List<string> subjects)
     {
-        if (ToolArguments.TryGetNonEmptyString(context.Arguments, webRequestPolicy.RequestArgumentName, out string? requestValue))
+        if (context.Arguments.TryGetProperty(webRequestPolicy.RequestArgumentName, out JsonElement requestElement))
         {
-            subjects.Add(requestValue!);
+            AddWebRequestSubjects(requestElement, subjects);
         }
+        else if (string.Equals(context.ToolName, AgentToolNames.WebRun, StringComparison.OrdinalIgnoreCase))
+        {
+            AddWebRequestSubjects(context.Arguments, subjects);
+        }
+    }
+
+    private static void AddWebRequestSubjects(
+        JsonElement element,
+        List<string> subjects)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String:
+                if (!string.IsNullOrWhiteSpace(element.GetString()))
+                {
+                    AddSubject(subjects, element.GetString()!);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    AddWebRequestSubjects(item, subjects);
+                }
+
+                break;
+
+            case JsonValueKind.Object:
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (IsWebRequestSubjectProperty(property.Name))
+                    {
+                        AddWebRequestSubjects(property.Value, subjects);
+                    }
+                }
+
+                break;
+        }
+    }
+
+    private static bool IsWebRequestSubjectProperty(string propertyName)
+    {
+        return propertyName switch
+        {
+            "q" or
+            "ref_id" or
+            "location" or
+            "ticker" or
+            "utc_offset" or
+            "league" or
+            "team" or
+            "opponent" or
+            "date_from" or
+            "date_to" => true,
+            _ => false
+        };
     }
 
     private static string ResolveWithinWorkspace(

@@ -28,7 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
         services.AddSingleton<IPermissionConfigurationAccessor, PermissionConfigurationAccessor>();
-        services.AddHttpClient<IWebSearchService, DuckDuckGoWebSearchService>(client =>
+        services.AddHttpClient<IWebRunService, WebRunService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");

@@ -2,9 +2,10 @@ using NanoAgent.Application.Tools.Models;
 
 namespace NanoAgent.Application.Abstractions;
 
-public interface IWebSearchService
+public interface IWebRunService
 {
-    Task<WebSearchResult> SearchAsync(
-        WebSearchRequest request,
+    Task<WebRunResult> RunAsync(
+        WebRunRequest request,
+        string sessionId,
         CancellationToken cancellationToken);
 }

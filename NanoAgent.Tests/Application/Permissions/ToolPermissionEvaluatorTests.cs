@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Profiles;
+using NanoAgent.Application.Tools;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
 
@@ -458,6 +459,31 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
                 executionPhase: ConversationExecutionPhase.Planning)));
 
         result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_Should_CollectNestedWebRunSubjects_ForPermissionMatching()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new StubPermissionConfigurationAccessor());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ApprovalMode = ToolApprovalMode.RequireApproval,
+                WebRequest = new WebRequestPermissionPolicy
+                {
+                    RequestArgumentName = "search_query"
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "search_query": [{ "q": "dotnet docs" }], "open": [{ "ref_id": "https://example.com" }] }""",
+                toolName: AgentToolNames.WebRun)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
+        result.Request.Should().NotBeNull();
+        result.Request!.Subjects.Should().Contain("dotnet docs");
     }
 
     [Fact]

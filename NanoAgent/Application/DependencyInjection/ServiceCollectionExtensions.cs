@@ -43,7 +43,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, FileWriteTool>();
         services.AddSingleton<ITool, TextSearchTool>();
         services.AddSingleton<ITool, UpdatePlanTool>();
-        services.AddSingleton<ITool, WebSearchTool>();
+        services.AddSingleton<ITool, WebRunTool>();
         services.AddSingleton<ITool, ShellCommandTool>();
         services.AddSingleton<IReplCommandHandler, AllowCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ConfigCommandHandler>();

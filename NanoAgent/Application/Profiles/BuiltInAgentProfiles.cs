@@ -24,7 +24,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.ShellCommand,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
-            AgentToolNames.WebSearch
+            AgentToolNames.WebRun
         ],
         StringComparer.Ordinal);
 
@@ -38,7 +38,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
             AgentToolNames.TextSearch,
-            AgentToolNames.WebSearch
+            AgentToolNames.WebRun
         ],
         StringComparer.Ordinal);
 
@@ -52,7 +52,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.ShellCommand,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
-            AgentToolNames.WebSearch
+            AgentToolNames.WebRun
         ],
         StringComparer.Ordinal);
 
@@ -63,7 +63,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
             AgentToolNames.TextSearch,
-            AgentToolNames.WebSearch
+            AgentToolNames.WebRun
         ],
         StringComparer.Ordinal);
 

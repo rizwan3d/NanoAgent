@@ -1,8 +1,10 @@
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using NanoAgent.Application.Tools.Models;
 
 namespace NanoAgent.Application.Tools.Serialization;
 
+[JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(ToolErrorPayload))]
 [JsonSerializable(typeof(AgentDelegationResult))]
 [JsonSerializable(typeof(PlanUpdateItem))]
@@ -18,8 +20,7 @@ namespace NanoAgent.Application.Tools.Serialization;
 [JsonSerializable(typeof(WorkspaceDirectoryEntry))]
 [JsonSerializable(typeof(WorkspaceTextSearchResult))]
 [JsonSerializable(typeof(WorkspaceTextSearchMatch))]
-[JsonSerializable(typeof(WebSearchResult))]
-[JsonSerializable(typeof(WebSearchResultItem))]
+[JsonSerializable(typeof(WebRunResult))]
 [JsonSerializable(typeof(ShellCommandExecutionResult))]
 internal sealed partial class ToolJsonContext : JsonSerializerContext
 {
