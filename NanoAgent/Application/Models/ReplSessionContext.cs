@@ -1,17 +1,30 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Domain.Models;
+using System.Globalization;
+using System.Text;
 
 namespace NanoAgent.Application.Models;
 
 public sealed class ReplSessionContext
 {
     private const string DefaultApplicationName = "NanoAgent";
+    private const int MaxFileContextEntries = 40;
+    private const int MaxEditContextEntries = 40;
+    private const int MaxTerminalHistoryEntries = 40;
+    private const int MaxStateTextCharacters = 1_500;
+    private const int MaxPromptFileContextEntries = 16;
+    private const int MaxPromptEditContextEntries = 12;
+    private const int MaxPromptTerminalHistoryEntries = 12;
+    private const int MaxPromptFieldCharacters = 600;
     public const string DefaultSectionTitle = "Untitled section";
     private readonly HashSet<string> _availableModelIds;
     private List<WorkspaceFileEditTransaction>? _batchedFileEditTransactions;
     private readonly List<ConversationRequestMessage> _conversationHistory = [];
+    private readonly List<SessionEditContext> _editContexts = [];
+    private readonly List<SessionFileContext> _fileContexts = [];
     private readonly Stack<WorkspaceFileEditTransaction> _redoFileEditTransactions = new();
+    private readonly List<SessionTerminalCommand> _terminalHistory = [];
     private bool _sectionTitleGenerationStarted;
     private readonly Stack<WorkspaceFileEditTransaction> _undoFileEditTransactions = new();
     private readonly List<PermissionRule> _permissionOverrides = [];
@@ -46,7 +59,8 @@ public sealed class ReplSessionContext
         PendingExecutionPlan? pendingExecutionPlan = null,
         bool isResumedSection = false,
         IAgentProfile? agentProfile = null,
-        string? reasoningEffort = null)
+        string? reasoningEffort = null,
+        SessionStateSnapshot? sessionState = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -93,6 +107,7 @@ public sealed class ReplSessionContext
         TotalEstimatedOutputTokens = totalEstimatedOutputTokens;
         IsResumedSection = isResumedSection;
         PendingExecutionPlan = pendingExecutionPlan;
+        RestoreSessionState(sessionState);
 
         if (SectionUpdatedAtUtc < SectionCreatedAtUtc)
         {
@@ -147,6 +162,11 @@ public sealed class ReplSessionContext
     public string SectionId { get; }
 
     public string SessionId => SectionId;
+
+    public SessionStateSnapshot SessionState => new(
+        _fileContexts.ToArray(),
+        _editContexts.ToArray(),
+        _terminalHistory.ToArray());
 
     public string SectionTitle { get; private set; }
 
@@ -259,6 +279,109 @@ public sealed class ReplSessionContext
         IsPersistedStateDirty = true;
     }
 
+    public void RecordFileContext(SessionFileContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (string.IsNullOrWhiteSpace(context.Path) ||
+            string.IsNullOrWhiteSpace(context.Activity) ||
+            string.IsNullOrWhiteSpace(context.Summary))
+        {
+            return;
+        }
+
+        SessionFileContext normalizedContext = context with
+        {
+            Path = NormalizeStateText(context.Path, MaxPromptFieldCharacters),
+            Activity = NormalizeStateText(context.Activity, MaxPromptFieldCharacters),
+            Summary = NormalizeStateText(context.Summary, MaxStateTextCharacters)
+        };
+
+        int existingIndex = _fileContexts.FindIndex(existing =>
+            string.Equals(existing.Path, normalizedContext.Path, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(existing.Activity, normalizedContext.Activity, StringComparison.Ordinal));
+
+        if (existingIndex >= 0)
+        {
+            _fileContexts.RemoveAt(existingIndex);
+        }
+
+        _fileContexts.Add(normalizedContext);
+        TrimOldest(_fileContexts, MaxFileContextEntries);
+        IsPersistedStateDirty = true;
+    }
+
+    public void RecordEditContext(SessionEditContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        if (string.IsNullOrWhiteSpace(context.Description))
+        {
+            return;
+        }
+
+        string[] normalizedPaths = (context.Paths ?? [])
+            .Where(static path => !string.IsNullOrWhiteSpace(path))
+            .Select(static path => NormalizeStateText(path, MaxPromptFieldCharacters))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        SessionEditContext normalizedContext = context with
+        {
+            Description = NormalizeStateText(context.Description, MaxPromptFieldCharacters),
+            Paths = normalizedPaths,
+            AddedLineCount = Math.Max(0, context.AddedLineCount),
+            RemovedLineCount = Math.Max(0, context.RemovedLineCount)
+        };
+
+        _editContexts.Add(normalizedContext);
+        TrimOldest(_editContexts, MaxEditContextEntries);
+        IsPersistedStateDirty = true;
+    }
+
+    public void RecordTerminalCommand(SessionTerminalCommand command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+
+        if (string.IsNullOrWhiteSpace(command.Command) ||
+            string.IsNullOrWhiteSpace(command.WorkingDirectory))
+        {
+            return;
+        }
+
+        SessionTerminalCommand normalizedCommand = command with
+        {
+            Command = NormalizeStateText(command.Command, MaxPromptFieldCharacters),
+            WorkingDirectory = NormalizeStateText(command.WorkingDirectory, MaxPromptFieldCharacters),
+            StandardOutput = NormalizeOptionalStateText(command.StandardOutput, MaxStateTextCharacters),
+            StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters)
+        };
+
+        _terminalHistory.Add(normalizedCommand);
+        TrimOldest(_terminalHistory, MaxTerminalHistoryEntries);
+        IsPersistedStateDirty = true;
+    }
+
+    public string? CreateStatefulContextPrompt()
+    {
+        if (_fileContexts.Count == 0 &&
+            _editContexts.Count == 0 &&
+            _terminalHistory.Count == 0)
+        {
+            return null;
+        }
+
+        StringBuilder builder = new();
+        builder.AppendLine("Session state:");
+        builder.AppendLine("Compact memory from previous tool use in this section. Use it to maintain continuity across turns; re-read files or rerun commands when exact current contents or fresh output matter.");
+
+        AppendFileContextPrompt(builder);
+        AppendEditContextPrompt(builder);
+        AppendTerminalHistoryPrompt(builder);
+
+        return builder.ToString().Trim();
+    }
+
     public ConversationSectionSnapshot CreateSectionSnapshot(DateTimeOffset updatedAtUtc)
     {
         if (updatedAtUtc < SectionCreatedAtUtc)
@@ -304,7 +427,8 @@ public sealed class ReplSessionContext
             TotalEstimatedOutputTokens,
             PendingExecutionPlan,
             AgentProfile.Name,
-            ReasoningEffort);
+            ReasoningEffort,
+            SessionState);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)
@@ -499,6 +623,227 @@ public sealed class ReplSessionContext
 
         _undoFileEditTransactions.Push(transaction);
         _redoFileEditTransactions.Clear();
+    }
+
+    private void RestoreSessionState(SessionStateSnapshot? sessionState)
+    {
+        if (sessionState is null || sessionState.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (SessionFileContext context in (sessionState.Files ?? []).Where(static context => context is not null))
+        {
+            if (string.IsNullOrWhiteSpace(context.Path) ||
+                string.IsNullOrWhiteSpace(context.Activity) ||
+                string.IsNullOrWhiteSpace(context.Summary))
+            {
+                continue;
+            }
+
+            _fileContexts.Add(context with
+            {
+                Path = NormalizeStateText(context.Path, MaxPromptFieldCharacters),
+                Activity = NormalizeStateText(context.Activity, MaxPromptFieldCharacters),
+                Summary = NormalizeStateText(context.Summary, MaxStateTextCharacters)
+            });
+        }
+
+        foreach (SessionEditContext context in (sessionState.Edits ?? []).Where(static context => context is not null))
+        {
+            if (string.IsNullOrWhiteSpace(context.Description))
+            {
+                continue;
+            }
+
+            _editContexts.Add(context with
+            {
+                Description = NormalizeStateText(context.Description, MaxPromptFieldCharacters),
+                Paths = (context.Paths ?? [])
+                    .Where(static path => !string.IsNullOrWhiteSpace(path))
+                    .Select(static path => NormalizeStateText(path, MaxPromptFieldCharacters))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToArray(),
+                AddedLineCount = Math.Max(0, context.AddedLineCount),
+                RemovedLineCount = Math.Max(0, context.RemovedLineCount)
+            });
+        }
+
+        foreach (SessionTerminalCommand command in (sessionState.TerminalHistory ?? []).Where(static command => command is not null))
+        {
+            if (string.IsNullOrWhiteSpace(command.Command) ||
+                string.IsNullOrWhiteSpace(command.WorkingDirectory))
+            {
+                continue;
+            }
+
+            _terminalHistory.Add(command with
+            {
+                Command = NormalizeStateText(command.Command, MaxPromptFieldCharacters),
+                WorkingDirectory = NormalizeStateText(command.WorkingDirectory, MaxPromptFieldCharacters),
+                StandardOutput = NormalizeOptionalStateText(command.StandardOutput, MaxStateTextCharacters),
+                StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters)
+            });
+        }
+
+        TrimOldest(_fileContexts, MaxFileContextEntries);
+        TrimOldest(_editContexts, MaxEditContextEntries);
+        TrimOldest(_terminalHistory, MaxTerminalHistoryEntries);
+    }
+
+    private void AppendFileContextPrompt(StringBuilder builder)
+    {
+        if (_fileContexts.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Known files and workspace observations:");
+        foreach (SessionFileContext context in TakeLatest(_fileContexts, MaxPromptFileContextEntries))
+        {
+            builder
+                .Append("- ")
+                .Append(context.Path)
+                .Append(" [")
+                .Append(context.Activity)
+                .Append(", ")
+                .Append(FormatTimestamp(context.ObservedAtUtc))
+                .Append("]: ")
+                .AppendLine(FormatPromptField(context.Summary));
+        }
+    }
+
+    private void AppendEditContextPrompt(StringBuilder builder)
+    {
+        if (_editContexts.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Previous edits:");
+        foreach (SessionEditContext context in TakeLatest(_editContexts, MaxPromptEditContextEntries))
+        {
+            string paths = context.Paths.Count == 0
+                ? "(paths unavailable)"
+                : string.Join(", ", context.Paths);
+
+            builder
+                .Append("- ")
+                .Append(FormatTimestamp(context.EditedAtUtc))
+                .Append(": ")
+                .Append(context.Description)
+                .Append(" on ")
+                .Append(paths)
+                .Append(" (+")
+                .Append(context.AddedLineCount.ToString(CultureInfo.InvariantCulture))
+                .Append(" -")
+                .Append(context.RemovedLineCount.ToString(CultureInfo.InvariantCulture))
+                .AppendLine(").");
+        }
+    }
+
+    private void AppendTerminalHistoryPrompt(StringBuilder builder)
+    {
+        if (_terminalHistory.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Terminal history:");
+        foreach (SessionTerminalCommand command in TakeLatest(_terminalHistory, MaxPromptTerminalHistoryEntries))
+        {
+            builder
+                .Append("- ")
+                .Append(FormatTimestamp(command.ExecutedAtUtc))
+                .Append(": `")
+                .Append(command.Command)
+                .Append("` in ")
+                .Append(command.WorkingDirectory)
+                .Append(" exited ")
+                .Append(command.ExitCode.ToString(CultureInfo.InvariantCulture));
+
+            if (!string.IsNullOrWhiteSpace(command.StandardOutput))
+            {
+                builder
+                    .Append("; stdout: ")
+                    .Append(FormatPromptField(command.StandardOutput));
+            }
+
+            if (!string.IsNullOrWhiteSpace(command.StandardError))
+            {
+                builder
+                    .Append("; stderr: ")
+                    .Append(FormatPromptField(command.StandardError));
+            }
+
+            builder.AppendLine();
+        }
+    }
+
+    private static IReadOnlyList<T> TakeLatest<T>(
+        IReadOnlyList<T> values,
+        int maxCount)
+    {
+        if (values.Count <= maxCount)
+        {
+            return values.ToArray();
+        }
+
+        return values
+            .Skip(values.Count - maxCount)
+            .ToArray();
+    }
+
+    private static string FormatTimestamp(DateTimeOffset value)
+    {
+        return value.ToUniversalTime().ToString("u", CultureInfo.InvariantCulture);
+    }
+
+    private static string FormatPromptField(string value)
+    {
+        return NormalizeStateText(value, MaxPromptFieldCharacters)
+            .Replace("\n", "\\n", StringComparison.Ordinal);
+    }
+
+    private static string? NormalizeOptionalStateText(
+        string? value,
+        int maxCharacters)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : NormalizeStateText(value, maxCharacters);
+    }
+
+    private static string NormalizeStateText(
+        string value,
+        int maxCharacters)
+    {
+        string normalized = value
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
+
+        if (normalized.Length <= maxCharacters)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(0, maxCharacters - 3)].TrimEnd() + "...";
+    }
+
+    private static void TrimOldest<T>(
+        List<T> values,
+        int maxCount)
+    {
+        if (values.Count <= maxCount)
+        {
+            return;
+        }
+
+        values.RemoveRange(0, values.Count - maxCount);
     }
 
     private static WorkspaceFileEditTransaction MergeTransactions(

@@ -67,6 +67,7 @@ internal sealed class FileReadTool : ITool
         Application.Tools.Models.WorkspaceFileReadResult result = await _workspaceFileService.ReadFileAsync(
             safePath,
             cancellationToken);
+        SessionStateToolRecorder.RecordFileRead(context.Session, result);
 
         return ToolResultFactory.Success(
             $"Read file '{result.Path}'.",

@@ -93,6 +93,7 @@ internal sealed class FileWriteTool : ITool
             cancellationToken);
         context.Session.RecordFileEditTransaction(executionResult.EditTransaction);
         WorkspaceFileWriteResult result = executionResult.Result;
+        SessionStateToolRecorder.RecordFileWrite(context.Session, result);
 
         string renderText = result.OverwroteExistingFile
             ? $"Updated {result.Path} (+{result.AddedLineCount} -{result.RemovedLineCount})."

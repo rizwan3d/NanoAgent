@@ -62,6 +62,7 @@ internal sealed class DirectoryListTool : ITool
             path,
             recursive,
             cancellationToken);
+        SessionStateToolRecorder.RecordDirectoryList(context.Session, result);
 
         string[] entryLines = result.Entries
             .Select(entry => $"{entry.EntryType}: {entry.Path}")

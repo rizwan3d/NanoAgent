@@ -139,6 +139,7 @@ internal sealed class ShellCommandTool : ITool
                 safeCommand,
                 ToolArguments.GetOptionalString(context.Arguments, "workingDirectory")),
             cancellationToken);
+        SessionStateToolRecorder.RecordShellCommand(context.Session, result);
 
         string renderText =
             $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +

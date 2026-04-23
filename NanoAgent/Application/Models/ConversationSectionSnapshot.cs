@@ -17,7 +17,8 @@ public sealed class ConversationSectionSnapshot
         int totalEstimatedOutputTokens,
         PendingExecutionPlan? pendingExecutionPlan = null,
         string? agentProfileName = null,
-        string? reasoningEffort = null)
+        string? reasoningEffort = null,
+        SessionStateSnapshot? sessionState = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -64,6 +65,7 @@ public sealed class ConversationSectionSnapshot
             .ToArray();
         UpdatedAtUtc = updatedAtUtc;
         PendingExecutionPlan = pendingExecutionPlan;
+        SessionState = sessionState ?? SessionStateSnapshot.Empty;
     }
 
     public string ActiveModelId { get; }
@@ -81,6 +83,8 @@ public sealed class ConversationSectionSnapshot
     public string? ReasoningEffort { get; }
 
     public string SectionId { get; }
+
+    public SessionStateSnapshot SessionState { get; }
 
     public string Title { get; }
 

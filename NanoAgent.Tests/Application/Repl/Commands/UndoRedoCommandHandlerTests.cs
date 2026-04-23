@@ -64,6 +64,7 @@ public sealed class UndoRedoCommandHandlerTests
         session.TryGetPendingUndoFileEdit(out _).Should().BeFalse();
         session.TryGetPendingRedoFileEdit(out WorkspaceFileEditTransaction? redoTransaction).Should().BeTrue();
         redoTransaction.Should().BeSameAs(transaction);
+        session.SessionState.Edits.Should().Contain(edit => edit.Description == "undo (file_write (README.md))");
     }
 
     [Fact]
@@ -95,6 +96,7 @@ public sealed class UndoRedoCommandHandlerTests
         session.TryGetPendingRedoFileEdit(out _).Should().BeFalse();
         session.TryGetPendingUndoFileEdit(out WorkspaceFileEditTransaction? undoTransaction).Should().BeTrue();
         undoTransaction.Should().BeSameAs(transaction);
+        session.SessionState.Edits.Should().Contain(edit => edit.Description == "redo (file_write (README.md))");
     }
 
     [Fact]
