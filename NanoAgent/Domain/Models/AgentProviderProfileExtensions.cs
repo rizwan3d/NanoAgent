@@ -22,4 +22,14 @@ public static class AgentProviderProfileExtensions
         throw new InvalidOperationException(
             $"The configured {providerProfile.ProviderKind.ToDisplayName()} is missing a base URL.");
     }
+
+    public static Uri ResolveBaseUri(this AgentProviderProfile providerProfile)
+    {
+        string resolvedBaseUrl = providerProfile.ResolveBaseUrl();
+        string baseUri = resolvedBaseUrl.EndsWith("/", StringComparison.Ordinal)
+            ? resolvedBaseUrl
+            : $"{resolvedBaseUrl}/";
+
+        return new Uri(baseUri);
+    }
 }

@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
 using System.Text;
 
@@ -121,16 +122,7 @@ internal sealed class ShellCommandService : IShellCommandService
         bool directoryRequired)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        string normalizedRequestedPath = string.IsNullOrWhiteSpace(requestedPath)
-            ? workspaceRoot
-            : requestedPath.Trim();
-
-        string fullPath = Path.GetFullPath(
-            Path.IsPathRooted(normalizedRequestedPath)
-                ? normalizedRequestedPath
-                : Path.Combine(workspaceRoot, normalizedRequestedPath));
-
-        EnsureWithinWorkspace(workspaceRoot, fullPath);
+        string fullPath = WorkspacePath.Resolve(workspaceRoot, requestedPath);
 
         if (directoryRequired && !Directory.Exists(fullPath))
         {
@@ -144,45 +136,7 @@ internal sealed class ShellCommandService : IShellCommandService
     private string ToWorkspaceRelativePath(string fullPath)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        if (string.Equals(workspaceRoot, fullPath, GetPathComparison()))
-        {
-            return ".";
-        }
-
-        return Path.GetRelativePath(workspaceRoot, fullPath)
-            .Replace('\\', '/');
-    }
-
-    private static void EnsureWithinWorkspace(
-        string workspaceRoot,
-        string candidatePath)
-    {
-        string normalizedRoot = EnsureTrailingSeparator(workspaceRoot);
-        string normalizedCandidate = EnsureTrailingSeparator(candidatePath);
-
-        if (!normalizedCandidate.StartsWith(
-                normalizedRoot,
-                GetPathComparison()) &&
-            !string.Equals(workspaceRoot, candidatePath, GetPathComparison()))
-        {
-            throw new InvalidOperationException(
-                "Tool paths must stay within the current workspace.");
-        }
-    }
-
-    private static StringComparison GetPathComparison()
-    {
-        return OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-    }
-
-    private static string EnsureTrailingSeparator(string path)
-    {
-        return path.EndsWith(Path.DirectorySeparatorChar) ||
-               path.EndsWith(Path.AltDirectorySeparatorChar)
-            ? path
-            : path + Path.DirectorySeparatorChar;
+        return WorkspacePath.ToRelativePath(workspaceRoot, fullPath);
     }
 
     private static string TrimOutput(string value)

@@ -4,7 +4,7 @@ using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Infrastructure.OpenAi;
+using NanoAgent.Domain.Models;
 using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.Conversation;
@@ -29,7 +29,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        Uri baseUri = OpenAiBaseUriResolver.Resolve(request.ProviderProfile);
+        Uri baseUri = request.ProviderProfile.ResolveBaseUri();
         using HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "chat/completions"));
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
 

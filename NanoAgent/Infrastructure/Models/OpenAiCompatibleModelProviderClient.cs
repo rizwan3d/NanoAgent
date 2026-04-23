@@ -3,7 +3,6 @@ using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
-using NanoAgent.Infrastructure.OpenAi;
 using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.Models;
@@ -31,7 +30,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         ArgumentNullException.ThrowIfNull(providerProfile);
         ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
 
-        Uri baseUri = OpenAiBaseUriResolver.Resolve(providerProfile);
+        Uri baseUri = providerProfile.ResolveBaseUri();
         using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
         ApplyAuthenticationHeaders(request, providerProfile.ProviderKind, apiKey);
         LogDebugApiRequest(request.Method, request.RequestUri);

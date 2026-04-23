@@ -4,6 +4,7 @@ using DiffPlex.DiffBuilder.Model;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Infrastructure.Tools;
 
@@ -389,7 +390,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             ? currentFullPath
             : ResolveWorkspacePath(operation.MoveToPath, directoryRequired: false, fileRequired: false);
 
-        if (!string.Equals(currentFullPath, destinationFullPath, GetPathComparison()) &&
+        if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
             File.Exists(destinationFullPath))
         {
             throw new InvalidOperationException(
@@ -404,7 +405,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             Utf8NoBom,
             cancellationToken);
 
-        if (!string.Equals(currentFullPath, destinationFullPath, GetPathComparison()) &&
+        if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
             File.Exists(currentFullPath))
         {
             File.Delete(currentFullPath);
@@ -647,16 +648,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         bool fileRequired)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        string normalizedRequestedPath = string.IsNullOrWhiteSpace(requestedPath)
-            ? workspaceRoot
-            : requestedPath.Trim();
-
-        string fullPath = Path.GetFullPath(
-            Path.IsPathRooted(normalizedRequestedPath)
-                ? normalizedRequestedPath
-                : Path.Combine(workspaceRoot, normalizedRequestedPath));
-
-        EnsureWithinWorkspace(workspaceRoot, fullPath);
+        string fullPath = WorkspacePath.Resolve(workspaceRoot, requestedPath);
 
         if (directoryRequired && !Directory.Exists(fullPath))
         {
@@ -676,45 +668,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private string ToWorkspaceRelativePath(string fullPath)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        if (string.Equals(workspaceRoot, fullPath, GetPathComparison()))
-        {
-            return ".";
-        }
-
-        return Path.GetRelativePath(workspaceRoot, fullPath)
-            .Replace('\\', '/');
-    }
-
-    private static void EnsureWithinWorkspace(
-        string workspaceRoot,
-        string candidatePath)
-    {
-        string normalizedRoot = EnsureTrailingSeparator(workspaceRoot);
-        string normalizedCandidate = EnsureTrailingSeparator(candidatePath);
-
-        if (!normalizedCandidate.StartsWith(
-                normalizedRoot,
-                GetPathComparison()) &&
-            !string.Equals(workspaceRoot, candidatePath, GetPathComparison()))
-        {
-            throw new InvalidOperationException(
-                "Tool paths must stay within the current workspace.");
-        }
-    }
-
-    private static StringComparison GetPathComparison()
-    {
-        return OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-    }
-
-    private static string EnsureTrailingSeparator(string path)
-    {
-        return path.EndsWith(Path.DirectorySeparatorChar) ||
-               path.EndsWith(Path.AltDirectorySeparatorChar)
-            ? path
-            : path + Path.DirectorySeparatorChar;
+        return WorkspacePath.ToRelativePath(workspaceRoot, fullPath);
     }
 
     private static void EnsureParentDirectory(string fullPath)

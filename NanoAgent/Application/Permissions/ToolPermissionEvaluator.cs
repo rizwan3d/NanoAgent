@@ -4,6 +4,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Planning;
 using NanoAgent.Application.Tools;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Permissions;
 
@@ -328,7 +329,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         string candidatePath;
         try
         {
-            candidatePath = ResolveWithinWorkspace(workspaceRoot, requestedPath!);
+            candidatePath = WorkspacePath.Resolve(workspaceRoot, requestedPath!);
         }
         catch (InvalidOperationException)
         {
@@ -339,8 +340,8 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 
         bool isAllowed = rule.AllowedRoots.Any(allowedRoot =>
         {
-            string allowedPath = ResolveWithinWorkspace(workspaceRoot, allowedRoot);
-            return IsSamePathOrDescendant(allowedPath, candidatePath);
+            string allowedPath = WorkspacePath.Resolve(workspaceRoot, allowedRoot);
+            return WorkspacePath.IsSamePathOrDescendant(allowedPath, candidatePath);
         });
 
         if (!isAllowed)
@@ -351,7 +352,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                 $"Tool '{context.ToolName}' was denied {rule.Kind.ToString().ToLowerInvariant()} access to '{requestedPath}'. Allowed roots: {allowedRoots}.");
         }
 
-        subjects.Add(ToWorkspaceRelativePath(workspaceRoot, candidatePath));
+        subjects.Add(WorkspacePath.ToRelativePath(workspaceRoot, candidatePath));
         return PermissionEvaluationResult.Allowed();
     }
 
@@ -371,7 +372,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             string candidatePath;
             try
             {
-                candidatePath = ResolveWithinWorkspace(workspaceRoot, path);
+                candidatePath = WorkspacePath.Resolve(workspaceRoot, path);
             }
             catch (InvalidOperationException)
             {
@@ -382,8 +383,8 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 
             bool isAllowed = patchPolicy.AllowedRoots.Any(allowedRoot =>
             {
-                string allowedPath = ResolveWithinWorkspace(workspaceRoot, allowedRoot);
-                return IsSamePathOrDescendant(allowedPath, candidatePath);
+                string allowedPath = WorkspacePath.Resolve(workspaceRoot, allowedRoot);
+                return WorkspacePath.IsSamePathOrDescendant(allowedPath, candidatePath);
             });
 
             if (!isAllowed)
@@ -394,7 +395,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                     $"Tool '{context.ToolName}' was denied {patchPolicy.Kind.ToString().ToLowerInvariant()} access to '{path}'. Allowed roots: {allowedRoots}.");
             }
 
-            subjects.Add(ToWorkspaceRelativePath(workspaceRoot, candidatePath));
+            subjects.Add(WorkspacePath.ToRelativePath(workspaceRoot, candidatePath));
         }
 
         return PermissionEvaluationResult.Allowed();
@@ -565,61 +566,4 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         };
     }
 
-    private static string ResolveWithinWorkspace(
-        string workspaceRoot,
-        string requestedPath)
-    {
-        string fullPath = Path.GetFullPath(
-            Path.IsPathRooted(requestedPath)
-                ? requestedPath
-                : Path.Combine(workspaceRoot, requestedPath));
-
-        if (!IsSamePathOrDescendant(workspaceRoot, fullPath))
-        {
-            throw new InvalidOperationException("The requested path is outside the workspace.");
-        }
-
-        return fullPath;
-    }
-
-    private static string ToWorkspaceRelativePath(
-        string workspaceRoot,
-        string fullPath)
-    {
-        string relativePath = Path.GetRelativePath(workspaceRoot, fullPath);
-        return relativePath == "."
-            ? "."
-            : relativePath.Replace('\\', '/');
-    }
-
-    private static bool IsSamePathOrDescendant(
-        string parentPath,
-        string candidatePath)
-    {
-        string normalizedParent = EnsureTrailingSeparator(Path.GetFullPath(parentPath));
-        string normalizedCandidate = EnsureTrailingSeparator(Path.GetFullPath(candidatePath));
-
-        return normalizedCandidate.StartsWith(
-                   normalizedParent,
-                   GetPathComparison()) ||
-               string.Equals(
-                   Path.GetFullPath(parentPath),
-                   Path.GetFullPath(candidatePath),
-                   GetPathComparison());
-    }
-
-    private static StringComparison GetPathComparison()
-    {
-        return OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-    }
-
-    private static string EnsureTrailingSeparator(string path)
-    {
-        return path.EndsWith(Path.DirectorySeparatorChar) ||
-               path.EndsWith(Path.AltDirectorySeparatorChar)
-            ? path
-            : path + Path.DirectorySeparatorChar;
-    }
 }
