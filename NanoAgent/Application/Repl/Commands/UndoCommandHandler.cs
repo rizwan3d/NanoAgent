@@ -52,6 +52,11 @@ internal sealed class UndoCommandHandler : IReplCommandHandler
             transaction.BeforeStates,
             cancellationToken);
         context.Session.CompleteUndoFileEdit();
+        FileEditCommandStateRecorder.Record(
+            context.Session,
+            "undo",
+            "Rolled back file edit",
+            transaction);
 
         return ReplCommandResult.Continue(
             $"Rolled back the last file edit: {transaction.Description}. Use /redo to restore it.",

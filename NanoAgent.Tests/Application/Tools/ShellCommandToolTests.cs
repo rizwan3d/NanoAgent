@@ -54,6 +54,40 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_RecordTerminalHistory_When_CommandRuns()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ExecuteAsync(
+                It.IsAny<ShellCommandExecutionRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "dotnet test",
+                ".",
+                0,
+                "Passed!",
+                string.Empty));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+        ReplSessionContext session = TestSessionFactory.Create();
+        using JsonDocument document = JsonDocument.Parse("""{ "command": "dotnet test" }""");
+        ToolExecutionContext context = new(
+            "call_1",
+            "shell_command",
+            document.RootElement.Clone(),
+            session);
+
+        ToolResult result = await sut.ExecuteAsync(
+            context,
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        session.SessionState.TerminalHistory.Should().ContainSingle();
+        session.SessionState.TerminalHistory[0].Command.Should().Be("dotnet test");
+        session.SessionState.TerminalHistory[0].StandardOutput.Should().Be("Passed!");
+    }
+
+    [Fact]
     public void PermissionRequirements_Should_AllowCommonProjectToolchainCommands()
     {
         ToolRegistry registry = new(

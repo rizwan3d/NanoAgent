@@ -138,6 +138,57 @@ public sealed class ReplSessionContextTests
         session.ReasoningEffort.Should().BeNull();
     }
 
+    [Fact]
+    public void SessionState_Should_PersistFileEditAndTerminalContext_InSnapshot()
+    {
+        ReplSessionContext session = CreateSession();
+        DateTimeOffset observedAtUtc = new(2026, 4, 23, 10, 0, 0, TimeSpan.Zero);
+
+        session.RecordFileContext(new SessionFileContext(
+            "README.md",
+            "read",
+            observedAtUtc,
+            "Read 100 characters. Excerpt: NanoAgent helps with coding tasks."));
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc.AddMinutes(1),
+            "file_write (README.md)",
+            ["README.md"],
+            2,
+            1));
+        session.RecordTerminalCommand(new SessionTerminalCommand(
+            observedAtUtc.AddMinutes(2),
+            "dotnet test NanoAgent.slnx",
+            ".",
+            0,
+            "Passed! Total: 292",
+            null));
+
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(session.SectionCreatedAtUtc.AddMinutes(3));
+        ReplSessionContext resumedSession = new(
+            "NanoAgent",
+            snapshot.ProviderProfile,
+            snapshot.ActiveModelId,
+            snapshot.AvailableModelIds,
+            snapshot.SectionId,
+            snapshot.Title,
+            snapshot.CreatedAtUtc,
+            snapshot.UpdatedAtUtc,
+            snapshot.TotalEstimatedOutputTokens,
+            snapshot.Turns,
+            snapshot.PendingExecutionPlan,
+            isResumedSection: true,
+            agentProfile: BuiltInAgentProfiles.Resolve(snapshot.AgentProfileName),
+            reasoningEffort: snapshot.ReasoningEffort,
+            sessionState: snapshot.SessionState);
+
+        snapshot.SessionState.Files.Should().ContainSingle();
+        snapshot.SessionState.Edits.Should().ContainSingle();
+        snapshot.SessionState.TerminalHistory.Should().ContainSingle();
+        resumedSession.CreateStatefulContextPrompt().Should().Contain("README.md");
+        resumedSession.CreateStatefulContextPrompt().Should().Contain("file_write (README.md)");
+        resumedSession.CreateStatefulContextPrompt().Should().Contain("dotnet test NanoAgent.slnx");
+    }
+
     private static ReplSessionContext CreateSession()
     {
         return new ReplSessionContext(

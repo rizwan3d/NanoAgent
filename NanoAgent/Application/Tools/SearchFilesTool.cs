@@ -77,6 +77,7 @@ internal sealed class SearchFilesTool : ITool
                 ToolArguments.GetOptionalString(context.Arguments, "path"),
                 ToolArguments.GetBoolean(context.Arguments, "caseSensitive")),
             cancellationToken);
+        SessionStateToolRecorder.RecordFileSearch(context.Session, result);
 
         string renderText = result.Matches.Count == 0
             ? "No matching files found."

@@ -285,17 +285,24 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ReplSessionContext session)
     {
         string? contribution = session.AgentProfile.SystemPrompt;
-        if (string.IsNullOrWhiteSpace(contribution))
-        {
-            return basePrompt;
-        }
+        string? statefulContext = session.CreateStatefulContextPrompt();
+        string?[] promptSections =
+        [
+            basePrompt,
+            contribution,
+            statefulContext
+        ];
 
-        if (string.IsNullOrWhiteSpace(basePrompt))
-        {
-            return contribution.Trim();
-        }
+        string[] normalizedSections = promptSections
+            .Where(static section => !string.IsNullOrWhiteSpace(section))
+            .Select(static section => section!.Trim())
+            .ToArray();
 
-        return $"{basePrompt.Trim()}{Environment.NewLine}{Environment.NewLine}{contribution.Trim()}";
+        return normalizedSections.Length == 0
+            ? null
+            : string.Join(
+                $"{Environment.NewLine}{Environment.NewLine}",
+                normalizedSections);
     }
 
     private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)

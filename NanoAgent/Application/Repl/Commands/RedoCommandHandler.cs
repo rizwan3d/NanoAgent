@@ -52,6 +52,11 @@ internal sealed class RedoCommandHandler : IReplCommandHandler
             transaction.AfterStates,
             cancellationToken);
         context.Session.CompleteRedoFileEdit();
+        FileEditCommandStateRecorder.Record(
+            context.Session,
+            "redo",
+            "Re-applied file edit",
+            transaction);
 
         return ReplCommandResult.Continue(
             $"Re-applied the last undone file edit: {transaction.Description}.",

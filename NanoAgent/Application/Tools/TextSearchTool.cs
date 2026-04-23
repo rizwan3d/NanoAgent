@@ -79,6 +79,7 @@ internal sealed class TextSearchTool : ITool
                 ToolArguments.GetOptionalString(context.Arguments, "path"),
                 ToolArguments.GetBoolean(context.Arguments, "caseSensitive")),
             cancellationToken);
+        SessionStateToolRecorder.RecordTextSearch(context.Session, result);
 
         string renderText = result.Matches.Count == 0
             ? "No matches found."

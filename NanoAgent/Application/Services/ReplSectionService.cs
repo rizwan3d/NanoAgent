@@ -167,7 +167,8 @@ internal sealed class ReplSectionService : IReplSectionService
             snapshot.PendingExecutionPlan,
             isResumedSection: true,
             agentProfile: profileOverride ?? BuiltInAgentProfiles.Resolve(snapshot.AgentProfileName),
-            reasoningEffort: snapshot.ReasoningEffort);
+            reasoningEffort: snapshot.ReasoningEffort,
+            sessionState: snapshot.SessionState);
 
         if (!session.HasGeneratedSectionTitle &&
             session.TryGetFirstUserPrompt(out string? firstUserPrompt) &&

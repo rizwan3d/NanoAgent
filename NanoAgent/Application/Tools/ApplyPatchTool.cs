@@ -83,6 +83,7 @@ internal sealed class ApplyPatchTool : ITool
             context.Session.RecordFileEditTransaction(executionResult.EditTransaction);
         }
         WorkspaceApplyPatchResult result = executionResult.Result;
+        SessionStateToolRecorder.RecordApplyPatch(context.Session, result);
 
         string renderText = result.Files.Count == 0
             ? "No files changed."

@@ -180,6 +180,90 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_IncludeSessionStateInSystemPrompt_When_ToolContextExists()
+    {
+        ReplSessionContext session = CreateSession();
+        DateTimeOffset observedAtUtc = new(2026, 4, 23, 9, 0, 0, TimeSpan.Zero);
+        session.RecordFileContext(new SessionFileContext(
+            "NanoAgent/Program.cs",
+            "read",
+            observedAtUtc,
+            "Read 500 characters. Excerpt: Host.CreateApplicationBuilder(args)."));
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc.AddMinutes(1),
+            "apply_patch (1 file)",
+            ["NanoAgent/Program.cs"],
+            3,
+            1));
+        session.RecordTerminalCommand(new SessionTerminalCommand(
+            observedAtUtc.AddMinutes(2),
+            "dotnet test NanoAgent.slnx",
+            ".",
+            0,
+            "Passed! Total: 292",
+            null));
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_state"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Used the remembered state.",
+                [],
+                "resp_state"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await sut.ProcessAsync(
+            "Continue from there.",
+            session,
+            CancellationToken.None);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Session state:");
+        requests[0].SystemPrompt.Should().Contain("NanoAgent/Program.cs");
+        requests[0].SystemPrompt.Should().Contain("apply_patch (1 file)");
+        requests[0].SystemPrompt.Should().Contain("dotnet test NanoAgent.slnx");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_FilterAvailableTools_When_ProfileIsReadOnly()
     {
         ReplSessionContext session = CreateSession(BuiltInAgentProfiles.Plan);

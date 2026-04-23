@@ -37,7 +37,26 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
             new PendingExecutionPlan(
                 "plan the todo app",
                 "Plan\n1. Inspect\n2. Implement\n3. Validate",
-                ["Inspect", "Implement", "Validate"]));
+                ["Inspect", "Implement", "Validate"]),
+            sessionState: new SessionStateSnapshot(
+                [new SessionFileContext(
+                    "README.md",
+                    "read",
+                    new DateTimeOffset(2026, 4, 21, 1, 1, 0, TimeSpan.Zero),
+                    "Read 10 characters.")],
+                [new SessionEditContext(
+                    new DateTimeOffset(2026, 4, 21, 1, 2, 0, TimeSpan.Zero),
+                    "file_write (README.md)",
+                    ["README.md"],
+                    1,
+                    0)],
+                [new SessionTerminalCommand(
+                    new DateTimeOffset(2026, 4, 21, 1, 3, 0, TimeSpan.Zero),
+                    "dotnet test",
+                    ".",
+                    0,
+                    "Passed",
+                    null)]));
 
         await sut.SaveAsync(snapshot, CancellationToken.None);
         ConversationSectionSnapshot? loadedSnapshot = await sut.LoadAsync(snapshot.SectionId, CancellationToken.None);
@@ -55,6 +74,12 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.PendingExecutionPlan.Should().NotBeNull();
         loadedSnapshot.PendingExecutionPlan!.SourceUserInput.Should().Be("plan the todo app");
         loadedSnapshot.PendingExecutionPlan.Tasks.Should().Equal("Inspect", "Implement", "Validate");
+        loadedSnapshot.SessionState.Files.Should().ContainSingle();
+        loadedSnapshot.SessionState.Files[0].Path.Should().Be("README.md");
+        loadedSnapshot.SessionState.Edits.Should().ContainSingle();
+        loadedSnapshot.SessionState.Edits[0].Description.Should().Be("file_write (README.md)");
+        loadedSnapshot.SessionState.TerminalHistory.Should().ContainSingle();
+        loadedSnapshot.SessionState.TerminalHistory[0].Command.Should().Be("dotnet test");
     }
 
     public void Dispose()
