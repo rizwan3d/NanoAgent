@@ -88,6 +88,9 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("Base prompt");
         requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
         requests[0].SystemPrompt.Should().Contain("planning_mode");
+        requests[0].SystemPrompt.Should().Contain("plan-first pass");
+        requests[0].SystemPrompt.Should().Contain("call `planning_mode`");
+        requests[0].SystemPrompt.Should().Contain("freeform plan in assistant text");
         requests[0].SystemPrompt.Should().Contain("installed build tools");
         requests[0].SystemPrompt.Should().Contain("separate verified facts from assumptions or open questions");
         requests[0].SystemPrompt.Should().Contain("Verified facts, Assumptions / open questions");
@@ -98,6 +101,7 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("one task at a time");
         requests[0].SystemPrompt.Should().Contain("finish the requested implementation when practical");
         requests[0].SystemPrompt.Should().Contain("do not stop at analysis if you can safely continue");
+        requests[0].SystemPrompt.Should().NotContain("Always use planning_mode for tasks.");
         requests[0].SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
         requests[0].SystemPrompt.Should().NotContain("EXECUTION PHASE IS ACTIVE.");
         requests[0].AvailableTools.Select(static tool => tool.Name)
@@ -1423,7 +1427,7 @@ public sealed class AgentConversationPipelineTests
         RecordingConversationProgressSink progressSink = new();
 
         ConversationTurnResult result = await sut.ProcessAsync(
-            "Make planning more Codex-like.",
+            "Make planning more accurate.",
             session,
             progressSink,
             CancellationToken.None);

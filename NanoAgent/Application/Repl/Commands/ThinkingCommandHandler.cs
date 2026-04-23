@@ -14,7 +14,7 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
 
     public string CommandName => "thinking";
 
-    public string Description => "Show or set Codex-style thinking effort for subsequent prompts.";
+    public string Description => "Show or set thinking effort for subsequent prompts.";
 
     public string Usage => "/thinking [none|minimal|low|medium|high|xhigh|default]";
 

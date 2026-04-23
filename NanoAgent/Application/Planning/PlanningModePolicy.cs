@@ -158,7 +158,7 @@ internal static class PlanningModePolicy
         Tool-driven planning:
         - `planning_mode` is available as an optional tool when you want to inspect and think first.
         - Use planning_mode for ambiguous, risky, multi-step, or unfamiliar work when the right implementation path is not yet clear.
-        - `update_plan` is available for Codex-style live planning. Use it for meaningful multi-step work after you have enough evidence to define concrete steps.
+        - `update_plan` is available for live planning. Use it for meaningful multi-step work after you have enough evidence to define concrete steps.
         - An update_plan call must contain a concise ordered task list. Use statuses `completed`, `in_progress`, and `pending`; keep at most one step `in_progress`; keep completed steps first, then the active step, then pending steps.
         - Before planning, gather repo evidence with read-only tools instead of guessing.
         - When relevant, use `shell_command` to inspect the environment and check installed build tools, SDKs, compilers, package managers, or runtimes with safe probe commands such as `dotnet --info`, `python --version`, `node --version`, `gcc --version`, `where.exe dotnet`, or `Get-Command cmake`.
@@ -166,8 +166,8 @@ internal static class PlanningModePolicy
         - During execution, use `shell_command` for real toolchain work when it materially advances the task: scaffold projects, restore or install dependencies, run code generation, build, test, lint, format, or inspect runtime behavior.
         - For project scaffolding commands such as `npm create vite@latest`, include the project name, template or preset, and any supported confirmation flags in the initial command so the scaffold stays non-interactive.
         - Prefer repo-native validation commands such as `dotnet build`, `dotnet test`, `npm test`, `npm run build`, `python -m pytest`, `cargo test`, `go test ./...`, `mvn test`, or `gradle test` when those toolchains are present.
-        - When you produce a plan, prefer Codex-style sections such as: Objective, Verified facts, Assumptions / open questions, Relevant files / areas, Environment / toolchain, Candidate approaches, Recommended approach, Immediate next step, Plan, Validation, Risks / unknowns.
-        - A Codex-style plan should:
+        - When you produce a plan, prefer sections such as: Objective, Verified facts, Assumptions / open questions, Relevant files / areas, Environment / toolchain, Candidate approaches, Recommended approach, Immediate next step, Plan, Validation, Risks / unknowns.
+        - A plan should:
           - restate the objective clearly
           - start from verified repo evidence, not guesses
           - separate verified facts from assumptions or open questions
