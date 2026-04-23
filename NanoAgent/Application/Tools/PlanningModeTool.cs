@@ -50,7 +50,7 @@ internal sealed class PlanningModeTool : ITool
     ];
 
     public string Description =>
-        "Switch into a Codex-style plan-first workflow for the current task. Use this when you want to inspect the repo, check the local toolchain and official documentation when relevant, separate verified facts from assumptions, compare approaches, think through risks, and produce a high-quality task list before making changes. This tool does not modify files. After planning, call update_plan for meaningful multi-step execution, then continue in the same turn and work one step at a time unless the user asked only for a plan.";
+        "Switch into a plan-first workflow for the current task. Use this when you want to inspect the repo, check the local toolchain and official documentation when relevant, separate verified facts from assumptions, compare approaches, think through risks, and produce a high-quality task list before making changes. This tool does not modify files. After planning, call update_plan for meaningful multi-step execution, then continue in the same turn and work one step at a time unless the user asked only for a plan.";
 
     public string Name => AgentToolNames.PlanningMode;
 

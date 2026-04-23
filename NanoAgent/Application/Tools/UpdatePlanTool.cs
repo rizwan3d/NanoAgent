@@ -13,7 +13,7 @@ internal sealed class UpdatePlanTool : ITool
     private const string CompletedStatus = "completed";
 
     public string Description =>
-        "Publish or update a concise Codex-style task plan for the current turn. Use this for multi-step work to show pending, in_progress, and completed steps. Keep at most one step in_progress.";
+        "Publish or update a concise task plan for the current turn. Use this for multi-step work to show pending, in_progress, and completed steps. Keep at most one step in_progress.";
 
     public string Name => AgentToolNames.UpdatePlan;
 
