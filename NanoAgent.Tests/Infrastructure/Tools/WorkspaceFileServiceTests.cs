@@ -187,6 +187,54 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_AddFinalNewline_When_RemovedLineHadNoNewlineMarker()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+            @@
+            -{}
+            \ No newline at end of file
+            +{}
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{}\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RemoveFinalNewline_When_AddedLineHasNoNewlineMarker()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}\n", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+            @@
+            -{}
+            +{}
+            \ No newline at end of file
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{}");
+    }
+
+    [Fact]
     public async Task WriteFileWithTrackingAsync_Should_ReturnUndoableBeforeAndAfterStates()
     {
         WorkspaceFileService sut = CreateSut();

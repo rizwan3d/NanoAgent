@@ -775,8 +775,20 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                !lines[lineIndex].StartsWith("*** ", StringComparison.Ordinal))
         {
             string line = lines[lineIndex];
-            if (string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal) ||
-                string.Equals(line, "*** End of File", StringComparison.Ordinal))
+            if (string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal))
+            {
+                if (currentHunkLines is null || currentHunkLines.Count == 0)
+                {
+                    throw new FormatException("No-newline patch markers must follow a patch line.");
+                }
+
+                PatchLine previousLine = currentHunkLines[^1];
+                currentHunkLines[^1] = previousLine with { NoNewlineAtEnd = true };
+                lineIndex++;
+                continue;
+            }
+
+            if (string.Equals(line, "*** End of File", StringComparison.Ordinal))
             {
                 lineIndex++;
                 continue;
@@ -808,7 +820,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     '-' => PatchLineKind.Removal,
                     _ => throw new FormatException($"Invalid patch line prefix in '{line}'.")
                 },
-                line[1..]));
+                line[1..],
+                NoNewlineAtEnd: false));
 
             lineIndex++;
         }
@@ -862,6 +875,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         List<string> currentLines = SplitLines(previousContent).ToList();
         int searchStart = 0;
+        bool? trailingNewLineOverride = null;
 
         foreach (PatchHunk hunk in hunks)
         {
@@ -892,10 +906,31 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             currentLines.RemoveRange(matchIndex, beforeLines.Length);
             currentLines.InsertRange(matchIndex, afterLines);
             searchStart = matchIndex + afterLines.Length;
+            trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
         }
 
-        bool trailingNewLine = previousContent.EndsWith('\n') || previousContent.EndsWith('\r');
+        bool trailingNewLine = trailingNewLineOverride ??
+            (previousContent.EndsWith('\n') || previousContent.EndsWith('\r'));
         return JoinLines(currentLines, trailingNewLine);
+    }
+
+    private static bool? GetTrailingNewLineOverride(PatchHunk hunk)
+    {
+        bool? trailingNewLine = null;
+
+        foreach (PatchLine line in hunk.Lines)
+        {
+            if (!line.NoNewlineAtEnd)
+            {
+                continue;
+            }
+
+            trailingNewLine = line.Kind is PatchLineKind.Addition or PatchLineKind.Context
+                ? false
+                : true;
+        }
+
+        return trailingNewLine;
     }
 
     private static int FindSequence(
@@ -1115,7 +1150,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private readonly record struct PatchLine(
         PatchLineKind Kind,
-        string Text);
+        string Text,
+        bool NoNewlineAtEnd);
 
     private enum PatchOperationKind
     {
