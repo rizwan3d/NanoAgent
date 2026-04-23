@@ -66,6 +66,61 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteFileAsync_Should_AllowEmptyContent()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileWriteResult result = await sut.WriteFileAsync(
+            ".gitkeep",
+            string.Empty,
+            overwrite: true,
+            CancellationToken.None);
+
+        result.CharacterCount.Should().Be(0);
+        result.AddedLineCount.Should().Be(0);
+        result.PreviewLines.Should().BeEmpty();
+        File.ReadAllText(Path.Combine(_workspaceRoot, ".gitkeep"))
+            .Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteFileAsync_Should_TruncateExistingFileToEmptyContent()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}\n", CancellationToken.None);
+
+        WorkspaceFileWriteResult result = await sut.WriteFileAsync(
+            "settings.json",
+            string.Empty,
+            overwrite: true,
+            CancellationToken.None);
+
+        result.OverwroteExistingFile.Should().BeTrue();
+        result.CharacterCount.Should().Be(0);
+        File.ReadAllText(filePath).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteFileAsync_Should_WriteUtf8WithoutBom()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        await sut.WriteFileAsync(
+            "script.sh",
+            "#!/bin/sh\necho hi\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        byte[] bytes = await File.ReadAllBytesAsync(
+            Path.Combine(_workspaceRoot, "script.sh"),
+            CancellationToken.None);
+
+        bytes.Take(3).Should().NotEqual(new byte[] { 0xEF, 0xBB, 0xBF });
+    }
+
+    [Fact]
     public async Task ReadFileAsync_Should_ReadFileContent()
     {
         WorkspaceFileService sut = CreateSut();
@@ -147,6 +202,54 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         (await File.ReadAllTextAsync(existingFile, CancellationToken.None)).Should().Contain("// done");
         (await File.ReadAllTextAsync(Path.Combine(_workspaceRoot, "src", "Notes.txt"), CancellationToken.None))
             .Should().Be("remember the tests");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AddFinalNewline_When_RemovedLineHadNoNewlineMarker()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+            @@
+            -{}
+            \ No newline at end of file
+            +{}
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{}\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RemoveFinalNewline_When_AddedLineHasNoNewlineMarker()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}\n", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+            @@
+            -{}
+            +{}
+            \ No newline at end of file
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{}");
     }
 
     [Fact]
