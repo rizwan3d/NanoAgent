@@ -17,6 +17,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private const int FileWritePreviewContextLines = 1;
     private const int MaxFileWritePreviewLines = 8;
 
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
     public WorkspaceFileService(IWorkspaceRootProvider workspaceRootProvider)
@@ -90,7 +92,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             await File.WriteAllTextAsync(
                 fullPath,
                 state.Content!,
-                Encoding.UTF8,
+                Utf8NoBom,
                 cancellationToken);
         }
 
@@ -241,12 +243,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            throw new InvalidOperationException(
-                "File content must not be empty.");
-        }
+        ArgumentNullException.ThrowIfNull(content);
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
         bool fileExists = File.Exists(fullPath);
@@ -270,7 +267,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         await File.WriteAllTextAsync(
             fullPath,
             content,
-            Encoding.UTF8,
+            Utf8NoBom,
             cancellationToken);
 
         FileWritePreview preview = BuildFileWritePreview(previousContent, content);
@@ -346,7 +343,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         await File.WriteAllTextAsync(
             fullPath,
             content,
-            Encoding.UTF8,
+            Utf8NoBom,
             cancellationToken);
 
         return CreatePatchFileResult(
@@ -404,7 +401,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         await File.WriteAllTextAsync(
             destinationFullPath,
             updatedContent,
-            Encoding.UTF8,
+            Utf8NoBom,
             cancellationToken);
 
         if (!string.Equals(currentFullPath, destinationFullPath, GetPathComparison()) &&
@@ -446,9 +443,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string fullPath,
         bool recursive)
     {
-        IEnumerable<string> entries = recursive
-            ? Directory.EnumerateFileSystemEntries(fullPath, "*", SearchOption.AllDirectories)
-            : Directory.EnumerateFileSystemEntries(fullPath, "*", SearchOption.TopDirectoryOnly);
+        IEnumerable<string> entries = EnumerateFileSystemEntriesSafely(fullPath, recursive);
 
         return entries
             .OrderBy(static entry => entry, StringComparer.Ordinal)
@@ -469,7 +464,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         IEnumerable<string> files = File.Exists(fullPath)
             ? [fullPath]
-            : Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories);
+            : Directory.Exists(fullPath)
+                ? EnumerateFilesSafely(fullPath, recursive: true)
+                : throw new FileNotFoundException(
+                    $"Search path '{request.Path ?? "."}' does not exist.");
 
         return files
             .OrderBy(static path => path, StringComparer.Ordinal)
@@ -492,10 +490,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
         else if (Directory.Exists(fullPath))
         {
-            filesToSearch.AddRange(Directory.EnumerateFiles(
-                fullPath,
-                "*",
-                SearchOption.AllDirectories));
+            filesToSearch.AddRange(EnumerateFilesSafely(fullPath, recursive: true));
         }
         else
         {
@@ -512,8 +507,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            FileInfo fileInfo = new(filePath);
-            if (fileInfo.Length > MaxSearchFileBytes)
+            if (!TryGetFileLength(filePath, out long fileLength) ||
+                fileLength > MaxSearchFileBytes)
             {
                 continue;
             }
@@ -531,6 +526,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 continue;
             }
             catch (InvalidDataException)
+            {
+                continue;
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
             {
                 continue;
             }
@@ -557,6 +556,89 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return matches;
+    }
+
+    private static IEnumerable<string> EnumerateFilesSafely(
+        string root,
+        bool recursive)
+    {
+        return EnumerateFileSystemEntriesSafely(root, recursive)
+            .Where(static entry => File.Exists(entry));
+    }
+
+    private static IEnumerable<string> EnumerateFileSystemEntriesSafely(
+        string root,
+        bool recursive)
+    {
+        Stack<string> pendingDirectories = new();
+        pendingDirectories.Push(root);
+
+        while (pendingDirectories.Count > 0)
+        {
+            string directoryPath = pendingDirectories.Pop();
+            string[] entries;
+            try
+            {
+                entries = Directory.GetFileSystemEntries(directoryPath);
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
+            {
+                continue;
+            }
+
+            foreach (string entry in entries)
+            {
+                yield return entry;
+
+                if (recursive && ShouldRecurseIntoDirectory(entry))
+                {
+                    pendingDirectories.Push(entry);
+                }
+            }
+
+            if (!recursive)
+            {
+                yield break;
+            }
+        }
+    }
+
+    private static bool TryGetFileLength(
+        string path,
+        out long length)
+    {
+        try
+        {
+            length = new FileInfo(path).Length;
+            return true;
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+            length = 0;
+            return false;
+        }
+    }
+
+    private static bool ShouldRecurseIntoDirectory(string path)
+    {
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(path);
+            return attributes.HasFlag(FileAttributes.Directory) &&
+                !attributes.HasFlag(FileAttributes.ReparsePoint);
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsFileSystemAccessException(Exception exception)
+    {
+        return exception is UnauthorizedAccessException or
+            IOException or
+            PathTooLongException or
+            System.Security.SecurityException;
     }
 
     private string ResolveWorkspacePath(
@@ -780,8 +862,20 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                !lines[lineIndex].StartsWith("*** ", StringComparison.Ordinal))
         {
             string line = lines[lineIndex];
-            if (string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal) ||
-                string.Equals(line, "*** End of File", StringComparison.Ordinal))
+            if (string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal))
+            {
+                if (currentHunkLines is null || currentHunkLines.Count == 0)
+                {
+                    throw new FormatException("No-newline patch markers must follow a patch line.");
+                }
+
+                PatchLine previousLine = currentHunkLines[^1];
+                currentHunkLines[^1] = previousLine with { NoNewlineAtEnd = true };
+                lineIndex++;
+                continue;
+            }
+
+            if (string.Equals(line, "*** End of File", StringComparison.Ordinal))
             {
                 lineIndex++;
                 continue;
@@ -813,7 +907,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     '-' => PatchLineKind.Removal,
                     _ => throw new FormatException($"Invalid patch line prefix in '{line}'.")
                 },
-                line[1..]));
+                line[1..],
+                NoNewlineAtEnd: false));
 
             lineIndex++;
         }
@@ -867,6 +962,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         List<string> currentLines = SplitLines(previousContent).ToList();
         int searchStart = 0;
+        bool? trailingNewLineOverride = null;
 
         foreach (PatchHunk hunk in hunks)
         {
@@ -897,10 +993,31 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             currentLines.RemoveRange(matchIndex, beforeLines.Length);
             currentLines.InsertRange(matchIndex, afterLines);
             searchStart = matchIndex + afterLines.Length;
+            trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
         }
 
-        bool trailingNewLine = previousContent.EndsWith('\n') || previousContent.EndsWith('\r');
+        bool trailingNewLine = trailingNewLineOverride ??
+            (previousContent.EndsWith('\n') || previousContent.EndsWith('\r'));
         return JoinLines(currentLines, trailingNewLine);
+    }
+
+    private static bool? GetTrailingNewLineOverride(PatchHunk hunk)
+    {
+        bool? trailingNewLine = null;
+
+        foreach (PatchLine line in hunk.Lines)
+        {
+            if (!line.NoNewlineAtEnd)
+            {
+                continue;
+            }
+
+            trailingNewLine = line.Kind is PatchLineKind.Addition or PatchLineKind.Context
+                ? false
+                : true;
+        }
+
+        return trailingNewLine;
     }
 
     private static int FindSequence(
@@ -1120,7 +1237,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private readonly record struct PatchLine(
         PatchLineKind Kind,
-        string Text);
+        string Text,
+        bool NoNewlineAtEnd);
 
     private enum PatchOperationKind
     {

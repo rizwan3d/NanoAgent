@@ -42,6 +42,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         processRunner.Requests[0].FileName.Should().Be("/bin/bash");
         processRunner.Requests[0].Arguments.Should().Equal("-lc", "node -v && npm -v");
         processRunner.Requests[0].WorkingDirectory.Should().Be(Path.Combine(_workspaceRoot, "src"));
+        processRunner.Requests[0].MaxOutputCharacters.Should().Be(8000);
     }
 
     [Fact]
@@ -65,6 +66,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         processRunner.Requests.Should().ContainSingle();
         ProcessExecutionRequest request = processRunner.Requests[0];
         request.FileName.Should().Be("powershell");
+        request.MaxOutputCharacters.Should().Be(8000);
         request.Arguments.Should().Contain("-Command");
         request.Arguments[^1].Should().Contain("Invoke-NanoSegment");
         request.Arguments[^1].Should().Contain("FromBase64String");
