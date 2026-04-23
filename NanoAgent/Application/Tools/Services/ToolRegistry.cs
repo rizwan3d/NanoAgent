@@ -36,7 +36,7 @@ internal sealed class ToolRegistry : IToolRegistry
                 tool.Name,
                 tool.PermissionRequirements);
 
-            if (!toolMap.TryAdd(tool.Name, new ToolRegistration(tool, definition, permissionPolicy)))
+            if (!toolMap.TryAdd(tool.Name, new ToolRegistration(tool, permissionPolicy)))
             {
                 throw new InvalidOperationException(
                     $"Duplicate tool registration detected for '{tool.Name}'.");

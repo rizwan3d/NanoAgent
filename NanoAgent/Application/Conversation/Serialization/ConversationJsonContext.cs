@@ -5,7 +5,7 @@ namespace NanoAgent.Application.Conversation.Serialization;
 
 [JsonSourceGenerationOptions(UseStringEnumConverter = true)]
 [JsonSerializable(typeof(ToolFeedbackPayload))]
-[JsonSerializable(typeof(ToolFeedbackRenderPayload))]
+[JsonSerializable(typeof(ToolRenderPayload))]
 internal sealed partial class ConversationJsonContext : JsonSerializerContext
 {
 }

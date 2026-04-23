@@ -184,13 +184,6 @@ public sealed class ReplSessionContext
         IsPersistedStateDirty = true;
     }
 
-    public bool ContainsModel(string modelId)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
-
-        return _availableModelIds.Contains(modelId.Trim());
-    }
-
     public void SetActiveModel(string modelId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(modelId);
