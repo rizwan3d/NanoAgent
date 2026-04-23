@@ -4,6 +4,7 @@ set -euo pipefail
 readonly OWNER="rizwan3d"
 readonly REPO="NanoAgent"
 readonly APP_NAME="NanoAgent"
+readonly COMMAND_NAME="nano"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 
 log() {
@@ -122,7 +123,7 @@ main() {
   asset_name="${APP_NAME}-${platform}.zip"
   download_url="https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${asset_name}"
 
-  log "Installing ${APP_NAME} ${tag} for ${platform}..."
+  log "Installing ${APP_NAME} ${tag} for ${platform} as '${COMMAND_NAME}'..."
   log "Install directory: ${install_dir}"
 
   temp_root="$(mktemp -d)"
@@ -148,11 +149,11 @@ main() {
     fail "Expected executable '${APP_NAME}' was not found in ${asset_name}."
   fi
 
-  destination_binary="${install_dir}/${APP_NAME}"
+  destination_binary="${install_dir}/${COMMAND_NAME}"
   cp "$source_binary" "$destination_binary"
   chmod 0755 "$destination_binary"
 
-  log "Installed '${APP_NAME}' to ${destination_binary}"
+  log "Installed '${COMMAND_NAME}' to ${destination_binary}"
 
   case ":${PATH}:" in
     *":${install_dir}:"*)
