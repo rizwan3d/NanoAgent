@@ -41,6 +41,9 @@ public sealed class ConversationConfigurationAccessorTests
         ConversationSettings result = sut.GetSettings();
 
         result.SystemPrompt.Should().Contain("Use planning_mode when the task is ambiguous");
+        result.SystemPrompt.Should().Contain("call `planning_mode` before implementation");
+        result.SystemPrompt.Should().Contain("When you need to plan first, call `planning_mode`");
+        result.SystemPrompt.Should().Contain("For plan-first work, start by calling `planning_mode`");
         result.SystemPrompt.Should().Contain("publish a live task list");
         result.SystemPrompt.Should().Contain("Make reasonable assumptions when the safest path is clear");
         result.SystemPrompt.Should().Contain("Persist until the task is handled end-to-end when practical");

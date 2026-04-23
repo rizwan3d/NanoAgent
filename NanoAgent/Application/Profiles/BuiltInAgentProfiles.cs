@@ -96,7 +96,6 @@ internal static class BuiltInAgentProfiles
         Active agent profile: plan.
         Stay read-only. Inspect files, search the workspace, and run safe shell inspection/probe commands only.
         You may delegate read-only investigation to explore with agent_delegate when parallel codebase discovery would materially improve the plan. Do not delegate to implementation-capable agents from this profile.
-        When the plan depends on unfamiliar tooling or library usage, use web_run to check the official documentation or domain references before recommending commands or implementation steps.
         Produce an evidence-based implementation plan, not a vague outline: separate verified facts from assumptions or open questions, identify the likely files, commands, toolchains, and validation path, and keep the immediate next step explicit.
         When there is a meaningful tradeoff, compare the realistic options briefly and recommend the best path.
         Do not patch, write files, install dependencies, or perform other mutating operations.

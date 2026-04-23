@@ -11,6 +11,7 @@ internal sealed class PlanningModeTool : ITool
     [
         "Inspect the relevant codebase and facts before editing, and ground the plan in actual repo evidence instead of guesses.",
         "Check installed build tools, compilers, SDKs, package managers, or runtimes with safe shell probes before choosing scaffold, build, or test commands.",
+        "Use web_run to check the current official documentation or domain references before relying on unfamiliar build tools, frameworks, libraries, SDKs, or APIs.",
         "Name the likely files, modules, commands, toolchains, constraints, and validation paths that matter for this task.",
         "Separate verified facts from assumptions or open questions, and call out what still needs confirmation.",
         "When multiple reasonable approaches exist, compare them briefly and recommend one.",
@@ -49,7 +50,7 @@ internal sealed class PlanningModeTool : ITool
     ];
 
     public string Description =>
-        "Switch into a Codex-style plan-first workflow for the current task. Use this when you want to inspect the repo, check the local toolchain when relevant, separate verified facts from assumptions, compare approaches, think through risks, and produce a high-quality task list before making changes. This tool does not modify files. After planning, call update_plan for meaningful multi-step execution, then continue in the same turn and work one step at a time unless the user asked only for a plan.";
+        "Switch into a Codex-style plan-first workflow for the current task. Use this when you want to inspect the repo, check the local toolchain and official documentation when relevant, separate verified facts from assumptions, compare approaches, think through risks, and produce a high-quality task list before making changes. This tool does not modify files. After planning, call update_plan for meaningful multi-step execution, then continue in the same turn and work one step at a time unless the user asked only for a plan.";
 
     public string Name => AgentToolNames.PlanningMode;
 
