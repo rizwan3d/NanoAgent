@@ -72,6 +72,16 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
+                if (autoSelectAt is not null && _terminal.KeyAvailable)
+                {
+                    if (TryHandleSelectionInput(request, layout, ref selectedIndex, out T selectedValue))
+                    {
+                        return selectedValue;
+                    }
+
+                    continue;
+                }
+
                 if (TryAutoSelectDefault(
                     request,
                     autoSelectAt,
@@ -88,50 +98,9 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
                     continue;
                 }
 
-                ConsoleKeyInfo keyInfo = _terminal.ReadKey(intercept: true);
-                switch (keyInfo.Key)
+                if (TryHandleSelectionInput(request, layout, ref selectedIndex, out T manualSelectedValue))
                 {
-                    case ConsoleKey.UpArrow:
-                        if (selectedIndex > 0)
-                        {
-                            selectedIndex--;
-                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
-                        }
-
-                        break;
-
-                    case ConsoleKey.DownArrow:
-                        if (selectedIndex < request.Options.Count - 1)
-                        {
-                            selectedIndex++;
-                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
-                        }
-
-                        break;
-
-                    case ConsoleKey.Home:
-                        if (selectedIndex != 0)
-                        {
-                            selectedIndex = 0;
-                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
-                        }
-
-                        break;
-
-                    case ConsoleKey.End:
-                        if (selectedIndex != request.Options.Count - 1)
-                        {
-                            selectedIndex = request.Options.Count - 1;
-                            _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
-                        }
-
-                        break;
-
-                    case ConsoleKey.Enter:
-                        return request.Options[selectedIndex].Value;
-
-                    case ConsoleKey.Escape when request.AllowCancellation:
-                        throw new PromptCancelledException();
+                    return manualSelectedValue;
                 }
             }
         }
@@ -139,6 +108,64 @@ internal sealed class ConsoleSelectionPrompt : ISelectionPrompt
         {
             _renderer.ClearInteractiveSelectionPrompt(layout);
         }
+    }
+
+    private bool TryHandleSelectionInput<T>(
+        SelectionPromptRequest<T> request,
+        InteractiveSelectionPromptLayout layout,
+        ref int selectedIndex,
+        out T selectedValue)
+    {
+        selectedValue = default!;
+
+        ConsoleKeyInfo keyInfo = _terminal.ReadKey(intercept: true);
+        switch (keyInfo.Key)
+        {
+            case ConsoleKey.UpArrow:
+                if (selectedIndex > 0)
+                {
+                    selectedIndex--;
+                    _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                }
+
+                break;
+
+            case ConsoleKey.DownArrow:
+                if (selectedIndex < request.Options.Count - 1)
+                {
+                    selectedIndex++;
+                    _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                }
+
+                break;
+
+            case ConsoleKey.Home:
+                if (selectedIndex != 0)
+                {
+                    selectedIndex = 0;
+                    _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                }
+
+                break;
+
+            case ConsoleKey.End:
+                if (selectedIndex != request.Options.Count - 1)
+                {
+                    selectedIndex = request.Options.Count - 1;
+                    _renderer.RewriteSelectionOptions(request, selectedIndex, layout);
+                }
+
+                break;
+
+            case ConsoleKey.Enter:
+                selectedValue = request.Options[selectedIndex].Value;
+                return true;
+
+            case ConsoleKey.Escape when request.AllowCancellation:
+                throw new PromptCancelledException();
+        }
+
+        return false;
     }
 
     private bool TryAutoSelectDefault<T>(
