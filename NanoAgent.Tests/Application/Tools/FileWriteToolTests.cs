@@ -61,6 +61,40 @@ public sealed class FileWriteToolTests
         transaction!.Description.Should().Be("file_write (README.md)");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_PassEmptyContentToWorkspaceService()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.WriteFileWithTrackingAsync(
+                ".gitkeep",
+                string.Empty,
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WorkspaceFileWriteExecutionResult(
+                new WorkspaceFileWriteResult(
+                    ".gitkeep",
+                    false,
+                    0,
+                    0,
+                    0,
+                    [],
+                    0),
+                new WorkspaceFileEditTransaction(
+                    "file_write (.gitkeep)",
+                    [new WorkspaceFileEditState(".gitkeep", exists: false, content: null)],
+                    [new WorkspaceFileEditState(".gitkeep", exists: true, content: string.Empty)])));
+
+        FileWriteTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": ".gitkeep", "content": "" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        workspaceFileService.VerifyAll();
+    }
+
     private static ToolExecutionContext CreateContext(
         string argumentsJson,
         ReplSessionContext? session = null)

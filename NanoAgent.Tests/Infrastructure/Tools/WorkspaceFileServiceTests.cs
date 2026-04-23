@@ -66,6 +66,43 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteFileAsync_Should_AllowEmptyContent()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileWriteResult result = await sut.WriteFileAsync(
+            ".gitkeep",
+            string.Empty,
+            overwrite: true,
+            CancellationToken.None);
+
+        result.CharacterCount.Should().Be(0);
+        result.AddedLineCount.Should().Be(0);
+        result.PreviewLines.Should().BeEmpty();
+        File.ReadAllText(Path.Combine(_workspaceRoot, ".gitkeep"))
+            .Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public async Task WriteFileAsync_Should_TruncateExistingFileToEmptyContent()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}\n", CancellationToken.None);
+
+        WorkspaceFileWriteResult result = await sut.WriteFileAsync(
+            "settings.json",
+            string.Empty,
+            overwrite: true,
+            CancellationToken.None);
+
+        result.OverwroteExistingFile.Should().BeTrue();
+        result.CharacterCount.Should().Be(0);
+        File.ReadAllText(filePath).Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ReadFileAsync_Should_ReadFileContent()
     {
         WorkspaceFileService sut = CreateSut();

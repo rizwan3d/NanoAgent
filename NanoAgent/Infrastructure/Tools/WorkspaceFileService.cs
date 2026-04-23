@@ -241,12 +241,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        if (string.IsNullOrWhiteSpace(content))
-        {
-            throw new InvalidOperationException(
-                "File content must not be empty.");
-        }
+        ArgumentNullException.ThrowIfNull(content);
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
         bool fileExists = File.Exists(fullPath);
