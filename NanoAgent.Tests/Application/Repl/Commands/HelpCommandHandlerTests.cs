@@ -25,8 +25,8 @@ public sealed class HelpCommandHandlerTests
         result.ExitRequested.Should().BeFalse();
         result.Message.Should().Contain("Active agent profile: plan");
         result.Message.Should().Contain("/profile <name>");
-        result.Message.Should().Contain("/thinking [effort|default]");
-        result.Message.Should().Contain("--thinking <effort>");
+        result.Message.Should().Contain("/thinking [on|off]");
+        result.Message.Should().Contain("--thinking <on|off>");
         result.Message.Should().Contain("Multiline input: enter \"\"\" on its own line");
         result.Message.Should().Contain("@general or @explore");
     }

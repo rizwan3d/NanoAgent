@@ -14,9 +14,9 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
 
     public string CommandName => "thinking";
 
-    public string Description => "Show or set thinking effort for subsequent prompts.";
+    public string Description => "Show or set thinking mode for subsequent prompts.";
 
-    public string Usage => "/thinking [none|minimal|low|medium|high|xhigh|default]";
+    public string Usage => "/thinking [on|off]";
 
     public async Task<ReplCommandResult> ExecuteAsync(
         ReplCommandContext context,
@@ -28,42 +28,30 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
         if (string.IsNullOrWhiteSpace(context.ArgumentText))
         {
             return ReplCommandResult.Continue(
-                $"Thinking effort: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}. " +
-                $"Use /thinking <{string.Join("|", ReasoningEffortOptions.SupportedValues)}> or /thinking default.");
+                $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}. " +
+                "Use /thinking on or /thinking off.");
         }
 
-        string requestedEffort = context.ArgumentText.Trim();
-        if (IsDefaultKeyword(requestedEffort))
-        {
-            bool changed = context.Session.ClearReasoningEffort();
-            await SaveAsync(context.Session, cancellationToken);
-
-            return ReplCommandResult.Continue(
-                changed
-                    ? "Thinking effort reset to provider default."
-                    : "Thinking effort is already using provider default.");
-        }
-
-        string normalizedEffort;
+        string requestedMode = context.ArgumentText.Trim();
+        string? normalizedMode;
         try
         {
-            normalizedEffort = ReasoningEffortOptions.NormalizeOrThrow(requestedEffort)!;
+            normalizedMode = ReasoningEffortOptions.NormalizeOrThrow(requestedMode);
         }
         catch (ArgumentException)
         {
             return ReplCommandResult.Continue(
-                $"Unsupported thinking effort '{requestedEffort}'. Supported values: " +
-                $"{ReasoningEffortOptions.SupportedValuesText}, default.",
+                $"Unsupported thinking mode '{requestedMode}'. Supported values: {ReasoningEffortOptions.SupportedValuesText}.",
                 ReplFeedbackKind.Error);
         }
 
-        bool effortChanged = context.Session.SetReasoningEffort(normalizedEffort);
+        bool modeChanged = context.Session.SetReasoningEffort(normalizedMode);
         await SaveAsync(context.Session, cancellationToken);
 
         return ReplCommandResult.Continue(
-            effortChanged
-                ? $"Thinking effort set to '{normalizedEffort}'."
-                : $"Already using thinking effort '{normalizedEffort}'.");
+            modeChanged
+                ? $"Thinking turned {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}."
+                : $"Thinking is already {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.");
     }
 
     private Task SaveAsync(
@@ -76,11 +64,5 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
                 session.ActiveModelId,
                 session.ReasoningEffort),
             cancellationToken);
-    }
-
-    private static bool IsDefaultKeyword(string value)
-    {
-        return string.Equals(value, "default", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(value, "auto", StringComparison.OrdinalIgnoreCase);
     }
 }

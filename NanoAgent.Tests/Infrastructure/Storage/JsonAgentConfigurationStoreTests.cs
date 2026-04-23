@@ -27,7 +27,7 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.GoogleAiStudio, null),
             "gemini-2.5-flash",
-            "high");
+            "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -43,7 +43,7 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.Anthropic, null),
             "claude-sonnet-4-6",
-            "high");
+            "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -95,6 +95,47 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
               }
             }
             """,
+            CancellationToken.None);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_ClearLegacyThinkingValues()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            """
+            {
+              "providerProfile": {
+                "providerKind": 1
+              },
+              "preferredModelId": "gpt-5.4",
+              "reasoningEffort": "high"
+            }
+            """,
+            CancellationToken.None);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().NotBeNull();
+        loadedConfiguration!.ReasoningEffort.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_ReturnNull_When_ConfigurationJsonIsMalformed()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            "{",
             CancellationToken.None);
 
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);

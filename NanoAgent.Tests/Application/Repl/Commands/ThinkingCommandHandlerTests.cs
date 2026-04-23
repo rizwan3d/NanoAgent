@@ -10,67 +10,67 @@ namespace NanoAgent.Tests.Application.Repl.Commands;
 public sealed class ThinkingCommandHandlerTests
 {
     [Fact]
-    public async Task ExecuteAsync_Should_ShowCurrentThinkingEffort_When_ArgumentIsMissing()
+    public async Task ExecuteAsync_Should_ShowCurrentThinkingMode_When_ArgumentIsMissing()
     {
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         ThinkingCommandHandler sut = new(configurationStore.Object);
         ReplSessionContext session = CreateSession();
-        session.SetReasoningEffort("high");
+        session.SetReasoningEffort("on");
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext("thinking", string.Empty, [], "/thinking", session),
             CancellationToken.None);
 
-        result.Message.Should().Contain("Thinking effort: high");
+        result.Message.Should().Contain("Thinking: on");
         configurationStore.VerifyNoOtherCalls();
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_SetThinkingEffort_AndPersistConfiguration()
+    public async Task ExecuteAsync_Should_TurnThinkingOn_AndPersistConfiguration()
     {
         ReplSessionContext session = CreateSession();
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(session.ProviderProfile, session.ActiveModelId, "xhigh"),
+                new AgentConfiguration(session.ProviderProfile, session.ActiveModelId, "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         ThinkingCommandHandler sut = new(configurationStore.Object);
 
         ReplCommandResult result = await sut.ExecuteAsync(
-            new ReplCommandContext("thinking", "xhigh", ["xhigh"], "/thinking xhigh", session),
+            new ReplCommandContext("thinking", "on", ["on"], "/thinking on", session),
             CancellationToken.None);
 
-        session.ReasoningEffort.Should().Be("xhigh");
+        session.ReasoningEffort.Should().Be("on");
         session.IsPersistedStateDirty.Should().BeTrue();
-        result.Message.Should().Be("Thinking effort set to 'xhigh'.");
+        result.Message.Should().Be("Thinking turned on.");
         configurationStore.VerifyAll();
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_ResetThinkingEffort_AndPersistProviderDefault()
+    public async Task ExecuteAsync_Should_TurnThinkingOff_AndPersistConfiguration()
     {
         ReplSessionContext session = CreateSession();
-        session.SetReasoningEffort("medium");
+        session.SetReasoningEffort("on");
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(session.ProviderProfile, session.ActiveModelId, null),
+                new AgentConfiguration(session.ProviderProfile, session.ActiveModelId, "off"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
         ThinkingCommandHandler sut = new(configurationStore.Object);
 
         ReplCommandResult result = await sut.ExecuteAsync(
-            new ReplCommandContext("thinking", "default", ["default"], "/thinking default", session),
+            new ReplCommandContext("thinking", "off", ["off"], "/thinking off", session),
             CancellationToken.None);
 
-        session.ReasoningEffort.Should().BeNull();
-        result.Message.Should().Be("Thinking effort reset to provider default.");
+        session.ReasoningEffort.Should().Be("off");
+        result.Message.Should().Be("Thinking turned off.");
         configurationStore.VerifyAll();
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_ReturnError_When_ThinkingEffortIsUnsupported()
+    public async Task ExecuteAsync_Should_ReturnError_When_ThinkingModeIsUnsupported()
     {
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         ThinkingCommandHandler sut = new(configurationStore.Object);
@@ -81,8 +81,8 @@ public sealed class ThinkingCommandHandlerTests
             CancellationToken.None);
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Error);
-        result.Message.Should().Contain("Unsupported thinking effort 'turbo'");
-        result.Message.Should().Contain("none, minimal, low, medium, high, xhigh");
+        result.Message.Should().Contain("Unsupported thinking mode 'turbo'");
+        result.Message.Should().Contain("on, off");
         session.ReasoningEffort.Should().BeNull();
         configurationStore.VerifyNoOtherCalls();
     }

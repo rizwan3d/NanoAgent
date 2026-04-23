@@ -2,21 +2,14 @@ namespace NanoAgent.Application.Models;
 
 public static class ReasoningEffortOptions
 {
-    public const string None = "none";
-    public const string Minimal = "minimal";
-    public const string Low = "low";
-    public const string Medium = "medium";
-    public const string High = "high";
-    public const string XHigh = "xhigh";
+    public const string On = "on";
+    public const string Off = "off";
+    private const string ProviderEnabledValue = "high";
 
     private static readonly string[] Values =
     [
-        None,
-        Minimal,
-        Low,
-        Medium,
-        High,
-        XHigh
+        On,
+        Off
     ];
 
     public static IReadOnlyList<string> SupportedValues => Values;
@@ -25,10 +18,7 @@ public static class ReasoningEffortOptions
 
     public static string? NormalizeOrNull(string? reasoningEffort)
     {
-        string normalized = NormalizeInput(reasoningEffort);
-        return Values.Contains(normalized, StringComparer.Ordinal)
-            ? normalized
-            : null;
+        return NormalizeCore(reasoningEffort);
     }
 
     public static string? NormalizeOrThrow(string? reasoningEffort)
@@ -39,19 +29,27 @@ public static class ReasoningEffortOptions
             return null;
         }
 
-        if (Values.Contains(normalized, StringComparer.Ordinal))
+        string? normalizedMode = NormalizeCore(normalized);
+        if (normalizedMode is not null)
         {
-            return normalized;
+            return normalizedMode;
         }
 
         throw new ArgumentException(
-            $"Unsupported thinking effort '{reasoningEffort?.Trim()}'. Supported values: {SupportedValuesText}.",
+            $"Unsupported thinking mode '{reasoningEffort?.Trim()}'. Supported values: {SupportedValuesText}.",
             nameof(reasoningEffort));
     }
 
     public static string Format(string? reasoningEffort)
     {
-        return NormalizeOrNull(reasoningEffort) ?? "provider default";
+        return NormalizeOrNull(reasoningEffort) ?? Off;
+    }
+
+    public static string? ToProviderValue(string? reasoningEffort)
+    {
+        return NormalizeOrNull(reasoningEffort) == On
+            ? ProviderEnabledValue
+            : null;
     }
 
     private static string NormalizeInput(string? reasoningEffort)
@@ -59,5 +57,17 @@ public static class ReasoningEffortOptions
         return string.IsNullOrWhiteSpace(reasoningEffort)
             ? string.Empty
             : reasoningEffort.Trim().ToLowerInvariant();
+    }
+
+    private static string? NormalizeCore(string? reasoningEffort)
+    {
+        string normalized = NormalizeInput(reasoningEffort);
+        return normalized switch
+        {
+            "" => null,
+            On => On,
+            Off => Off,
+            _ => null
+        };
     }
 }

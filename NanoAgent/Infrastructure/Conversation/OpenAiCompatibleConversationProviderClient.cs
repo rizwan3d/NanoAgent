@@ -101,7 +101,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             request.ModelId,
             messages,
             tools,
-            request.ReasoningEffort);
+            ReasoningEffortOptions.ToProviderValue(request.ReasoningEffort));
     }
 
     private static OpenAiChatCompletionRequestMessage MapMessage(ConversationRequestMessage message)

@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Domain.Services;
 
 namespace NanoAgent.Application.Services;
 
@@ -23,7 +24,10 @@ internal sealed class ModelActivationService : IModelActivationService
         }
 
         string[] suffixMatches = session.AvailableModelIds
-            .Where(modelId => HasMatchingTerminalSegment(modelId, normalizedRequestedModel))
+            .Where(modelId => ModelIdMatcher.HasMatchingTerminalSegment(
+                modelId,
+                normalizedRequestedModel,
+                StringComparison.OrdinalIgnoreCase))
             .ToArray();
 
         if (suffixMatches.Length == 1)
@@ -41,21 +45,6 @@ internal sealed class ModelActivationService : IModelActivationService
 
         return new ModelActivationResult(ModelActivationStatus.NotFound, null);
     }
-
-    private static bool HasMatchingTerminalSegment(string modelId, string requestedModel)
-    {
-        int lastSlashIndex = modelId.LastIndexOf('/');
-        if (lastSlashIndex < 0 || lastSlashIndex == modelId.Length - 1)
-        {
-            return false;
-        }
-
-        return string.Equals(
-            modelId[(lastSlashIndex + 1)..],
-            requestedModel,
-            StringComparison.OrdinalIgnoreCase);
-    }
-
     private static ModelActivationResult SwitchOrConfirm(
         ReplSessionContext session,
         string resolvedModelId)

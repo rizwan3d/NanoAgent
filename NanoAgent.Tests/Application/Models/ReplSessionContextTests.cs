@@ -117,25 +117,25 @@ public sealed class ReplSessionContextTests
     {
         ReplSessionContext session = CreateSession();
 
-        bool changed = session.SetReasoningEffort("HIGH");
+        bool changed = session.SetReasoningEffort("on");
         ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(DateTimeOffset.UtcNow.AddMinutes(1));
 
         changed.Should().BeTrue();
-        session.ReasoningEffort.Should().Be("high");
+        session.ReasoningEffort.Should().Be("on");
         session.IsPersistedStateDirty.Should().BeTrue();
-        snapshot.ReasoningEffort.Should().Be("high");
+        snapshot.ReasoningEffort.Should().Be("on");
     }
 
     [Fact]
-    public void ClearReasoningEffort_Should_ResetThinkingEffortToProviderDefault()
+    public void ClearReasoningEffort_Should_TurnThinkingOff()
     {
         ReplSessionContext session = CreateSession();
-        session.SetReasoningEffort("medium");
+        session.SetReasoningEffort("on");
 
         bool changed = session.ClearReasoningEffort();
 
         changed.Should().BeTrue();
-        session.ReasoningEffort.Should().BeNull();
+        session.ReasoningEffort.Should().Be("off");
     }
 
     [Fact]

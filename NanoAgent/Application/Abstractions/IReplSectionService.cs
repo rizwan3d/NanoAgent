@@ -10,24 +10,12 @@ public interface IReplSectionService
         AgentProviderProfile providerProfile,
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
-        CancellationToken cancellationToken);
-
-    Task<ReplSessionContext> CreateNewAsync(
-        string applicationName,
-        AgentProviderProfile providerProfile,
-        string activeModelId,
-        IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         CancellationToken cancellationToken);
 
     void EnsureTitleGenerationStarted(
         ReplSessionContext session,
         string firstUserPrompt);
-
-    Task<ReplSessionContext> ResumeAsync(
-        string applicationName,
-        string sectionId,
-        CancellationToken cancellationToken);
 
     Task<ReplSessionContext> ResumeAsync(
         string applicationName,

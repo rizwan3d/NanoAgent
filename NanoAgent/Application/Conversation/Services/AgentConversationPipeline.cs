@@ -82,18 +82,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     public async Task<ConversationTurnResult> ProcessAsync(
         string input,
         ReplSessionContext session,
-        CancellationToken cancellationToken)
-    {
-        return await ProcessAsync(
-            input,
-            session,
-            NoOpConversationProgressSink.Instance,
-            cancellationToken);
-    }
-
-    public async Task<ConversationTurnResult> ProcessAsync(
-        string input,
-        ReplSessionContext session,
         IConversationProgressSink progressSink,
         CancellationToken cancellationToken)
     {
@@ -700,36 +688,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return results.Count == 0
             ? null
             : new ToolExecutionBatchResult(results.ToArray());
-    }
-
-    private sealed class NoOpConversationProgressSink : IConversationProgressSink
-    {
-        public static NoOpConversationProgressSink Instance { get; } = new();
-
-        public Task ReportToolCallsStartedAsync(
-            IReadOnlyList<ConversationToolCall> toolCalls,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
-
-        public Task ReportExecutionPlanAsync(
-            ExecutionPlanProgress executionPlanProgress,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            ArgumentNullException.ThrowIfNull(executionPlanProgress);
-            return Task.CompletedTask;
-        }
-
-        public Task ReportToolResultsAsync(
-            ToolExecutionBatchResult toolExecutionResult,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            return Task.CompletedTask;
-        }
     }
 
     private sealed class ExecutionPlanTracker

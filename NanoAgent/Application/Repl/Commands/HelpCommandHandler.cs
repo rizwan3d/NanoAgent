@@ -30,11 +30,11 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/rules - List the effective permission rules in evaluation order.\n" +
-            "/thinking [effort|default] - Show or set thinking effort: none, minimal, low, medium, high, or xhigh.\n" +
+            "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model for subsequent prompts.\n\n" +
             "Multiline input: enter \"\"\" on its own line, then finish with \"\"\" on its own line.\n\n" +
-            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile. Use --thinking <effort> to choose initial thinking effort, or use /profile <name> and /thinking <effort> inside an active session.\n" +
+            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +
             "Invoke subagents for one turn with @general or @explore; primary agents can also delegate focused work with agent_delegate.";
 
         return Task.FromResult(ReplCommandResult.Continue(

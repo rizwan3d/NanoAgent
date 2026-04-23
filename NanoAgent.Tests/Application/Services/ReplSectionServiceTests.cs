@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
 using NanoAgent.Domain.Models;
 using FluentAssertions;
@@ -77,6 +78,7 @@ public sealed class ReplSectionServiceTests
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "gpt-5-mini",
             ["gpt-5-mini"],
+            BuiltInAgentProfiles.Build,
             CancellationToken.None);
 
         sut.EnsureTitleGenerationStarted(session, "build a todo app");
@@ -108,7 +110,7 @@ public sealed class ReplSectionServiceTests
                 "plan the todo app",
                 "Plan\n1. Inspect\n2. Implement\n3. Validate",
                 ["Inspect", "Implement", "Validate"]),
-            reasoningEffort: "high");
+            reasoningEffort: "on");
 
         Mock<IConversationSectionStore> sectionStore = new(MockBehavior.Strict);
         sectionStore
@@ -130,6 +132,7 @@ public sealed class ReplSectionServiceTests
         ReplSessionContext session = await sut.ResumeAsync(
             "NanoAgent",
             snapshot.SectionId,
+            profileOverride: null,
             CancellationToken.None);
 
         session.SectionId.Should().Be(snapshot.SectionId);
@@ -138,12 +141,49 @@ public sealed class ReplSectionServiceTests
         session.ActiveModelId.Should().Be("gpt-5-mini");
         session.AvailableModelIds.Should().Equal("gpt-5-mini", "gpt-4.1");
         session.TotalEstimatedOutputTokens.Should().Be(19);
-        session.ReasoningEffort.Should().Be("high");
+        session.ReasoningEffort.Should().Be("on");
         session.ConversationHistory.Should().HaveCount(2);
         session.ConversationHistory[0].Content.Should().Be("first prompt");
         session.ConversationHistory[1].Content.Should().Be("first reply");
         session.PendingExecutionPlan.Should().NotBeNull();
         session.PendingExecutionPlan!.Tasks.Should().Equal("Inspect", "Implement", "Validate");
+    }
+
+    [Fact]
+    public async Task ResumeAsync_Should_ClearLegacyThinkingValues_FromSavedSnapshot()
+    {
+        ConversationSectionSnapshot snapshot = new(
+            Guid.NewGuid().ToString("D"),
+            "Todo App Session",
+            new DateTimeOffset(2026, 4, 21, 1, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 4, 21, 1, 5, 0, TimeSpan.Zero),
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "gpt-5-mini",
+            ["gpt-5-mini", "gpt-4.1"],
+            [new ConversationSectionTurn("first prompt", "first reply")],
+            19,
+            reasoningEffort: "high");
+
+        Mock<IConversationSectionStore> sectionStore = new(MockBehavior.Strict);
+        sectionStore
+            .Setup(store => store.LoadAsync(snapshot.SectionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
+
+        ReplSectionService sut = new(
+            sectionStore.Object,
+            Mock.Of<IApiKeySecretStore>(),
+            Mock.Of<IConversationProviderClient>(),
+            Mock.Of<IConversationResponseMapper>(),
+            TimeProvider.System,
+            NullLogger<ReplSectionService>.Instance);
+
+        ReplSessionContext session = await sut.ResumeAsync(
+            "NanoAgent",
+            snapshot.SectionId,
+            profileOverride: null,
+            CancellationToken.None);
+
+        session.ReasoningEffort.Should().BeNull();
     }
 
     private sealed class FixedTimeProvider : TimeProvider

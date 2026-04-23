@@ -55,22 +55,6 @@ internal sealed class ReplSectionService : IReplSectionService
         AgentProviderProfile providerProfile,
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
-        CancellationToken cancellationToken)
-    {
-        return await CreateNewAsync(
-            applicationName,
-            providerProfile,
-            activeModelId,
-            availableModelIds,
-            BuiltInAgentProfiles.Build,
-            cancellationToken);
-    }
-
-    public async Task<ReplSessionContext> CreateNewAsync(
-        string applicationName,
-        AgentProviderProfile providerProfile,
-        string activeModelId,
-        IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         CancellationToken cancellationToken)
     {
@@ -124,18 +108,6 @@ internal sealed class ReplSectionService : IReplSectionService
             CancellationToken.None,
             TaskContinuationOptions.ExecuteSynchronously,
             TaskScheduler.Default);
-    }
-
-    public async Task<ReplSessionContext> ResumeAsync(
-        string applicationName,
-        string sectionId,
-        CancellationToken cancellationToken)
-    {
-        return await ResumeAsync(
-            applicationName,
-            sectionId,
-            profileOverride: null,
-            cancellationToken);
     }
 
     public async Task<ReplSessionContext> ResumeAsync(

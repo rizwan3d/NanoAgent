@@ -239,7 +239,7 @@ public sealed class ReplSessionContext
 
     public bool ClearReasoningEffort()
     {
-        return SetReasoningEffort(null);
+        return SetReasoningEffort(ReasoningEffortOptions.Off);
     }
 
     public void SetAgentProfile(IAgentProfile agentProfile)

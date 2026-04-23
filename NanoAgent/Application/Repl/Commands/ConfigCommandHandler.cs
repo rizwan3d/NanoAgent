@@ -37,7 +37,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
             $"Base URL: {baseUrl}\n" +
             $"Configuration file: {_userDataPathProvider.GetConfigurationFilePath()}\n" +
             $"Agent profile: {context.Session.AgentProfile.Name} - {context.Session.AgentProfile.Description}\n" +
-            $"Thinking effort: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
+            $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
             $"Active model: {context.Session.ActiveModelId}";
 
         return Task.FromResult(ReplCommandResult.Continue(message));

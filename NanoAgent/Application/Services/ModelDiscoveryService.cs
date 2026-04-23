@@ -6,6 +6,7 @@ using NanoAgent.Application.Logging;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Abstractions;
 using NanoAgent.Domain.Models;
+using NanoAgent.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Application.Services;
@@ -80,7 +81,7 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
         }
 
         if (!string.Equals(
-                NormalizeModelId(configuration.PreferredModelId),
+                ModelIdMatcher.NormalizeOrNull(configuration.PreferredModelId),
                 selection.SelectedModelId,
                 StringComparison.Ordinal))
         {
@@ -148,13 +149,5 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
         string rawKey = $"{providerProfile.ProviderKind}|{providerProfile.ResolveBaseUrl()}|{apiKey}";
         byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexString(hashBytes);
-    }
-
-    private static string? NormalizeModelId(string? modelId)
-    {
-        string normalizedModelId = modelId?.Trim() ?? string.Empty;
-        return string.IsNullOrWhiteSpace(normalizedModelId)
-            ? null
-            : normalizedModelId;
     }
 }

@@ -90,7 +90,7 @@ public sealed class SessionAppServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_Should_ApplyRequestedThinkingEffort()
+    public async Task CreateAsync_Should_ApplyRequestedThinkingMode()
     {
         BuiltInAgentProfileResolver profileResolver = new();
         AgentProviderProfile providerProfile = new(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1");
@@ -121,10 +121,10 @@ public sealed class SessionAppServiceTests
                 providerProfile,
                 "gpt-5.4",
                 ["gpt-5.4"],
-                ReasoningEffort: "medium"),
+                ReasoningEffort: "on"),
             CancellationToken.None);
 
-        result.ReasoningEffort.Should().Be("medium");
+        result.ReasoningEffort.Should().Be("on");
         result.IsPersistedStateDirty.Should().BeTrue();
         sectionService.VerifyAll();
     }
