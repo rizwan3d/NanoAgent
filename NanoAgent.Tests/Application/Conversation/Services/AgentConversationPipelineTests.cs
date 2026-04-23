@@ -76,10 +76,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Implement the next refactor.",
-            session,
-            CancellationToken.None);
+            session);
 
         result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
         result.ResponseText.Should().Be("Implemented the refactor.");
@@ -125,7 +125,7 @@ public sealed class AgentConversationPipelineTests
     public async Task ProcessAsync_Should_PassThinkingEffortToProviderRequest()
     {
         ReplSessionContext session = CreateSession();
-        session.SetReasoningEffort("high");
+        session.SetReasoningEffort("on");
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore
             .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
@@ -174,13 +174,13 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        await sut.ProcessAsync(
+        await ProcessAsync(
+            sut,
             "Use deeper thinking.",
-            session,
-            CancellationToken.None);
+            session);
 
         requests.Should().ContainSingle();
-        requests[0].ReasoningEffort.Should().Be("high");
+        requests[0].ReasoningEffort.Should().Be("on");
     }
 
     [Fact]
@@ -255,10 +255,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        await sut.ProcessAsync(
+        await ProcessAsync(
+            sut,
             "Continue from there.",
-            session,
-            CancellationToken.None);
+            session);
 
         requests.Should().ContainSingle();
         requests[0].SystemPrompt.Should().Contain("Session state:");
@@ -328,10 +328,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        await sut.ProcessAsync(
+        await ProcessAsync(
+            sut,
             "Plan this safely.",
-            session,
-            CancellationToken.None);
+            session);
 
         requests.Should().ContainSingle();
         requests[0].SystemPrompt.Should().Contain("Active agent profile: plan.");
@@ -406,10 +406,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Implement the next refactor.",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be("Implemented the refactor.");
         requests.Should().HaveCount(2);
@@ -483,10 +483,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Update the plan.",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be("Continuing without raw protocol markers.");
         requests.Should().HaveCount(2);
@@ -628,10 +628,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Fix Program.cs.",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be("All planned work is complete.");
         requests.Should().HaveCount(4);
@@ -817,10 +817,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        Func<Task> act = async () => await sut.ProcessAsync(
-                "Help me with this refactor.",
-                session,
-                CancellationToken.None);
+        Func<Task> act = () => ProcessAsync(
+            sut,
+            "Help me with this refactor.",
+            session);
 
         ConversationResponseException exception = (await act.Should()
                 .ThrowAsync<ConversationResponseException>())
@@ -909,10 +909,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Help me plan this refactor",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be(planningSummary);
         requests.Should().HaveCount(1);
@@ -1011,10 +1011,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "continue",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be("Implemented the approved plan.");
         requests.Should().HaveCount(1);
@@ -1301,10 +1301,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Run several tools.",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be("Handled the tool results.");
         requests.Should().HaveCount(2);
@@ -1471,7 +1471,7 @@ public sealed class AgentConversationPipelineTests
             Mock.Of<IToolRegistry>(),
             Mock.Of<IConversationConfigurationAccessor>());
 
-        Func<Task> action = () => sut.ProcessAsync("hello", session, CancellationToken.None);
+        Func<Task> action = () => ProcessAsync(sut, "hello", session);
 
         await action.Should().ThrowAsync<ConversationPipelineException>()
             .WithMessage("*API key is missing*");
@@ -1513,7 +1513,7 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        Func<Task> action = () => sut.ProcessAsync("hello", session, CancellationToken.None);
+        Func<Task> action = () => ProcessAsync(sut, "hello", session);
 
         await action.Should().ThrowAsync<ConversationProviderException>()
             .WithMessage("Provider unavailable.");
@@ -1569,8 +1569,8 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        await sut.ProcessAsync("First question", session, CancellationToken.None);
-        await sut.ProcessAsync("What did I just ask?", session, CancellationToken.None);
+        await ProcessAsync(sut, "First question", session);
+        await ProcessAsync(sut, "What did I just ask?", session);
 
         requests.Should().HaveCount(2);
         requests[1].Messages.Should().HaveCount(3);
@@ -1633,9 +1633,9 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        await sut.ProcessAsync("Question one", session, CancellationToken.None);
-        await sut.ProcessAsync("Question two", session, CancellationToken.None);
-        await sut.ProcessAsync("Question three", session, CancellationToken.None);
+        await ProcessAsync(sut, "Question one", session);
+        await ProcessAsync(sut, "Question two", session);
+        await ProcessAsync(sut, "Question three", session);
 
         requests.Should().HaveCount(3);
         requests[2].Messages.Should().HaveCount(3);
@@ -1730,10 +1730,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        ConversationTurnResult result = await sut.ProcessAsync(
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
             "Keep using tools until finished.",
-            session,
-            CancellationToken.None);
+            session);
 
         result.ResponseText.Should().Be("Finished after multiple tool rounds.");
         requests.Should().HaveCount(4);
@@ -1816,10 +1816,10 @@ public sealed class AgentConversationPipelineTests
             toolRegistry.Object,
             configurationAccessor.Object);
 
-        Func<Task> action = () => sut.ProcessAsync(
+        Func<Task> action = () => ProcessAsync(
+            sut,
             "Keep writing files.",
-            session,
-            CancellationToken.None);
+            session);
 
         await action.Should().ThrowAsync<ConversationResponseException>()
             .WithMessage("*Configured limit: 2 round(s).*");
@@ -1845,6 +1845,18 @@ public sealed class AgentConversationPipelineTests
             toolRegistry,
             configurationAccessor,
             NullLogger<AgentConversationPipeline>.Instance);
+    }
+
+    private static Task<ConversationTurnResult> ProcessAsync(
+        AgentConversationPipeline sut,
+        string input,
+        ReplSessionContext session)
+    {
+        return sut.ProcessAsync(
+            input,
+            session,
+            new RecordingConversationProgressSink(),
+            CancellationToken.None);
     }
 
     private static ToolDefinition CreateToolDefinition(string name)

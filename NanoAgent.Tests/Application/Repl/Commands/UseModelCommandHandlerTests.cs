@@ -81,11 +81,11 @@ public sealed class UseModelCommandHandlerTests
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "qwen/qwen3-coder-30b",
             ["qwen/qwen3-coder-30b", "openai/gpt-oss-20b"],
-            reasoningEffort: "high");
+            reasoningEffort: "on");
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(session.ProviderProfile, "openai/gpt-oss-20b", "high"),
+                new AgentConfiguration(session.ProviderProfile, "openai/gpt-oss-20b", "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(() => Task.CompletedTask);
         UseModelCommandHandler sut = new(new ModelActivationService(), configurationStore.Object);
@@ -95,7 +95,7 @@ public sealed class UseModelCommandHandlerTests
             CancellationToken.None);
 
         result.Message.Should().Be("Active model switched to 'openai/gpt-oss-20b'.");
-        session.ReasoningEffort.Should().Be("high");
+        session.ReasoningEffort.Should().Be("on");
         configurationStore.VerifyAll();
     }
 

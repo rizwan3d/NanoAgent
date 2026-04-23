@@ -35,14 +35,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             return configuration;
         }
 
-        AgentProviderProfile? legacyProfile = JsonSerializer.Deserialize(
-            json,
-            OnboardingStorageJsonContext.Default.AgentProviderProfile);
-
-        AgentProviderProfile? normalizedLegacyProfile = NormalizeProfile(legacyProfile);
-        return normalizedLegacyProfile is null
-            ? null
-            : new AgentConfiguration(normalizedLegacyProfile, null);
+        return TryDeserializeLegacyConfiguration(json);
     }
 
     public async Task SaveAsync(AgentConfiguration configuration, CancellationToken cancellationToken)
@@ -94,7 +87,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
 
             return new AgentConfiguration(
                 normalizedProfile,
-                NormalizeModelId(configuration.PreferredModelId),
+                ModelIdMatcher.NormalizeOrNull(configuration.PreferredModelId),
                 ReasoningEffortOptions.NormalizeOrNull(configuration.ReasoningEffort));
         }
         catch (JsonException)
@@ -103,12 +96,23 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
         }
     }
 
-    private static string? NormalizeModelId(string? modelId)
+    private static AgentConfiguration? TryDeserializeLegacyConfiguration(string json)
     {
-        string normalizedModelId = modelId?.Trim() ?? string.Empty;
-        return string.IsNullOrWhiteSpace(normalizedModelId)
-            ? null
-            : normalizedModelId;
+        try
+        {
+            AgentProviderProfile? legacyProfile = JsonSerializer.Deserialize(
+                json,
+                OnboardingStorageJsonContext.Default.AgentProviderProfile);
+
+            AgentProviderProfile? normalizedLegacyProfile = NormalizeProfile(legacyProfile);
+            return normalizedLegacyProfile is null
+                ? null
+                : new AgentConfiguration(normalizedLegacyProfile, null);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static AgentProviderProfile? NormalizeProfile(AgentProviderProfile? profile)

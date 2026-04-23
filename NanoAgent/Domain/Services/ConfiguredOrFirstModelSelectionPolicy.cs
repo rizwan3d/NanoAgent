@@ -16,7 +16,7 @@ internal sealed class ConfiguredOrFirstModelSelectionPolicy : IModelSelectionPol
                 "Model selection cannot run because the provider returned no available models.");
         }
 
-        string? configuredDefaultModel = Normalize(context.ConfiguredDefaultModel);
+        string? configuredDefaultModel = ModelIdMatcher.NormalizeOrNull(context.ConfiguredDefaultModel);
         string? matchedConfiguredDefaultModel = ResolvePreferredModelId(
             context.AvailableModels,
             configuredDefaultModel);
@@ -45,7 +45,7 @@ internal sealed class ConfiguredOrFirstModelSelectionPolicy : IModelSelectionPol
         IReadOnlyList<AvailableModel> availableModels,
         string? preferredModelId)
     {
-        string? normalizedPreferredModelId = Normalize(preferredModelId);
+        string? normalizedPreferredModelId = ModelIdMatcher.NormalizeOrNull(preferredModelId);
         if (normalizedPreferredModelId is null)
         {
             return null;
@@ -61,31 +61,15 @@ internal sealed class ConfiguredOrFirstModelSelectionPolicy : IModelSelectionPol
 
         foreach (AvailableModel availableModel in availableModels)
         {
-            if (HasMatchingTerminalSegment(availableModel.Id, normalizedPreferredModelId))
+            if (ModelIdMatcher.HasMatchingTerminalSegment(
+                    availableModel.Id,
+                    normalizedPreferredModelId,
+                    StringComparison.Ordinal))
             {
                 return availableModel.Id;
             }
         }
 
         return null;
-    }
-
-    private static bool HasMatchingTerminalSegment(string modelId, string preferredModelId)
-    {
-        int lastSlashIndex = modelId.LastIndexOf('/');
-        if (lastSlashIndex < 0 || lastSlashIndex == modelId.Length - 1)
-        {
-            return false;
-        }
-
-        return modelId[(lastSlashIndex + 1)..].Equals(preferredModelId, StringComparison.Ordinal);
-    }
-
-    private static string? Normalize(string? value)
-    {
-        string normalized = value?.Trim() ?? string.Empty;
-        return string.IsNullOrWhiteSpace(normalized)
-            ? null
-            : normalized;
     }
 }

@@ -35,7 +35,7 @@ public sealed class ConfigCommandHandlerTests
         result.Message.Should().Contain("Base URL: https://provider.example.com/v1");
         result.Message.Should().Contain("Configuration file:");
         result.Message.Should().Contain("Agent profile: review");
-        result.Message.Should().Contain("Thinking effort: provider default");
+        result.Message.Should().Contain("Thinking: off");
         result.Message.Should().Contain("Active model: openai/gpt-oss-20b");
     }
 
@@ -88,7 +88,7 @@ public sealed class ConfigCommandHandlerTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_ShowThinkingEffort_When_Configured()
+    public async Task ExecuteAsync_Should_ShowThinkingMode_When_Configured()
     {
         Mock<IUserDataPathProvider> pathProvider = new(MockBehavior.Strict);
         pathProvider
@@ -100,12 +100,12 @@ public sealed class ConfigCommandHandlerTests
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5.4",
             ["gpt-5.4"],
-            reasoningEffort: "high");
+            reasoningEffort: "on");
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext("config", string.Empty, [], "/config", session),
             CancellationToken.None);
 
-        result.Message.Should().Contain("Thinking effort: high");
+        result.Message.Should().Contain("Thinking: on");
     }
 }

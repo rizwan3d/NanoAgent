@@ -172,7 +172,7 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
-    public async Task SendAsync_Should_SerializeReasoningEffort_When_RequestProvidesThinkingEffort()
+    public async Task SendAsync_Should_SerializeProviderReasoningEffort_When_ThinkingIsOn()
     {
         RecordingHandler handler = new("""
             {
@@ -197,7 +197,7 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 [ConversationRequestMessage.User("Think carefully.")],
                 "You are helpful.",
                 [],
-                "high"),
+                "on"),
             CancellationToken.None);
 
         handler.RequestBody.Should().Contain("\"reasoning_effort\":\"high\"");

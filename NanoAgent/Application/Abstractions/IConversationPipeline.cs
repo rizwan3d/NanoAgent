@@ -7,11 +7,6 @@ public interface IConversationPipeline
     Task<ConversationTurnResult> ProcessAsync(
         string input,
         ReplSessionContext session,
-        CancellationToken cancellationToken);
-
-    Task<ConversationTurnResult> ProcessAsync(
-        string input,
-        ReplSessionContext session,
         IConversationProgressSink progressSink,
         CancellationToken cancellationToken);
 }

@@ -130,7 +130,7 @@ public sealed class AgentApplicationRunnerTests
     }
 
     [Fact]
-    public async Task RunAsync_Should_CreateNewSectionWithRequestedThinkingEffort_When_ThinkingArgumentIsProvided()
+    public async Task RunAsync_Should_CreateNewSectionWithRequestedThinkingMode_When_ThinkingArgumentIsProvided()
     {
         OnboardingResult onboardingResult = new(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
@@ -147,7 +147,7 @@ public sealed class AgentApplicationRunnerTests
             onboardingResult.Profile,
             "gpt-5.4",
             ["gpt-5.4"],
-            reasoningEffort: "high");
+            reasoningEffort: "on");
 
         Mock<IFirstRunOnboardingService> onboardingService = new(MockBehavior.Strict);
         onboardingService
@@ -166,7 +166,7 @@ public sealed class AgentApplicationRunnerTests
                     request.ProviderProfile == onboardingResult.Profile &&
                     request.ActiveModelId == "gpt-5.4" &&
                     request.ProfileName == null &&
-                    request.ReasoningEffort == "high"),
+                    request.ReasoningEffort == "on"),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -180,7 +180,7 @@ public sealed class AgentApplicationRunnerTests
             modelDiscoveryService.Object,
             sessionAppService.Object,
             replRuntime.Object,
-            BuildConfiguration(thinkingEffort: "HIGH"),
+            BuildConfiguration(thinkingEffort: "on"),
             NullLogger<AgentApplicationRunner>.Instance);
 
         await sut.RunAsync(CancellationToken.None);
