@@ -71,7 +71,7 @@ internal sealed class ReplRuntime : IReplRuntime
                     continue;
                 }
 
-                if (input.StartsWith("/", StringComparison.Ordinal))
+                if (IsSlashCommand(input))
                 {
                     ReplCommandResult commandResult;
 
@@ -224,6 +224,12 @@ internal sealed class ReplRuntime : IReplRuntime
         }
 
         return normalizedInput.TrimStart('\uFEFF');
+    }
+
+    private static bool IsSlashCommand(string input)
+    {
+        return input.StartsWith("/", StringComparison.Ordinal) &&
+               input.IndexOfAny(['\r', '\n']) < 0;
     }
 
     private async Task StopSectionAsync(ReplSessionContext session)

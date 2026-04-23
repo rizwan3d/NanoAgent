@@ -293,6 +293,63 @@ public sealed class ReplRuntimeTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_TreatMultilineInputStartingWithSlash_AsConversationPrompt()
+    {
+        ReplSessionContext session = CreateSession();
+        string multilineInput = "/help me review this route" + Environment.NewLine + "Focus on src/app.ts";
+        QueueReplInputReader inputReader = new(multilineInput, "/exit");
+        RecordingReplOutputWriter outputWriter = new();
+        ParsedReplCommand exitCommand = new("/exit", "exit", string.Empty, []);
+
+        Mock<IReplCommandParser> commandParser = new(MockBehavior.Strict);
+        commandParser.Setup(parser => parser.Parse("/exit")).Returns(exitCommand);
+
+        Mock<IReplCommandDispatcher> commandDispatcher = new(MockBehavior.Strict);
+        commandDispatcher
+            .Setup(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ReplCommandResult.Exit());
+
+        Mock<IAgentTurnService> agentTurnService = new(MockBehavior.Strict);
+        agentTurnService
+            .Setup(service => service.RunTurnAsync(
+                It.Is<AgentTurnRequest>(request =>
+                    ReferenceEquals(request.Session, session) &&
+                    request.UserInput == multilineInput),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ConversationTurnResult.AssistantMessage("Looks good."));
+
+        Mock<ISessionAppService> sessionAppService = new(MockBehavior.Strict);
+        sessionAppService
+            .Setup(service => service.EnsureTitleGenerationStarted(session, multilineInput));
+        sessionAppService
+            .Setup(service => service.SaveIfDirtyAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        sessionAppService
+            .Setup(service => service.StopAsync(session, It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<ITokenEstimator> tokenEstimator = new(MockBehavior.Strict);
+        tokenEstimator.Setup(estimator => estimator.Estimate(multilineInput)).Returns(9);
+
+        ReplRuntime sut = new(
+            inputReader,
+            outputWriter,
+            new NoOpReplInterruptMonitor(),
+            commandParser.Object,
+            commandDispatcher.Object,
+            agentTurnService.Object,
+            sessionAppService.Object,
+            tokenEstimator.Object,
+            NullLogger<ReplRuntime>.Instance);
+
+        await sut.RunAsync(session, CancellationToken.None);
+
+        agentTurnService.VerifyAll();
+        commandDispatcher.Verify(dispatcher => dispatcher.DispatchAsync(exitCommand, session, It.IsAny<CancellationToken>()), Times.Once);
+        outputWriter.Responses.Should().ContainSingle().Which.Should().Be("Looks good.");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_ShowToolCallsInRealtimeBeforeAssistantResponse_When_ConversationReportsProgress()
     {
         ReplSessionContext session = CreateSession();

@@ -117,6 +117,12 @@ internal sealed class ConsoleReplOutputWriter : IReplOutputWriter
         await DelayIfAnimatedAsync(cancellationToken).ConfigureAwait(false);
         _outputTarget.WriteLine([
             new CliOutputSegment(
+                "  Multiline input: enter \"\"\" on its own line, then finish with \"\"\".",
+                CliOutputStyle.Muted)
+        ]);
+        await DelayIfAnimatedAsync(cancellationToken).ConfigureAwait(false);
+        _outputTarget.WriteLine([
+            new CliOutputSegment(
                 "  Press Esc while a response is running to interrupt the current request.",
                 CliOutputStyle.Muted)
         ]);

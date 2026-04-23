@@ -27,6 +27,7 @@ public sealed class HelpCommandHandlerTests
         result.Message.Should().Contain("/profile <name>");
         result.Message.Should().Contain("/thinking [effort|default]");
         result.Message.Should().Contain("--thinking <effort>");
+        result.Message.Should().Contain("Multiline input: enter \"\"\" on its own line");
         result.Message.Should().Contain("@general or @explore");
     }
 }

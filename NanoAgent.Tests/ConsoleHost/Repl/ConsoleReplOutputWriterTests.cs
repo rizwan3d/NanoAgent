@@ -29,6 +29,7 @@ public sealed class ConsoleReplOutputWriterTests
         output.Should().Contain("GitHub: github.com/rizwan3d/NanoAgent");
         output.Should().Contain("Sponsor: ALFAIN Technologies (PVT) Limited (https://alfain.co/)");
         output.Should().Contain("Press Ctrl+C or use /exit to quit.");
+        output.Should().Contain("Multiline input: enter \"\"\" on its own line, then finish with \"\"\".");
         output.Should().Contain("Press Esc while a response is running to interrupt the current request.");
         output.Should().Contain(new string('-', 53));
     }
