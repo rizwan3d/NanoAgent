@@ -74,7 +74,7 @@ internal sealed class ProfileCommandHandler : IReplCommandHandler
                     ? " (active)"
                     : string.Empty;
 
-                return $"* {profile.Name}{suffix} - {profile.Description}";
+                return $"* {profile.Name}{suffix} [{profile.Mode.ToString().ToLowerInvariant()}] - {profile.Description}";
             })
             .ToArray();
 
@@ -82,6 +82,6 @@ internal sealed class ProfileCommandHandler : IReplCommandHandler
             $"Active agent profile: {session.AgentProfile.Name} - {session.AgentProfile.Description}\n" +
             $"Available profiles ({availableProfiles.Count}):\n" +
             string.Join("\n", profileLines) +
-            "\nUse /profile <name> to switch profiles for this session.";
+            "\nUse /profile <name> to switch profiles for this session, or start a prompt with @general or @explore for a one-turn subagent handoff.";
     }
 }

@@ -339,6 +339,37 @@ public sealed class ReplSessionContext
         _redoFileEditTransactions.Clear();
     }
 
+    public bool TryCreateFileEditTransactionSnapshot(
+        string description,
+        out WorkspaceFileEditTransaction? transaction)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(description);
+
+        if (_batchedFileEditTransactions is not null)
+        {
+            throw new InvalidOperationException(
+                "File edit transactions cannot be snapshotted while a transaction batch is active.");
+        }
+
+        WorkspaceFileEditTransaction[] transactions = _undoFileEditTransactions
+            .Reverse()
+            .ToArray();
+
+        if (transactions.Length == 0)
+        {
+            transaction = null;
+            return false;
+        }
+
+        transaction = transactions.Length == 1
+            ? new WorkspaceFileEditTransaction(
+                description,
+                transactions[0].BeforeStates,
+                transactions[0].AfterStates)
+            : MergeTransactions(transactions, description);
+        return true;
+    }
+
     public bool TryGetPendingUndoFileEdit(out WorkspaceFileEditTransaction? transaction)
     {
         if (_undoFileEditTransactions.Count == 0)
@@ -471,7 +502,8 @@ public sealed class ReplSessionContext
     }
 
     private static WorkspaceFileEditTransaction MergeTransactions(
-        IReadOnlyList<WorkspaceFileEditTransaction> transactions)
+        IReadOnlyList<WorkspaceFileEditTransaction> transactions,
+        string? description = null)
     {
         Dictionary<string, WorkspaceFileEditState> firstBeforeStates = new(StringComparer.OrdinalIgnoreCase);
         Dictionary<string, WorkspaceFileEditState> lastAfterStates = new(StringComparer.OrdinalIgnoreCase);
@@ -508,9 +540,12 @@ public sealed class ReplSessionContext
             .Select(path => lastAfterStates[path])
             .ToArray();
         int fileCount = orderedPaths.Count;
+        string transactionDescription = string.IsNullOrWhiteSpace(description)
+            ? $"tool round ({transactions.Count} edits across {fileCount} {(fileCount == 1 ? "file" : "files")})"
+            : description.Trim();
 
         return new WorkspaceFileEditTransaction(
-            $"tool round ({transactions.Count} edits across {fileCount} {(fileCount == 1 ? "file" : "files")})",
+            transactionDescription,
             beforeStates,
             afterStates);
     }

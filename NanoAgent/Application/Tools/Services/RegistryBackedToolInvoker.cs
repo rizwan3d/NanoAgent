@@ -2,12 +2,15 @@ using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Serialization;
 
 namespace NanoAgent.Application.Tools.Services;
 
 internal sealed class RegistryBackedToolInvoker : IToolInvoker
 {
+    private static readonly TimeSpan AgentDelegateTimeout = TimeSpan.FromMinutes(10);
+
     private readonly TimeSpan _defaultTimeout;
     private readonly IPermissionApprovalPrompt _permissionApprovalPrompt;
     private readonly IPermissionEvaluator _permissionEvaluator;
@@ -137,8 +140,9 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                         reason)));
         }
 
+        TimeSpan timeout = GetToolTimeout(toolCall.Name);
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutSource.CancelAfter(_defaultTimeout);
+        timeoutSource.CancelAfter(timeout);
 
         try
         {
@@ -155,10 +159,10 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                 toolCall.Name,
                 ToolResultFactory.ExecutionError(
                     "tool_timeout",
-                    $"Tool '{toolCall.Name}' timed out after {_defaultTimeout.TotalSeconds:0} seconds.",
+                    $"Tool '{toolCall.Name}' timed out after {timeout.TotalSeconds:0} seconds.",
                     new ToolRenderPayload(
                         $"Tool timed out: {toolCall.Name}",
-                        $"'{toolCall.Name}' did not finish within {_defaultTimeout.TotalSeconds:0} seconds.")));
+                        $"'{toolCall.Name}' did not finish within {timeout.TotalSeconds:0} seconds.")));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -176,6 +180,13 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                         $"Tool failed: {toolCall.Name}",
                         exception.Message)));
         }
+    }
+
+    private TimeSpan GetToolTimeout(string toolName)
+    {
+        return string.Equals(toolName, AgentToolNames.AgentDelegate, StringComparison.Ordinal)
+            ? AgentDelegateTimeout
+            : _defaultTimeout;
     }
 
     private async Task<PermissionEvaluationResult> ResolveApprovalAsync(

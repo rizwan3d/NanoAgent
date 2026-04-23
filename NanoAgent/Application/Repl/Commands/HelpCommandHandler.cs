@@ -33,7 +33,8 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/thinking [effort|default] - Show or set thinking effort: none, minimal, low, medium, high, or xhigh.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model for subsequent prompts.\n\n" +
-            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile. Use --thinking <effort> to choose initial thinking effort, or use /profile <name> and /thinking <effort> inside an active session.";
+            "Start with --profile build, --profile plan, or --profile review to choose the initial session profile. Use --thinking <effort> to choose initial thinking effort, or use /profile <name> and /thinking <effort> inside an active session.\n" +
+            "Invoke subagents for one turn with @general or @explore; primary agents can also delegate focused work with agent_delegate.";
 
         return Task.FromResult(ReplCommandResult.Continue(
             $"Active agent profile: {context.Session.AgentProfile.Name}\n\n{HelpText}"));

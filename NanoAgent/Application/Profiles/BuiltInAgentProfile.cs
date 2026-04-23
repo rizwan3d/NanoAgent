@@ -7,6 +7,7 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
 {
     public BuiltInAgentProfile(
         string name,
+        AgentProfileMode mode,
         string description,
         string? systemPrompt,
         IReadOnlySet<string> enabledTools,
@@ -18,6 +19,7 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
         ArgumentNullException.ThrowIfNull(permissionIntent);
 
         Name = name.Trim();
+        Mode = mode;
         Description = description.Trim();
         SystemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
             ? null
@@ -27,6 +29,8 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
     }
 
     public string Name { get; }
+
+    public AgentProfileMode Mode { get; }
 
     public string Description { get; }
 

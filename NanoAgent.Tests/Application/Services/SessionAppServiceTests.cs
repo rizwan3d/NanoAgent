@@ -147,7 +147,7 @@ public sealed class SessionAppServiceTests
 
         await action.Should()
             .ThrowAsync<ArgumentException>()
-            .WithMessage("*Unknown agent profile 'ops'*build*plan*review*");
+            .WithMessage("*Unknown agent profile 'ops'*build*plan*review*general*explore*");
     }
 
     [Fact]
