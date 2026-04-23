@@ -98,6 +98,29 @@ public sealed class ConsoleSelectionPromptTests
     }
 
     [Fact]
+    public async Task PromptAsync_Should_HandlePendingInput_BeforeExpiredAutoSelectDefault()
+    {
+        FakeConsoleTerminal terminal = new();
+        terminal.EnqueueKey(new ConsoleKeyInfo('\0', ConsoleKey.DownArrow, false, false, false));
+        terminal.EnqueueKey(new ConsoleKeyInfo('\r', ConsoleKey.Enter, false, false, false));
+
+        ConsoleSelectionPrompt sut = CreateSut(terminal);
+
+        SelectionPromptRequest<string> request = new(
+            "Approve file write?",
+            [
+                new SelectionPromptOption<string>("Allow once", "allow-once"),
+                new SelectionPromptOption<string>("Deny once", "deny-once")
+            ],
+            DefaultIndex: 0,
+            AutoSelectAfter: TimeSpan.Zero);
+
+        string selectedValue = await sut.PromptAsync(request, CancellationToken.None);
+
+        selectedValue.Should().Be("deny-once");
+    }
+
+    [Fact]
     public async Task PromptAsync_Should_NotThrow_When_RewriteEndsPastConsoleBuffer()
     {
         FakeConsoleTerminal innerTerminal = new();
