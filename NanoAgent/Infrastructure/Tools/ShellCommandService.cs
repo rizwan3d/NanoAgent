@@ -43,11 +43,13 @@ internal sealed class ShellCommandService : IShellCommandService
             ? new ProcessExecutionRequest(
                 "powershell",
                 ["-NoProfile", "-NonInteractive", "-Command", commandText],
-                WorkingDirectory: workingDirectory)
+                WorkingDirectory: workingDirectory,
+                MaxOutputCharacters: MaxOutputCharacters)
             : new ProcessExecutionRequest(
                 "/bin/bash",
                 ["-lc", request.Command],
-                WorkingDirectory: workingDirectory);
+                WorkingDirectory: workingDirectory,
+                MaxOutputCharacters: MaxOutputCharacters);
 
         ProcessExecutionResult result = await _processRunner.RunAsync(
             processRequest,
