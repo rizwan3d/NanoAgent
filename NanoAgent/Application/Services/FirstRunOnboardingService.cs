@@ -21,6 +21,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.GoogleAiStudio,
             "Use Gemini through Google AI Studio with only a Gemini API key."),
         new(
+            "Anthropic",
+            OnboardingProviderChoice.Anthropic,
+            "Use Claude through Anthropic with only an Anthropic API key."),
+        new(
             "OpenAI-compatible provider",
             OnboardingProviderChoice.OpenAiCompatible,
             "Use a custom base URL and API key.")
@@ -118,6 +122,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         {
             OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
+            OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
             OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
                 await PromptUntilValidAsync(
                     promptCancellationToken => _textPrompt.PromptAsync(

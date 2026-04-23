@@ -8,6 +8,13 @@ NanoAgent is a local command-line coding agent for inspecting repositories, edit
 
 NanoAgent helps with day-to-day software engineering tasks from a terminal workflow. It can search and read files, apply focused patches, run build and test commands, manage model/provider configuration, and preserve local session history.
 
+## Supported Providers
+
+- OpenAI
+- Anthropic
+- Google AI Studio
+- OpenAI-compatible providers with a custom base URL
+
 ## Installation
 
 ### macOS/Linux

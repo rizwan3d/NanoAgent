@@ -135,6 +135,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToAnthropicEndpoint_When_AnthropicProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_5",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Claude."
+                  }
+                }
+              ]
+            }
+            """, responseIdHeaderName: "request-id");
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.Anthropic, null),
+                "test-key",
+                "claude-sonnet-4-6",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.anthropic.com/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer test-key");
+        handler.RequestBody.Should().Contain("\"model\":\"claude-sonnet-4-6\"");
+        payload.ProviderKind.Should().Be(ProviderKind.Anthropic);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_SerializeReasoningEffort_When_RequestProvidesThinkingEffort()
     {
         RecordingHandler handler = new("""
@@ -244,10 +281,12 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     private sealed class RecordingHandler : HttpMessageHandler
     {
         private readonly string _responseBody;
+        private readonly string _responseIdHeaderName;
 
-        public RecordingHandler(string responseBody)
+        public RecordingHandler(string responseBody, string responseIdHeaderName = "x-request-id")
         {
             _responseBody = responseBody;
+            _responseIdHeaderName = responseIdHeaderName;
         }
 
         public string? AuthorizationHeader { get; private set; }
@@ -273,7 +312,7 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             {
                 Content = new StringContent(_responseBody, Encoding.UTF8, "application/json")
             };
-            response.Headers.Add("x-request-id", "req_789");
+            response.Headers.Add(_responseIdHeaderName, "req_789");
 
             return response;
         }

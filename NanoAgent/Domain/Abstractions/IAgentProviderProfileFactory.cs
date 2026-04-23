@@ -9,4 +9,6 @@ public interface IAgentProviderProfileFactory
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();
+
+    AgentProviderProfile CreateAnthropic();
 }
