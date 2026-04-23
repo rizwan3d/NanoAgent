@@ -8,6 +8,16 @@ NanoAgent is a local command-line coding agent for inspecting repositories, edit
 
 NanoAgent helps with day-to-day software engineering tasks from a terminal workflow. It can search and read files, apply focused patches, run build and test commands, manage model/provider configuration, and preserve local session history.
 
+## Multi-Agent Workflow
+
+NanoAgent includes OpenCode-style primary profiles and subagents:
+
+- Primary profiles: `build`, `plan`, and `review`.
+- Subagents: `general` for bounded delegated implementation work and `explore` for fast read-only codebase investigation.
+- Use `/profile <name>` to switch the active profile.
+- Start a prompt with `@general` or `@explore` to hand one turn to a subagent.
+- Primary agents can call the `agent_delegate` tool to delegate focused side tasks while they continue orchestrating the main request.
+
 ## Supported Providers
 
 - OpenAI

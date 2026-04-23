@@ -2,6 +2,7 @@ namespace NanoAgent.Application.Tools;
 
 internal static class AgentToolNames
 {
+    public const string AgentDelegate = "agent_delegate";
     public const string ApplyPatch = "apply_patch";
     public const string DirectoryList = "directory_list";
     public const string FileRead = "file_read";

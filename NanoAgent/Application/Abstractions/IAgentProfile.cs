@@ -6,6 +6,8 @@ public interface IAgentProfile
 {
     string Name { get; }
 
+    AgentProfileMode Mode { get; }
+
     string Description { get; }
 
     string? SystemPrompt { get; }

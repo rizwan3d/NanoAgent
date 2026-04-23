@@ -22,11 +22,14 @@ public sealed class ProfileCommandHandlerTests
 
         result.ExitRequested.Should().BeFalse();
         result.Message.Should().Contain("Active agent profile: build");
-        result.Message.Should().Contain("Available profiles (3):");
-        result.Message.Should().Contain("* build (active)");
+        result.Message.Should().Contain("Available profiles (5):");
+        result.Message.Should().Contain("* build (active) [primary]");
         result.Message.Should().Contain("* plan");
         result.Message.Should().Contain("* review");
-        result.Message.Should().Contain("Use /profile <name> to switch profiles for this session.");
+        result.Message.Should().Contain("* general");
+        result.Message.Should().Contain("* explore");
+        result.Message.Should().Contain("Use /profile <name> to switch profiles for this session");
+        result.Message.Should().Contain("@general or @explore");
     }
 
     [Fact]
@@ -68,7 +71,7 @@ public sealed class ProfileCommandHandlerTests
 
         session.AgentProfile.Name.Should().Be(BuiltInAgentProfiles.BuildName);
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Error);
-        result.Message.Should().Be("Unknown agent profile 'ops'. Available profiles: build, plan, review.");
+        result.Message.Should().Be("Unknown agent profile 'ops'. Available profiles: build, plan, review, general, explore.");
     }
 
     private static ReplSessionContext CreateSession(IAgentProfile? agentProfile = null)
