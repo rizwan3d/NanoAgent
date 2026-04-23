@@ -1,4 +1,3 @@
-using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Presentation.Repl.Commands;
 using NanoAgent.Domain.Models;
@@ -11,7 +10,7 @@ public sealed class PermissionCommandHandlerTests
     [Fact]
     public async Task PermissionsCommand_Should_ShowSummaryAndExamples()
     {
-        PermissionsCommandHandler sut = new(new StubPermissionConfigurationAccessor(new PermissionSettings
+        PermissionsCommandHandler sut = new(new PermissionSettings
         {
             DefaultMode = PermissionMode.Ask,
             Rules =
@@ -22,7 +21,7 @@ public sealed class PermissionCommandHandlerTests
                     Tools = ["read"]
                 }
             ]
-        }));
+        });
         ReplSessionContext session = CreateSession();
         session.AddPermissionOverride(new PermissionRule
         {
@@ -46,7 +45,7 @@ public sealed class PermissionCommandHandlerTests
     [Fact]
     public async Task RulesCommand_Should_ListConfiguredRulesAndSessionOverrides()
     {
-        RulesCommandHandler sut = new(new StubPermissionConfigurationAccessor(new PermissionSettings
+        RulesCommandHandler sut = new(new PermissionSettings
         {
             DefaultMode = PermissionMode.Ask,
             Rules =
@@ -57,7 +56,7 @@ public sealed class PermissionCommandHandlerTests
                     Tools = ["read"]
                 }
             ]
-        }));
+        });
         ReplSessionContext session = CreateSession();
         session.AddPermissionOverride(new PermissionRule
         {
@@ -132,20 +131,5 @@ public sealed class PermissionCommandHandlerTests
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "gpt-5-mini",
             ["gpt-5-mini"]);
-    }
-
-    private sealed class StubPermissionConfigurationAccessor : IPermissionConfigurationAccessor
-    {
-        private readonly PermissionSettings _settings;
-
-        public StubPermissionConfigurationAccessor(PermissionSettings settings)
-        {
-            _settings = settings;
-        }
-
-        public PermissionSettings GetSettings()
-        {
-            return _settings;
-        }
     }
 }

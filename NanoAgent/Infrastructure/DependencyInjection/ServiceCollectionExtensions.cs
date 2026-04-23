@@ -27,7 +27,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
-        services.AddSingleton<IPermissionConfigurationAccessor, PermissionConfigurationAccessor>();
+        services.AddSingleton(static serviceProvider =>
+            ApplicationSettingsFactory.CreatePermissionSettings(
+                serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
         services.AddHttpClient<IWebRunService, WebRunService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);
@@ -38,7 +40,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModelCache, InMemoryModelCache>();
         services.AddSingleton<IConversationConfigurationAccessor, ConversationConfigurationAccessor>();
         services.AddSingleton<IConversationResponseMapper, OpenAiConversationResponseMapper>();
-        services.AddSingleton<IModelSelectionConfigurationAccessor, ModelSelectionConfigurationAccessor>();
+        services.AddSingleton(static serviceProvider =>
+            ApplicationSettingsFactory.CreateModelSelectionSettings(
+                serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IPlatformCredentialStore>(CreatePlatformCredentialStore());

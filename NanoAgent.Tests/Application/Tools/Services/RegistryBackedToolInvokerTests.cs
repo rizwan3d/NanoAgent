@@ -10,7 +10,11 @@ namespace NanoAgent.Tests.Application.Tools.Services;
 
 public sealed class RegistryBackedToolInvokerTests
 {
-    private static readonly StubPermissionConfigurationAccessor PermissionConfigurationAccessor = new();
+    private static readonly PermissionSettings DefaultPermissionSettings = new()
+    {
+        DefaultMode = PermissionMode.Ask,
+        Rules = []
+    };
     private static readonly ReplSessionContext Session = new(
         new AgentProviderProfile(ProviderKind.OpenAi, null),
         "gpt-5-mini",
@@ -21,7 +25,7 @@ public sealed class RegistryBackedToolInvokerTests
     {
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
@@ -41,7 +45,7 @@ public sealed class RegistryBackedToolInvokerTests
     {
         RegistryBackedToolInvoker sut = new(new ToolRegistry([
             new EchoTool()
-        ], new ToolPermissionParser()), new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor), new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+        ], new ToolPermissionParser()), new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings), new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "echo_tool", "[]"),
@@ -59,7 +63,7 @@ public sealed class RegistryBackedToolInvokerTests
     {
         RegistryBackedToolInvoker sut = new(new ToolRegistry([
             new ThrowingTool()
-        ], new ToolPermissionParser()), new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor), new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+        ], new ToolPermissionParser()), new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings), new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
             new ConversationToolCall("call_1", "exploding_tool", "{}"),
@@ -77,7 +81,7 @@ public sealed class RegistryBackedToolInvokerTests
     {
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([new SlowTool()], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce),
             TimeSpan.FromMilliseconds(50));
 
@@ -98,7 +102,7 @@ public sealed class RegistryBackedToolInvokerTests
         ApprovalTool tool = new();
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([tool], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.AllowOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
@@ -123,7 +127,7 @@ public sealed class RegistryBackedToolInvokerTests
         FixedPermissionApprovalPrompt prompt = new(PermissionApprovalChoice.AllowForAgent);
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([tool], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             prompt);
 
         ToolInvocationResult first = await sut.InvokeAsync(
@@ -155,7 +159,7 @@ public sealed class RegistryBackedToolInvokerTests
         ApprovalTool tool = new();
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([tool], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyForAgent));
 
         ToolInvocationResult result = await sut.InvokeAsync(
@@ -175,7 +179,7 @@ public sealed class RegistryBackedToolInvokerTests
     {
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([new ShellRestrictedTool()], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
@@ -194,7 +198,7 @@ public sealed class RegistryBackedToolInvokerTests
     {
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([new EchoTool()], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), PermissionConfigurationAccessor),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
@@ -341,18 +345,6 @@ public sealed class RegistryBackedToolInvokerTests
         public string GetWorkspaceRoot()
         {
             return Path.GetTempPath();
-        }
-    }
-
-    private sealed class StubPermissionConfigurationAccessor : IPermissionConfigurationAccessor
-    {
-        public PermissionSettings GetSettings()
-        {
-            return new PermissionSettings
-            {
-                DefaultMode = PermissionMode.Ask,
-                Rules = []
-            };
         }
     }
 

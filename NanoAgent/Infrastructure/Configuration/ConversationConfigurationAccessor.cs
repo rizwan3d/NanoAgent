@@ -15,20 +15,6 @@ internal sealed class ConversationConfigurationAccessor : IConversationConfigura
 
     public ConversationSettings GetSettings()
     {
-        ConversationOptions conversation = _options.Value.Conversation ?? new ConversationOptions();
-        string? systemPrompt = string.IsNullOrWhiteSpace(conversation.SystemPrompt)
-            ? null
-            : conversation.SystemPrompt.Trim();
-        TimeSpan requestTimeout = conversation.RequestTimeoutSeconds <= 0
-            ? Timeout.InfiniteTimeSpan
-            : TimeSpan.FromSeconds(conversation.RequestTimeoutSeconds);
-        int maxHistoryTurns = Math.Max(0, conversation.MaxHistoryTurns);
-        int maxToolRoundsPerTurn = Math.Max(0, conversation.MaxToolRoundsPerTurn);
-
-        return new ConversationSettings(
-            systemPrompt,
-            requestTimeout,
-            maxHistoryTurns,
-            maxToolRoundsPerTurn);
+        return ApplicationSettingsFactory.CreateConversationSettings(_options.Value);
     }
 }

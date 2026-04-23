@@ -41,13 +41,11 @@ public sealed class ConversationConfigurationAccessorTests
         ConversationSettings result = sut.GetSettings();
 
         result.SystemPrompt.Should().Contain("Use `planning_mode` when you need a plan-first pass");
-        result.SystemPrompt.Should().Contain("publish a live task list");
         result.SystemPrompt.Should().Contain("When you intentionally want a plan-first pass, call `planning_mode`");
-        result.SystemPrompt.Should().Contain("For plan-first work, start by calling `planning_mode` rather than drafting the plan freeform");
+        result.SystemPrompt.Should().Contain("Use `update_plan` to publish a live task list");
         result.SystemPrompt.Should().Contain("Make reasonable assumptions when the safest path is clear");
         result.SystemPrompt.Should().Contain("Persist until the task is handled end-to-end when practical");
         result.SystemPrompt.Should().Contain("fully specified, non-interactive commands for project scaffolding tools");
-        result.SystemPrompt.Should().Contain("project scaffolding, dependency restore/install");
         result.SystemPrompt.Should().Contain("Use `web_run` when current external facts or documentation are required");
         result.SystemPrompt.Should().Contain("Before using unfamiliar build tools, frameworks, libraries, SDKs, or APIs");
         result.SystemPrompt.Should().Contain("official documentation or domain references");
@@ -55,6 +53,7 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("- update_plan:");
         result.SystemPrompt.Should().Contain("- web_run:");
         result.SystemPrompt.Should().Contain("- shell_command:");
+        result.SystemPrompt.Should().NotContain("Developed by:");
         result.SystemPrompt.Should().NotContain("Always use planning_mode for tasks.");
         result.SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
         result.SystemPrompt.Should().NotContain("Do not write files.");

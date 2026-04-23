@@ -41,10 +41,7 @@ public sealed class ModelDiscoveryServiceTests
                 new AvailableModel("gpt-5")
             ]);
 
-        Mock<IModelSelectionConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
-        configurationAccessor
-            .Setup(accessor => accessor.GetSettings())
-            .Returns(new ModelSelectionSettings(TimeSpan.FromMinutes(5)));
+        ModelSelectionSettings settings = new(TimeSpan.FromMinutes(5));
 
         ModelDiscoveryService sut = CreateSut(
             configurationStore.Object,
@@ -52,7 +49,7 @@ public sealed class ModelDiscoveryServiceTests
             providerClient.Object,
             new InMemoryModelCache(),
             new ConfiguredOrFirstModelSelectionPolicy(),
-            configurationAccessor.Object);
+            settings);
 
         ModelDiscoveryResult result = await sut.DiscoverAndSelectAsync(CancellationToken.None);
 
@@ -97,10 +94,7 @@ public sealed class ModelDiscoveryServiceTests
                 new AvailableModel("gpt-4.1-mini")
             ]);
 
-        Mock<IModelSelectionConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
-        configurationAccessor
-            .Setup(accessor => accessor.GetSettings())
-            .Returns(new ModelSelectionSettings(TimeSpan.FromMinutes(5)));
+        ModelSelectionSettings settings = new(TimeSpan.FromMinutes(5));
 
         ModelDiscoveryService sut = CreateSut(
             configurationStore.Object,
@@ -108,7 +102,7 @@ public sealed class ModelDiscoveryServiceTests
             providerClient.Object,
             new InMemoryModelCache(),
             new ConfiguredOrFirstModelSelectionPolicy(),
-            configurationAccessor.Object);
+            settings);
 
         ModelDiscoveryResult result = await sut.DiscoverAndSelectAsync(CancellationToken.None);
 
@@ -157,10 +151,7 @@ public sealed class ModelDiscoveryServiceTests
                 ];
             });
 
-        Mock<IModelSelectionConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
-        configurationAccessor
-            .Setup(accessor => accessor.GetSettings())
-            .Returns(new ModelSelectionSettings(TimeSpan.FromMinutes(5)));
+        ModelSelectionSettings settings = new(TimeSpan.FromMinutes(5));
 
         ModelDiscoveryService sut = CreateSut(
             configurationStore.Object,
@@ -168,7 +159,7 @@ public sealed class ModelDiscoveryServiceTests
             providerClient.Object,
             new InMemoryModelCache(),
             new ConfiguredOrFirstModelSelectionPolicy(),
-            configurationAccessor.Object);
+            settings);
 
         await sut.DiscoverAndSelectAsync(CancellationToken.None);
         await sut.DiscoverAndSelectAsync(CancellationToken.None);
@@ -202,10 +193,7 @@ public sealed class ModelDiscoveryServiceTests
                 new AvailableModel("")
             ]);
 
-        Mock<IModelSelectionConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
-        configurationAccessor
-            .Setup(accessor => accessor.GetSettings())
-            .Returns(new ModelSelectionSettings(TimeSpan.FromMinutes(5)));
+        ModelSelectionSettings settings = new(TimeSpan.FromMinutes(5));
 
         ModelDiscoveryService sut = CreateSut(
             configurationStore.Object,
@@ -213,7 +201,7 @@ public sealed class ModelDiscoveryServiceTests
             providerClient.Object,
             new InMemoryModelCache(),
             new ConfiguredOrFirstModelSelectionPolicy(),
-            configurationAccessor.Object);
+            settings);
 
         Func<Task> action = () => sut.DiscoverAndSelectAsync(CancellationToken.None);
 
@@ -227,7 +215,7 @@ public sealed class ModelDiscoveryServiceTests
         IModelProviderClient providerClient,
         IModelCache modelCache,
         IModelSelectionPolicy selectionPolicy,
-        IModelSelectionConfigurationAccessor configurationAccessor)
+        ModelSelectionSettings settings)
     {
         return new ModelDiscoveryService(
             configurationStore,
@@ -235,7 +223,7 @@ public sealed class ModelDiscoveryServiceTests
             providerClient,
             modelCache,
             selectionPolicy,
-            configurationAccessor,
+            settings,
             NullLogger<ModelDiscoveryService>.Instance);
     }
 }

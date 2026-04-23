@@ -18,7 +18,7 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
     private readonly IModelProviderClient _modelProviderClient;
     private readonly IModelCache _modelCache;
     private readonly IModelSelectionPolicy _modelSelectionPolicy;
-    private readonly IModelSelectionConfigurationAccessor _configurationAccessor;
+    private readonly ModelSelectionSettings _settings;
     private readonly ILogger<ModelDiscoveryService> _logger;
 
     public ModelDiscoveryService(
@@ -27,7 +27,7 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
         IModelProviderClient modelProviderClient,
         IModelCache modelCache,
         IModelSelectionPolicy modelSelectionPolicy,
-        IModelSelectionConfigurationAccessor configurationAccessor,
+        ModelSelectionSettings settings,
         ILogger<ModelDiscoveryService> logger)
     {
         _configurationStore = configurationStore;
@@ -35,7 +35,7 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
         _modelProviderClient = modelProviderClient;
         _modelCache = modelCache;
         _modelSelectionPolicy = modelSelectionPolicy;
-        _configurationAccessor = configurationAccessor;
+        _settings = settings;
         _logger = logger;
     }
 
@@ -54,12 +54,10 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
             _logger,
             providerProfile.ProviderKind.ToDisplayName());
 
-        ModelSelectionSettings settings = _configurationAccessor.GetSettings();
-
         (IReadOnlyList<AvailableModel> models, bool hadDuplicates) = await LoadAvailableModelsAsync(
             providerProfile,
             apiKey,
-            settings.CacheDuration,
+            _settings.CacheDuration,
             cancellationToken);
 
         if (hadDuplicates)

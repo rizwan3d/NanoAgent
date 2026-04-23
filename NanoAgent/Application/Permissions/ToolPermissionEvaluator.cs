@@ -10,15 +10,15 @@ namespace NanoAgent.Application.Permissions;
 
 internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 {
-    private readonly IPermissionConfigurationAccessor _configurationAccessor;
+    private readonly PermissionSettings _settings;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
     public ToolPermissionEvaluator(
         IWorkspaceRootProvider workspaceRootProvider,
-        IPermissionConfigurationAccessor configurationAccessor)
+        PermissionSettings settings)
     {
         _workspaceRootProvider = workspaceRootProvider;
-        _configurationAccessor = configurationAccessor;
+        _settings = settings;
     }
 
     public PermissionEvaluationResult Evaluate(
@@ -139,8 +139,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         IReadOnlyList<PermissionRule> overrides,
         PermissionMode fallbackMode)
     {
-        PermissionSettings settings = _configurationAccessor.GetSettings();
-        PermissionRule[] rules = (settings.Rules ?? [])
+        PermissionRule[] rules = (_settings.Rules ?? [])
             .Concat(overrides ?? [])
             .ToArray();
 

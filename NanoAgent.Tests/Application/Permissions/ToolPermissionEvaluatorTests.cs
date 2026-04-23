@@ -29,7 +29,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -54,7 +54,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -80,7 +80,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -98,7 +98,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -120,7 +120,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -141,7 +141,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -162,7 +162,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -184,7 +184,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -213,7 +213,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -237,7 +237,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor(new PermissionSettings
+            CreatePermissionSettings(new PermissionSettings
             {
                 DefaultMode = PermissionMode.Ask,
                 Rules =
@@ -289,7 +289,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
 
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor(new PermissionSettings
+            CreatePermissionSettings(new PermissionSettings
             {
                 DefaultMode = PermissionMode.Ask,
                 Rules =
@@ -332,7 +332,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -361,7 +361,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -389,7 +389,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor(new PermissionSettings
+            CreatePermissionSettings(new PermissionSettings
             {
                 DefaultMode = PermissionMode.Ask,
                 Rules =
@@ -419,7 +419,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -443,7 +443,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -466,7 +466,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -491,7 +491,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubPermissionConfigurationAccessor());
+            CreatePermissionSettings());
 
         PermissionEvaluationResult result = sut.Evaluate(
             new ToolPermissionPolicy
@@ -542,6 +542,15 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
             agentProfile);
     }
 
+    private static PermissionSettings CreatePermissionSettings(PermissionSettings? settings = null)
+    {
+        return settings ?? new PermissionSettings
+        {
+            DefaultMode = PermissionMode.Ask,
+            Rules = []
+        };
+    }
+
     private sealed class StubWorkspaceRootProvider : global::NanoAgent.Application.Abstractions.IWorkspaceRootProvider
     {
         private readonly string _workspaceRoot;
@@ -554,25 +563,6 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
         public string GetWorkspaceRoot()
         {
             return _workspaceRoot;
-        }
-    }
-
-    private sealed class StubPermissionConfigurationAccessor : global::NanoAgent.Application.Abstractions.IPermissionConfigurationAccessor
-    {
-        private readonly PermissionSettings _settings;
-
-        public StubPermissionConfigurationAccessor(PermissionSettings? settings = null)
-        {
-            _settings = settings ?? new PermissionSettings
-            {
-                DefaultMode = PermissionMode.Ask,
-                Rules = []
-            };
-        }
-
-        public PermissionSettings GetSettings()
-        {
-            return _settings;
         }
     }
 }

@@ -1,4 +1,3 @@
-using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Presentation.Abstractions;
 
@@ -6,11 +5,11 @@ namespace NanoAgent.Presentation.Repl.Commands;
 
 internal sealed class RulesCommandHandler : IReplCommandHandler
 {
-    private readonly IPermissionConfigurationAccessor _permissionConfigurationAccessor;
+    private readonly PermissionSettings _permissionSettings;
 
-    public RulesCommandHandler(IPermissionConfigurationAccessor permissionConfigurationAccessor)
+    public RulesCommandHandler(PermissionSettings permissionSettings)
     {
-        _permissionConfigurationAccessor = permissionConfigurationAccessor;
+        _permissionSettings = permissionSettings;
     }
 
     public string CommandName => "rules";
@@ -33,9 +32,8 @@ internal sealed class RulesCommandHandler : IReplCommandHandler
                 ReplFeedbackKind.Error));
         }
 
-        PermissionSettings settings = _permissionConfigurationAccessor.GetSettings();
         return Task.FromResult(ReplCommandResult.Continue(
-            PermissionCommandSupport.BuildRulesListing(settings, context.Session),
+            PermissionCommandSupport.BuildRulesListing(_permissionSettings, context.Session),
             ReplFeedbackKind.Info));
     }
 }

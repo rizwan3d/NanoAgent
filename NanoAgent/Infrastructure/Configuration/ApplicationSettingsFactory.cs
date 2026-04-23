@@ -1,12 +1,10 @@
-using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using Microsoft.Extensions.Options;
 
 namespace NanoAgent.Infrastructure.Configuration;
 
-internal sealed class PermissionConfigurationAccessor : IPermissionConfigurationAccessor
+internal static class ApplicationSettingsFactory
 {
-    private static readonly PermissionRule[] BuiltInRules =
+    private static readonly PermissionRule[] BuiltInPermissionRules =
     [
         new PermissionRule
         {
@@ -56,31 +54,50 @@ internal sealed class PermissionConfigurationAccessor : IPermissionConfiguration
         }
     ];
 
-    private readonly IOptions<ApplicationOptions> _options;
-
-    public PermissionConfigurationAccessor(IOptions<ApplicationOptions> options)
+    public static ConversationSettings CreateConversationSettings(ApplicationOptions options)
     {
-        _options = options;
+        ArgumentNullException.ThrowIfNull(options);
+
+        ConversationOptions conversation = options.Conversation ?? new ConversationOptions();
+        string? systemPrompt = string.IsNullOrWhiteSpace(conversation.SystemPrompt)
+            ? null
+            : conversation.SystemPrompt.Trim();
+        TimeSpan requestTimeout = conversation.RequestTimeoutSeconds <= 0
+            ? Timeout.InfiniteTimeSpan
+            : TimeSpan.FromSeconds(conversation.RequestTimeoutSeconds);
+
+        return new ConversationSettings(
+            systemPrompt,
+            requestTimeout,
+            Math.Max(0, conversation.MaxHistoryTurns),
+            Math.Max(0, conversation.MaxToolRoundsPerTurn));
     }
 
-    public PermissionSettings GetSettings()
+    public static ModelSelectionSettings CreateModelSelectionSettings(ApplicationOptions options)
     {
-        PermissionSettings configured = _options.Value.Permissions ?? new PermissionSettings();
+        ArgumentNullException.ThrowIfNull(options);
 
+        return new ModelSelectionSettings(
+            TimeSpan.FromSeconds(options.ModelSelection.CacheDurationSeconds));
+    }
+
+    public static PermissionSettings CreatePermissionSettings(ApplicationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        PermissionSettings configured = options.Permissions ?? new PermissionSettings();
         PermissionRule[] configuredRules = (configured.Rules ?? [])
             .Where(static rule => rule is not null)
-            .Select(NormalizeRule)
-            .ToArray();
-
-        PermissionRule[] effectiveRules = BuiltInRules
-            .Concat(configuredRules)
             .Select(NormalizeRule)
             .ToArray();
 
         return new PermissionSettings
         {
             DefaultMode = configured.DefaultMode,
-            Rules = effectiveRules
+            Rules = BuiltInPermissionRules
+                .Concat(configuredRules)
+                .Select(NormalizeRule)
+                .ToArray()
         };
     }
 
