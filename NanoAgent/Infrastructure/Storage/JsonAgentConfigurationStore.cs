@@ -2,6 +2,7 @@ using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
+using NanoAgent.Domain.Services;
 
 namespace NanoAgent.Infrastructure.Storage;
 
@@ -117,16 +118,23 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             return null;
         }
 
-        return profile.ProviderKind switch
+        try
         {
-            ProviderKind.OpenAi => new AgentProviderProfile(ProviderKind.OpenAi, BaseUrl: null),
-            ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
-            ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),
-            ProviderKind.OpenAiCompatible when !string.IsNullOrWhiteSpace(profile.BaseUrl)
-                => new AgentProviderProfile(
-                    ProviderKind.OpenAiCompatible,
-                    profile.BaseUrl.Trim().TrimEnd('/')),
-            _ => null
-        };
+            return profile.ProviderKind switch
+            {
+                ProviderKind.OpenAi => new AgentProviderProfile(ProviderKind.OpenAi, BaseUrl: null),
+                ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
+                ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),
+                ProviderKind.OpenAiCompatible when !string.IsNullOrWhiteSpace(profile.BaseUrl)
+                    => new AgentProviderProfile(
+                        ProviderKind.OpenAiCompatible,
+                        CompatibleProviderBaseUrlNormalizer.Normalize(profile.BaseUrl)),
+                _ => null
+            };
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
     }
 }

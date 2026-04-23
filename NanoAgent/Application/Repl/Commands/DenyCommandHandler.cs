@@ -28,17 +28,10 @@ internal sealed class DenyCommandHandler : IReplCommandHandler
             return Task.FromResult(errorResult!);
         }
 
-        context.Session.AddPermissionOverride(new PermissionRule
-        {
-            Mode = PermissionMode.Deny,
-            Tools = [toolPattern],
-            Patterns = subjectPattern is null ? [] : [subjectPattern]
-        });
-
-        string message = subjectPattern is null
-            ? $"Added a session deny rule for '{toolPattern}' across all targets. Use /rules to review it."
-            : $"Added a session deny rule for '{toolPattern}' on '{subjectPattern}'. Use /rules to review it.";
-
-        return Task.FromResult(ReplCommandResult.Continue(message, ReplFeedbackKind.Info));
+        return Task.FromResult(PermissionCommandSupport.AddSessionOverride(
+            context.Session,
+            PermissionMode.Deny,
+            toolPattern,
+            subjectPattern));
     }
 }

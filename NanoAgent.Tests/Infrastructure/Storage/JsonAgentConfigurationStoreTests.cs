@@ -51,6 +51,57 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(configuration);
     }
 
+    [Fact]
+    public async Task LoadAsync_Should_NormalizeCompatibleProviderBaseUrl()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            """
+            {
+              "providerProfile": {
+                "providerKind": 2,
+                "baseUrl": "https://provider.example.com/"
+              },
+              "preferredModelId": "gpt-4.1"
+            }
+            """,
+            CancellationToken.None);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().NotBeNull();
+        loadedConfiguration!.ProviderProfile.Should().Be(
+            new AgentProviderProfile(
+                ProviderKind.OpenAiCompatible,
+                "https://provider.example.com/v1"));
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_ReturnNull_When_CompatibleProviderBaseUrlIsInvalid()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            """
+            {
+              "providerProfile": {
+                "providerKind": 2,
+                "baseUrl": "not-a-url"
+              }
+            }
+            """,
+            CancellationToken.None);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().BeNull();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempRoot))

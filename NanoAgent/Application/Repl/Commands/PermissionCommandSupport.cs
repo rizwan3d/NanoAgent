@@ -86,6 +86,29 @@ internal static class PermissionCommandSupport
         return true;
     }
 
+    public static ReplCommandResult AddSessionOverride(
+        ReplSessionContext session,
+        PermissionMode mode,
+        string toolPattern,
+        string? subjectPattern)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        session.AddPermissionOverride(new PermissionRule
+        {
+            Mode = mode,
+            Tools = [toolPattern],
+            Patterns = subjectPattern is null ? [] : [subjectPattern]
+        });
+
+        string modeText = ToDisplayText(mode).ToLowerInvariant();
+        string message = subjectPattern is null
+            ? $"Added a session {modeText} rule for '{toolPattern}' across all targets. Use /rules to review it."
+            : $"Added a session {modeText} rule for '{toolPattern}' on '{subjectPattern}'. Use /rules to review it.";
+
+        return ReplCommandResult.Continue(message, ReplFeedbackKind.Info);
+    }
+
     public static string FormatRule(PermissionRule rule)
     {
         ArgumentNullException.ThrowIfNull(rule);
