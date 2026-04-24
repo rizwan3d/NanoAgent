@@ -1,14 +1,28 @@
-﻿using NanoAgent.Application.Exceptions;
-using System.Text.Json;
+using System.Collections.Concurrent;
 using NanoAgent.Application.Models;
 
 namespace NanoAgent.CLI;
 
-public sealed class UiBridge
+public sealed class UiBridge : IUiBridge
 {
     private const int MaxActivityDescriptionLength = 96;
 
-    private readonly System.Collections.Concurrent.ConcurrentQueue<Action<AppState>> _pending = new();
+    private readonly ConcurrentQueue<Action<AppState>> _pending = new();
+    private readonly IPlanOutputFormatter _planOutputFormatter;
+    private readonly IToolOutputFormatter _toolOutputFormatter;
+
+    public UiBridge()
+        : this(new ToolOutputFormatter(), new PlanOutputFormatter())
+    {
+    }
+
+    internal UiBridge(
+        IToolOutputFormatter toolOutputFormatter,
+        IPlanOutputFormatter planOutputFormatter)
+    {
+        _toolOutputFormatter = toolOutputFormatter ?? throw new ArgumentNullException(nameof(toolOutputFormatter));
+        _planOutputFormatter = planOutputFormatter ?? throw new ArgumentNullException(nameof(planOutputFormatter));
+    }
 
     public void ApplyPending(AppState state)
     {
@@ -116,7 +130,7 @@ public sealed class UiBridge
     public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
     {
         string[] descriptions = toolCalls
-            .Select(DescribeToolCall)
+            .Select(_toolOutputFormatter.DescribeCall)
             .Where(static description => !string.IsNullOrWhiteSpace(description))
             .ToArray();
 
@@ -144,23 +158,20 @@ public sealed class UiBridge
 
     public void ShowToolResults(ToolExecutionBatchResult toolExecutionResult)
     {
+        IReadOnlyList<string> messages = _toolOutputFormatter.FormatResults(toolExecutionResult);
+
         Enqueue(state =>
         {
-            foreach (ToolInvocationResult result in toolExecutionResult.Results)
+            foreach (string message in messages)
             {
-                if (IsSuccessfulPlanUpdate(result))
-                {
-                    continue;
-                }
-
-                state.AddSystemMessage(BuildToolResultMessage(result));
+                state.AddSystemMessage(message);
             }
         });
     }
 
     public void ShowExecutionPlan(ExecutionPlanProgress progress)
     {
-        string description = BuildPlanDescription(progress);
+        string description = _planOutputFormatter.Format(progress);
 
         Enqueue(state =>
         {
@@ -170,166 +181,6 @@ public sealed class UiBridge
 
             state.AddSystemMessage(description);
         });
-    }
-
-    private static string BuildPlanDescription(ExecutionPlanProgress progress)
-    {
-        if (progress.Tasks.Count == 0)
-        {
-            return "Plan updated.";
-        }
-
-        List<string> lines =
-        [
-            $"Plan progress: {progress.CompletedTaskCount}/{progress.Tasks.Count}"
-        ];
-
-        for (int index = 0; index < progress.Tasks.Count; index++)
-        {
-            string marker = index < progress.CompletedTaskCount
-                ? "[x]"
-                : index == progress.CurrentTaskIndex
-                    ? "[>]"
-                    : "[ ]";
-
-            lines.Add($"{marker} {progress.Tasks[index]}");
-        }
-
-        return string.Join(Environment.NewLine, lines);
-    }
-
-    private static string DescribeToolCall(ConversationToolCall toolCall)
-    {
-        string name = toolCall.Name.Trim();
-
-        return name switch
-        {
-            "shell_command" when TryGetArgumentString(toolCall.ArgumentsJson, "command", out string? command) =>
-                $"command: {Truncate(command, 120)}",
-            "file_read" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string? path) =>
-                $"file read: {path}",
-            "directory_list" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string? path) =>
-                $"directory list: {path}",
-            "directory_list" => "directory list",
-            "search_files" when TryGetArgumentString(toolCall.ArgumentsJson, "query", out string? query) =>
-                $"file search: \"{query}\"",
-            "text_search" when TryGetArgumentString(toolCall.ArgumentsJson, "query", out string? query) =>
-                $"text search: \"{query}\"",
-            "file_write" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string? path) =>
-                $"file write: {path}",
-            "web_run" => DescribeWebRunCall(toolCall.ArgumentsJson),
-            _ => name
-        };
-    }
-
-    private static string DescribeWebRunCall(string argumentsJson)
-    {
-        if (TryGetFirstArrayObjectString(argumentsJson, "search_query", "q", out string? query))
-        {
-            return $"web search: \"{query}\"";
-        }
-
-        if (TryGetFirstArrayObjectString(argumentsJson, "open", "ref_id", out string? refId))
-        {
-            return $"web open: {refId}";
-        }
-
-        if (TryGetFirstArrayObjectString(argumentsJson, "find", "pattern", out string? pattern))
-        {
-            return $"web find: \"{pattern}\"";
-        }
-
-        return "web_run";
-    }
-
-    private static string BuildToolResultMessage(ToolInvocationResult invocationResult)
-    {
-        ToolRenderPayload? renderPayload = invocationResult.Result.RenderPayload;
-        if (renderPayload is not null)
-        {
-            string prefix = invocationResult.Result.IsSuccess
-                ? string.Empty
-                : "Tool issue: ";
-
-            return $"{prefix}{renderPayload.Title}{Environment.NewLine}{Environment.NewLine}{renderPayload.Text}";
-        }
-
-        string title = invocationResult.Result.IsSuccess
-            ? $"Tool complete: {invocationResult.ToolName}"
-            : $"Tool issue: {invocationResult.ToolName}";
-
-        return $"{title}{Environment.NewLine}{Environment.NewLine}{invocationResult.Result.Message}";
-    }
-
-    private static bool IsSuccessfulPlanUpdate(ToolInvocationResult invocationResult)
-    {
-        return invocationResult.Result.IsSuccess &&
-            string.Equals(invocationResult.ToolName, "update_plan", StringComparison.Ordinal);
-    }
-
-    private static bool TryGetArgumentString(
-        string argumentsJson,
-        string propertyName,
-        out string value)
-    {
-        value = string.Empty;
-
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(argumentsJson);
-            if (document.RootElement.ValueKind != JsonValueKind.Object ||
-                !document.RootElement.TryGetProperty(propertyName, out JsonElement property) ||
-                property.ValueKind != JsonValueKind.String)
-            {
-                return false;
-            }
-
-            value = property.GetString()?.Trim() ?? string.Empty;
-            return !string.IsNullOrWhiteSpace(value);
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
-    }
-
-    private static bool TryGetFirstArrayObjectString(
-        string argumentsJson,
-        string arrayPropertyName,
-        string itemPropertyName,
-        out string value)
-    {
-        value = string.Empty;
-
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(argumentsJson);
-            if (document.RootElement.ValueKind != JsonValueKind.Object ||
-                !document.RootElement.TryGetProperty(arrayPropertyName, out JsonElement array) ||
-                array.ValueKind != JsonValueKind.Array)
-            {
-                return false;
-            }
-
-            foreach (JsonElement item in array.EnumerateArray())
-            {
-                if (item.ValueKind != JsonValueKind.Object ||
-                    !item.TryGetProperty(itemPropertyName, out JsonElement property) ||
-                    property.ValueKind != JsonValueKind.String)
-                {
-                    continue;
-                }
-
-                value = property.GetString()?.Trim() ?? string.Empty;
-                return !string.IsNullOrWhiteSpace(value);
-            }
-
-            return false;
-        }
-        catch (JsonException)
-        {
-            return false;
-        }
     }
 
     private static string Truncate(string value, int maxLength)

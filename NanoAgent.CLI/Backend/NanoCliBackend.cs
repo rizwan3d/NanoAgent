@@ -10,7 +10,7 @@ using NanoAgent.Infrastructure.DependencyInjection;
 
 namespace NanoAgent.CLI;
 
-public sealed class NanoCliBackend : IAsyncDisposable
+public sealed class NanoCliBackend : INanoAgentBackend
 {
     private readonly string[] _args;
     private IAgentTurnService? _agentTurnService;
@@ -28,7 +28,7 @@ public sealed class NanoCliBackend : IAsyncDisposable
     }
 
     public async Task<BackendSessionInfo> InitializeAsync(
-        UiBridge uiBridge,
+        IUiBridge uiBridge,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(uiBridge);
@@ -96,7 +96,7 @@ public sealed class NanoCliBackend : IAsyncDisposable
 
     public async Task<ConversationTurnResult> RunTurnAsync(
         string input,
-        UiBridge uiBridge,
+        IUiBridge uiBridge,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(input);
@@ -157,7 +157,7 @@ public sealed class NanoCliBackend : IAsyncDisposable
         }
     }
 
-    private static IHost CreateHost(UiBridge uiBridge, string[] args)
+    private static IHost CreateHost(IUiBridge uiBridge, string[] args)
     {
         HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
 

@@ -5,9 +5,9 @@ namespace NanoAgent.CLI;
 
 public sealed class NanoCliProgressSink : IConversationProgressSink
 {
-    private readonly UiBridge _uiBridge;
+    private readonly IUiBridge _uiBridge;
 
-    public NanoCliProgressSink(UiBridge uiBridge)
+    public NanoCliProgressSink(IUiBridge uiBridge)
     {
         _uiBridge = uiBridge;
     }

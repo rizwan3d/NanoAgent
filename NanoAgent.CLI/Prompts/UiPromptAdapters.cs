@@ -5,9 +5,9 @@ namespace NanoAgent.CLI;
 
 public sealed class UiSelectionPrompt : ISelectionPrompt
 {
-    private readonly UiBridge _uiBridge;
+    private readonly IUiBridge _uiBridge;
 
-    public UiSelectionPrompt(UiBridge uiBridge)
+    public UiSelectionPrompt(IUiBridge uiBridge)
     {
         _uiBridge = uiBridge;
     }
@@ -20,9 +20,9 @@ public sealed class UiSelectionPrompt : ISelectionPrompt
 
 public sealed class UiTextPrompt : ITextPrompt
 {
-    private readonly UiBridge _uiBridge;
+    private readonly IUiBridge _uiBridge;
 
-    public UiTextPrompt(UiBridge uiBridge)
+    public UiTextPrompt(IUiBridge uiBridge)
     {
         _uiBridge = uiBridge;
     }
@@ -35,9 +35,9 @@ public sealed class UiTextPrompt : ITextPrompt
 
 public sealed class UiSecretPrompt : ISecretPrompt
 {
-    private readonly UiBridge _uiBridge;
+    private readonly IUiBridge _uiBridge;
 
-    public UiSecretPrompt(UiBridge uiBridge)
+    public UiSecretPrompt(IUiBridge uiBridge)
     {
         _uiBridge = uiBridge;
     }

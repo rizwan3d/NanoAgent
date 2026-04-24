@@ -11,9 +11,28 @@ public static partial class Program
         ref bool firstLine,
         string roleName,
         string roleColor,
+        Role role,
         int contentWidth)
     {
         string trimmedLine = rawLine.Trim();
+
+        if (role == Role.System &&
+            TryGetToolOutputLineStyle(rawLine, out string toolOutputLineStyle))
+        {
+            AddWrappedMarkdownLine(
+                lines,
+                rawLine,
+                toolOutputLineStyle,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                string.Empty,
+                ref firstLine,
+                roleName,
+                roleColor,
+                contentWidth);
+            return;
+        }
 
         if (TryGetMarkdownHeading(trimmedLine, out int headingLevel, out string headingText))
         {
@@ -349,6 +368,141 @@ public static partial class Program
             2 => "bold green",
             _ => "bold yellow"
         };
+    }
+
+    private static bool TryGetToolOutputLineStyle(
+        string rawLine,
+        out string style)
+    {
+        style = string.Empty;
+        string trimmedStart = rawLine.TrimStart();
+
+        if (trimmedStart.StartsWith("Running ", StringComparison.Ordinal))
+        {
+            style = "bold yellow";
+            return true;
+        }
+
+        if (trimmedStart.StartsWith("Plan progress:", StringComparison.Ordinal))
+        {
+            style = "bold aqua";
+            return true;
+        }
+
+        if (trimmedStart.StartsWith("✓ ", StringComparison.Ordinal))
+        {
+            style = "green";
+            return true;
+        }
+
+        if (trimmedStart.StartsWith("☐ ", StringComparison.Ordinal))
+        {
+            style = "yellow";
+            return true;
+        }
+
+        if (trimmedStart.StartsWith("• ", StringComparison.Ordinal))
+        {
+            style = GetToolOutputHeaderStyle(trimmedStart);
+            return true;
+        }
+
+        if (trimmedStart.StartsWith("…", StringComparison.Ordinal) ||
+            trimmedStart.StartsWith("...", StringComparison.Ordinal))
+        {
+            style = "grey";
+            return true;
+        }
+
+        if (trimmedStart.StartsWith("- ", StringComparison.Ordinal))
+        {
+            style = trimmedStart.Contains("stderr:", StringComparison.OrdinalIgnoreCase)
+                ? "bold red"
+                : trimmedStart.Contains("stdout:", StringComparison.OrdinalIgnoreCase)
+                    ? "bold deepskyblue1"
+                    : "aqua";
+            return true;
+        }
+
+        if (TryGetDiffPreviewLineStyle(trimmedStart, out style))
+        {
+            return true;
+        }
+
+        if (rawLine.StartsWith("    ", StringComparison.Ordinal))
+        {
+            style = "grey";
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string GetToolOutputHeaderStyle(string trimmedStart)
+    {
+        if (trimmedStart.StartsWith("• Edited ", StringComparison.Ordinal))
+        {
+            return "bold green";
+        }
+
+        if (trimmedStart.StartsWith("• Ran ", StringComparison.Ordinal))
+        {
+            return "bold deepskyblue1";
+        }
+
+        if (trimmedStart.StartsWith("• Read ", StringComparison.Ordinal))
+        {
+            return "bold aqua";
+        }
+
+        if (trimmedStart.StartsWith("• Listed ", StringComparison.Ordinal))
+        {
+            return "bold blue";
+        }
+
+        if (trimmedStart.StartsWith("• Searched ", StringComparison.Ordinal) ||
+            trimmedStart.StartsWith("• Found ", StringComparison.Ordinal))
+        {
+            return "bold yellow";
+        }
+
+        if (trimmedStart.StartsWith("• web_run ", StringComparison.Ordinal))
+        {
+            return "bold fuchsia";
+        }
+
+        return "bold cyan";
+    }
+
+    private static bool TryGetDiffPreviewLineStyle(
+        string trimmedStart,
+        out string style)
+    {
+        style = string.Empty;
+        int index = 0;
+
+        while (index < trimmedStart.Length &&
+            char.IsDigit(trimmedStart[index]))
+        {
+            index++;
+        }
+
+        if (index == 0 ||
+            index + 1 >= trimmedStart.Length ||
+            trimmedStart[index] != ' ')
+        {
+            return false;
+        }
+
+        style = trimmedStart[index + 1] switch
+        {
+            '+' => "green",
+            '-' => "red",
+            ' ' => "grey",
+            _ => string.Empty
+        };
+
+        return !string.IsNullOrWhiteSpace(style);
     }
 
     private static bool TryGetMarkdownBullet(

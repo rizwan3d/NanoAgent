@@ -182,6 +182,7 @@ public static partial class Program
                 ref firstLine,
                 roleName,
                 roleColor,
+                message.Role,
                 contentWidth);
         }
 
