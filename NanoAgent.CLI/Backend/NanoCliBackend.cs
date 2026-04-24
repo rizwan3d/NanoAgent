@@ -5,9 +5,8 @@ using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.DependencyInjection;
 using NanoAgent.Application.Models;
+using NanoAgent.CLI.Commands;
 using NanoAgent.Infrastructure.DependencyInjection;
-using NanoAgent.Presentation.Abstractions;
-using NanoAgent.Presentation.DependencyInjection;
 
 namespace NanoAgent.CLI;
 
@@ -173,7 +172,7 @@ public sealed class NanoCliBackend : IAsyncDisposable
         builder.Services.AddSingleton(uiBridge);
         builder.Services
             .AddApplication()
-            .AddPresentation()
+            .AddNanoCliCommands()
             .AddInfrastructure(builder.Configuration);
 
         builder.Services.AddSingleton<ISelectionPrompt, UiSelectionPrompt>();
