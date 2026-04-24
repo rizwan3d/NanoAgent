@@ -109,11 +109,12 @@ public static partial class Program
     {
         if (command == "/exit")
         {
+            state.AddSystemMessage("Exiting NanoAgent.");
             state.Running = false;
             return;
         }
 
-        if ((state.IsBusy || state.IsStreaming) && command != "/help")
+        if (state.IsBusy || state.IsStreaming)
         {
             state.AddSystemMessage("That command is unavailable while NanoAgent is working.");
             return;
@@ -126,30 +127,6 @@ public static partial class Program
             state.CurrentTurnStartedAt = null;
             state.PendingCompletionNote = null;
             state.AddSystemMessage("Screen cleared.");
-            return;
-        }
-
-        if (command == "/help")
-        {
-            state.AddSystemMessage(
-                """
-                Commands:
-                  /help          Show help
-                  /clear         Clear messages
-                  /exit          Quit
-                  /ls            List files in workspace
-                  /read <file>   Ask permission, then read file
-
-                Natural-language prompts are sent to the NanoAgent backend.
-
-                Prompt controls:
-                  Up / Down      Change selection
-                  Enter          Confirm
-                  Esc            Cancel when allowed
-                  Mouse wheel    Scroll conversation
-                  PgUp / PgDn    Scroll conversation
-                  Home / End     Jump conversation
-                """);
             return;
         }
 
@@ -173,7 +150,16 @@ public static partial class Program
             return;
         }
 
-        state.AddSystemMessage($"Unknown command: {command}");
+        if (!state.IsReady)
+        {
+            state.AddSystemMessage(
+                state.HasFatalError
+                    ? "NanoAgent backend failed to start. Use /exit and try again."
+                    : "NanoAgent is still starting up. Please wait.");
+            return;
+        }
+
+        StartCommand(state, command);
     }
 
     private static void RequestReadPermission(AppState state, string path)
@@ -285,6 +271,77 @@ public static partial class Program
         }
 
         return fullPath;
+    }
+
+    private static void StartCommand(AppState state, string command)
+    {
+        state.IsBusy = true;
+        state.ActivityText = $"Running {FormatCommandActivity(command)}";
+
+        state.ActiveOperation = Task.Run(async () =>
+        {
+            try
+            {
+                BackendCommandResult result = await state.Backend.RunCommandAsync(
+                    command,
+                    state.LifetimeCancellation.Token);
+
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ProviderName = result.SessionInfo.ProviderName;
+                    appState.ActiveModelId = result.SessionInfo.ModelId;
+
+                    AddCommandFeedbackMessage(appState, result.CommandResult);
+
+                    if (result.CommandResult.ExitRequested)
+                    {
+                        appState.Running = false;
+                    }
+                });
+            }
+            catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.AddSystemMessage($"Command failed: {exception.Message}");
+                });
+            }
+        });
+    }
+
+    private static void AddCommandFeedbackMessage(
+        AppState state,
+        ReplCommandResult result)
+    {
+        if (string.IsNullOrWhiteSpace(result.Message))
+        {
+            return;
+        }
+
+        string prefix = result.FeedbackKind switch
+        {
+            ReplFeedbackKind.Error => "Error: ",
+            ReplFeedbackKind.Warning => "Warning: ",
+            _ => string.Empty
+        };
+
+        state.AddSystemMessage(prefix + result.Message);
+    }
+
+    private static string FormatCommandActivity(string command)
+    {
+        string normalized = command.Trim();
+        int firstSpaceIndex = normalized.IndexOf(' ');
+        return firstSpaceIndex < 0
+            ? normalized
+            : normalized[..firstSpaceIndex];
     }
 
     private static void UpdateStreaming(AppState state)

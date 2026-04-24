@@ -6,6 +6,8 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.DependencyInjection;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.DependencyInjection;
+using NanoAgent.Presentation.Abstractions;
+using NanoAgent.Presentation.DependencyInjection;
 
 namespace NanoAgent.CLI;
 
@@ -16,6 +18,8 @@ public sealed class NanoCliBackend : IAsyncDisposable
     private IHost? _host;
     private IFirstRunOnboardingService? _onboardingService;
     private IModelDiscoveryService? _modelDiscoveryService;
+    private IReplCommandDispatcher? _commandDispatcher;
+    private IReplCommandParser? _commandParser;
     private ReplSessionContext? _session;
     private ISessionAppService? _sessionAppService;
 
@@ -42,6 +46,8 @@ public sealed class NanoCliBackend : IAsyncDisposable
         _modelDiscoveryService = _host.Services.GetRequiredService<IModelDiscoveryService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
+        _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
+        _commandDispatcher = _host.Services.GetRequiredService<IReplCommandDispatcher>();
 
         OnboardingResult onboardingResult = await _onboardingService.EnsureOnboardedAsync(cancellationToken);
         ModelDiscoveryResult modelResult = await _modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken);
@@ -58,6 +64,35 @@ public sealed class NanoCliBackend : IAsyncDisposable
         return new BackendSessionInfo(
             _session.ProviderName,
             _session.ActiveModelId);
+    }
+
+    public async Task<BackendCommandResult> RunCommandAsync(
+        string commandText,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandText);
+
+        if (_session is null ||
+            _sessionAppService is null ||
+            _commandParser is null ||
+            _commandDispatcher is null)
+        {
+            throw new InvalidOperationException("NanoAgent backend has not been initialized.");
+        }
+
+        ParsedReplCommand command = _commandParser.Parse(commandText);
+        ReplCommandResult result = await _commandDispatcher.DispatchAsync(
+            command,
+            _session,
+            cancellationToken);
+
+        await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
+
+        return new BackendCommandResult(
+            result,
+            new BackendSessionInfo(
+                _session.ProviderName,
+                _session.ActiveModelId));
     }
 
     public async Task<ConversationTurnResult> RunTurnAsync(
@@ -138,6 +173,7 @@ public sealed class NanoCliBackend : IAsyncDisposable
         builder.Services.AddSingleton(uiBridge);
         builder.Services
             .AddApplication()
+            .AddPresentation()
             .AddInfrastructure(builder.Configuration);
 
         builder.Services.AddSingleton<ISelectionPrompt, UiSelectionPrompt>();
