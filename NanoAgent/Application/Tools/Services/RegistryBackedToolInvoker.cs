@@ -184,6 +184,11 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
 
     private TimeSpan GetToolTimeout(string toolName)
     {
+        if (toolName.StartsWith("mcp__", StringComparison.Ordinal))
+        {
+            return TimeSpan.FromMinutes(10);
+        }
+
         return string.Equals(toolName, AgentToolNames.AgentDelegate, StringComparison.Ordinal)
             ? AgentDelegateTimeout
             : _defaultTimeout;

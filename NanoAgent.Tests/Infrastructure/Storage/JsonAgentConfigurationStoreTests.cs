@@ -165,6 +165,11 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             return Path.Combine(_root, "agent-profile.json");
         }
 
+        public string GetMcpConfigurationFilePath()
+        {
+            return Path.Combine(_root, "mcp.toml");
+        }
+
         public string GetLogsDirectoryPath()
         {
             return Path.Combine(_root, "logs");

@@ -6,6 +6,7 @@ namespace NanoAgent.Infrastructure.Storage;
 internal sealed class UserDataPathProvider : IUserDataPathProvider
 {
     private const string ConfigurationFileName = "agent-profile.json";
+    private const string McpConfigurationFileName = "mcp.toml";
     private const string LogsDirectoryName = "logs";
     private const string SectionsDirectoryName = "sections";
 
@@ -14,6 +15,13 @@ internal sealed class UserDataPathProvider : IUserDataPathProvider
         return Path.Combine(
             GetApplicationDirectoryPath(),
             ConfigurationFileName);
+    }
+
+    public string GetMcpConfigurationFilePath()
+    {
+        return Path.Combine(
+            GetApplicationDirectoryPath(),
+            McpConfigurationFileName);
     }
 
     public string GetLogsDirectoryPath()

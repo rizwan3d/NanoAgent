@@ -11,7 +11,8 @@ internal sealed class ToolRegistry : IToolRegistry
 
     public ToolRegistry(
         IEnumerable<ITool> tools,
-        IPermissionParser permissionParser)
+        IPermissionParser permissionParser,
+        IEnumerable<IDynamicToolProvider>? dynamicToolProviders = null)
     {
         ArgumentNullException.ThrowIfNull(tools);
         ArgumentNullException.ThrowIfNull(permissionParser);
@@ -19,7 +20,7 @@ internal sealed class ToolRegistry : IToolRegistry
         Dictionary<string, ToolRegistration> toolMap = new(StringComparer.Ordinal);
         List<ToolDefinition> definitions = [];
 
-        foreach (ITool tool in tools)
+        foreach (ITool tool in tools.Concat(GetDynamicTools(dynamicToolProviders)))
         {
             if (string.IsNullOrWhiteSpace(tool.Description))
             {
@@ -86,5 +87,15 @@ internal sealed class ToolRegistry : IToolRegistry
         }
 
         return schemaDocument.RootElement.Clone();
+    }
+
+    private static IEnumerable<ITool> GetDynamicTools(IEnumerable<IDynamicToolProvider>? dynamicToolProviders)
+    {
+        if (dynamicToolProviders is null)
+        {
+            return [];
+        }
+
+        return dynamicToolProviders.SelectMany(static provider => provider.GetTools());
     }
 }

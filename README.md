@@ -33,6 +33,7 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 
 - **Sandboxed Tool Calls** - Use read-only, workspace-write, or danger-full-access sandbox modes with shell escalation requests
 - **Workspace Instructions** - Load persistent repo guidance from `AGENTS.md` or `.agent/AGENTS.md`
+- **MCP Servers** - Load MCP servers from NanoAgent user and workspace configuration files
 - **File Operations** — Search, read, and edit files with full regex support
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
@@ -117,6 +118,7 @@ nanoai
 |---------|-------------|
 | `/help` | List available commands |
 | `/config` | Show current provider, model, profile |
+| `/mcp` | Show configured MCP servers and discovered MCP tools |
 | `/models` | Show available models |
 | `/use <model>` | Switch active model |
 | `/profile <name>` | Switch active profile (build, plan, review) |
@@ -138,6 +140,24 @@ Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `
 ### Workspace Instructions
 
 NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the workspace root and adds them to the model's system prompt as persistent project instructions.
+
+### MCP Servers
+
+NanoAgent can connect to MCP servers configured with the `[mcp_servers]` TOML shape. It reads the user-level NanoAgent `mcp.toml` file shown by `/config` and the workspace-local `.nanoagent/config.toml`, then exposes server tools to the model as `mcp__server__tool`.
+
+```toml
+[mcp_servers.context7]
+command = "npx"
+args = ["-y", "@upstash/context7-mcp"]
+startup_timeout_sec = 20
+tool_timeout_sec = 45
+default_tools_approval_mode = "prompt"
+
+[mcp_servers.context7.env]
+MY_ENV_VAR = "MY_ENV_VALUE"
+```
+
+Supported transports are stdio (`command`, `args`, `env`, `env_vars`, `cwd`) and basic streamable HTTP (`url`, `bearer_token_env_var`, `http_headers`, `env_http_headers`). Use `enabled_tools` or `disabled_tools` to filter server tools, and `/mcp` to inspect what loaded.
 
 ---
 

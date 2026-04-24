@@ -80,6 +80,11 @@ public sealed class DailyFileLoggerProviderTests : IDisposable
             return Path.Combine(_logsDirectoryPath, "..", "agent-profile.json");
         }
 
+        public string GetMcpConfigurationFilePath()
+        {
+            return Path.Combine(_logsDirectoryPath, "..", "mcp.toml");
+        }
+
         public string GetLogsDirectoryPath()
         {
             return _logsDirectoryPath;

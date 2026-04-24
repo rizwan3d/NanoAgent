@@ -279,8 +279,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IReadOnlySet<string> enabledTools = session.AgentProfile.EnabledTools;
 
         return _toolRegistry.GetToolDefinitions()
-            .Where(definition => enabledTools.Contains(definition.Name))
+            .Where(definition =>
+                enabledTools.Contains(definition.Name) ||
+                IsMcpTool(definition.Name))
             .ToArray();
+    }
+
+    private static bool IsMcpTool(string toolName)
+    {
+        return toolName.StartsWith("mcp__", StringComparison.Ordinal);
     }
 
     private async Task<string?> CreateProfileSystemPromptAsync(

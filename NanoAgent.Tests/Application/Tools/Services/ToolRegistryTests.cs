@@ -39,6 +39,23 @@ public sealed class ToolRegistryTests
             .WithMessage("*Duplicate tool registration*");
     }
 
+    [Fact]
+    public void Constructor_Should_RegisterDynamicTools()
+    {
+        ToolRegistry sut = new(
+            [new StubTool("file_read")],
+            new ToolPermissionParser(),
+            [new StubDynamicToolProvider([new StubTool("mcp__docs__search")])]);
+
+        sut.GetRegisteredToolNames()
+            .Should()
+            .Equal("file_read", "mcp__docs__search");
+        sut.TryResolve("mcp__docs__search", out ToolRegistration? registration)
+            .Should()
+            .BeTrue();
+        registration!.PermissionPolicy.FilePaths.Should().ContainSingle();
+    }
+
     private sealed class StubTool : ITool
     {
         public StubTool(string name)
@@ -70,6 +87,26 @@ public sealed class ToolRegistryTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
+        }
+    }
+
+    private sealed class StubDynamicToolProvider : IDynamicToolProvider
+    {
+        private readonly IReadOnlyList<ITool> _tools;
+
+        public StubDynamicToolProvider(IReadOnlyList<ITool> tools)
+        {
+            _tools = tools;
+        }
+
+        public IReadOnlyList<ITool> GetTools()
+        {
+            return _tools;
+        }
+
+        public IReadOnlyList<DynamicToolProviderStatus> GetStatuses()
+        {
+            return [];
         }
     }
 }

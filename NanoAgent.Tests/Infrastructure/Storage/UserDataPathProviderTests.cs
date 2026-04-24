@@ -17,6 +17,17 @@ public sealed class UserDataPathProviderTests
     }
 
     [Fact]
+    public void GetMcpConfigurationFilePath_Should_ReturnStorageDirectoryMcpTomlPath()
+    {
+        UserDataPathProvider sut = new();
+
+        string mcpConfigurationFilePath = sut.GetMcpConfigurationFilePath();
+
+        Path.GetFileName(mcpConfigurationFilePath).Should().Be("mcp.toml");
+        mcpConfigurationFilePath.Should().Contain("NanoAgent");
+    }
+
+    [Fact]
     public void GetSectionsDirectoryPath_Should_ReturnStorageDirectorySectionsPath()
     {
         UserDataPathProvider sut = new();

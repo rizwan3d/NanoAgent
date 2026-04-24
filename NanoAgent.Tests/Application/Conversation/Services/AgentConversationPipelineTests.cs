@@ -415,6 +415,72 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_IncludeMcpTools_When_ProfileFiltersBuiltInTools()
+    {
+        ReplSessionContext session = CreateSession(BuiltInAgentProfiles.Plan);
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition(AgentToolNames.FileWrite),
+                CreateToolDefinition("mcp__docs__search")
+            ]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_mcp"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_mcp"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await ProcessAsync(
+            sut,
+            "Use MCP docs.",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].AvailableTools.Select(static tool => tool.Name)
+            .Should()
+            .Equal("mcp__docs__search");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_RecoverEmptyStopResponse_When_MapperMarksResponseRetryable()
     {
         ReplSessionContext session = CreateSession();

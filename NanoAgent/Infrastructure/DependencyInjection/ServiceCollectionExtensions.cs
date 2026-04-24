@@ -1,6 +1,7 @@
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.Logging;
+using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.Models;
@@ -28,12 +29,19 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
+        services.AddSingleton<NanoAgentMcpConfigLoader>();
+        services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();
         services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreatePermissionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
         services.AddHttpClient<IWebRunService, WebRunService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
+        services.AddHttpClient("NanoAgent.Mcp", client =>
+        {
+            client.Timeout = Timeout.InfiniteTimeSpan;
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
         services.AddSingleton<IAgentConfigurationStore, JsonAgentConfigurationStore>();
