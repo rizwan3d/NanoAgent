@@ -24,8 +24,6 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: NanoAgent.Desktop
-  APP_PROJECT: NanoAgent.Desktop/NanoAgent.Desktop.csproj
   CONFIGURATION: Release
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -80,26 +78,90 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish ${{ matrix.rid }}
+    name: Publish ${{ matrix.display_name }} ${{ matrix.rid }}
     needs: validate
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: windows-2025
+          - display_name: CLI
+            app_id: cli
+            package_name: NanoAgent.CLI
+            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            runner: windows-2025
+            rid: win-x64
+            artifact_name: cli-win-x64
+
+          - display_name: CLI
+            app_id: cli
+            package_name: NanoAgent.CLI
+            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            runner: ubuntu-24.04
+            rid: linux-x64
+            artifact_name: cli-linux-x64
+
+          - display_name: CLI
+            app_id: cli
+            package_name: NanoAgent.CLI
+            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            runner: ubuntu-24.04-arm
+            rid: linux-arm64
+            artifact_name: cli-linux-arm64
+
+          - display_name: CLI
+            app_id: cli
+            package_name: NanoAgent.CLI
+            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            runner: macos-15-intel
+            rid: osx-x64
+            artifact_name: cli-osx-x64
+
+          - display_name: CLI
+            app_id: cli
+            package_name: NanoAgent.CLI
+            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            runner: macos-15
+            rid: osx-arm64
+            artifact_name: cli-osx-arm64
+
+          - display_name: Desktop
+            app_id: desktop
+            package_name: NanoAgent.Desktop
+            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            runner: windows-2025
             rid: win-x64
             artifact_name: desktop-win-x64
-          - runner: ubuntu-24.04
+
+          - display_name: Desktop
+            app_id: desktop
+            package_name: NanoAgent.Desktop
+            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            runner: ubuntu-24.04
             rid: linux-x64
             artifact_name: desktop-linux-x64
-          - runner: ubuntu-24.04-arm
+
+          - display_name: Desktop
+            app_id: desktop
+            package_name: NanoAgent.Desktop
+            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            runner: ubuntu-24.04-arm
             rid: linux-arm64
             artifact_name: desktop-linux-arm64
-          - runner: macos-15-intel
+
+          - display_name: Desktop
+            app_id: desktop
+            package_name: NanoAgent.Desktop
+            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            runner: macos-15-intel
             rid: osx-x64
             artifact_name: desktop-osx-x64
-          - runner: macos-15
+
+          - display_name: Desktop
+            app_id: desktop
+            package_name: NanoAgent.Desktop
+            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            runner: macos-15
             rid: osx-arm64
             artifact_name: desktop-osx-arm64
 
@@ -123,28 +185,34 @@ jobs:
       - name: Prepare artifact directories
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE/artifacts/publish", "$env:GITHUB_WORKSPACE/artifacts/packages" | Out-Null
+          New-Item -ItemType Directory -Force -Path `
+            "$env:GITHUB_WORKSPACE/artifacts/publish/${{ matrix.app_id }}", `
+            "$env:GITHUB_WORKSPACE/artifacts/packages" | Out-Null
 
-      - name: Publish Desktop app
+      - name: Publish ${{ matrix.display_name }} app
         run: >
-          dotnet publish ${{ env.APP_PROJECT }}
+          dotnet publish ${{ matrix.project }}
           --configuration ${{ env.CONFIGURATION }}
           --runtime ${{ matrix.rid }}
           --self-contained true
-          --output ./artifacts/publish/${{ matrix.rid }}
+          --output ./artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}
 
       - name: Package published output on Windows
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $archivePath = Join-Path $env:GITHUB_WORKSPACE "artifacts/packages/$env:APP_NAME-${{ matrix.rid }}.zip"
+          $archivePath = Join-Path $env:GITHUB_WORKSPACE "artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}.zip"
+
           if (Test-Path $archivePath) {
             Remove-Item $archivePath -Force
           }
-          Compress-Archive -Path "$env:GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}/*" -DestinationPath $archivePath
+
+          Compress-Archive `
+            -Path "$env:GITHUB_WORKSPACE/artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}/*" `
+            -DestinationPath $archivePath
 
       - name: Build Windows desktop installer
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && matrix.app_id == 'desktop'
         shell: pwsh
         run: |
           choco install innosetup --no-progress --yes
@@ -155,7 +223,7 @@ jobs:
           }
 
           $scriptPath = Join-Path $env:RUNNER_TEMP "NanoAgent.Desktop.iss"
-          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.rid }}").Replace('\', '\\')
+          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\', '\\')
           $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\', '\\')
 
           @"
@@ -200,8 +268,9 @@ jobs:
         if: runner.os != 'Windows'
         shell: bash
         run: |
-          archive_path="$GITHUB_WORKSPACE/artifacts/packages/${APP_NAME}-${{ matrix.rid }}.zip"
-          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}"
+          archive_path="$GITHUB_WORKSPACE/artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}.zip"
+          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}"
+
           cd "$publish_dir"
           zip -r "$archive_path" .
 
@@ -209,7 +278,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
-          path: ./artifacts/packages/*
+          path: ./artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}*
           if-no-files-found: error
           retention-days: 14
 
