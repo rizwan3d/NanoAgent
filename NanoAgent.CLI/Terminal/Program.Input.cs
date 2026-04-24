@@ -6,6 +6,9 @@ public static partial class Program
 {
     private static void HandleInput(AppState state)
     {
+        bool appendedInputInBatch = false;
+        int pastedLineBreaksInBatch = 0;
+
         while (Console.KeyAvailable)
         {
             ConsoleKeyInfo key = Console.ReadKey(intercept: true);
@@ -20,6 +23,11 @@ public static partial class Program
             {
                 state.ActiveModal.HandleKey(state, key);
                 return;
+            }
+
+            if (TrySkipLineFeedAfterCarriageReturn(state, key))
+            {
+                continue;
             }
 
             if (key.Key == ConsoleKey.C &&
@@ -52,6 +60,21 @@ public static partial class Program
 
             if (IsEnterKey(key))
             {
+                if (IsMultilineEnterKey(key))
+                {
+                    AppendInputLineBreak(state, key);
+                    appendedInputInBatch = true;
+                    continue;
+                }
+
+                if (IsLikelyPastedLineBreak(key, appendedInputInBatch, pastedLineBreaksInBatch))
+                {
+                    AppendInputLineBreak(state, key);
+                    appendedInputInBatch = true;
+                    pastedLineBreaksInBatch++;
+                    continue;
+                }
+
                 SubmitInput(state);
                 return;
             }
@@ -59,8 +82,21 @@ public static partial class Program
             if (!char.IsControl(key.KeyChar))
             {
                 state.Input.Append(key.KeyChar);
+                state.SkipNextInputLineFeed = false;
+                appendedInputInBatch = true;
             }
         }
+    }
+
+    private static bool TrySkipLineFeedAfterCarriageReturn(AppState state, ConsoleKeyInfo key)
+    {
+        if (!state.SkipNextInputLineFeed)
+        {
+            return false;
+        }
+
+        state.SkipNextInputLineFeed = false;
+        return key.KeyChar == '\n';
     }
 
     private static bool IsBackspaceKey(ConsoleKeyInfo key)
@@ -73,6 +109,26 @@ public static partial class Program
     {
         return key.Key == ConsoleKey.Enter ||
             key.KeyChar is '\r' or '\n';
+    }
+
+    private static bool IsMultilineEnterKey(ConsoleKeyInfo key)
+    {
+        return IsEnterKey(key) &&
+            (key.Modifiers.HasFlag(ConsoleModifiers.Shift) ||
+                key.Modifiers.HasFlag(ConsoleModifiers.Control) ||
+                IsShiftKeyPressed() ||
+                IsControlKeyPressed());
+    }
+
+    private static bool IsLikelyPastedLineBreak(
+        ConsoleKeyInfo key,
+        bool appendedInputInBatch,
+        int pastedLineBreaksInBatch)
+    {
+        return IsEnterKey(key) &&
+            (HasBufferedInputAfterDelay(PasteContinuationReadTimeoutMilliseconds) ||
+                pastedLineBreaksInBatch > 0 ||
+                (appendedInputInBatch && key.KeyChar == '\n'));
     }
 
     private static bool IsEscapeKey(ConsoleKeyInfo key)
@@ -242,6 +298,12 @@ public static partial class Program
 
     private static void HandleCsiKeySequence(AppState state, string sequence)
     {
+        if (sequence == "200~")
+        {
+            ConsumeBracketedPasteInput(state);
+            return;
+        }
+
         if (TryDispatchModalTerminalKeySequence(state, sequence))
         {
             return;
@@ -252,6 +314,12 @@ public static partial class Program
 
     private static void HandleTerminalKeySequence(AppState state, string sequence)
     {
+        if (IsMultilineEnterTerminalSequence(sequence))
+        {
+            AppendInputLineBreak(state);
+            return;
+        }
+
         switch (sequence)
         {
             case "A":
@@ -280,6 +348,96 @@ public static partial class Program
                 state.ConversationScrollOffset = 0;
                 return;
         }
+    }
+
+    private static bool IsMultilineEnterTerminalSequence(string sequence)
+    {
+        return sequence is "13;2u" or "13;4u" or "13;5u" or "13;6u" or "13;7u" or "13;8u";
+    }
+
+    private static void AppendInputLineBreak(AppState state)
+    {
+        AppendInputLineBreak(state, default);
+    }
+
+    private static void AppendInputLineBreak(AppState state, ConsoleKeyInfo key)
+    {
+        if (state.ActiveModal is null)
+        {
+            state.Input.Append('\n');
+        }
+
+        state.SkipNextInputLineFeed = key.KeyChar == '\r';
+    }
+
+    private static void AppendInputText(AppState state, string text)
+    {
+        if (state.ActiveModal is not null || string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        string normalized = text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        state.Input.Append(normalized);
+        state.SkipNextInputLineFeed = false;
+    }
+
+    private static void ConsumeBracketedPasteInput(AppState state)
+    {
+        StringBuilder pastedText = new();
+
+        while (TryReadBufferedKey(out ConsoleKeyInfo key))
+        {
+            if (key.KeyChar == '\u001b' &&
+                TryConsumeBracketedPasteTerminator(pastedText))
+            {
+                AppendInputText(state, pastedText.ToString());
+                return;
+            }
+
+            pastedText.Append(key.KeyChar);
+        }
+
+        AppendInputText(state, pastedText.ToString());
+    }
+
+    private static bool TryConsumeBracketedPasteTerminator(StringBuilder pastedText)
+    {
+        if (!TryReadBufferedKey(out ConsoleKeyInfo prefixKey))
+        {
+            pastedText.Append('\u001b');
+            return false;
+        }
+
+        if (prefixKey.KeyChar != '[')
+        {
+            pastedText.Append('\u001b');
+            pastedText.Append(prefixKey.KeyChar);
+            return false;
+        }
+
+        StringBuilder sequence = new();
+        while (TryReadBufferedKey(out ConsoleKeyInfo sequenceKey))
+        {
+            sequence.Append(sequenceKey.KeyChar);
+            if (IsAnsiFinalByte(sequenceKey.KeyChar))
+            {
+                break;
+            }
+        }
+
+        if (sequence.ToString() == "201~")
+        {
+            return true;
+        }
+
+        pastedText.Append('\u001b');
+        pastedText.Append('[');
+        pastedText.Append(sequence);
+        return false;
     }
 
     private static bool TryDispatchModalTerminalKeySequence(AppState state, string sequence)
@@ -329,6 +487,23 @@ public static partial class Program
         }
 
         key = Console.ReadKey(intercept: true);
+        return true;
+    }
+
+    private static bool HasBufferedInputAfterDelay(int timeoutMilliseconds)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMilliseconds(timeoutMilliseconds);
+
+        while (!Console.KeyAvailable)
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                return false;
+            }
+
+            Thread.Sleep(1);
+        }
+
         return true;
     }
 

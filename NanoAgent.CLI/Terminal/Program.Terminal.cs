@@ -4,6 +4,11 @@ namespace NanoAgent.CLI;
 
 public static partial class Program
 {
+    private const int LeftShiftVirtualKey = 0xA0;
+    private const int RightShiftVirtualKey = 0xA1;
+    private const int LeftControlVirtualKey = 0xA2;
+    private const int RightControlVirtualKey = 0xA3;
+
     private static void EnableTerminalWheelScrolling()
     {
         if (Console.IsInputRedirected || Console.IsOutputRedirected)
@@ -18,6 +23,7 @@ public static partial class Program
 
         Console.Write(DisableMouseTrackingSequence);
         Console.Write(EnableAlternateScreenSequence);
+        Console.Write(EnableBracketedPasteSequence);
         Console.Write(EnableWheelScrollingSequence);
     }
 
@@ -26,6 +32,7 @@ public static partial class Program
         if (!Console.IsOutputRedirected)
         {
             Console.Write(DisableWheelScrollingSequence);
+            Console.Write(DisableBracketedPasteSequence);
             Console.Write(DisableMouseTrackingSequence);
             Console.Write(DisableAlternateScreenSequence);
         }
@@ -69,6 +76,23 @@ public static partial class Program
         s_originalInputMode = null;
     }
 
+    private static bool IsControlKeyPressed()
+    {
+        return OperatingSystem.IsWindows() &&
+            (IsVirtualKeyPressed(LeftControlVirtualKey) || IsVirtualKeyPressed(RightControlVirtualKey));
+    }
+
+    private static bool IsShiftKeyPressed()
+    {
+        return OperatingSystem.IsWindows() &&
+            (IsVirtualKeyPressed(LeftShiftVirtualKey) || IsVirtualKeyPressed(RightShiftVirtualKey));
+    }
+
+    private static bool IsVirtualKeyPressed(int virtualKey)
+    {
+        return (GetAsyncKeyState(virtualKey) & 0x8000) != 0;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr GetStdHandle(int nStdHandle);
 
@@ -77,4 +101,7 @@ public static partial class Program
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+    [DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int vKey);
 }

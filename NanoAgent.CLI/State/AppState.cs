@@ -28,6 +28,8 @@ public sealed class AppState
 
     public StringBuilder Input { get; } = new();
 
+    public bool SkipNextInputLineFeed { get; set; }
+
     public bool IsBusy { get; set; }
 
     public bool IsReady { get; set; }

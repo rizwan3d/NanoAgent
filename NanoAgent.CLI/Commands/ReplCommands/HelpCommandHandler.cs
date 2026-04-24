@@ -34,7 +34,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model for subsequent prompts.\n\n" +
-            "Multiline input: enter \"\"\" on its own line, then finish with \"\"\" on its own line.\n\n" +
+            "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --profile build, --profile plan, or --profile review to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +
             "Invoke subagents for one turn with @general or @explore; primary agents can also delegate focused work with agent_delegate.";
 
