@@ -31,7 +31,8 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 
 ## Features
 
-- **Sandboxed Tool Calls** - Use read-only, workspace-write, or danger-full-access sandbox modes with Codex-style shell escalation requests
+- **Sandboxed Tool Calls** - Use read-only, workspace-write, or danger-full-access sandbox modes with shell escalation requests
+- **Workspace Instructions** - Load persistent repo guidance from `AGENTS.md` or `.agent/AGENTS.md`
 - **File Operations** — Search, read, and edit files with full regex support
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
@@ -134,6 +135,10 @@ NanoAgent defaults to `WorkspaceWrite` sandbox mode for tool calls. Configure `A
 
 Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `justification`; escalation goes through the normal permission approval flow.
 
+### Workspace Instructions
+
+NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the workspace root and adds them to the model's system prompt as persistent project instructions.
+
 ---
 
 ## Examples
@@ -141,21 +146,21 @@ Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `
 ### Fix a Bug
 
 ```
-$ nano
+$ nanoai
 > Find and fix the memory leak in src/cache.c
 ```
 
 ### Explore Codebase
 
 ```
-$ nano
+$ nanoai
 > @explore How does authentication work in this project?
 ```
 
 ### Review Changes
 
 ```
-$ nano
+$ nanoai
 /profile review
 > Review the changes in this branch for security issues
 ```

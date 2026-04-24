@@ -184,6 +184,71 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_IncludeWorkspaceInstructionsInSystemPrompt()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_1"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_1"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            new FixedWorkspaceInstructionsProvider("Workspace instructions:\nFrom AGENTS.md:\nFollow repo rules."));
+
+        await ProcessAsync(
+            sut,
+            "Do the thing.",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Base prompt");
+        requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
+        requests[0].SystemPrompt.Should().Contain("Workspace instructions:");
+        requests[0].SystemPrompt.Should().Contain("Follow repo rules.");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_IncludeSessionStateInSystemPrompt_When_ToolContextExists()
     {
         ReplSessionContext session = CreateSession();
@@ -1841,7 +1906,8 @@ public sealed class AgentConversationPipelineTests
         IConversationResponseMapper responseMapper,
         IToolExecutionPipeline toolExecutionPipeline,
         IToolRegistry toolRegistry,
-        IConversationConfigurationAccessor configurationAccessor)
+        IConversationConfigurationAccessor configurationAccessor,
+        IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null)
     {
         return new AgentConversationPipeline(
             timeProvider,
@@ -1852,6 +1918,7 @@ public sealed class AgentConversationPipelineTests
             toolExecutionPipeline,
             toolRegistry,
             configurationAccessor,
+            workspaceInstructionsProvider ?? new EmptyWorkspaceInstructionsProvider(),
             NullLogger<AgentConversationPipeline>.Instance);
     }
 
@@ -1932,6 +1999,35 @@ public sealed class AgentConversationPipelineTests
             cancellationToken.ThrowIfCancellationRequested();
             CompletedToolBatches.Add(toolExecutionResult);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class EmptyWorkspaceInstructionsProvider : IWorkspaceInstructionsProvider
+    {
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+    }
+
+    private sealed class FixedWorkspaceInstructionsProvider : IWorkspaceInstructionsProvider
+    {
+        private readonly string? _instructions;
+
+        public FixedWorkspaceInstructionsProvider(string? instructions)
+        {
+            _instructions = instructions;
+        }
+
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_instructions);
         }
     }
 }

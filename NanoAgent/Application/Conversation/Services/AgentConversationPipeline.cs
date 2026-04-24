@@ -55,6 +55,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IToolExecutionPipeline _toolExecutionPipeline;
     private readonly IToolRegistry _toolRegistry;
     private readonly IConversationConfigurationAccessor _configurationAccessor;
+    private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
     private readonly ILogger<AgentConversationPipeline> _logger;
 
     public AgentConversationPipeline(
@@ -66,6 +67,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IToolExecutionPipeline toolExecutionPipeline,
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
+        IWorkspaceInstructionsProvider workspaceInstructionsProvider,
         ILogger<AgentConversationPipeline> logger)
     {
         _timeProvider = timeProvider;
@@ -76,6 +78,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _toolExecutionPipeline = toolExecutionPipeline;
         _toolRegistry = toolRegistry;
         _configurationAccessor = configurationAccessor;
+        _workspaceInstructionsProvider = workspaceInstructionsProvider;
         _logger = logger;
     }
 
@@ -95,7 +98,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "Conversation cannot start because the API key is missing.");
 
         ConversationSettings settings = _configurationAccessor.GetSettings();
-        string? profileSystemPrompt = CreateProfileSystemPrompt(settings.SystemPrompt, session);
+        string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
+            settings.SystemPrompt,
+            session,
+            cancellationToken);
         IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
         IReadOnlySet<string> availableToolNames = availableToolDefinitions
             .Select(static definition => definition.Name)
@@ -197,7 +203,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             session,
             executionMessages,
             PlanningModePolicy.CreateExecutionSystemPrompt(
-                CreateProfileSystemPrompt(settings.SystemPrompt, session),
+                await CreateProfileSystemPromptAsync(
+                    settings.SystemPrompt,
+                    session,
+                    cancellationToken),
                 pendingPlan.PlanningSummary),
             allToolDefinitions,
             executionToolNames,
@@ -274,16 +283,21 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             .ToArray();
     }
 
-    private static string? CreateProfileSystemPrompt(
+    private async Task<string?> CreateProfileSystemPromptAsync(
         string? basePrompt,
-        ReplSessionContext session)
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
     {
         string? contribution = session.AgentProfile.SystemPrompt;
+        string? workspaceInstructions = await _workspaceInstructionsProvider.LoadAsync(
+            session,
+            cancellationToken);
         string? statefulContext = session.CreateStatefulContextPrompt();
         string?[] promptSections =
         [
             basePrompt,
             contribution,
+            workspaceInstructions,
             statefulContext
         ];
 

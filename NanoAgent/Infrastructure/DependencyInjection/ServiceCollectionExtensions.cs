@@ -26,6 +26,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IConversationSectionStore, JsonConversationSectionStore>();
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
+        services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
         services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreatePermissionSettings(

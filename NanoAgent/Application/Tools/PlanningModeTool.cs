@@ -18,7 +18,7 @@ internal sealed class PlanningModeTool : ITool
         "Keep the immediate next step explicit and make the first task the first thing you would really do.",
         "Use shell_command for toolchain work during execution when it materially advances the task: project scaffolding, dependency restore/install, code generation, build, test, lint, or format checks.",
         "Use update_plan for non-trivial execution work: publish concise steps, keep exactly one active in_progress step, and update statuses as work advances.",
-        "Produce a high-quality ordered task list in Codex style that names likely files, commands, validation steps, and risks.",
+        "Produce a high-quality ordered task list that names likely files, commands, validation steps, and risks.",
         "Avoid vague plans like 'look at the code', 'make the change', or 'test it' unless you ground them in concrete files, commands, and checks.",
         "Keep one active step at a time and revise the plan when new evidence changes the safest path; if the user asked only for a plan, stop after planning, otherwise continue execution when practical."
     ];
