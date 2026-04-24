@@ -5,9 +5,9 @@ namespace NanoAgent.CLI;
 public sealed class UiStatusMessageWriter : IStatusMessageWriter
 {
     private const string ExistingProviderConfigurationPrefix = "Using existing provider configuration:";
-    private readonly UiBridge _uiBridge;
+    private readonly IUiBridge _uiBridge;
 
-    public UiStatusMessageWriter(UiBridge uiBridge)
+    public UiStatusMessageWriter(IUiBridge uiBridge)
     {
         _uiBridge = uiBridge;
     }

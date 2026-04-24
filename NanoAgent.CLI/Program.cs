@@ -40,8 +40,8 @@ public static partial class Program
         Console.CursorVisible = false;
         EnableTerminalWheelScrolling();
 
-        UiBridge uiBridge = new();
-        NanoCliBackend backend = new(args ?? []);
+        IUiBridge uiBridge = new UiBridge();
+        INanoAgentBackend backend = new NanoCliBackend(args ?? []);
         AppState state = new(uiBridge, backend);
 
         StartInitialization(state);

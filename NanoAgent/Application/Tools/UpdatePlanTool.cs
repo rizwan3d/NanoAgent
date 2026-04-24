@@ -215,9 +215,9 @@ internal sealed class UpdatePlanTool : ITool
     {
         return status switch
         {
-            CompletedStatus => "[x]",
-            InProgressStatus => "[>]",
-            _ => "[ ]"
+            CompletedStatus => "✓",
+            InProgressStatus => "☐",
+            _ => "☐"
         };
     }
 

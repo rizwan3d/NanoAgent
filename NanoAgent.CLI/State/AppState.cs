@@ -6,7 +6,7 @@ public sealed class AppState
 {
     private int _nextMessageId = 1;
 
-    public AppState(UiBridge uiBridge, NanoCliBackend backend)
+    public AppState(IUiBridge uiBridge, INanoAgentBackend backend)
     {
         UiBridge = uiBridge;
         Backend = backend;
@@ -20,7 +20,7 @@ public sealed class AppState
 
     public string ActivityText { get; set; } = "Initializing NanoAgent backend";
 
-    public NanoCliBackend Backend { get; }
+    public INanoAgentBackend Backend { get; }
 
     public bool ClearBusyWhenStreamCompletes { get; set; }
 
@@ -56,7 +56,7 @@ public sealed class AppState
 
     public Queue<char> StreamQueue { get; } = new();
 
-    public UiBridge UiBridge { get; }
+    public IUiBridge UiBridge { get; }
 
     public void AddSystemMessage(string text)
     {
