@@ -12,7 +12,7 @@ $Owner = 'rizwan3d'
 $Repo = 'NanoAgent'
 $AppName = 'NanoAgent'
 $ExecutableName = 'NanoAgent.CLI'
-$CommandName = 'nano'
+$CommandName = 'nanoai'
 $AssetName = "$AppName-win-x64.zip"
 
 function Write-Status {
