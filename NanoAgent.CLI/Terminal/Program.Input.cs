@@ -1,0 +1,353 @@
+﻿using System.Text;
+
+namespace NanoAgent.CLI;
+
+public static partial class Program
+{
+    private static void HandleInput(AppState state)
+    {
+        while (Console.KeyAvailable)
+        {
+            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
+
+            if (IsEscapeKey(key) &&
+                TryHandleTerminalEscapeInput(state))
+            {
+                continue;
+            }
+
+            if (state.ActiveModal is not null)
+            {
+                state.ActiveModal.HandleKey(state, key);
+                return;
+            }
+
+            if (key.Key == ConsoleKey.C &&
+                key.Modifiers.HasFlag(ConsoleModifiers.Control))
+            {
+                state.Running = false;
+                return;
+            }
+
+            if (IsEscapeKey(key))
+            {
+                state.Running = false;
+                return;
+            }
+
+            if (HandleConversationScrollInput(state, key))
+            {
+                continue;
+            }
+
+            if (IsBackspaceKey(key))
+            {
+                if (state.Input.Length > 0)
+                {
+                    state.Input.Remove(state.Input.Length - 1, 1);
+                }
+
+                continue;
+            }
+
+            if (IsEnterKey(key))
+            {
+                SubmitInput(state);
+                return;
+            }
+
+            if (!char.IsControl(key.KeyChar))
+            {
+                state.Input.Append(key.KeyChar);
+            }
+        }
+    }
+
+    private static bool IsBackspaceKey(ConsoleKeyInfo key)
+    {
+        return key.Key == ConsoleKey.Backspace ||
+            key.KeyChar is '\b' or '\u007f';
+    }
+
+    private static bool IsEnterKey(ConsoleKeyInfo key)
+    {
+        return key.Key == ConsoleKey.Enter ||
+            key.KeyChar is '\r' or '\n';
+    }
+
+    private static bool IsEscapeKey(ConsoleKeyInfo key)
+    {
+        return key.Key == ConsoleKey.Escape ||
+            key.KeyChar == '\u001b';
+    }
+
+    private static bool HandleConversationScrollInput(AppState state, ConsoleKeyInfo key)
+    {
+        int viewportLineCount = GetMessageViewportLineCount(state);
+        int pageSize = Math.Max(1, viewportLineCount - 1);
+
+        switch (key.Key)
+        {
+            case ConsoleKey.PageUp:
+                ScrollConversation(state, pageSize);
+                return true;
+
+            case ConsoleKey.PageDown:
+                ScrollConversation(state, -pageSize);
+                return true;
+
+            case ConsoleKey.UpArrow:
+                ScrollConversation(state, MouseWheelScrollLineCount);
+                return true;
+
+            case ConsoleKey.DownArrow:
+                ScrollConversation(state, -MouseWheelScrollLineCount);
+                return true;
+
+            case ConsoleKey.Home:
+                state.ConversationScrollOffset = GetMaxConversationScrollOffset(state);
+                return true;
+
+            case ConsoleKey.End:
+                state.ConversationScrollOffset = 0;
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryHandleTerminalEscapeInput(AppState state)
+    {
+        if (!TryReadBufferedKey(out ConsoleKeyInfo prefixKey))
+        {
+            return false;
+        }
+
+        if (prefixKey.KeyChar == '[')
+        {
+            return ConsumeCsiInput(state);
+        }
+
+        if (prefixKey.KeyChar == 'O')
+        {
+            ConsumeSs3Input(state);
+            return true;
+        }
+
+        return true;
+    }
+
+    private static bool ConsumeCsiInput(AppState state)
+    {
+        if (!TryReadBufferedKey(out ConsoleKeyInfo modeKey))
+        {
+            return true;
+        }
+
+        if (modeKey.KeyChar == '<')
+        {
+            ConsumeSgrMouseInput(state);
+            return true;
+        }
+
+        if (modeKey.KeyChar == 'M')
+        {
+            ConsumeX10MouseInput(state);
+            return true;
+        }
+
+        StringBuilder sequence = new();
+        sequence.Append(modeKey.KeyChar);
+
+        if (!IsAnsiFinalByte(modeKey.KeyChar))
+        {
+            while (TryReadBufferedKey(out ConsoleKeyInfo sequenceKey))
+            {
+                sequence.Append(sequenceKey.KeyChar);
+                if (IsAnsiFinalByte(sequenceKey.KeyChar))
+                {
+                    break;
+                }
+            }
+        }
+
+        HandleCsiKeySequence(state, sequence.ToString());
+        return true;
+    }
+
+    private static void ConsumeSgrMouseInput(AppState state)
+    {
+        StringBuilder sequence = new();
+
+        while (TryReadBufferedKey(out ConsoleKeyInfo key))
+        {
+            char character = key.KeyChar;
+            if (!char.IsDigit(character) &&
+                character is not (';' or 'M' or 'm'))
+            {
+                return;
+            }
+
+            sequence.Append(character);
+
+            if (character is 'M' or 'm')
+            {
+                HandleSgrMouseSequence(state, sequence.ToString());
+                return;
+            }
+        }
+    }
+
+    private static void HandleSgrMouseSequence(AppState state, string sequence)
+    {
+        if (sequence.Length == 0 ||
+            sequence[^1] is not ('M' or 'm'))
+        {
+            return;
+        }
+
+        string[] parts = sequence[..^1].Split(';');
+        if (parts.Length != 3 ||
+            !int.TryParse(parts[0], out int buttonCode))
+        {
+            return;
+        }
+
+        HandleMouseButtonCode(state, buttonCode);
+    }
+
+    private static void ConsumeX10MouseInput(AppState state)
+    {
+        if (!TryReadBufferedKey(out ConsoleKeyInfo buttonKey))
+        {
+            return;
+        }
+
+        TryReadBufferedKey(out _);
+        TryReadBufferedKey(out _);
+
+        HandleMouseButtonCode(state, buttonKey.KeyChar - 32);
+    }
+
+    private static void ConsumeSs3Input(AppState state)
+    {
+        if (!TryReadBufferedKey(out ConsoleKeyInfo key))
+        {
+            return;
+        }
+
+        HandleTerminalKeySequence(state, key.KeyChar.ToString());
+    }
+
+    private static void HandleCsiKeySequence(AppState state, string sequence)
+    {
+        if (TryDispatchModalTerminalKeySequence(state, sequence))
+        {
+            return;
+        }
+
+        HandleTerminalKeySequence(state, sequence);
+    }
+
+    private static void HandleTerminalKeySequence(AppState state, string sequence)
+    {
+        switch (sequence)
+        {
+            case "A":
+                ScrollConversation(state, MouseWheelScrollLineCount);
+                return;
+
+            case "B":
+                ScrollConversation(state, -MouseWheelScrollLineCount);
+                return;
+
+            case "5~":
+                ScrollConversation(state, Math.Max(1, GetMessageViewportLineCount(state) - 1));
+                return;
+
+            case "6~":
+                ScrollConversation(state, -Math.Max(1, GetMessageViewportLineCount(state) - 1));
+                return;
+
+            case "H":
+            case "1~":
+                state.ConversationScrollOffset = GetMaxConversationScrollOffset(state);
+                return;
+
+            case "F":
+            case "4~":
+                state.ConversationScrollOffset = 0;
+                return;
+        }
+    }
+
+    private static bool TryDispatchModalTerminalKeySequence(AppState state, string sequence)
+    {
+        if (state.ActiveModal is null)
+        {
+            return false;
+        }
+
+        ConsoleKey? key = sequence switch
+        {
+            "A" => ConsoleKey.UpArrow,
+            "B" => ConsoleKey.DownArrow,
+            "C" => ConsoleKey.RightArrow,
+            "D" => ConsoleKey.LeftArrow,
+            "H" or "1~" => ConsoleKey.Home,
+            "F" or "4~" => ConsoleKey.End,
+            "5~" => ConsoleKey.PageUp,
+            "6~" => ConsoleKey.PageDown,
+            _ => null
+        };
+
+        if (key is null)
+        {
+            return false;
+        }
+
+        state.ActiveModal.HandleKey(
+            state,
+            new ConsoleKeyInfo('\0', key.Value, false, false, false));
+        return true;
+    }
+
+    private static bool TryReadBufferedKey(out ConsoleKeyInfo key)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMilliseconds(TerminalSequenceReadTimeoutMilliseconds);
+
+        while (!Console.KeyAvailable)
+        {
+            if (DateTimeOffset.UtcNow >= deadline)
+            {
+                key = default;
+                return false;
+            }
+
+            Thread.Sleep(1);
+        }
+
+        key = Console.ReadKey(intercept: true);
+        return true;
+    }
+
+    private static bool IsAnsiFinalByte(char character)
+    {
+        return character is >= '@' and <= '~';
+    }
+
+    private static void HandleMouseButtonCode(AppState state, int buttonCode)
+    {
+        int normalizedButtonCode = buttonCode & ~0b1_1100;
+
+        if (normalizedButtonCode == 64)
+        {
+            ScrollConversation(state, MouseWheelScrollLineCount);
+        }
+        else if (normalizedButtonCode == 65)
+        {
+            ScrollConversation(state, -MouseWheelScrollLineCount);
+        }
+    }
+}
