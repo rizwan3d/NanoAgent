@@ -3,7 +3,7 @@ using NanoAgent.Application.Models;
 
 namespace NanoAgent.Application.Tools.Services;
 
-internal sealed class ToolExecutionPipeline : IToolExecutionPipeline
+internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
 {
     private readonly IToolInvoker _toolInvoker;
 
@@ -12,12 +12,29 @@ internal sealed class ToolExecutionPipeline : IToolExecutionPipeline
         _toolInvoker = toolInvoker;
     }
 
-    public async Task<ToolExecutionBatchResult> ExecuteAsync(
+    public Task<ToolExecutionBatchResult> ExecuteAsync(
         IReadOnlyList<ConversationToolCall> toolCalls,
         ReplSessionContext session,
         ConversationExecutionPhase executionPhase,
         IReadOnlySet<string> allowedToolNames,
         CancellationToken cancellationToken)
+    {
+        return ExecuteAsync(
+            toolCalls,
+            session,
+            executionPhase,
+            allowedToolNames,
+            cancellationToken,
+            onToolResult: null);
+    }
+
+    public async Task<ToolExecutionBatchResult> ExecuteAsync(
+        IReadOnlyList<ConversationToolCall> toolCalls,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
+        CancellationToken cancellationToken,
+        Func<ToolInvocationResult, CancellationToken, Task>? onToolResult)
     {
         ArgumentNullException.ThrowIfNull(toolCalls);
         ArgumentNullException.ThrowIfNull(session);
@@ -44,6 +61,10 @@ internal sealed class ToolExecutionPipeline : IToolExecutionPipeline
                 cancellationToken);
 
             results.Add(result);
+            if (onToolResult is not null)
+            {
+                await onToolResult(result, cancellationToken);
+            }
         }
 
         return new ToolExecutionBatchResult(results);

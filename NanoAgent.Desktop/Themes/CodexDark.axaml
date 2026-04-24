@@ -1,0 +1,105 @@
+<Styles xmlns="https://github.com/avaloniaui">
+    <Style Selector="Window">
+        <Setter Property="FontFamily" Value="Inter, Segoe UI, Arial"/>
+    </Style>
+
+    <Style Selector="Button">
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="12,8"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="MinHeight" Value="34"/>
+    </Style>
+
+    <Style Selector="Button.primary">
+        <Setter Property="Background" Value="#F4F4F5"/>
+        <Setter Property="Foreground" Value="#09090B"/>
+        <Setter Property="BorderBrush" Value="#F4F4F5"/>
+    </Style>
+
+    <Style Selector="Button.primary:pointerover">
+        <Setter Property="Background" Value="#FFFFFF"/>
+        <Setter Property="BorderBrush" Value="#FFFFFF"/>
+    </Style>
+
+    <Style Selector="Button.secondary">
+        <Setter Property="Background" Value="#121417"/>
+        <Setter Property="Foreground" Value="#F4F4F5"/>
+        <Setter Property="BorderBrush" Value="#30363D"/>
+    </Style>
+
+    <Style Selector="Button.secondary:pointerover">
+        <Setter Property="Background" Value="#171B21"/>
+        <Setter Property="BorderBrush" Value="#3D444D"/>
+    </Style>
+
+    <Style Selector="Button.ghost">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="#CBD5E1"/>
+        <Setter Property="BorderBrush" Value="#2B313A"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="MinHeight" Value="28"/>
+    </Style>
+
+    <Style Selector="Button.ghost:pointerover">
+        <Setter Property="Background" Value="#151922"/>
+        <Setter Property="BorderBrush" Value="#3D444D"/>
+    </Style>
+
+    <Style Selector="ComboBox">
+        <Setter Property="Background" Value="#121417"/>
+        <Setter Property="Foreground" Value="#F4F4F5"/>
+        <Setter Property="BorderBrush" Value="#30363D"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="10,6"/>
+        <Setter Property="MinHeight" Value="34"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="ComboBox:pointerover">
+        <Setter Property="BorderBrush" Value="#3D444D"/>
+    </Style>
+
+    <Style Selector="ComboBoxItem">
+        <Setter Property="Background" Value="#121417"/>
+        <Setter Property="Foreground" Value="#F4F4F5"/>
+        <Setter Property="Padding" Value="10,7"/>
+        <Setter Property="FontSize" Value="12"/>
+    </Style>
+
+    <Style Selector="ComboBoxItem:pointerover">
+        <Setter Property="Background" Value="#1A1F27"/>
+    </Style>
+
+    <Style Selector="TextBox">
+        <Setter Property="CaretBrush" Value="#F4F4F5"/>
+        <Setter Property="SelectionBrush" Value="#334155"/>
+        <Setter Property="Foreground" Value="#F4F4F5"/>
+        <Setter Property="FontSize" Value="13"/>
+    </Style>
+
+    <Style Selector="TextBox /template/ TextBlock#PART_Watermark">
+        <Setter Property="Foreground" Value="#6B7280"/>
+    </Style>
+
+    <Style Selector="ListBox">
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style Selector="ListBoxItem">
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0"/>
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style Selector="ListBoxItem:selected">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style Selector="ScrollViewer">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+</Styles>

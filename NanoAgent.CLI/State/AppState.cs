@@ -1,4 +1,5 @@
-﻿using System.Text;
+using System.Text;
+using NanoAgent.Application.Backend;
 
 namespace NanoAgent.CLI;
 
@@ -6,7 +7,7 @@ public sealed class AppState
 {
     private int _nextMessageId = 1;
 
-    public AppState(IUiBridge uiBridge, INanoAgentBackend backend)
+    public AppState(UiBridge uiBridge, INanoAgentBackend backend)
     {
         UiBridge = uiBridge;
         Backend = backend;
@@ -64,7 +65,7 @@ public sealed class AppState
 
     public Queue<char> StreamQueue { get; } = new();
 
-    public IUiBridge UiBridge { get; }
+    public UiBridge UiBridge { get; }
 
     public void AddSystemMessage(string text)
     {

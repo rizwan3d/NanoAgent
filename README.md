@@ -5,7 +5,7 @@
 <h1 align="center">NanoAgent</h1>
 
 <p align="center">
-  A local command-line coding agent for software engineering
+  A local coding agent for desktop and terminal workflows
 </p>
 
 <p align="center">
@@ -15,11 +15,17 @@
   <a href="https://github.com/rizwan3d/NanoAgent/issues"><img src="https://img.shields.io/github/issues/rizwan3d/NanoAgent" alt="Issues"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe">
+    <img src="https://img.shields.io/badge/Download-Desktop%20Installer-2ea44f?style=for-the-badge" alt="Download NanoAgent Desktop">
+  </a>
+</p>
+
 ---
 
 ## What is NanoAgent?
 
-NanoAgent is a local command-line coding agent that helps with day-to-day software engineering tasks from a terminal workflow. It can search and read files, apply focused patches, run build and test commands, manage model/provider configuration, and preserve local session history.
+NanoAgent is a local coding agent that helps with day-to-day software engineering tasks from a desktop UI or terminal workflow. It can search and read files, apply focused patches, run build and test commands, manage model/provider configuration, and preserve local workspace sections.
 
 ---
 
@@ -31,12 +37,19 @@ NanoAgent is a local command-line coding agent that helps with day-to-day softwa
 - **Thinking Effort** — Configure thinking effort: none, minimal, low, medium, high, or xhigh
 - **Subagent Delegation** — Delegate focused tasks to `general` or `explore` subagents
 - **Provider Flexibility** — OpenAI, Anthropic, Google AI Studio, or any OpenAI-compatible API
-- **Session History** — Preserve conversation context across sessions
+- **Desktop UI** — Use workspace sections, colorful tool output, and permission prompts in a native app
+- **Session History** — Preserve conversation context across workspace sections
 - **Local-First** — All your code stays on your machine
 
 ---
 
 ## Installation
+
+### Desktop
+
+Download the latest Windows desktop installer:
+
+[![Download NanoAgent Desktop](https://img.shields.io/badge/Download-Desktop%20Installer-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe)
 
 ### macOS / Linux
 
@@ -58,7 +71,7 @@ Restart your shell after installation if the `nano` command is not immediately a
 
 ```bash
 # Start the agent
-nano
+nanoai
 ```
 
 ---

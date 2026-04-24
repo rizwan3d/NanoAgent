@@ -37,6 +37,7 @@ jobs:
           cache-dependency-path: |
             NanoAgent/packages.lock.json
             NanoAgent.CLI/packages.lock.json
+            NanoAgent.Desktop/packages.lock.json
             NanoAgent.Tests/packages.lock.json
 
       - name: Restore

@@ -1,0 +1,184 @@
+using System;
+using System.Collections.Generic;
+using System.Collections.ObjectModel;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+
+namespace NanoAgent.Desktop.Models;
+
+public sealed partial class DesktopSelectionPrompt : ObservableObject
+{
+    private readonly Action _onCancelled;
+    private readonly Action<int, bool> _onSelected;
+    private bool _isResolved;
+
+    [ObservableProperty]
+    private int _remainingSeconds;
+
+    [ObservableProperty]
+    private int _selectedIndex;
+
+    public DesktopSelectionPrompt(
+        string title,
+        string? description,
+        IReadOnlyList<DesktopSelectionPromptOptionDescriptor> options,
+        int defaultIndex,
+        bool allowCancellation,
+        TimeSpan? autoSelectAfter,
+        Action<int, bool> onSelected,
+        Action onCancelled)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(onSelected);
+        ArgumentNullException.ThrowIfNull(onCancelled);
+
+        Title = string.IsNullOrWhiteSpace(title) ? "Prompt" : title.Trim();
+        Description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        AllowCancellation = allowCancellation;
+        _onSelected = onSelected;
+        _onCancelled = onCancelled;
+
+        SelectedIndex = Math.Clamp(defaultIndex, 0, Math.Max(0, options.Count - 1));
+        DeadlineUtc = autoSelectAfter.HasValue
+            ? DateTimeOffset.UtcNow.Add(autoSelectAfter.Value)
+            : null;
+        RemainingSeconds = GetRemainingSeconds();
+
+        for (int index = 0; index < options.Count; index++)
+        {
+            int optionIndex = index;
+            DesktopSelectionPromptOptionDescriptor option = options[index];
+            Options.Add(new DesktopSelectionPromptOption(
+                option.Label,
+                option.Description,
+                optionIndex == SelectedIndex,
+                new RelayCommand(
+                    () => Select(optionIndex),
+                    () => !_isResolved)));
+        }
+
+        CancelCommand = new RelayCommand(
+            Cancel,
+            () => AllowCancellation && !_isResolved);
+    }
+
+    public bool AllowCancellation { get; }
+
+    public IRelayCommand CancelCommand { get; }
+
+    public string CountdownText => HasCountdown
+        ? $"Default in {RemainingSeconds}s"
+        : "Waiting for selection";
+
+    public DateTimeOffset? DeadlineUtc { get; }
+
+    public string? Description { get; }
+
+    public bool HasCountdown => DeadlineUtc is not null;
+
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    public ObservableCollection<DesktopSelectionPromptOption> Options { get; } = new();
+
+    public string Title { get; }
+
+    public event EventHandler? Dismissed;
+
+    public void Dismiss()
+    {
+        if (_isResolved)
+        {
+            return;
+        }
+
+        _isResolved = true;
+        NotifyCommandStatesChanged();
+        Dismissed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Tick()
+    {
+        if (_isResolved || DeadlineUtc is null)
+        {
+            return;
+        }
+
+        RemainingSeconds = GetRemainingSeconds();
+        if (RemainingSeconds <= 0)
+        {
+            Resolve(SelectedIndex, isAutomatic: true);
+        }
+    }
+
+    private void Cancel()
+    {
+        if (_isResolved)
+        {
+            return;
+        }
+
+        _isResolved = true;
+        NotifyCommandStatesChanged();
+        _onCancelled();
+        Dismissed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private int GetRemainingSeconds()
+    {
+        if (DeadlineUtc is null)
+        {
+            return 0;
+        }
+
+        TimeSpan remaining = DeadlineUtc.Value - DateTimeOffset.UtcNow;
+        return Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds));
+    }
+
+    private void NotifyCommandStatesChanged()
+    {
+        CancelCommand.NotifyCanExecuteChanged();
+        foreach (DesktopSelectionPromptOption option in Options)
+        {
+            option.SelectCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private void Resolve(int index, bool isAutomatic)
+    {
+        if (_isResolved || Options.Count == 0)
+        {
+            return;
+        }
+
+        SelectedIndex = Math.Clamp(index, 0, Options.Count - 1);
+        _isResolved = true;
+        NotifyCommandStatesChanged();
+        _onSelected(SelectedIndex, isAutomatic);
+        Dismissed?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void Select(int index)
+    {
+        Resolve(index, isAutomatic: false);
+    }
+
+    partial void OnRemainingSecondsChanged(int value)
+    {
+        OnPropertyChanged(nameof(CountdownText));
+    }
+}
+
+public sealed record DesktopSelectionPromptOption(
+    string Label,
+    string? Description,
+    bool IsDefault,
+    IRelayCommand SelectCommand)
+{
+    public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    public bool IsNotDefault => !IsDefault;
+}
+
+public sealed record DesktopSelectionPromptOptionDescriptor(
+    string Label,
+    string? Description);

@@ -1,0 +1,15 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="NanoAgent.Desktop.App"
+             xmlns:local="using:NanoAgent.Desktop"
+             RequestedThemeVariant="Dark">
+
+    <Application.DataTemplates>
+        <local:ViewLocator/>
+    </Application.DataTemplates>
+  
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://NanoAgent.Desktop/Themes/CodexDark.axaml"/>
+    </Application.Styles>
+</Application>

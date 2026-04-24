@@ -24,8 +24,8 @@ permissions:
   contents: write
 
 env:
-  APP_NAME: NanoAgent
-  APP_PROJECT: NanoAgent.CLI/NanoAgent.CLI.csproj
+  APP_NAME: NanoAgent.Desktop
+  APP_PROJECT: NanoAgent.Desktop/NanoAgent.Desktop.csproj
   CONFIGURATION: Release
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -53,6 +53,7 @@ jobs:
           cache-dependency-path: |
             NanoAgent/packages.lock.json
             NanoAgent.CLI/packages.lock.json
+            NanoAgent.Desktop/packages.lock.json
             NanoAgent.Tests/packages.lock.json
 
       - name: Restore
@@ -88,19 +89,19 @@ jobs:
         include:
           - runner: windows-2025
             rid: win-x64
-            artifact_name: app-win-x64
+            artifact_name: desktop-win-x64
           - runner: ubuntu-24.04
             rid: linux-x64
-            artifact_name: app-linux-x64
+            artifact_name: desktop-linux-x64
           - runner: ubuntu-24.04-arm
             rid: linux-arm64
-            artifact_name: app-linux-arm64
+            artifact_name: desktop-linux-arm64
           - runner: macos-15-intel
             rid: osx-x64
-            artifact_name: app-osx-x64
+            artifact_name: desktop-osx-x64
           - runner: macos-15
             rid: osx-arm64
-            artifact_name: app-osx-arm64
+            artifact_name: desktop-osx-arm64
 
     steps:
       - name: Checkout
@@ -116,20 +117,15 @@ jobs:
           cache-dependency-path: |
             NanoAgent/packages.lock.json
             NanoAgent.CLI/packages.lock.json
+            NanoAgent.Desktop/packages.lock.json
             NanoAgent.Tests/packages.lock.json
-
-      - name: Install Linux Native AOT prerequisites
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install --yes clang zlib1g-dev
 
       - name: Prepare artifact directories
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "$env:GITHUB_WORKSPACE/artifacts/publish", "$env:GITHUB_WORKSPACE/artifacts/packages" | Out-Null
 
-      - name: Publish Native AOT
+      - name: Publish Desktop app
         run: >
           dotnet publish ${{ env.APP_PROJECT }}
           --configuration ${{ env.CONFIGURATION }}
@@ -147,6 +143,59 @@ jobs:
           }
           Compress-Archive -Path "$env:GITHUB_WORKSPACE/artifacts/publish/${{ matrix.rid }}/*" -DestinationPath $archivePath
 
+      - name: Build Windows desktop installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress --yes
+
+          $version = $env:RELEASE_TAG.TrimStart('v')
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            $version = "0.0.0"
+          }
+
+          $scriptPath = Join-Path $env:RUNNER_TEMP "NanoAgent.Desktop.iss"
+          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.rid }}").Replace('\', '\\')
+          $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\', '\\')
+
+          @"
+          #define MyAppName "NanoAgent Desktop"
+          #define MyAppVersion "$version"
+          #define MyAppPublisher "NanoAgent"
+          #define MyAppExeName "NanoAgent.Desktop.exe"
+
+          [Setup]
+          AppId={{99F60D6D-6C4D-4CB8-934F-03CBF59D34BC}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          AppPublisher={#MyAppPublisher}
+          DefaultDirName={autopf}\NanoAgent Desktop
+          DefaultGroupName=NanoAgent Desktop
+          DisableProgramGroupPage=yes
+          OutputDir=$outputDir
+          OutputBaseFilename=NanoAgent.Desktop-${{ matrix.rid }}-setup
+          Compression=lzma
+          SolidCompression=yes
+          WizardStyle=modern
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+
+          [Files]
+          Source: "$publishDir\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+          [Icons]
+          Name: "{autoprograms}\NanoAgent Desktop"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\NanoAgent Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+
+          [Tasks]
+          Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
+
+          [Run]
+          Filename: "{app}\{#MyAppExeName}"; Description: "Launch NanoAgent Desktop"; Flags: nowait postinstall skipifsilent
+          "@ | Set-Content -Path $scriptPath -Encoding UTF8
+
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $scriptPath
+
       - name: Package published output on Linux and macOS
         if: runner.os != 'Windows'
         shell: bash
@@ -160,7 +209,7 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: ${{ matrix.artifact_name }}
-          path: ./artifacts/packages/*.zip
+          path: ./artifacts/packages/*
           if-no-files-found: error
           retention-days: 14
 
@@ -195,7 +244,7 @@ jobs:
           fi
 
           package_lines="$(
-            find "$GITHUB_WORKSPACE/artifacts/release" -type f -name '*.zip' |
+            find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) |
               sort |
               while IFS= read -r package_path; do
                 printf -- '- %s\n' "$(basename "$package_path")"
@@ -224,7 +273,7 @@ jobs:
           tag="$RELEASE_TAG"
           title="NanoAgent $tag"
           target_sha="$(git rev-parse HEAD)"
-          mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release" -type f -name '*.zip' | sort)
+          mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) | sort)
 
           if [[ "${#assets[@]}" -eq 0 ]]; then
             echo "No packaged artifacts were found." >&2

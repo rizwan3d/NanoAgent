@@ -1,4 +1,5 @@
-﻿using System.Text;
+using System.Text;
+using NanoAgent.Application.Backend;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using Spectre.Console;
@@ -7,7 +8,7 @@ namespace NanoAgent.CLI;
 
 public static partial class Program
 {
-    private const string DefaultCompletionNote = "(0s · 0 tokens)";
+    private const string DefaultCompletionNote = "(0s � 0 tokens)";
     private const double EstimatedLiveTokensPerSecond = 4d;
     private const int HeaderDividerWidth = 53;
     private const int HeaderPanelSize = 10;
@@ -45,8 +46,8 @@ public static partial class Program
         Console.CursorVisible = false;
         EnableTerminalWheelScrolling();
 
-        IUiBridge uiBridge = new UiBridge();
-        INanoAgentBackend backend = new NanoCliBackend(args ?? []);
+        UiBridge uiBridge = new();
+        INanoAgentBackend backend = new NanoAgentBackend(args ?? []);
         AppState state = new(uiBridge, backend);
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
         {

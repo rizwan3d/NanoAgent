@@ -376,12 +376,33 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     response.ToolCalls,
                     cancellationToken);
 
-                ToolExecutionBatchResult toolExecutionResult = await _toolExecutionPipeline.ExecuteAsync(
-                    response.ToolCalls,
-                    session,
-                    executionPhase,
-                    allowedToolNames,
-                    cancellationToken);
+                bool reportedToolResultsDuringExecution = false;
+                ToolExecutionBatchResult toolExecutionResult;
+                if (_toolExecutionPipeline is IStreamingToolExecutionPipeline streamingToolExecutionPipeline)
+                {
+                    toolExecutionResult = await streamingToolExecutionPipeline.ExecuteAsync(
+                        response.ToolCalls,
+                        session,
+                        executionPhase,
+                        allowedToolNames,
+                        cancellationToken,
+                        async (toolInvocationResult, toolCancellationToken) =>
+                        {
+                            reportedToolResultsDuringExecution = true;
+                            await progressSink.ReportToolResultsAsync(
+                                new ToolExecutionBatchResult([toolInvocationResult]),
+                                toolCancellationToken);
+                        });
+                }
+                else
+                {
+                    toolExecutionResult = await _toolExecutionPipeline.ExecuteAsync(
+                        response.ToolCalls,
+                        session,
+                        executionPhase,
+                        allowedToolNames,
+                        cancellationToken);
+                }
 
                 ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
                 executedToolResults.AddRange(toolExecutionResult.Results);
@@ -395,9 +416,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     latestPlanProgress = reportedPlanUpdate;
                 }
 
-                await progressSink.ReportToolResultsAsync(
-                    toolExecutionResult,
-                    cancellationToken);
+                if (!reportedToolResultsDuringExecution)
+                {
+                    await progressSink.ReportToolResultsAsync(
+                        toolExecutionResult,
+                        cancellationToken);
+                }
 
                 if (executionPhase == ConversationExecutionPhase.Execution &&
                     executionPlanTracker is not null &&
