@@ -26,6 +26,8 @@ public sealed class AppState
 
     public bool HasFatalError { get; set; }
 
+    public string? FatalExitMessage { get; set; }
+
     public StringBuilder Input { get; } = new();
 
     public bool SkipNextInputLineFeed { get; set; }
@@ -49,6 +51,10 @@ public sealed class AppState
     public string? ProviderName { get; set; }
 
     public string RootDirectory { get; } = Directory.GetCurrentDirectory();
+
+    public string? SectionResumeCommand { get; set; }
+
+    public string? SessionId { get; set; }
 
     public bool Running { get; set; } = true;
 

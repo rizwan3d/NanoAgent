@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
 using Microsoft.Extensions.Logging;
@@ -125,6 +126,8 @@ internal sealed class ReplSectionService : IReplSectionService
             ?? throw new InvalidOperationException(
                 $"Section '{sectionId.Trim()}' was not found.");
 
+        EnsureWorkspaceMatches(snapshot);
+
         ReplSessionContext session = new(
             applicationName,
             snapshot.ProviderProfile,
@@ -140,7 +143,8 @@ internal sealed class ReplSectionService : IReplSectionService
             isResumedSection: true,
             agentProfile: profileOverride ?? BuiltInAgentProfiles.Resolve(snapshot.AgentProfileName),
             reasoningEffort: snapshot.ReasoningEffort,
-            sessionState: snapshot.SessionState);
+            sessionState: snapshot.SessionState,
+            workspacePath: snapshot.WorkspacePath);
 
         if (!session.HasGeneratedSectionTitle &&
             session.TryGetFirstUserPrompt(out string? firstUserPrompt) &&
@@ -150,6 +154,27 @@ internal sealed class ReplSectionService : IReplSectionService
         }
 
         return session;
+    }
+
+    private static void EnsureWorkspaceMatches(ConversationSectionSnapshot snapshot)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot.WorkspacePath))
+        {
+            return;
+        }
+
+        string currentWorkspacePath = NormalizeWorkspacePath(Directory.GetCurrentDirectory());
+        string sectionWorkspacePath = NormalizeWorkspacePath(snapshot.WorkspacePath);
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        if (!string.Equals(currentWorkspacePath, sectionWorkspacePath, comparison))
+        {
+            throw new SectionWorkspaceMismatchException(
+                currentWorkspacePath,
+                sectionWorkspacePath);
+        }
     }
 
     public async Task SaveIfDirtyAsync(
@@ -319,5 +344,25 @@ internal sealed class ReplSectionService : IReplSectionService
         return normalizedTitle.Length <= 80
             ? normalizedTitle
             : normalizedTitle[..80].TrimEnd();
+    }
+
+    private static string NormalizeWorkspacePath(string path)
+    {
+        string fullPath = Path.GetFullPath(path);
+        string? root = Path.GetPathRoot(fullPath);
+
+        if (!string.IsNullOrEmpty(root))
+        {
+            StringComparison comparison = OperatingSystem.IsWindows()
+                ? StringComparison.OrdinalIgnoreCase
+                : StringComparison.Ordinal;
+
+            if (string.Equals(fullPath, root, comparison))
+            {
+                return fullPath;
+            }
+        }
+
+        return fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 }

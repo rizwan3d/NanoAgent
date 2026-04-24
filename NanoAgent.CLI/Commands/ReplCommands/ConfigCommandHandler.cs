@@ -34,6 +34,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
         string message =
             "Current configuration:\n" +
             $"Session: {context.Session.SessionId}\n" +
+            $"Resume command: {context.Session.SectionResumeCommand}\n" +
             $"Provider: {context.Session.ProviderName}\n" +
             $"Base URL: {baseUrl}\n" +
             $"Configuration file: {_userDataPathProvider.GetConfigurationFilePath()}\n" +

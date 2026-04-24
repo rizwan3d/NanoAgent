@@ -290,6 +290,8 @@ public static partial class Program
                 {
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.SessionId = result.SessionInfo.SessionId;
+                    appState.SectionResumeCommand = result.SessionInfo.SectionResumeCommand;
                     appState.ProviderName = result.SessionInfo.ProviderName;
                     appState.ActiveModelId = result.SessionInfo.ModelId;
 

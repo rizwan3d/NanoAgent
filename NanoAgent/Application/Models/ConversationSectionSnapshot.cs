@@ -18,7 +18,8 @@ public sealed class ConversationSectionSnapshot
         PendingExecutionPlan? pendingExecutionPlan = null,
         string? agentProfileName = null,
         string? reasoningEffort = null,
-        SessionStateSnapshot? sessionState = null)
+        SessionStateSnapshot? sessionState = null,
+        string? workspacePath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -66,6 +67,9 @@ public sealed class ConversationSectionSnapshot
         UpdatedAtUtc = updatedAtUtc;
         PendingExecutionPlan = pendingExecutionPlan;
         SessionState = sessionState ?? SessionStateSnapshot.Empty;
+        WorkspacePath = string.IsNullOrWhiteSpace(workspacePath)
+            ? null
+            : Path.GetFullPath(workspacePath.Trim());
     }
 
     public string ActiveModelId { get; }
@@ -93,4 +97,6 @@ public sealed class ConversationSectionSnapshot
     public IReadOnlyList<ConversationSectionTurn> Turns { get; }
 
     public DateTimeOffset UpdatedAtUtc { get; }
+
+    public string? WorkspacePath { get; }
 }

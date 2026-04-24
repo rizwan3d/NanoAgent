@@ -60,7 +60,8 @@ public sealed class ReplSessionContext
         bool isResumedSection = false,
         IAgentProfile? agentProfile = null,
         string? reasoningEffort = null,
-        SessionStateSnapshot? sessionState = null)
+        SessionStateSnapshot? sessionState = null,
+        string? workspacePath = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -100,6 +101,7 @@ public sealed class ReplSessionContext
 
         ActiveModelId = normalizedActiveModelId;
         ReasoningEffort = ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
+        WorkspacePath = NormalizeWorkspacePath(workspacePath);
         SectionId = NormalizeSectionId(sectionId);
         SectionTitle = NormalizeSectionTitle(sectionTitle);
         SectionCreatedAtUtc = sectionCreatedAtUtc ?? DateTimeOffset.UtcNow;
@@ -162,6 +164,8 @@ public sealed class ReplSessionContext
     public string SectionId { get; }
 
     public string SessionId => SectionId;
+
+    public string WorkspacePath { get; }
 
     public SessionStateSnapshot SessionState => new(
         _fileContexts.ToArray(),
@@ -428,7 +432,8 @@ public sealed class ReplSessionContext
             PendingExecutionPlan,
             AgentProfile.Name,
             ReasoningEffort,
-            SessionState);
+            SessionState,
+            WorkspacePath);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)
@@ -917,6 +922,15 @@ public sealed class ReplSessionContext
         return string.IsNullOrWhiteSpace(sectionTitle)
             ? DefaultSectionTitle
             : sectionTitle.Trim();
+    }
+
+    private static string NormalizeWorkspacePath(string? workspacePath)
+    {
+        string normalized = string.IsNullOrWhiteSpace(workspacePath)
+            ? Directory.GetCurrentDirectory()
+            : workspacePath.Trim();
+
+        return Path.GetFullPath(normalized);
     }
 
     private sealed class FileEditTransactionBatchScope : IDisposable

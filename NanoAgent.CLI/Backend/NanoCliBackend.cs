@@ -35,10 +35,10 @@ public sealed class NanoCliBackend : INanoAgentBackend
 
         if (_session is not null)
         {
-            return new BackendSessionInfo(
-                _session.ProviderName,
-                _session.ActiveModelId);
+            return CreateSessionInfo(_session);
         }
+
+        CliSessionOptions options = ParseSessionOptions(_args);
 
         _host = CreateHost(uiBridge, _args);
         _onboardingService = _host.Services.GetRequiredService<IFirstRunOnboardingService>();
@@ -48,21 +48,34 @@ public sealed class NanoCliBackend : INanoAgentBackend
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
         _commandDispatcher = _host.Services.GetRequiredService<IReplCommandDispatcher>();
 
-        OnboardingResult onboardingResult = await _onboardingService.EnsureOnboardedAsync(cancellationToken);
-        ModelDiscoveryResult modelResult = await _modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken);
+        if (!string.IsNullOrWhiteSpace(options.SectionId))
+        {
+            _session = await _sessionAppService.ResumeAsync(
+                new ResumeSessionRequest(
+                    options.SectionId,
+                    options.ProfileName,
+                    options.ThinkingMode),
+                cancellationToken);
 
-        _session = await _sessionAppService.CreateAsync(
-            new CreateSessionRequest(
-                onboardingResult.Profile,
-                modelResult.SelectedModelId,
-                modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
-                ProfileName: null,
-                ReasoningEffort: onboardingResult.ReasoningEffort),
-            cancellationToken);
+            await _onboardingService.EnsureOnboardedAsync(cancellationToken);
+        }
+        else
+        {
+            OnboardingResult onboardingResult = await _onboardingService.EnsureOnboardedAsync(cancellationToken);
+            ModelDiscoveryResult modelResult = await _modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken);
+            string? reasoningEffort = options.ThinkingMode ?? onboardingResult.ReasoningEffort;
 
-        return new BackendSessionInfo(
-            _session.ProviderName,
-            _session.ActiveModelId);
+            _session = await _sessionAppService.CreateAsync(
+                new CreateSessionRequest(
+                    onboardingResult.Profile,
+                    modelResult.SelectedModelId,
+                    modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
+                    options.ProfileName,
+                    reasoningEffort),
+                cancellationToken);
+        }
+
+        return CreateSessionInfo(_session);
     }
 
     public async Task<BackendCommandResult> RunCommandAsync(
@@ -89,9 +102,7 @@ public sealed class NanoCliBackend : INanoAgentBackend
 
         return new BackendCommandResult(
             result,
-            new BackendSessionInfo(
-                _session.ProviderName,
-                _session.ActiveModelId));
+            CreateSessionInfo(_session));
     }
 
     public async Task<ConversationTurnResult> RunTurnAsync(
@@ -183,4 +194,107 @@ public sealed class NanoCliBackend : INanoAgentBackend
 
         return builder.Build();
     }
+
+    private static BackendSessionInfo CreateSessionInfo(ReplSessionContext session)
+    {
+        return new BackendSessionInfo(
+            session.SessionId,
+            session.SectionResumeCommand,
+            session.ProviderName,
+            session.ActiveModelId,
+            session.AvailableModelIds,
+            ReasoningEffortOptions.Format(session.ReasoningEffort),
+            session.AgentProfileName,
+            session.SectionTitle,
+            session.IsResumedSection,
+            CreateConversationHistory(session));
+    }
+
+    private static IReadOnlyList<BackendConversationMessage> CreateConversationHistory(
+        ReplSessionContext session)
+    {
+        return session.ConversationHistory
+            .Where(static message =>
+                !string.IsNullOrWhiteSpace(message.Content) &&
+                (string.Equals(message.Role, "user", StringComparison.Ordinal) ||
+                    string.Equals(message.Role, "assistant", StringComparison.Ordinal)))
+            .Select(static message => new BackendConversationMessage(
+                message.Role,
+                message.Content!))
+            .ToArray();
+    }
+
+    private static CliSessionOptions ParseSessionOptions(IReadOnlyList<string> args)
+    {
+        string? sectionId = null;
+        string? profileName = null;
+        string? thinkingMode = null;
+
+        for (int index = 0; index < args.Count; index++)
+        {
+            string arg = args[index];
+
+            if (TryReadOptionValue(args, ref index, "--section", out string? sectionValue) ||
+                TryReadOptionValue(args, ref index, "--session", out sectionValue))
+            {
+                sectionId = sectionValue;
+                continue;
+            }
+
+            if (TryReadOptionValue(args, ref index, "--profile", out string? profileValue))
+            {
+                profileName = profileValue;
+                continue;
+            }
+
+            if (TryReadOptionValue(args, ref index, "--thinking", out string? thinkingValue))
+            {
+                thinkingMode = thinkingValue;
+            }
+        }
+
+        return new CliSessionOptions(sectionId, profileName, thinkingMode);
+    }
+
+    private static bool TryReadOptionValue(
+        IReadOnlyList<string> args,
+        ref int index,
+        string optionName,
+        out string? value)
+    {
+        string arg = args[index];
+        value = null;
+
+        if (string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            int valueIndex = index + 1;
+            if (valueIndex >= args.Count || string.IsNullOrWhiteSpace(args[valueIndex]))
+            {
+                throw new ArgumentException($"Missing value for {optionName}.");
+            }
+
+            value = args[valueIndex].Trim();
+            index = valueIndex;
+            return true;
+        }
+
+        string prefix = optionName + "=";
+        if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        value = arg[prefix.Length..].Trim();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"Missing value for {optionName}.");
+        }
+
+        return true;
+    }
+
+    private sealed record CliSessionOptions(
+        string? SectionId,
+        string? ProfileName,
+        string? ThinkingMode);
 }

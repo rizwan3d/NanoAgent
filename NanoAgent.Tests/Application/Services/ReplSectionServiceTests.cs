@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
@@ -88,8 +89,10 @@ public sealed class ReplSectionServiceTests
         initialSnapshot.Should().NotBeNull();
         titledSnapshot.Should().NotBeNull();
         initialSnapshot!.Title.Should().Be(ReplSessionContext.DefaultSectionTitle);
+        initialSnapshot.WorkspacePath.Should().Be(Path.GetFullPath(Directory.GetCurrentDirectory()));
         titledSnapshot!.Title.Should().Be("Todo App Builder");
         titledSnapshot.SectionId.Should().Be(session.SectionId);
+        titledSnapshot.WorkspacePath.Should().Be(initialSnapshot.WorkspacePath);
         session.SectionTitle.Should().Be("Todo App Builder");
     }
 
@@ -184,6 +187,51 @@ public sealed class ReplSectionServiceTests
             CancellationToken.None);
 
         session.ReasoningEffort.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ResumeAsync_WhenWorkspacePathDoesNotMatchCurrentDirectory_Should_Throw()
+    {
+        string sectionWorkspacePath = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-OtherWorkspace-{Guid.NewGuid():N}");
+        ConversationSectionSnapshot snapshot = new(
+            Guid.NewGuid().ToString("D"),
+            "Todo App Session",
+            new DateTimeOffset(2026, 4, 21, 1, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 4, 21, 1, 5, 0, TimeSpan.Zero),
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "gpt-5-mini",
+            ["gpt-5-mini", "gpt-4.1"],
+            [new ConversationSectionTurn("first prompt", "first reply")],
+            19,
+            workspacePath: sectionWorkspacePath);
+
+        Mock<IConversationSectionStore> sectionStore = new(MockBehavior.Strict);
+        sectionStore
+            .Setup(store => store.LoadAsync(snapshot.SectionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(snapshot);
+
+        ReplSectionService sut = new(
+            sectionStore.Object,
+            Mock.Of<IApiKeySecretStore>(),
+            Mock.Of<IConversationProviderClient>(),
+            Mock.Of<IConversationResponseMapper>(),
+            TimeProvider.System,
+            NullLogger<ReplSectionService>.Instance);
+
+        Func<Task> act = () => sut.ResumeAsync(
+            "NanoAgent",
+            snapshot.SectionId,
+            profileOverride: null,
+            CancellationToken.None);
+
+        SectionWorkspaceMismatchException exception = (await act.Should()
+            .ThrowAsync<SectionWorkspaceMismatchException>())
+            .Which;
+        exception.Message.Should().StartWith(SectionWorkspaceMismatchException.DefaultMessage);
+        exception.SectionWorkspacePath.Should().Be(Path.GetFullPath(sectionWorkspacePath));
+        exception.CurrentWorkspacePath.Should().Be(Path.GetFullPath(Directory.GetCurrentDirectory()));
     }
 
     private sealed class FixedTimeProvider : TimeProvider

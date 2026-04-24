@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using Spectre.Console;
 
@@ -47,8 +48,14 @@ public static partial class Program
         IUiBridge uiBridge = new UiBridge();
         INanoAgentBackend backend = new NanoCliBackend(args ?? []);
         AppState state = new(uiBridge, backend);
+        ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            state.Running = false;
+        };
 
         StartInitialization(state);
+        Console.CancelKeyPress += cancelKeyPressHandler;
 
         try
         {
@@ -72,6 +79,7 @@ public static partial class Program
         }
         finally
         {
+            Console.CancelKeyPress -= cancelKeyPressHandler;
             state.LifetimeCancellation.Cancel();
 
             try
@@ -85,8 +93,33 @@ public static partial class Program
                 state.LifetimeCancellation.Dispose();
                 Console.CursorVisible = true;
                 Console.ResetColor();
+                WriteFatalExitMessage(state);
+                WriteExitResumeHint(state);
             }
         }
+    }
+
+    private static void WriteFatalExitMessage(AppState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.FatalExitMessage))
+        {
+            return;
+        }
+
+        Console.WriteLine(state.FatalExitMessage.Trim());
+    }
+
+    private static void WriteExitResumeHint(AppState state)
+    {
+        if (string.IsNullOrWhiteSpace(state.SessionId) ||
+            string.IsNullOrWhiteSpace(state.SectionResumeCommand))
+        {
+            return;
+        }
+
+        Console.WriteLine("Exiting NanoAgent.");
+        Console.WriteLine($"Section: {state.SessionId}");
+        Console.WriteLine($"Resume this section: {state.SectionResumeCommand}");
     }
 
     private static void StartInitialization(AppState state)
@@ -108,12 +141,24 @@ public static partial class Program
                     appState.IsReady = true;
                     appState.HasFatalError = false;
                     appState.ActivityText = "Ready";
-                    appState.ProviderName = sessionInfo.ProviderName;
-                    appState.ActiveModelId = sessionInfo.ModelId;
+                    ApplySessionInfo(appState, sessionInfo);
+                    RenderResumedSection(appState, sessionInfo);
                 });
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
             {
+            }
+            catch (SectionWorkspaceMismatchException exception)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.HasFatalError = true;
+                    appState.ActivityText = "Backend startup failed";
+                    appState.FatalExitMessage = exception.Message;
+                    appState.AddSystemMessage(exception.Message);
+                    appState.Running = false;
+                });
             }
             catch (Exception exception)
             {
@@ -126,5 +171,52 @@ public static partial class Program
                 });
             }
         });
+    }
+
+    private static void ApplySessionInfo(
+        AppState state,
+        BackendSessionInfo sessionInfo)
+    {
+        state.SessionId = sessionInfo.SessionId;
+        state.SectionResumeCommand = sessionInfo.SectionResumeCommand;
+        state.ProviderName = sessionInfo.ProviderName;
+        state.ActiveModelId = sessionInfo.ModelId;
+    }
+
+    private static void RenderResumedSection(
+        AppState state,
+        BackendSessionInfo sessionInfo)
+    {
+        if (!sessionInfo.IsResumedSection)
+        {
+            return;
+        }
+
+        state.Messages.Clear();
+        state.ConversationScrollOffset = 0;
+
+        string sectionTitle = string.IsNullOrWhiteSpace(sessionInfo.SectionTitle)
+            ? "Untitled section"
+            : sessionInfo.SectionTitle.Trim();
+
+        state.AddSystemMessage(
+            $"Resumed section: {sectionTitle}\n" +
+            $"Section: {sessionInfo.SessionId}\n" +
+            $"Resume command: {sessionInfo.SectionResumeCommand}");
+
+        foreach (BackendConversationMessage message in sessionInfo.ConversationHistory)
+        {
+            Role? role = message.Role switch
+            {
+                "user" => Role.User,
+                "assistant" => Role.Assistant,
+                _ => null
+            };
+
+            if (role is not null && !string.IsNullOrWhiteSpace(message.Content))
+            {
+                state.AddMessage(role.Value, message.Content);
+            }
+        }
     }
 }

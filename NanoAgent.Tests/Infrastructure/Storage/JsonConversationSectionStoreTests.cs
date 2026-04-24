@@ -56,7 +56,8 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
                     ".",
                     0,
                     "Passed",
-                    null)]));
+                    null)]),
+            workspacePath: _tempRoot);
 
         await sut.SaveAsync(snapshot, CancellationToken.None);
         ConversationSectionSnapshot? loadedSnapshot = await sut.LoadAsync(snapshot.SectionId, CancellationToken.None);
@@ -71,6 +72,7 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.Turns[0].UserInput.Should().Be("build a todo app");
         loadedSnapshot.Turns[0].AssistantResponse.Should().Be("I created the scaffold.");
         loadedSnapshot.TotalEstimatedOutputTokens.Should().Be(27);
+        loadedSnapshot.WorkspacePath.Should().Be(Path.GetFullPath(_tempRoot));
         loadedSnapshot.PendingExecutionPlan.Should().NotBeNull();
         loadedSnapshot.PendingExecutionPlan!.SourceUserInput.Should().Be("plan the todo app");
         loadedSnapshot.PendingExecutionPlan.Tasks.Should().Equal("Inspect", "Implement", "Validate");
