@@ -25,7 +25,7 @@ permissions:
 
 env:
   APP_NAME: NanoAgent
-  APP_PROJECT: NanoAgent/NanoAgent.csproj
+  APP_PROJECT: NanoAgent.CLI/NanoAgent.CLI.csproj
   CONFIGURATION: Release
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
@@ -52,6 +52,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             NanoAgent/packages.lock.json
+            NanoAgent.CLI/packages.lock.json
             NanoAgent.Tests/packages.lock.json
 
       - name: Restore
@@ -114,6 +115,7 @@ jobs:
           cache: true
           cache-dependency-path: |
             NanoAgent/packages.lock.json
+            NanoAgent.CLI/packages.lock.json
             NanoAgent.Tests/packages.lock.json
 
       - name: Install Linux Native AOT prerequisites

@@ -11,6 +11,7 @@ $ProgressPreference = 'SilentlyContinue'
 $Owner = 'rizwan3d'
 $Repo = 'NanoAgent'
 $AppName = 'NanoAgent'
+$ExecutableName = 'NanoAgent.CLI'
 $CommandName = 'nano'
 $AssetName = "$AppName-win-x64.zip"
 
@@ -107,9 +108,9 @@ try {
     Write-Status 'Extracting archive...'
     Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
 
-    $sourcePath = Join-Path $extractDir "$AppName.exe"
+    $sourcePath = Join-Path $extractDir "$ExecutableName.exe"
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-        Fail-Install "Expected executable '$AppName.exe' was not found in $AssetName."
+        Fail-Install "Expected executable '$ExecutableName.exe' was not found in $AssetName."
     }
 
     Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force

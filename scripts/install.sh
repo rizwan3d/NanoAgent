@@ -4,6 +4,7 @@ set -euo pipefail
 readonly OWNER="rizwan3d"
 readonly REPO="NanoAgent"
 readonly APP_NAME="NanoAgent"
+readonly EXECUTABLE_NAME="NanoAgent.CLI"
 readonly COMMAND_NAME="nano"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 
@@ -144,9 +145,9 @@ main() {
   log "Extracting archive..."
   unzip -qo "$archive_path" -d "$extract_dir"
 
-  source_binary="${extract_dir}/${APP_NAME}"
+  source_binary="${extract_dir}/${EXECUTABLE_NAME}"
   if [[ ! -f "$source_binary" ]]; then
-    fail "Expected executable '${APP_NAME}' was not found in ${asset_name}."
+    fail "Expected executable '${EXECUTABLE_NAME}' was not found in ${asset_name}."
   fi
 
   destination_binary="${install_dir}/${COMMAND_NAME}"
