@@ -46,9 +46,9 @@ public sealed class UpdatePlanToolTests
         result.JsonResult.Should().Contain("\"CompletedTaskCount\":1");
         result.RenderPayload.Should().NotBeNull();
         result.RenderPayload!.Text.Should().Contain("Need a visible task list.");
-        result.RenderPayload.Text.Should().Contain("[x] Inspect current planning flow");
-        result.RenderPayload.Text.Should().Contain("[>] Add update_plan support");
-        result.RenderPayload.Text.Should().Contain("[ ] Run validation");
+        result.RenderPayload.Text.Should().Contain("\u2713 Inspect current planning flow");
+        result.RenderPayload.Text.Should().Contain("\u2610 Add update_plan support");
+        result.RenderPayload.Text.Should().Contain("\u2610 Run validation");
     }
 
     [Fact]
