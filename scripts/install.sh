@@ -5,7 +5,7 @@ readonly OWNER="rizwan3d"
 readonly REPO="NanoAgent"
 readonly APP_NAME="NanoAgent"
 readonly EXECUTABLE_NAME="NanoAgent.CLI"
-readonly COMMAND_NAME="nano"
+readonly COMMAND_NAME="nanoai"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 
 log() {
