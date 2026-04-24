@@ -13,7 +13,7 @@ $Repo = 'NanoAgent'
 $AppName = 'NanoAgent'
 $ExecutableName = 'NanoAgent.CLI'
 $CommandName = 'nanoai'
-$AssetName = "$AppName-win-x64.zip"
+$AssetName = "$ExecutableName-win-x64.zip"
 
 function Write-Status {
     param([string]$Message)
