@@ -32,7 +32,17 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "gpt-5-mini",
             ["gpt-5-mini", "gpt-4.1"],
-            [new ConversationSectionTurn("build a todo app", "I created the scaffold.")],
+            [
+                new ConversationSectionTurn(
+                    "build a todo app",
+                    "I created the scaffold.",
+                    [
+                        new ConversationToolCall(
+                            "call_1",
+                            "file_write",
+                            """{ "path": "README.md", "content": "hello" }""")
+                    ])
+            ],
             27,
             new PendingExecutionPlan(
                 "plan the todo app",
@@ -71,6 +81,9 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.Turns.Should().ContainSingle();
         loadedSnapshot.Turns[0].UserInput.Should().Be("build a todo app");
         loadedSnapshot.Turns[0].AssistantResponse.Should().Be("I created the scaffold.");
+        loadedSnapshot.Turns[0].ToolCalls.Should().ContainSingle();
+        loadedSnapshot.Turns[0].ToolCalls[0].Name.Should().Be("file_write");
+        loadedSnapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("README.md");
         loadedSnapshot.TotalEstimatedOutputTokens.Should().Be(27);
         loadedSnapshot.WorkspacePath.Should().Be(Path.GetFullPath(_tempRoot));
         loadedSnapshot.PendingExecutionPlan.Should().NotBeNull();
@@ -82,6 +95,47 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.SessionState.Edits[0].Description.Should().Be("file_write (README.md)");
         loadedSnapshot.SessionState.TerminalHistory.Should().ContainSingle();
         loadedSnapshot.SessionState.TerminalHistory[0].Command.Should().Be("dotnet test");
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_TreatMissingTurnToolCallsAsEmpty()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonConversationSectionStore sut = new(pathProvider);
+        string sectionId = Guid.NewGuid().ToString("D");
+        string sectionsDirectory = pathProvider.GetSectionsDirectoryPath();
+        Directory.CreateDirectory(sectionsDirectory);
+
+        await File.WriteAllTextAsync(
+            Path.Combine(sectionsDirectory, $"{sectionId}.json"),
+            $$"""
+            {
+              "sectionId": "{{sectionId}}",
+              "title": "Old Section",
+              "createdAtUtc": "2026-04-21T01:00:00+00:00",
+              "updatedAtUtc": "2026-04-21T01:05:00+00:00",
+              "providerProfile": {
+                "providerKind": "openAiCompatible",
+                "baseUrl": "https://provider.example.com/v1"
+              },
+              "activeModelId": "gpt-5-mini",
+              "availableModelIds": ["gpt-5-mini"],
+              "turns": [
+                {
+                  "userInput": "old prompt",
+                  "assistantResponse": "old response"
+                }
+              ],
+              "totalEstimatedOutputTokens": 12
+            }
+            """,
+            CancellationToken.None);
+
+        ConversationSectionSnapshot? loadedSnapshot = await sut.LoadAsync(sectionId, CancellationToken.None);
+
+        loadedSnapshot.Should().NotBeNull();
+        loadedSnapshot!.Turns.Should().ContainSingle();
+        loadedSnapshot.Turns[0].ToolCalls.Should().BeEmpty();
     }
 
     public void Dispose()

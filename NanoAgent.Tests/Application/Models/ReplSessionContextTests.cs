@@ -139,6 +139,31 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void CreateSectionSnapshot_Should_PersistToolCallsOnTurn()
+    {
+        ReplSessionContext session = CreateSession();
+
+        session.AddConversationTurn(
+            "read the README",
+            "I read it.",
+            [
+                new ConversationToolCall(
+                    "call_1",
+                    "file_read",
+                    """{ "path": "README.md" }""")
+            ]);
+
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+            session.SectionCreatedAtUtc.AddMinutes(1));
+
+        snapshot.Turns.Should().ContainSingle();
+        snapshot.Turns[0].ToolCalls.Should().ContainSingle();
+        snapshot.Turns[0].ToolCalls[0].Id.Should().Be("call_1");
+        snapshot.Turns[0].ToolCalls[0].Name.Should().Be("file_read");
+        snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Be("""{ "path": "README.md" }""");
+    }
+
+    [Fact]
     public void SessionState_Should_PersistFileEditAndTerminalContext_InSnapshot()
     {
         ReplSessionContext session = CreateSession();

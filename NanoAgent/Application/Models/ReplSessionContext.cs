@@ -21,6 +21,7 @@ public sealed class ReplSessionContext
     private readonly HashSet<string> _availableModelIds;
     private List<WorkspaceFileEditTransaction>? _batchedFileEditTransactions;
     private readonly List<ConversationRequestMessage> _conversationHistory = [];
+    private readonly List<ConversationSectionTurn> _conversationTurns = [];
     private readonly List<SessionEditContext> _editContexts = [];
     private readonly List<SessionFileContext> _fileContexts = [];
     private readonly Stack<WorkspaceFileEditTransaction> _redoFileEditTransactions = new();
@@ -123,6 +124,7 @@ public sealed class ReplSessionContext
 
         foreach (ConversationSectionTurn turn in conversationTurns.Where(static turn => turn is not null))
         {
+            _conversationTurns.Add(turn);
             _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
             _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(turn.AssistantResponse));
         }
@@ -273,13 +275,20 @@ public sealed class ReplSessionContext
 
     public void AddConversationTurn(
         string userInput,
-        string assistantResponse)
+        string assistantResponse,
+        IReadOnlyList<ConversationToolCall>? toolCalls = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
         ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
 
-        _conversationHistory.Add(ConversationRequestMessage.User(userInput.Trim()));
-        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(assistantResponse.Trim()));
+        ConversationSectionTurn turn = new(
+            userInput,
+            assistantResponse,
+            toolCalls);
+
+        _conversationTurns.Add(turn);
+        _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
+        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(turn.AssistantResponse));
         IsPersistedStateDirty = true;
     }
 
@@ -399,24 +408,28 @@ public sealed class ReplSessionContext
                 "Conversation history must contain complete user/assistant turns before it can be persisted.");
         }
 
-        List<ConversationSectionTurn> turns = [];
+        if (_conversationTurns.Count * 2 != _conversationHistory.Count)
+        {
+            throw new InvalidOperationException(
+                "Conversation turn metadata must match conversation history before it can be persisted.");
+        }
+
         for (int index = 0; index < _conversationHistory.Count; index += 2)
         {
             ConversationRequestMessage userMessage = _conversationHistory[index];
             ConversationRequestMessage assistantMessage = _conversationHistory[index + 1];
+            ConversationSectionTurn turn = _conversationTurns[index / 2];
 
             if (!string.Equals(userMessage.Role, "user", StringComparison.Ordinal) ||
                 !string.Equals(assistantMessage.Role, "assistant", StringComparison.Ordinal) ||
                 string.IsNullOrWhiteSpace(userMessage.Content) ||
-                string.IsNullOrWhiteSpace(assistantMessage.Content))
+                string.IsNullOrWhiteSpace(assistantMessage.Content) ||
+                !string.Equals(userMessage.Content, turn.UserInput, StringComparison.Ordinal) ||
+                !string.Equals(assistantMessage.Content, turn.AssistantResponse, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     "Conversation history contains an unsupported message layout for section persistence.");
             }
-
-            turns.Add(new ConversationSectionTurn(
-                userMessage.Content,
-                assistantMessage.Content));
         }
 
         return new ConversationSectionSnapshot(
@@ -427,7 +440,7 @@ public sealed class ReplSessionContext
             ProviderProfile,
             ActiveModelId,
             AvailableModelIds,
-            turns,
+            _conversationTurns.ToArray(),
             TotalEstimatedOutputTokens,
             PendingExecutionPlan,
             AgentProfile.Name,

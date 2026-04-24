@@ -1190,6 +1190,14 @@ public sealed class AgentConversationPipelineTests
         toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("ok");
         session.ConversationHistory.Should().HaveCount(2);
         session.ConversationHistory[1].Content.Should().Be("Implemented the requested change.");
+
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(session.SectionCreatedAtUtc.AddMinutes(1));
+        snapshot.Turns.Should().ContainSingle();
+        snapshot.Turns[0].ToolCalls.Select(static call => call.Name)
+            .Should()
+            .Equal(AgentToolNames.PlanningMode, AgentToolNames.FileWrite);
+        snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("Update the README.");
+        snapshot.Turns[0].ToolCalls[1].ArgumentsJson.Should().Contain("README.md");
     }
 
     [Fact]

@@ -148,7 +148,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
         session.ClearPendingExecutionPlan();
-        session.AddConversationTurn(normalizedInput, result.AssistantMessage);
+        session.AddConversationTurn(
+            normalizedInput,
+            result.AssistantMessage,
+            result.ToolCalls);
 
         return ConversationTurnResult.AssistantMessage(
             result.AssistantMessage,
@@ -214,7 +217,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
         session.ClearPendingExecutionPlan();
-        session.AddConversationTurn(normalizedInput, executionResult.AssistantMessage);
+        session.AddConversationTurn(
+            normalizedInput,
+            executionResult.AssistantMessage,
+            executionResult.ToolCalls);
 
         return ConversationTurnResult.AssistantMessage(
             executionResult.AssistantMessage,
@@ -337,6 +343,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         CancellationToken cancellationToken)
     {
         List<ConversationRequestMessage> messages = initialMessages.ToList();
+        List<ConversationToolCall> executedToolCalls = [];
         List<ToolInvocationResult> executedToolResults = [];
         int consecutiveToolFailureCount = 0;
         int incompletePlanFinalResponseRetryCount = 0;
@@ -405,6 +412,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 }
 
                 ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
+                executedToolCalls.AddRange(response.ToolCalls);
                 executedToolResults.AddRange(toolExecutionResult.Results);
 
                 ExecutionPlanProgress? reportedPlanUpdate = await ReportPlanUpdatesAsync(
@@ -478,6 +486,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             return new PhaseExecutionResult(
                 response.AssistantMessage,
+                executedToolCalls,
                 executedToolResults,
                 totalCompletionTokens,
                 hasReportedCompletionTokens);
@@ -761,14 +770,17 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     {
         public PhaseExecutionResult(
             string assistantMessage,
+            IReadOnlyList<ConversationToolCall> toolCalls,
             IReadOnlyList<ToolInvocationResult> executedToolResults,
             int totalCompletionTokens,
             bool hasReportedCompletionTokens)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(assistantMessage);
+            ArgumentNullException.ThrowIfNull(toolCalls);
             ArgumentNullException.ThrowIfNull(executedToolResults);
 
             AssistantMessage = assistantMessage.Trim();
+            ToolCalls = toolCalls.ToArray();
             ExecutedToolResults = executedToolResults.ToArray();
             TotalCompletionTokens = totalCompletionTokens;
             HasReportedCompletionTokens = hasReportedCompletionTokens;
@@ -779,6 +791,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         public IReadOnlyList<ToolInvocationResult> ExecutedToolResults { get; }
 
         public bool HasReportedCompletionTokens { get; }
+
+        public IReadOnlyList<ConversationToolCall> ToolCalls { get; }
 
         public int TotalCompletionTokens { get; }
     }
