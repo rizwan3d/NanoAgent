@@ -10,7 +10,7 @@ $ProgressPreference = 'SilentlyContinue'
 
 $Owner = 'rizwan3d'
 $Repo = 'NanoAgent'
-$AppName = 'NanoAgent'
+$AppName = 'NanoAgent.CLI'
 $ExecutableName = 'NanoAgent.CLI'
 $CommandName = 'nanoai'
 $AssetName = "$ExecutableName-win-x64.zip"
