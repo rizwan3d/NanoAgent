@@ -51,6 +51,7 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("official documentation or domain references");
         result.SystemPrompt.Should().Contain("- planning_mode:");
         result.SystemPrompt.Should().Contain("- update_plan:");
+        result.SystemPrompt.Should().Contain("- file_delete:");
         result.SystemPrompt.Should().Contain("- web_run:");
         result.SystemPrompt.Should().Contain("- shell_command:");
         result.SystemPrompt.Should().Contain("Developed by: Rizwan3D");

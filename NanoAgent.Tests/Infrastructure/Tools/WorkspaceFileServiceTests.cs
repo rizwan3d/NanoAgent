@@ -136,6 +136,27 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task DeleteFileAsync_Should_DeleteFileAndReturnPreview()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "README.md");
+        await File.WriteAllTextAsync(filePath, "first\nsecond", CancellationToken.None);
+
+        WorkspaceFileDeleteResult result = await sut.DeleteFileAsync(
+            "README.md",
+            CancellationToken.None);
+
+        File.Exists(filePath).Should().BeFalse();
+        result.Path.Should().Be("README.md");
+        result.DeletedCharacterCount.Should().Be(12);
+        result.AddedLineCount.Should().Be(0);
+        result.RemovedLineCount.Should().Be(2);
+        result.PreviewLines.Should().ContainInOrder(
+            new WorkspaceFileWritePreviewLine(1, "remove", "first"),
+            new WorkspaceFileWritePreviewLine(2, "remove", "second"));
+    }
+
+    [Fact]
     public async Task SearchFilesAsync_Should_ReturnMatchingWorkspaceRelativePaths()
     {
         WorkspaceFileService sut = CreateSut();
@@ -270,6 +291,27 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         result.EditTransaction.AfterStates[0].Path.Should().Be("README.md");
         result.EditTransaction.AfterStates[0].Exists.Should().BeTrue();
         result.EditTransaction.AfterStates[0].Content.Should().Be("hello");
+    }
+
+    [Fact]
+    public async Task DeleteFileWithTrackingAsync_Should_ReturnUndoableBeforeAndAfterStates()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "README.md");
+        await File.WriteAllTextAsync(filePath, "hello", CancellationToken.None);
+
+        WorkspaceFileDeleteExecutionResult result = await sut.DeleteFileWithTrackingAsync(
+            "README.md",
+            CancellationToken.None);
+
+        result.EditTransaction.BeforeStates.Should().ContainSingle();
+        result.EditTransaction.BeforeStates[0].Path.Should().Be("README.md");
+        result.EditTransaction.BeforeStates[0].Exists.Should().BeTrue();
+        result.EditTransaction.BeforeStates[0].Content.Should().Be("hello");
+        result.EditTransaction.AfterStates.Should().ContainSingle();
+        result.EditTransaction.AfterStates[0].Path.Should().Be("README.md");
+        result.EditTransaction.AfterStates[0].Exists.Should().BeFalse();
+        File.Exists(filePath).Should().BeFalse();
     }
 
     [Fact]

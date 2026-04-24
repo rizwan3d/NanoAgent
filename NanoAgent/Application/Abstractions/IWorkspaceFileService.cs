@@ -22,6 +22,14 @@ public interface IWorkspaceFileService
         bool recursive,
         CancellationToken cancellationToken);
 
+    Task<WorkspaceFileDeleteResult> DeleteFileAsync(
+        string path,
+        CancellationToken cancellationToken);
+
+    Task<WorkspaceFileDeleteExecutionResult> DeleteFileWithTrackingAsync(
+        string path,
+        CancellationToken cancellationToken);
+
     Task<WorkspaceFileReadResult> ReadFileAsync(
         string path,
         CancellationToken cancellationToken);

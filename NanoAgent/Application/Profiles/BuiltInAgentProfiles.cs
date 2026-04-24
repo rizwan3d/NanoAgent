@@ -17,6 +17,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.AgentDelegate,
             AgentToolNames.ApplyPatch,
             AgentToolNames.DirectoryList,
+            AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
             AgentToolNames.FileWrite,
             AgentToolNames.PlanningMode,
@@ -32,6 +33,7 @@ internal static class BuiltInAgentProfiles
         [
             AgentToolNames.ApplyPatch,
             AgentToolNames.DirectoryList,
+            AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
             AgentToolNames.FileWrite,
             AgentToolNames.PlanningMode,

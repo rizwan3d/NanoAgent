@@ -5,6 +5,7 @@ internal static class AgentToolNames
     public const string AgentDelegate = "agent_delegate";
     public const string ApplyPatch = "apply_patch";
     public const string DirectoryList = "directory_list";
+    public const string FileDelete = "file_delete";
     public const string FileRead = "file_read";
     public const string PlanningMode = "planning_mode";
     public const string SearchFiles = "search_files";

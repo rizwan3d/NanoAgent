@@ -111,6 +111,30 @@ internal static class SessionStateToolRecorder
             result.RemovedLineCount));
     }
 
+    public static void RecordFileDelete(
+        ReplSessionContext session,
+        WorkspaceFileDeleteResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string preview = FormatPreview(result.PreviewLines, result.RemainingPreviewLineCount);
+        DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "deleted",
+            observedAtUtc,
+            $"deleted by file_delete (+{result.AddedLineCount} -{result.RemovedLineCount}). Preview: {preview}"));
+
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc,
+            $"file_delete ({result.Path})",
+            [result.Path],
+            result.AddedLineCount,
+            result.RemovedLineCount));
+    }
+
     public static void RecordApplyPatch(
         ReplSessionContext session,
         WorkspaceApplyPatchResult result)

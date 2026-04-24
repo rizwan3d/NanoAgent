@@ -55,6 +55,28 @@ public sealed class SelectionPermissionApprovalPromptTests
     }
 
     [Fact]
+    public async Task PromptAsync_Should_ShowExactFilePath_ForFileDeleteRequests()
+    {
+        CapturingSelectionPrompt selectionPrompt = new(PermissionApprovalChoice.AllowOnce);
+        SelectionPermissionApprovalPrompt sut = new(selectionPrompt);
+
+        await sut.PromptAsync(
+            new PermissionApprovalRequest(
+                "NanoAgent",
+                new PermissionRequestDescriptor(
+                    "file_delete",
+                    "edit",
+                    ["edit", "file_delete"],
+                    ["src/App.js"]),
+                "Permission requires approval for tool 'file_delete' to delete file 'src/App.js'."),
+            CancellationToken.None);
+
+        selectionPrompt.LastRequest!.Title.Should().Be("Approve file delete?");
+        selectionPrompt.LastRequest.Description.Should().Contain("Tool: file_delete");
+        selectionPrompt.LastRequest.Description.Should().Contain("File path: src/App.js");
+    }
+
+    [Fact]
     public async Task PromptAsync_Should_ShowExactCommand_ForShellRequests()
     {
         CapturingSelectionPrompt selectionPrompt = new(PermissionApprovalChoice.AllowOnce);

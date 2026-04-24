@@ -143,6 +143,30 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 [afterState]));
     }
 
+    public async Task<WorkspaceFileDeleteExecutionResult> DeleteFileWithTrackingAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        WorkspaceFileEditState beforeState = await CaptureFileStateAsync(
+            path,
+            cancellationToken);
+        WorkspaceFileDeleteResult result = await DeleteFileAsync(
+            path,
+            cancellationToken);
+        WorkspaceFileEditState afterState = await CaptureFileStateAsync(
+            path,
+            cancellationToken);
+
+        return new WorkspaceFileDeleteExecutionResult(
+            result,
+            new WorkspaceFileEditTransaction(
+                $"file_delete ({result.Path})",
+                [beforeState],
+                [afterState]));
+    }
+
     private async Task<WorkspaceApplyPatchResult> ApplyPatchDocumentAsync(
         PatchDocument document,
         CancellationToken cancellationToken)
@@ -207,6 +231,31 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             ToWorkspaceRelativePath(fullPath),
             content,
             content.Length);
+    }
+
+    public async Task<WorkspaceFileDeleteResult> DeleteFileAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true);
+        string previousContent = await File.ReadAllTextAsync(
+            fullPath,
+            Encoding.UTF8,
+            cancellationToken);
+        FileWritePreview preview = BuildFileWritePreview(previousContent, string.Empty);
+
+        cancellationToken.ThrowIfCancellationRequested();
+        File.Delete(fullPath);
+
+        return new WorkspaceFileDeleteResult(
+            ToWorkspaceRelativePath(fullPath),
+            previousContent.Length,
+            preview.AddedLineCount,
+            preview.RemovedLineCount,
+            preview.Lines,
+            preview.RemainingPreviewLineCount);
     }
 
     public async Task<WorkspaceFileSearchResult> SearchFilesAsync(

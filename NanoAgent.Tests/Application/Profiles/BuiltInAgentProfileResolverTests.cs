@@ -61,6 +61,7 @@ public sealed class BuiltInAgentProfileResolverTests
             var profile = sut.Resolve(profileName);
 
             profile.EnabledTools.Should().NotContain(AgentToolNames.ApplyPatch);
+            profile.EnabledTools.Should().NotContain(AgentToolNames.FileDelete);
             profile.EnabledTools.Should().NotContain(AgentToolNames.FileWrite);
             profile.EnabledTools.Should().Contain(AgentToolNames.ShellCommand);
             profile.PermissionIntent.EditMode.Should().Be(AgentProfileEditMode.ReadOnly);
@@ -89,6 +90,7 @@ public sealed class BuiltInAgentProfileResolverTests
     public void GeneralSubagent_Should_EnableEditToolsWithoutNestedDelegationOrLivePlanTool()
     {
         BuiltInAgentProfiles.General.EnabledTools.Should().Contain(AgentToolNames.ApplyPatch);
+        BuiltInAgentProfiles.General.EnabledTools.Should().Contain(AgentToolNames.FileDelete);
         BuiltInAgentProfiles.General.EnabledTools.Should().Contain(AgentToolNames.FileWrite);
         BuiltInAgentProfiles.General.EnabledTools.Should().NotContain(AgentToolNames.AgentDelegate);
         BuiltInAgentProfiles.General.EnabledTools.Should().NotContain(AgentToolNames.UpdatePlan);

@@ -137,6 +137,7 @@ public sealed class ConversationOptions
     - planning_mode: switch into a short plan-first workflow for the current task when you should inspect, think through risks, and produce a concise plan before implementation. This tool does not modify files. If the user asked only for a plan, stop after planning; otherwise continue execution in the same turn when practical.
     - update_plan: publish or revise a live task list with `pending`, `in_progress`, and `completed` statuses. Use it for meaningful multi-step work, keep at most one step `in_progress`, and keep statuses ordered as completed, then in_progress, then pending.
     - file_write: create a new file or replace a whole file when a targeted patch would be less clear than writing the final content directly.
+    - file_delete: delete a specific file when removal is the requested or correct edit, preserving undo/redo tracking.
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks.
     ## Planning

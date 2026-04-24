@@ -29,6 +29,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"command: {Truncate(command, 120)}",
             "file_read" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file read: {path}",
+            "file_delete" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
+                $"file delete: {path}",
             "directory_list" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"directory list: {path}",
             "directory_list" => "directory list",
@@ -48,7 +50,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         ArgumentNullException.ThrowIfNull(toolExecutionResult);
 
         List<string> messages = [];
-        List<FileEditDisplayResult> fileWriteBatch = [];
+        List<FileEditDisplayResult> fileEditBatch = [];
 
         foreach (ToolInvocationResult result in toolExecutionResult.Results)
         {
@@ -57,17 +59,17 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 continue;
             }
 
-            if (CanGroupFileWrite(result, out FileEditDisplayResult fileEdit))
+            if (CanGroupFileEdit(result, out FileEditDisplayResult fileEdit))
             {
-                fileWriteBatch.Add(fileEdit);
+                fileEditBatch.Add(fileEdit);
                 continue;
             }
 
-            FlushFileWriteBatch(messages, fileWriteBatch);
+            FlushFileEditBatch(messages, fileEditBatch);
             messages.Add(BuildToolResultMessage(result));
         }
 
-        FlushFileWriteBatch(messages, fileWriteBatch);
+        FlushFileEditBatch(messages, fileEditBatch);
         return messages;
     }
 
@@ -815,17 +817,17 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
     }
 
-    private static void FlushFileWriteBatch(
+    private static void FlushFileEditBatch(
         List<string> messages,
-        List<FileEditDisplayResult> fileWriteBatch)
+        List<FileEditDisplayResult> fileEditBatch)
     {
-        if (fileWriteBatch.Count == 0)
+        if (fileEditBatch.Count == 0)
         {
             return;
         }
 
-        messages.Add(BuildFileEditMessage(fileWriteBatch));
-        fileWriteBatch.Clear();
+        messages.Add(BuildFileEditMessage(fileEditBatch));
+        fileEditBatch.Clear();
     }
 
     private static string BuildFileEditMessage(IReadOnlyList<FileEditDisplayResult> edits)
@@ -890,14 +892,15 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         return builder.ToString();
     }
 
-    private static bool CanGroupFileWrite(
+    private static bool CanGroupFileEdit(
         ToolInvocationResult invocationResult,
         out FileEditDisplayResult edit)
     {
         edit = default;
 
         return invocationResult.Result.IsSuccess &&
-            string.Equals(invocationResult.ToolName, "file_write", StringComparison.Ordinal) &&
+            (string.Equals(invocationResult.ToolName, "file_write", StringComparison.Ordinal) ||
+             string.Equals(invocationResult.ToolName, "file_delete", StringComparison.Ordinal)) &&
             TryParseFileWriteResult(invocationResult.Result.JsonResult, out edit);
     }
 
