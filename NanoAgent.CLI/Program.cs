@@ -14,10 +14,14 @@ public static partial class Program
     private const int InputCursorColumnWidth = 1;
     private const int MessageScrollbarColumnWidth = 2;
     private const int MouseWheelScrollLineCount = 3;
+    private const int MultilinePastePreviewLineThreshold = 3;
+    private const int PasteContinuationReadTimeoutMilliseconds = 40;
     private const int TerminalSequenceReadTimeoutMilliseconds = 25;
     private const string RepositoryUrl = "github.com/rizwan3d/NanoAgent";
     private const string EnableAlternateScreenSequence = "\u001b[?1049h";
     private const string DisableAlternateScreenSequence = "\u001b[?1049l";
+    private const string EnableBracketedPasteSequence = "\u001b[?2004h";
+    private const string DisableBracketedPasteSequence = "\u001b[?2004l";
     private const string EnableWheelScrollingSequence = "\u001b[?1007h";
     private const string DisableWheelScrollingSequence = "\u001b[?1007l";
     private const string DisableMouseTrackingSequence = "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l";

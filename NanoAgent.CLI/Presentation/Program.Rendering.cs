@@ -267,6 +267,14 @@ public static partial class Program
             return state.ActiveModal.BuildInputMarkup();
         }
 
+        if (TryBuildLargeInputPasteMarkup(
+            state.Input.ToString(),
+            state.IsBusy || state.IsStreaming,
+            out string largePasteMarkup))
+        {
+            return largePasteMarkup;
+        }
+
         return BuildInputLineMarkup(
             state.Input.ToString(),
             state.IsBusy || state.IsStreaming);
@@ -292,8 +300,8 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "Enter: send  |  Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
-            "[grey]Enter: send[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
+            "Enter: send  |  Shift+Enter: newline  |  Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
+            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
             BuildCompletionNote(state));
     }
 
@@ -386,12 +394,56 @@ public static partial class Program
             return 4;
         }
 
-        int bodyLineCount = WrapInputText(
-                state.Input.ToString(),
-                GetInputFirstLineTextWidth(state.IsBusy || state.IsStreaming),
-                GetInputContinuationLineTextWidth()).Count;
+        string input = state.Input.ToString();
+        int bodyLineCount = GetInputLogicalLineCount(input) > MultilinePastePreviewLineThreshold
+            ? 1
+            : WrapInputText(
+                    input,
+                    GetInputFirstLineTextWidth(state.IsBusy || state.IsStreaming),
+                    GetInputContinuationLineTextWidth()).Count;
 
         return Math.Max(3, bodyLineCount + 2);
+    }
+
+    private static bool TryBuildLargeInputPasteMarkup(
+        string input,
+        bool isBusy,
+        out string markup)
+    {
+        int lineCount = GetInputLogicalLineCount(input);
+        if (lineCount <= MultilinePastePreviewLineThreshold)
+        {
+            markup = string.Empty;
+            return false;
+        }
+
+        string lineLabel = lineCount == 1 ? "line is" : "lines are";
+        markup = BuildInputLineMarkup(
+            $"{lineCount} {lineLabel} pasted",
+            isBusy);
+        return true;
+    }
+
+    private static int GetInputLogicalLineCount(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return 1;
+        }
+
+        string normalizedInput = input
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        string countableInput = normalizedInput.EndsWith('\n')
+            ? normalizedInput[..^1]
+            : normalizedInput;
+
+        if (countableInput.Length == 0)
+        {
+            return 1;
+        }
+
+        return countableInput.Count(static character => character == '\n') + 1;
     }
 
     private static int GetInputFirstLineTextWidth(bool isBusy)
@@ -433,14 +485,30 @@ public static partial class Program
         }
 
         List<string> lines = [];
-        int offset = 0;
         int width = Math.Max(1, firstLineWidth);
+        string[] logicalLines = normalizedInput
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
 
-        while (offset < normalizedInput.Length)
+        foreach (string logicalLine in logicalLines)
         {
-            int length = Math.Min(width, normalizedInput.Length - offset);
-            lines.Add(normalizedInput.Substring(offset, length));
-            offset += length;
+            if (logicalLine.Length == 0)
+            {
+                lines.Add(string.Empty);
+                width = Math.Max(1, continuationLineWidth);
+                continue;
+            }
+
+            int offset = 0;
+            while (offset < logicalLine.Length)
+            {
+                int length = Math.Min(width, logicalLine.Length - offset);
+                lines.Add(logicalLine.Substring(offset, length));
+                offset += length;
+                width = Math.Max(1, continuationLineWidth);
+            }
+
             width = Math.Max(1, continuationLineWidth);
         }
 
