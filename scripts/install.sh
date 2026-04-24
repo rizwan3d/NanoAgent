@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly OWNER="rizwan3d"
 readonly REPO="NanoAgent"
-readonly APP_NAME="NanoAgent"
+readonly APP_NAME="NanoAgent.CLI"
 readonly EXECUTABLE_NAME="NanoAgent.CLI"
 readonly COMMAND_NAME="nanoai"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
