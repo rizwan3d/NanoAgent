@@ -31,6 +31,17 @@ internal sealed class ProcessRunner : IProcessRunner
             startInfo.ArgumentList.Add(argument);
         }
 
+        if (request.EnvironmentVariables is not null)
+        {
+            foreach (KeyValuePair<string, string> environmentVariable in request.EnvironmentVariables)
+            {
+                if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
+                {
+                    startInfo.Environment[environmentVariable.Key] = environmentVariable.Value;
+                }
+            }
+        }
+
         using Process process = new()
         {
             StartInfo = startInfo

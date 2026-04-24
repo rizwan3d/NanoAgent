@@ -5,4 +5,5 @@ internal sealed record ProcessExecutionRequest(
     IReadOnlyList<string> Arguments,
     string? StandardInput = null,
     string? WorkingDirectory = null,
-    int? MaxOutputCharacters = null);
+    int? MaxOutputCharacters = null,
+    IReadOnlyDictionary<string, string>? EnvironmentVariables = null);

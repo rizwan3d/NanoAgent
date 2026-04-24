@@ -308,7 +308,7 @@ internal static class PlanningModePolicy
         return $"{normalizedBasePrompt}{Environment.NewLine}{Environment.NewLine}{instructions}";
     }
 
-    private static bool IsWriteLikeTool(ToolPermissionPolicy permissionPolicy)
+    public static bool IsWriteLikeTool(ToolPermissionPolicy permissionPolicy)
     {
         if (permissionPolicy.Patch is not null)
         {
@@ -323,6 +323,13 @@ internal static class PlanningModePolicy
 
         return (permissionPolicy.FilePaths ?? [])
             .Any(static rule => rule.Kind == ToolPathAccessKind.Write);
+    }
+
+    public static bool IsSafeInspectionShellCommand(
+        string commandText,
+        out string denialReason)
+    {
+        return IsSafePlanningShellCommand(commandText, out denialReason);
     }
 
     private static PermissionRequestDescriptor CreateRequest(

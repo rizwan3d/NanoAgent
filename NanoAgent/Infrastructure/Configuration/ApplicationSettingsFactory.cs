@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools;
 
 namespace NanoAgent.Infrastructure.Configuration;
 
@@ -25,6 +26,12 @@ internal static class ApplicationSettingsFactory
         {
             Tools = ["bash"],
             Mode = PermissionMode.Ask
+        },
+        new PermissionRule
+        {
+            Tools = ["sandbox"],
+            Mode = PermissionMode.Ask,
+            Patterns = [ShellCommandSandboxArguments.SandboxEscalationSubject]
         },
         new PermissionRule
         {
@@ -94,6 +101,7 @@ internal static class ApplicationSettingsFactory
         return new PermissionSettings
         {
             DefaultMode = configured.DefaultMode,
+            SandboxMode = configured.SandboxMode,
             Rules = BuiltInPermissionRules
                 .Concat(configuredRules)
                 .Select(NormalizeRule)

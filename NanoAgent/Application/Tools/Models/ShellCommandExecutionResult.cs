@@ -5,4 +5,6 @@ public sealed record ShellCommandExecutionResult(
     string WorkingDirectory,
     int ExitCode,
     string StandardOutput,
-    string StandardError);
+    string StandardError,
+    string SandboxPermissions = "use_default",
+    string? Justification = null);

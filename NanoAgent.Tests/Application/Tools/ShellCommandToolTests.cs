@@ -88,6 +88,65 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ForwardSandboxEscalationArguments_When_Provided()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ExecuteAsync(
+                It.Is<ShellCommandExecutionRequest>(request =>
+                    request.Command == "dotnet test" &&
+                    request.SandboxPermissions == ShellCommandSandboxPermissions.RequireEscalated &&
+                    request.Justification == "needs package cache access" &&
+                    request.PrefixRule != null &&
+                    request.PrefixRule.SequenceEqual(new[] { "dotnet", "test" })),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "dotnet test",
+                ".",
+                0,
+                "Passed!",
+                string.Empty,
+                "require_escalated",
+                "needs package cache access"));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext(
+                """
+                {
+                  "command": "dotnet test",
+                  "sandbox_permissions": "require_escalated",
+                  "justification": "needs package cache access",
+                  "prefix_rule": ["dotnet", "test"]
+                }
+                """),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.RenderPayload!.Text.Should().Contain("Sandbox permissions: require_escalated");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_EscalationJustificationIsMissing()
+    {
+        ShellCommandTool sut = new(Mock.Of<IShellCommandService>());
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext(
+                """
+                {
+                  "command": "dotnet test",
+                  "sandbox_permissions": "require_escalated"
+                }
+                """),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("justification");
+    }
+
+    [Fact]
     public void PermissionRequirements_Should_AllowCommonProjectToolchainCommands()
     {
         ToolRegistry registry = new(

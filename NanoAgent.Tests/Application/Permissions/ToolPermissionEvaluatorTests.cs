@@ -509,6 +509,170 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
         result.IsAllowed.Should().BeTrue();
     }
 
+    [Fact]
+    public void Evaluate_Should_DenyWriteTools_When_SandboxModeIsReadOnly()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                SandboxMode = ToolSandboxMode.ReadOnly
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["edit"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Write,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext("""{ "path": "src/app.cs" }""")));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("sandbox_readonly_write_blocked");
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyUnsafeShellCommands_When_SandboxModeIsReadOnly()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                SandboxMode = ToolSandboxMode.ReadOnly
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["dotnet"]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext("""{ "command": "dotnet test" }""")));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("sandbox_readonly_shell_blocked");
+    }
+
+    [Fact]
+    public void Evaluate_Should_RequireApproval_When_ShellRequestsEscalatedSandboxPermissions()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                SandboxMode = ToolSandboxMode.WorkspaceWrite
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["bash"],
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["dotnet"]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """
+                {
+                  "command": "dotnet test",
+                  "sandbox_permissions": "require_escalated",
+                  "justification": "needs access outside the workspace",
+                  "prefix_rule": ["dotnet", "test"]
+                }
+                """)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
+        result.ReasonCode.Should().Be("permission_approval_required");
+        result.Request.Should().NotBeNull();
+        result.Request!.ToolTags.Should().Contain("sandbox");
+        result.Request.Subjects.Should().Contain(ShellCommandSandboxArguments.SandboxEscalationSubject);
+        result.Request.Subjects.Should().Contain("dotnet test*");
+    }
+
+    [Fact]
+    public void Evaluate_Should_AllowEscalatedSandboxRequest_When_ApprovalWasGranted()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                SandboxMode = ToolSandboxMode.WorkspaceWrite
+            }));
+
+        ToolExecutionContext context = CreateContext(
+            """
+            {
+              "command": "dotnet test",
+              "sandbox_permissions": "require_escalated",
+              "justification": "needs access outside the workspace"
+            }
+            """);
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["bash"],
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["dotnet"]
+                }
+            },
+            new PermissionEvaluationContext(context, approvalGranted: true));
+
+        result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyEscalatedSandboxRequest_When_JustificationIsMissing()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                SandboxMode = ToolSandboxMode.WorkspaceWrite
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["bash"],
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["dotnet"]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """
+                {
+                  "command": "dotnet test",
+                  "sandbox_permissions": "require_escalated"
+                }
+                """)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("sandbox_justification_required");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

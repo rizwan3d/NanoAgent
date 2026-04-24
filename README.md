@@ -31,6 +31,7 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 
 ## Features
 
+- **Sandboxed Tool Calls** - Use read-only, workspace-write, or danger-full-access sandbox modes with Codex-style shell escalation requests
 - **File Operations** — Search, read, and edit files with full regex support
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
@@ -126,6 +127,12 @@ nanoai
 | `/undo` | Roll back last file edit |
 | `/redo` | Re-apply undone edit |
 | `/exit` | Exit the shell |
+
+### Tool Sandboxing
+
+NanoAgent defaults to `WorkspaceWrite` sandbox mode for tool calls. Configure `Application:Permissions:SandboxMode` as `ReadOnly`, `WorkspaceWrite`, or `DangerFullAccess`.
+
+Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `justification`; escalation goes through the normal permission approval flow.
 
 ---
 

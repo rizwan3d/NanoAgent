@@ -4,6 +4,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Planning;
 using NanoAgent.Application.Tools;
+using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Permissions;
@@ -44,8 +45,17 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             return planningModeResult;
         }
 
+        PermissionEvaluationResult? sandboxModeResult = EvaluateSandboxModeRestrictions(
+            permissionPolicy,
+            context.ToolExecutionContext);
+        if (sandboxModeResult is not null)
+        {
+            return sandboxModeResult;
+        }
+
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         List<string> subjects = [];
+        List<string> dynamicToolTags = [];
 
         foreach (FilePathPermissionRule rule in permissionPolicy.FilePaths)
         {
@@ -78,9 +88,10 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         if (permissionPolicy.Shell is not null)
         {
             PermissionEvaluationResult shellResult = EvaluateShellPolicy(
-                context.ToolExecutionContext,
+                context,
                 permissionPolicy.Shell,
-                subjects);
+                subjects,
+                dynamicToolTags);
 
             if (!shellResult.IsAllowed)
             {
@@ -99,7 +110,8 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         PermissionRequestDescriptor request = CreateRequestDescriptor(
             context.ToolExecutionContext,
             permissionPolicy,
-            subjects);
+            subjects,
+            dynamicToolTags);
 
         if (permissionPolicy.BypassUserPermissionRules)
         {
@@ -108,10 +120,13 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                 request);
         }
 
+        bool sandboxEscalationRequested = subjects.Contains(
+            ShellCommandSandboxArguments.SandboxEscalationSubject,
+            StringComparer.OrdinalIgnoreCase);
         PermissionMode effectiveMode = DetermineEffectiveMode(
             request,
             context.ToolExecutionContext.Session.PermissionOverrides,
-            GetFallbackMode(permissionPolicy.ApprovalMode));
+            GetFallbackMode(permissionPolicy.ApprovalMode, sandboxEscalationRequested));
 
         return effectiveMode switch
         {
@@ -264,20 +279,46 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         };
     }
 
-    private static PermissionMode GetFallbackMode(ToolApprovalMode approvalMode)
+    private PermissionMode GetFallbackMode(
+        ToolApprovalMode approvalMode,
+        bool sandboxEscalationRequested)
     {
-        return approvalMode == ToolApprovalMode.RequireApproval
+        PermissionMode fallbackMode = approvalMode == ToolApprovalMode.RequireApproval
             ? PermissionMode.Ask
             : PermissionMode.Allow;
+
+        if (sandboxEscalationRequested &&
+            _settings.SandboxMode != ToolSandboxMode.DangerFullAccess &&
+            GetSeverity(fallbackMode) < GetSeverity(PermissionMode.Ask))
+        {
+            return PermissionMode.Ask;
+        }
+
+        return fallbackMode;
     }
 
     private static PermissionRequestDescriptor CreateRequestDescriptor(
         ToolExecutionContext context,
         ToolPermissionPolicy permissionPolicy,
-        IReadOnlyList<string> subjects)
+        IReadOnlyList<string> subjects,
+        IReadOnlyList<string>? dynamicToolTags = null)
     {
         List<string> tags = [];
         foreach (string tag in permissionPolicy.ToolTags ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(tag))
+            {
+                continue;
+            }
+
+            string normalizedTag = tag.Trim();
+            if (!tags.Contains(normalizedTag, StringComparer.OrdinalIgnoreCase))
+            {
+                tags.Add(normalizedTag);
+            }
+        }
+
+        foreach (string tag in dynamicToolTags ?? [])
         {
             if (string.IsNullOrWhiteSpace(tag))
             {
@@ -312,6 +353,64 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         string verb)
     {
         return PermissionRequestDisplayFormatter.BuildDecisionMessage(request, verb);
+    }
+
+    private PermissionEvaluationResult? EvaluateSandboxModeRestrictions(
+        ToolPermissionPolicy permissionPolicy,
+        ToolExecutionContext context)
+    {
+        if (_settings.SandboxMode != ToolSandboxMode.ReadOnly)
+        {
+            return null;
+        }
+
+        if (PlanningModePolicy.IsWriteLikeTool(permissionPolicy))
+        {
+            PermissionRequestDescriptor request = CreateRequestDescriptor(
+                context,
+                permissionPolicy,
+                []);
+
+            return PermissionEvaluationResult.Denied(
+                "sandbox_readonly_write_blocked",
+                $"The configured sandbox mode is read-only. Tool '{context.ToolName}' cannot modify files unless the sandbox mode is changed.",
+                PermissionMode.Deny,
+                request);
+        }
+
+        if (permissionPolicy.Shell is not null &&
+            ToolArguments.TryGetNonEmptyString(
+                context.Arguments,
+                permissionPolicy.Shell.CommandArgumentName,
+                out string? commandText) &&
+            !PlanningModePolicy.IsSafeInspectionShellCommand(commandText!, out string denialReason) &&
+            !ShellRequestsSandboxEscalation(context, permissionPolicy.Shell))
+        {
+            PermissionRequestDescriptor request = CreateRequestDescriptor(
+                context,
+                permissionPolicy,
+                [commandText!]);
+
+            return PermissionEvaluationResult.Denied(
+                "sandbox_readonly_shell_blocked",
+                $"The configured sandbox mode is read-only. {denialReason}",
+                PermissionMode.Deny,
+                request);
+        }
+
+        return null;
+    }
+
+    private static bool ShellRequestsSandboxEscalation(
+        ToolExecutionContext context,
+        ShellCommandPermissionPolicy shellPolicy)
+    {
+        return ShellCommandSandboxArguments.TryGetSandboxPermissions(
+                   context.Arguments,
+                   shellPolicy.SandboxPermissionsArgumentName,
+                   out ShellCommandSandboxPermissions sandboxPermissions,
+                   out _) &&
+               sandboxPermissions == ShellCommandSandboxPermissions.RequireEscalated;
     }
 
     private PermissionEvaluationResult EvaluateFilePathRule(
@@ -427,20 +526,51 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         return paths;
     }
 
-    private static PermissionEvaluationResult EvaluateShellPolicy(
-        ToolExecutionContext context,
+    private PermissionEvaluationResult EvaluateShellPolicy(
+        PermissionEvaluationContext permissionContext,
         ShellCommandPermissionPolicy shellPolicy,
-        List<string> subjects)
+        List<string> subjects,
+        List<string> dynamicToolTags)
     {
+        ToolExecutionContext context = permissionContext.ToolExecutionContext;
         if (!ToolArguments.TryGetNonEmptyString(context.Arguments, shellPolicy.CommandArgumentName, out string? commandText))
         {
             return PermissionEvaluationResult.Allowed();
         }
 
+        if (!ShellCommandSandboxArguments.TryGetSandboxPermissions(
+                context.Arguments,
+                shellPolicy.SandboxPermissionsArgumentName,
+                out ShellCommandSandboxPermissions sandboxPermissions,
+                out string? invalidSandboxPermissions))
+        {
+            return PermissionEvaluationResult.Denied(
+                "invalid_sandbox_permissions",
+                $"Tool '{context.ToolName}' received invalid sandbox permission '{invalidSandboxPermissions}'. Expected 'use_default' or 'require_escalated'.");
+        }
+
+        bool requiresEscalation = sandboxPermissions == ShellCommandSandboxPermissions.RequireEscalated;
+        if (requiresEscalation &&
+            !ToolArguments.TryGetNonEmptyString(
+                context.Arguments,
+                shellPolicy.JustificationArgumentName,
+                out _))
+        {
+            return PermissionEvaluationResult.Denied(
+                "sandbox_justification_required",
+                $"Tool '{context.ToolName}' requested escalated sandbox permissions without a justification.");
+        }
+
         if (context.ExecutionPhase == ConversationExecutionPhase.Planning &&
             PlanningModePolicy.ShouldBypassShellAllowlistForPlanning(commandText!))
         {
-            subjects.Add(commandText!.Trim());
+            AddSubject(subjects, commandText!.Trim());
+            AddSandboxEscalationSubjectIfNeeded(
+                requiresEscalation,
+                context,
+                shellPolicy,
+                subjects,
+                dynamicToolTags);
             return PermissionEvaluationResult.Allowed();
         }
 
@@ -453,6 +583,12 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         }
 
         AddSubject(subjects, commandText!.Trim());
+        AddSandboxEscalationSubjectIfNeeded(
+            requiresEscalation,
+            context,
+            shellPolicy,
+            subjects,
+            dynamicToolTags);
 
         foreach (ShellCommandSegment segment in segments)
         {
@@ -479,6 +615,34 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         }
 
         return PermissionEvaluationResult.Allowed();
+    }
+
+    private void AddSandboxEscalationSubjectIfNeeded(
+        bool requiresEscalation,
+        ToolExecutionContext context,
+        ShellCommandPermissionPolicy shellPolicy,
+        List<string> subjects,
+        List<string> dynamicToolTags)
+    {
+        if (!requiresEscalation ||
+            _settings.SandboxMode == ToolSandboxMode.DangerFullAccess)
+        {
+            return;
+        }
+
+        AddSubject(subjects, ShellCommandSandboxArguments.SandboxEscalationSubject);
+        IReadOnlyList<string> prefixRule = ToolArguments.GetOptionalStringArray(
+            context.Arguments,
+            shellPolicy.PrefixRuleArgumentName);
+        if (prefixRule.Count > 0)
+        {
+            AddSubject(subjects, string.Join(" ", prefixRule) + "*");
+        }
+
+        if (!dynamicToolTags.Contains("sandbox", StringComparer.OrdinalIgnoreCase))
+        {
+            dynamicToolTags.Add("sandbox");
+        }
     }
 
     private static void AddSubject(

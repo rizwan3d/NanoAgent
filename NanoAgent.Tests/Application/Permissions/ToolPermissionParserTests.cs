@@ -25,6 +25,9 @@ public sealed class ToolPermissionParserTests
               ],
               "shell": {
                 "commandArgumentName": " command ",
+                "sandboxPermissionsArgumentName": " sandbox_permissions ",
+                "justificationArgumentName": " justification ",
+                "prefixRuleArgumentName": " prefix_rule ",
                 "allowedCommands": [" git ", "git", "dotnet"]
               }
             }
@@ -35,6 +38,9 @@ public sealed class ToolPermissionParserTests
         result.FilePaths[0].AllowedRoots.Should().Equal("src");
         result.Shell.Should().NotBeNull();
         result.Shell!.CommandArgumentName.Should().Be("command");
+        result.Shell.SandboxPermissionsArgumentName.Should().Be("sandbox_permissions");
+        result.Shell.JustificationArgumentName.Should().Be("justification");
+        result.Shell.PrefixRuleArgumentName.Should().Be("prefix_rule");
         result.Shell.AllowedCommands.Should().Equal("git", "dotnet");
     }
 

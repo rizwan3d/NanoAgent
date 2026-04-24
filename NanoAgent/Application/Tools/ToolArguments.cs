@@ -49,6 +49,34 @@ internal static class ToolArguments
             : null;
     }
 
+    public static IReadOnlyList<string> GetOptionalStringArray(
+        JsonElement arguments,
+        string propertyName)
+    {
+        if (!arguments.TryGetProperty(propertyName, out JsonElement value) ||
+            value.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        List<string> values = [];
+        foreach (JsonElement item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                continue;
+            }
+
+            string? text = item.GetString();
+            if (!string.IsNullOrWhiteSpace(text))
+            {
+                values.Add(text.Trim());
+            }
+        }
+
+        return values;
+    }
+
     public static bool GetBoolean(
         JsonElement arguments,
         string propertyName,

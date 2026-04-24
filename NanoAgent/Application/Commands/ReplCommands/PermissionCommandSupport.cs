@@ -18,6 +18,7 @@ internal static class PermissionCommandSupport
         return
             "Permissions:\n" +
             $"Default mode: {ToDisplayText(settings.DefaultMode)}\n" +
+            $"Sandbox mode: {ToDisplayText(settings.SandboxMode)}\n" +
             $"Built-in/configured rules: {configuredRuleCount}\n" +
             $"Session overrides: {sessionRuleCount}\n" +
             "\n" +
@@ -42,6 +43,8 @@ internal static class PermissionCommandSupport
         builder.AppendLine("Effective permission rules:");
         builder.Append("Default mode: ");
         builder.AppendLine(ToDisplayText(settings.DefaultMode));
+        builder.Append("Sandbox mode: ");
+        builder.AppendLine(ToDisplayText(settings.SandboxMode));
         builder.AppendLine();
         builder.AppendLine("Built-in and configured rules:");
         AppendRuleBlock(builder, settings.Rules ?? []);
@@ -148,6 +151,17 @@ internal static class PermissionCommandSupport
             PermissionMode.Allow => "Allow",
             PermissionMode.Ask => "Ask",
             PermissionMode.Deny => "Deny",
+            _ => mode.ToString()
+        };
+    }
+
+    private static string ToDisplayText(ToolSandboxMode mode)
+    {
+        return mode switch
+        {
+            ToolSandboxMode.ReadOnly => "Read only",
+            ToolSandboxMode.WorkspaceWrite => "Workspace write",
+            ToolSandboxMode.DangerFullAccess => "Danger full access",
             _ => mode.ToString()
         };
     }

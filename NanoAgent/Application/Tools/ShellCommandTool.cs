@@ -31,6 +31,9 @@ internal sealed class ShellCommandTool : ITool
           ],
           "shell": {
             "commandArgumentName": "command",
+            "sandboxPermissionsArgumentName": "sandbox_permissions",
+            "justificationArgumentName": "justification",
+            "prefixRuleArgumentName": "prefix_rule",
             "allowedCommands": [
               "bun",
               "cargo",
@@ -108,6 +111,20 @@ internal sealed class ShellCommandTool : ITool
             "workingDirectory": {
               "type": "string",
               "description": "Optional working directory relative to the workspace root."
+            },
+            "sandbox_permissions": {
+              "type": "string",
+              "enum": ["use_default", "require_escalated"],
+              "description": "Use 'use_default' for normal sandboxed execution. Use 'require_escalated' only when the command truly needs to run outside the configured sandbox."
+            },
+            "justification": {
+              "type": "string",
+              "description": "Required when sandbox_permissions is 'require_escalated'; briefly explain why sandbox escalation is needed."
+            },
+            "prefix_rule": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Optional command prefix that may be reused for similar future approvals."
             }
           },
           "required": ["command"],
@@ -133,16 +150,47 @@ internal sealed class ShellCommandTool : ITool
         }
 
         string safeCommand = command!;
+        if (!ShellCommandSandboxArguments.TryGetSandboxPermissions(
+                context.Arguments,
+                "sandbox_permissions",
+                out ShellCommandSandboxPermissions sandboxPermissions,
+                out string? invalidSandboxPermissions))
+        {
+            return ToolResultFactory.InvalidArguments(
+                "invalid_sandbox_permissions",
+                $"Tool 'shell_command' received invalid sandbox_permissions value '{invalidSandboxPermissions}'.",
+                new ToolRenderPayload(
+                    "Invalid shell_command arguments",
+                    "sandbox_permissions must be 'use_default' or 'require_escalated'."));
+        }
+
+        string? justification = ToolArguments.GetOptionalString(context.Arguments, "justification");
+        if (sandboxPermissions == ShellCommandSandboxPermissions.RequireEscalated &&
+            string.IsNullOrWhiteSpace(justification))
+        {
+            return ToolResultFactory.InvalidArguments(
+                "sandbox_justification_required",
+                "Tool 'shell_command' requires a non-empty 'justification' when sandbox_permissions is 'require_escalated'.",
+                new ToolRenderPayload(
+                    "Invalid shell_command arguments",
+                    "Provide a justification for sandbox escalation."));
+        }
+
+        IReadOnlyList<string> prefixRule = ToolArguments.GetOptionalStringArray(context.Arguments, "prefix_rule");
 
         ShellCommandExecutionResult result = await _shellCommandService.ExecuteAsync(
             new ShellCommandExecutionRequest(
                 safeCommand,
-                ToolArguments.GetOptionalString(context.Arguments, "workingDirectory")),
+                ToolArguments.GetOptionalString(context.Arguments, "workingDirectory"),
+                sandboxPermissions,
+                justification,
+                prefixRule),
             cancellationToken);
         SessionStateToolRecorder.RecordShellCommand(context.Session, result);
 
         string renderText =
             $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +
+            $"Sandbox permissions: {result.SandboxPermissions}{Environment.NewLine}" +
             $"Exit code: {result.ExitCode}{Environment.NewLine}" +
             $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
             $"STDERR:{Environment.NewLine}{result.StandardError}";

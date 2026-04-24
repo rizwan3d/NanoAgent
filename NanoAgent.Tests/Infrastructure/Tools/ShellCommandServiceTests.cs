@@ -1,3 +1,4 @@
+using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Tools;
@@ -98,6 +99,40 @@ public sealed class ShellCommandServiceTests : IDisposable
             .Trim()
             .Should()
             .Be("ok");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ExposeSandboxMetadataToProcessEnvironment()
+    {
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.ReadOnly
+            });
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest(
+                "dotnet test",
+                null,
+                ShellCommandSandboxPermissions.RequireEscalated,
+                "needs package cache access",
+                ["dotnet", "test"]),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.EnvironmentVariables.Should().NotBeNull();
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_MODE"].Should().Be("read-only");
+        request.EnvironmentVariables["NANOAGENT_SANDBOX_PERMISSIONS"].Should().Be("require_escalated");
+        request.EnvironmentVariables["NANOAGENT_SANDBOX_JUSTIFICATION"].Should().Be("needs package cache access");
+        request.EnvironmentVariables["NANOAGENT_SANDBOX_PREFIX_RULE"].Should().Be("dotnet test");
+        request.EnvironmentVariables["NANOAGENT_WORKSPACE_ROOT"].Should().Be(Path.GetFullPath(_workspaceRoot));
+        result.SandboxPermissions.Should().Be("require_escalated");
+        result.Justification.Should().Be("needs package cache access");
     }
 
     public void Dispose()

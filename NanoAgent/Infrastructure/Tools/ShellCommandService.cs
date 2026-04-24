@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
@@ -12,14 +13,17 @@ internal sealed class ShellCommandService : IShellCommandService
     private const int MaxOutputCharacters = 8_000;
 
     private readonly IProcessRunner _processRunner;
+    private readonly PermissionSettings _permissionSettings;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
     public ShellCommandService(
         IProcessRunner processRunner,
-        IWorkspaceRootProvider workspaceRootProvider)
+        IWorkspaceRootProvider workspaceRootProvider,
+        PermissionSettings? permissionSettings = null)
     {
         _processRunner = processRunner;
         _workspaceRootProvider = workspaceRootProvider;
+        _permissionSettings = permissionSettings ?? new PermissionSettings();
     }
 
     public async Task<ShellCommandExecutionResult> ExecuteAsync(
@@ -37,6 +41,10 @@ internal sealed class ShellCommandService : IShellCommandService
         }
 
         string workingDirectory = ResolveWorkspacePath(request.WorkingDirectory, directoryRequired: true);
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        IReadOnlyDictionary<string, string> sandboxEnvironment = BuildSandboxEnvironment(
+            request,
+            workspaceRoot);
         string commandText = OperatingSystem.IsWindows()
             ? BuildWindowsCommandText(request.Command)
             : request.Command;
@@ -45,12 +53,14 @@ internal sealed class ShellCommandService : IShellCommandService
                 "powershell",
                 ["-NoProfile", "-NonInteractive", "-Command", commandText],
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: MaxOutputCharacters)
+                MaxOutputCharacters: MaxOutputCharacters,
+                EnvironmentVariables: sandboxEnvironment)
             : new ProcessExecutionRequest(
                 "/bin/bash",
                 ["-lc", request.Command],
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: MaxOutputCharacters);
+                MaxOutputCharacters: MaxOutputCharacters,
+                EnvironmentVariables: sandboxEnvironment);
 
         ProcessExecutionResult result = await _processRunner.RunAsync(
             processRequest,
@@ -61,7 +71,45 @@ internal sealed class ShellCommandService : IShellCommandService
             ToWorkspaceRelativePath(workingDirectory),
             result.ExitCode,
             TrimOutput(result.StandardOutput),
-            TrimOutput(result.StandardError));
+            TrimOutput(result.StandardError),
+            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
+            string.IsNullOrWhiteSpace(request.Justification)
+                ? null
+                : request.Justification.Trim());
+    }
+
+    private IReadOnlyDictionary<string, string> BuildSandboxEnvironment(
+        ShellCommandExecutionRequest request,
+        string workspaceRoot)
+    {
+        Dictionary<string, string> environment = new(StringComparer.Ordinal)
+        {
+            ["NANOAGENT_SANDBOX_MODE"] = ToWireValue(_permissionSettings.SandboxMode),
+            ["NANOAGENT_SANDBOX_PERMISSIONS"] = ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
+            ["NANOAGENT_WORKSPACE_ROOT"] = workspaceRoot
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.Justification))
+        {
+            environment["NANOAGENT_SANDBOX_JUSTIFICATION"] = request.Justification.Trim();
+        }
+
+        if (request.PrefixRule is { Count: > 0 })
+        {
+            environment["NANOAGENT_SANDBOX_PREFIX_RULE"] = string.Join(" ", request.PrefixRule);
+        }
+
+        return environment;
+    }
+
+    private static string ToWireValue(ToolSandboxMode sandboxMode)
+    {
+        return sandboxMode switch
+        {
+            ToolSandboxMode.ReadOnly => "read-only",
+            ToolSandboxMode.DangerFullAccess => "danger-full-access",
+            _ => "workspace-write"
+        };
     }
 
     private static string BuildWindowsCommandText(string commandText)

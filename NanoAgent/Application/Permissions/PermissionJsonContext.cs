@@ -12,6 +12,7 @@ namespace NanoAgent.Application.Permissions;
 [JsonSerializable(typeof(PermissionRule))]
 [JsonSerializable(typeof(PermissionSettings))]
 [JsonSerializable(typeof(ShellCommandPermissionPolicy))]
+[JsonSerializable(typeof(ToolSandboxMode))]
 [JsonSerializable(typeof(WebRequestPermissionPolicy))]
 internal sealed partial class PermissionJsonContext : JsonSerializerContext
 {

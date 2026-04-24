@@ -156,6 +156,24 @@ internal sealed class ToolPermissionParser : IPermissionParser
                 $"Tool '{toolName}' must provide a non-empty shell command argument name.");
         }
 
+        if (string.IsNullOrWhiteSpace(shellPolicy.SandboxPermissionsArgumentName))
+        {
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' must provide a non-empty shell sandbox-permissions argument name.");
+        }
+
+        if (string.IsNullOrWhiteSpace(shellPolicy.JustificationArgumentName))
+        {
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' must provide a non-empty shell justification argument name.");
+        }
+
+        if (string.IsNullOrWhiteSpace(shellPolicy.PrefixRuleArgumentName))
+        {
+            throw new InvalidOperationException(
+                $"Tool '{toolName}' must provide a non-empty shell prefix-rule argument name.");
+        }
+
         string[] allowedCommands = (shellPolicy.AllowedCommands ?? [])
             .Where(static command => !string.IsNullOrWhiteSpace(command))
             .Select(static command => command.Trim())
@@ -171,6 +189,9 @@ internal sealed class ToolPermissionParser : IPermissionParser
         return new ShellCommandPermissionPolicy
         {
             CommandArgumentName = shellPolicy.CommandArgumentName.Trim(),
+            JustificationArgumentName = shellPolicy.JustificationArgumentName.Trim(),
+            PrefixRuleArgumentName = shellPolicy.PrefixRuleArgumentName.Trim(),
+            SandboxPermissionsArgumentName = shellPolicy.SandboxPermissionsArgumentName.Trim(),
             AllowedCommands = allowedCommands
         };
     }
