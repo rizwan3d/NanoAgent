@@ -7,7 +7,8 @@ public sealed record ChatMessage(
     string Role,
     string Content,
     DateTimeOffset Timestamp,
-    string? StatusNote = null)
+    string? StatusNote = null,
+    string? WorkspacePath = null)
 {
     public ChatMessage(string role, string content)
         : this(role, content, DateTimeOffset.Now)
@@ -16,6 +17,11 @@ public sealed record ChatMessage(
 
     public ChatMessage(string role, string content, string? statusNote)
         : this(role, content, DateTimeOffset.Now, statusNote)
+    {
+    }
+
+    public ChatMessage(string role, string content, string? statusNote, string? workspacePath)
+        : this(role, content, DateTimeOffset.Now, statusNote, workspacePath)
     {
     }
 

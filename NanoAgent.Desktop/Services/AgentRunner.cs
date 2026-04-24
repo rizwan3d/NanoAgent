@@ -349,7 +349,11 @@ public sealed class AgentRunner : IAsyncDisposable
         {
             ConversationMessageReceived?.Invoke(
                 this,
-                new DesktopChatMessage(role.Trim(), message.Trim()));
+                new DesktopChatMessage(
+                    role.Trim(),
+                    message.Trim(),
+                    statusNote: null,
+                    workspacePath: _workingDirectory));
         }
     }
 

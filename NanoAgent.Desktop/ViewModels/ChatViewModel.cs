@@ -229,11 +229,12 @@ public partial class ChatViewModel : ViewModelBase
 
         await RunControlOperationAsync(
             "Loading controls",
+            project.Path,
             async () =>
             {
                 BackendSessionInfo sessionInfo = await _agentRunner.GetSessionAsync(project.Path, SelectedSection?.SectionId);
-                ApplySessionInfo(sessionInfo, replaceConversation: true);
-                Activity.Add(new AgentEvent("settings", "Controls loaded."));
+                ApplySessionInfo(sessionInfo, replaceConversation: true, workspacePath: project.Path);
+                Activity.Add(new AgentEvent("settings", "Controls loaded.", project.Path));
             });
     }
 
@@ -246,13 +247,14 @@ public partial class ChatViewModel : ViewModelBase
 
         await RunControlOperationAsync(
             "Changing model",
+            project.Path,
             async () =>
             {
                 AgentRunResult result = await _agentRunner.SetModelAsync(
                     project.Path,
                     SelectedModelId,
                     SelectedSection?.SectionId);
-                ApplyRunResult(result);
+                ApplyRunResult(result, project.Path);
             });
     }
 
@@ -265,13 +267,14 @@ public partial class ChatViewModel : ViewModelBase
 
         await RunControlOperationAsync(
             "Changing thinking",
+            project.Path,
             async () =>
             {
                 AgentRunResult result = await _agentRunner.SetThinkingAsync(
                     project.Path,
                     SelectedThinkingMode,
                     SelectedSection?.SectionId);
-                ApplyRunResult(result);
+                ApplyRunResult(result, project.Path);
             });
     }
 
@@ -284,13 +287,14 @@ public partial class ChatViewModel : ViewModelBase
 
         await RunControlOperationAsync(
             "Changing profile",
+            project.Path,
             async () =>
             {
                 AgentRunResult result = await _agentRunner.SetProfileAsync(
                     project.Path,
                     SelectedProfileName,
                     SelectedSection?.SectionId);
-                ApplyRunResult(result);
+                ApplyRunResult(result, project.Path);
             });
     }
 
@@ -344,8 +348,8 @@ public partial class ChatViewModel : ViewModelBase
         var prompt = Prompt.Trim();
         Prompt = string.Empty;
 
-        Messages.Add(new ChatMessage("You", prompt));
-        Activity.Add(new AgentEvent("task", $"Running in {project.Name}"));
+        Messages.Add(new ChatMessage("You", prompt, statusNote: null, workspacePath: project.Path));
+        Activity.Add(new AgentEvent("task", $"Running in {project.Name}", project.Path));
 
         _currentRunStartedAt = DateTimeOffset.UtcNow;
         UpdateProgressText();
@@ -359,27 +363,28 @@ public partial class ChatViewModel : ViewModelBase
                 prompt,
                 SelectedSection?.SectionId);
             string finalProgressText = FormatFinalProgressText(result);
-            ApplySessionInfo(result.SessionInfo);
+            ApplySessionInfo(result.SessionInfo, workspacePath: project.Path);
 
-            AddToolOutputMessages(result);
+            AddToolOutputMessages(result, project.Path);
 
             Messages.Add(new ChatMessage(
                 "NanoAgent",
                 string.IsNullOrWhiteSpace(result.ResponseText) ? "Task completed with no output." : result.ResponseText.Trim(),
-                finalProgressText));
+                finalProgressText,
+                project.Path));
 
             foreach (string activity in result.Activity)
             {
-                Activity.Add(new AgentEvent("agent", activity));
+                Activity.Add(new AgentEvent("agent", activity, project.Path));
             }
 
-            Activity.Add(new AgentEvent("done", "Task finished."));
+            Activity.Add(new AgentEvent("done", "Task finished.", project.Path));
             RunCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
         {
-            Messages.Add(new ChatMessage("NanoAgent", ex.Message));
-            Activity.Add(new AgentEvent("error", ex.Message));
+            Messages.Add(new ChatMessage("NanoAgent", ex.Message, statusNote: null, workspacePath: project.Path));
+            Activity.Add(new AgentEvent("error", ex.Message, project.Path));
         }
         finally
         {
@@ -389,13 +394,16 @@ public partial class ChatViewModel : ViewModelBase
         }
     }
 
-    private async Task RunControlOperationAsync(string description, Func<Task> operation)
+    private async Task RunControlOperationAsync(
+        string description,
+        string? workspacePath,
+        Func<Task> operation)
     {
         _currentRunStartedAt = DateTimeOffset.UtcNow;
         UpdateProgressText();
         _progressTimer.Start();
         IsRunning = true;
-        Activity.Add(new AgentEvent("settings", description));
+        Activity.Add(new AgentEvent("settings", description, workspacePath));
 
         try
         {
@@ -403,8 +411,8 @@ public partial class ChatViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Messages.Add(new ChatMessage("NanoAgent", ex.Message));
-            Activity.Add(new AgentEvent("error", ex.Message));
+            Messages.Add(new ChatMessage("NanoAgent", ex.Message, statusNote: null, workspacePath: workspacePath));
+            Activity.Add(new AgentEvent("error", ex.Message, workspacePath));
         }
         finally
         {
@@ -444,43 +452,47 @@ public partial class ChatViewModel : ViewModelBase
 
         await RunControlOperationAsync(
             description,
+            project.Path,
             async () =>
             {
-                Messages.Add(new ChatMessage("You", command));
+                Messages.Add(new ChatMessage("You", command, statusNote: null, workspacePath: project.Path));
                 AgentRunResult result = await _agentRunner.RunAsync(
                     project.Path,
                     command,
                     SelectedSection?.SectionId);
-                ApplySessionInfo(result.SessionInfo);
-                AddToolOutputMessages(result);
+                ApplySessionInfo(result.SessionInfo, workspacePath: project.Path);
+                AddToolOutputMessages(result, project.Path);
                 Messages.Add(new ChatMessage(
                     "NanoAgent",
                     string.IsNullOrWhiteSpace(result.ResponseText)
                         ? "Command completed."
-                        : result.ResponseText.Trim()));
+                        : result.ResponseText.Trim(),
+                    statusNote: null,
+                    workspacePath: project.Path));
 
                 foreach (string activity in result.Activity)
                 {
-                    Activity.Add(new AgentEvent("command", activity));
+                    Activity.Add(new AgentEvent("command", activity, project.Path));
                 }
 
                 RunCompleted?.Invoke(this, EventArgs.Empty);
             });
     }
 
-    private void ApplyRunResult(AgentRunResult result)
+    private void ApplyRunResult(AgentRunResult result, string? workspacePath)
     {
-        ApplySessionInfo(result.SessionInfo);
+        ApplySessionInfo(result.SessionInfo, workspacePath: workspacePath);
 
         foreach (string activity in result.Activity)
         {
-            Activity.Add(new AgentEvent("settings", activity));
+            Activity.Add(new AgentEvent("settings", activity, workspacePath));
         }
     }
 
     private void ApplySessionInfo(
         BackendSessionInfo? sessionInfo,
-        bool replaceConversation = false)
+        bool replaceConversation = false,
+        string? workspacePath = null)
     {
         if (sessionInfo is null)
         {
@@ -499,7 +511,7 @@ public partial class ChatViewModel : ViewModelBase
         HasSessionOptions = true;
         if (replaceConversation)
         {
-            ReplaceConversationMessages(sessionInfo);
+            ReplaceConversationMessages(sessionInfo, workspacePath);
         }
 
         NotifyCommandStatesChanged();
@@ -522,7 +534,7 @@ public partial class ChatViewModel : ViewModelBase
         DenyPermissionCommand.NotifyCanExecuteChanged();
     }
 
-    private void AddToolOutputMessages(AgentRunResult result)
+    private void AddToolOutputMessages(AgentRunResult result, string? workspacePath)
     {
         if (result.ToolOutput is not { Count: > 0 })
         {
@@ -531,11 +543,11 @@ public partial class ChatViewModel : ViewModelBase
 
         foreach (string toolOutput in result.ToolOutput)
         {
-            Messages.Add(new ChatMessage("Tool", toolOutput));
+            Messages.Add(new ChatMessage("Tool", toolOutput, statusNote: null, workspacePath: workspacePath));
         }
     }
 
-    private void ReplaceConversationMessages(BackendSessionInfo sessionInfo)
+    private void ReplaceConversationMessages(BackendSessionInfo sessionInfo, string? workspacePath)
     {
         Messages.Clear();
 
@@ -544,7 +556,7 @@ public partial class ChatViewModel : ViewModelBase
             string label = string.IsNullOrWhiteSpace(sessionInfo.SectionTitle)
                 ? "Ready."
                 : $"Ready. Section: {sessionInfo.SectionTitle}";
-            Messages.Add(new ChatMessage("NanoAgent", label));
+            Messages.Add(new ChatMessage("NanoAgent", label, statusNote: null, workspacePath: workspacePath));
             return;
         }
 
@@ -553,7 +565,7 @@ public partial class ChatViewModel : ViewModelBase
             string role = string.Equals(message.Role, "user", StringComparison.Ordinal)
                 ? "You"
                 : "NanoAgent";
-            Messages.Add(new ChatMessage(role, message.Content));
+            Messages.Add(new ChatMessage(role, message.Content, statusNote: null, workspacePath: workspacePath));
         }
     }
 
