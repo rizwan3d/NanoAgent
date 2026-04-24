@@ -47,9 +47,14 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 
 ### Desktop
 
-Download the latest Windows desktop installer:
-
-[![Download NanoAgent Desktop](https://img.shields.io/badge/Download-Desktop%20Installer-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe)
+Download the latest desktop app:
+|    OS    |           |
+|----------|-----------|
+| Win x64  | [![Download ](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe) |
+| Linux x64| [![Download ](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-x64.zip) |
+| Linux arm64| [![Download ](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-arm64.zip) |
+| Osx x64 | [![Download ](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-x64.zip) |
+| Osx arm64 | [![Download ](https://img.shields.io/badge/Download-2ea44f?style=for-the-badge)](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-arm64.zip) |
 
 ### macOS / Linux
 
