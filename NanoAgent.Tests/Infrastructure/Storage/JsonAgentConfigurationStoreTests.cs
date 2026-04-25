@@ -52,6 +52,50 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_Should_PreserveMemoryAndMcpProfileSections()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            """
+            {
+              "memory": {
+                "requireApprovalForWrites": true,
+                "allowAutoFailureObservation": true,
+                "allowAutoManualLessons": false,
+                "redactSecrets": true,
+                "maxEntries": 500,
+                "maxPromptChars": 12000,
+                "disabled": false
+              },
+              "mcpServers": {
+                "context7": {
+                  "command": "npx",
+                  "args": ["-y", "@upstash/context7-mcp"]
+                }
+              }
+            }
+            """,
+            CancellationToken.None);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+        AgentConfiguration configuration = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "gpt-5.4",
+            "on");
+
+        await sut.SaveAsync(configuration, CancellationToken.None);
+
+        string savedJson = await File.ReadAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            CancellationToken.None);
+        savedJson.Should().Contain("\"memory\"");
+        savedJson.Should().Contain("\"mcpServers\"");
+        savedJson.Should().Contain("\"context7\"");
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+        loadedConfiguration.Should().Be(configuration);
+    }
+
+    [Fact]
     public async Task LoadAsync_Should_NormalizeCompatibleProviderBaseUrl()
     {
         StubUserDataPathProvider pathProvider = new(_tempRoot);

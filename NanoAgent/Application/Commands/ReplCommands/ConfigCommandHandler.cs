@@ -38,7 +38,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
             $"Provider: {context.Session.ProviderName}\n" +
             $"Base URL: {baseUrl}\n" +
             $"Configuration file: {_userDataPathProvider.GetConfigurationFilePath()}\n" +
-            $"MCP configuration file: {_userDataPathProvider.GetMcpConfigurationFilePath()}\n" +
+            $"MCP configuration: agent-profile.json mcpServers\n" +
             $"Agent profile: {context.Session.AgentProfile.Name} - {context.Session.AgentProfile.Description}\n" +
             $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
             $"Active model: {context.Session.ActiveModelId}";

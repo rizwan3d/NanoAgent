@@ -42,44 +42,36 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
-        string filePath = _pathProvider.GetConfigurationFilePath();
-        string directoryPath = Path.GetDirectoryName(filePath)
-            ?? throw new InvalidOperationException("Configuration path does not contain a parent directory.");
+        AgentProfileConfigurationDocument document =
+            await AgentProfileConfigurationReader.LoadUserDocumentAsync(
+                _pathProvider,
+                cancellationToken) ??
+            new AgentProfileConfigurationDocument();
 
-        FilePermissionHelper.EnsurePrivateDirectory(directoryPath);
+        document.ProviderProfile = configuration.ProviderProfile;
+        document.PreferredModelId = configuration.PreferredModelId;
+        document.ReasoningEffort = configuration.ReasoningEffort;
 
-        await using FileStream stream = new(
-            filePath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 4096,
-            FileOptions.Asynchronous);
-
-        await JsonSerializer.SerializeAsync(
-            stream,
-            configuration,
-            OnboardingStorageJsonContext.Default.AgentConfiguration,
+        await AgentProfileConfigurationReader.SaveUserDocumentAsync(
+            _pathProvider,
+            document,
             cancellationToken);
-
-        await stream.FlushAsync(cancellationToken);
-        FilePermissionHelper.EnsurePrivateFile(filePath);
     }
 
     private static AgentConfiguration? TryDeserializeConfiguration(string json)
     {
         try
         {
-            AgentConfiguration? configuration = JsonSerializer.Deserialize(
+            AgentProfileConfigurationDocument? document = JsonSerializer.Deserialize(
                 json,
-                OnboardingStorageJsonContext.Default.AgentConfiguration);
+                OnboardingStorageJsonContext.Default.AgentProfileConfigurationDocument);
 
-            if (configuration is null)
+            if (document?.ProviderProfile is null)
             {
                 return null;
             }
 
-            AgentProviderProfile? normalizedProfile = NormalizeProfile(configuration.ProviderProfile);
+            AgentProviderProfile? normalizedProfile = NormalizeProfile(document.ProviderProfile);
             if (normalizedProfile is null)
             {
                 return null;
@@ -87,12 +79,37 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
 
             return new AgentConfiguration(
                 normalizedProfile,
-                ModelIdMatcher.NormalizeOrNull(configuration.PreferredModelId),
-                ReasoningEffortOptions.NormalizeOrNull(configuration.ReasoningEffort));
+                ModelIdMatcher.NormalizeOrNull(document.PreferredModelId),
+                ReasoningEffortOptions.NormalizeOrNull(document.ReasoningEffort));
         }
         catch (JsonException)
         {
-            return null;
+            try
+            {
+                AgentConfiguration? configuration = JsonSerializer.Deserialize(
+                    json,
+                    OnboardingStorageJsonContext.Default.AgentConfiguration);
+
+                if (configuration is null)
+                {
+                    return null;
+                }
+
+                AgentProviderProfile? normalizedProfile = NormalizeProfile(configuration.ProviderProfile);
+                if (normalizedProfile is null)
+                {
+                    return null;
+                }
+
+                return new AgentConfiguration(
+                    normalizedProfile,
+                    ModelIdMatcher.NormalizeOrNull(configuration.PreferredModelId),
+                    ReasoningEffortOptions.NormalizeOrNull(configuration.ReasoningEffort));
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
     }
 

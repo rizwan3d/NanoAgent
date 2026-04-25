@@ -11,15 +11,22 @@ namespace NanoAgent.Application.Permissions;
 
 internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 {
+    private static readonly HashSet<string> MemoryWriteActions = new(
+        ["save", "edit", "delete"],
+        StringComparer.OrdinalIgnoreCase);
+
+    private readonly MemorySettings _memorySettings;
     private readonly PermissionSettings _settings;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
     public ToolPermissionEvaluator(
         IWorkspaceRootProvider workspaceRootProvider,
-        PermissionSettings settings)
+        PermissionSettings settings,
+        MemorySettings? memorySettings = null)
     {
         _workspaceRootProvider = workspaceRootProvider;
         _settings = settings;
+        _memorySettings = memorySettings ?? new MemorySettings();
     }
 
     public PermissionEvaluationResult Evaluate(
@@ -112,6 +119,15 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             permissionPolicy,
             subjects,
             dynamicToolTags);
+
+        PermissionEvaluationResult? memoryResult = EvaluateMemoryPolicy(
+            permissionPolicy,
+            context,
+            request);
+        if (memoryResult is not null)
+        {
+            return memoryResult;
+        }
 
         if (permissionPolicy.BypassUserPermissionRules)
         {
@@ -643,6 +659,58 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         {
             dynamicToolTags.Add("sandbox");
         }
+    }
+
+    private PermissionEvaluationResult? EvaluateMemoryPolicy(
+        ToolPermissionPolicy permissionPolicy,
+        PermissionEvaluationContext context,
+        PermissionRequestDescriptor request)
+    {
+        if (!IsMemoryTool(permissionPolicy, context.ToolExecutionContext))
+        {
+            return null;
+        }
+
+        if (_memorySettings.Disabled)
+        {
+            return PermissionEvaluationResult.Denied(
+                "memory_disabled",
+                "Lesson memory is disabled by configuration.",
+                PermissionMode.Deny,
+                request);
+        }
+
+        if (!ToolArguments.TryGetNonEmptyString(
+                context.ToolExecutionContext.Arguments,
+                "action",
+                out string? action) ||
+            !MemoryWriteActions.Contains(action!))
+        {
+            return null;
+        }
+
+        bool requiresApproval =
+            _memorySettings.RequireApprovalForWrites ||
+            !_memorySettings.AllowAutoManualLessons;
+        if (!requiresApproval || context.ApprovalGranted)
+        {
+            return null;
+        }
+
+        return PermissionEvaluationResult.RequiresApproval(
+            "memory_write_approval_required",
+            $"Tool '{context.ToolExecutionContext.ToolName}' requires approval before it can {action} lesson memory.",
+            PermissionMode.Ask,
+            request);
+    }
+
+    private static bool IsMemoryTool(
+        ToolPermissionPolicy permissionPolicy,
+        ToolExecutionContext context)
+    {
+        return string.Equals(context.ToolName, AgentToolNames.LessonMemory, StringComparison.Ordinal) ||
+            (permissionPolicy.ToolTags ?? [])
+                .Any(static tag => string.Equals(tag, "memory", StringComparison.OrdinalIgnoreCase));
     }
 
     private static void AddSubject(

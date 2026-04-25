@@ -16,7 +16,7 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
             Path.GetTempPath(),
             $"NanoAgent-McpLoader-{Guid.NewGuid():N}");
         _workspaceRoot = Path.Combine(_tempRoot, "workspace");
-        _userConfigPath = Path.Combine(_tempRoot, "appdata", "NanoAgent", "mcp.toml");
+        _userConfigPath = Path.Combine(_tempRoot, "appdata", "NanoAgent", "agent-profile.json");
 
         Directory.CreateDirectory(_workspaceRoot);
     }
@@ -27,21 +27,31 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
         WriteConfig(
             _userConfigPath,
             """
-            [mcp_servers.context7]
-            command = "npx"
-            args = ["global"]
-            cwd = ".mcp"
+            {
+              "mcpServers": {
+                "context7": {
+                  "command": "npx",
+                  "args": ["global"],
+                  "cwd": ".mcp"
+                }
+              }
+            }
             """);
         WriteConfig(
-            Path.Combine(_workspaceRoot, ".nanoagent", "config.toml"),
+            Path.Combine(_workspaceRoot, ".nanoagent", "agent-profile.json"),
             """
-            [mcp_servers.context7]
-            args = ["workspace"]
-            startup_timeout_sec = 20
-
-            [mcp_servers.workspace]
-            command = "dotnet"
-            args = ["tool"]
+            {
+              "mcpServers": {
+                "context7": {
+                  "args": ["workspace"],
+                  "startupTimeoutSeconds": 20
+                },
+                "workspace": {
+                  "command": "dotnet",
+                  "args": ["tool"]
+                }
+              }
+            }
             """);
         NanoAgentMcpConfigLoader sut = CreateLoader();
 
@@ -58,12 +68,18 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
     }
 
     [Fact]
-    public void Load_Should_IgnoreLegacyCodexConfig()
+    public void Load_Should_IgnoreLegacyTomlConfigs()
     {
         WriteConfig(
-            Path.Combine(_workspaceRoot, ".codex", "config.toml"),
+            Path.Combine(_workspaceRoot, ".nanoagent", "config.toml"),
             """
             [mcp_servers.legacy]
+            command = "npx"
+            """);
+        WriteConfig(
+            Path.Combine(_tempRoot, "appdata", "NanoAgent", "mcp.toml"),
+            """
+            [mcp_servers.user_legacy]
             command = "npx"
             """);
         NanoAgentMcpConfigLoader sut = CreateLoader();
@@ -120,12 +136,12 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
 
         public string GetConfigurationFilePath()
         {
-            return Path.Combine(Path.GetDirectoryName(_mcpConfigurationFilePath)!, "agent-profile.json");
+            return _mcpConfigurationFilePath;
         }
 
         public string GetMcpConfigurationFilePath()
         {
-            return _mcpConfigurationFilePath;
+            return GetConfigurationFilePath();
         }
 
         public string GetLogsDirectoryPath()

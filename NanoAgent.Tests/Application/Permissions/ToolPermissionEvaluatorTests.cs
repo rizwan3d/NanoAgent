@@ -487,6 +487,80 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void Evaluate_Should_AllowLessonMemorySearchWithoutApproval()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(),
+            new MemorySettings
+            {
+                RequireApprovalForWrites = true,
+                AllowAutoManualLessons = false
+            });
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["memory"]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "action": "search", "query": "CS0246" }""",
+                toolName: AgentToolNames.LessonMemory)));
+
+        result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Evaluate_Should_RequireApprovalForLessonMemoryWrites()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(),
+            new MemorySettings
+            {
+                RequireApprovalForWrites = true,
+                AllowAutoManualLessons = false
+            });
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["memory"]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "action": "save", "trigger": "CS0246", "problem": "DI", "lesson": "Check registration" }""",
+                toolName: AgentToolNames.LessonMemory)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
+        result.ReasonCode.Should().Be("memory_write_approval_required");
+    }
+
+    [Fact]
+    public void Evaluate_Should_AllowLessonMemoryWrite_When_ApprovalWasGranted()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(),
+            new MemorySettings
+            {
+                RequireApprovalForWrites = true,
+                AllowAutoManualLessons = false
+            });
+        ToolExecutionContext context = CreateContext(
+            """{ "action": "delete", "id": "les_123" }""",
+            toolName: AgentToolNames.LessonMemory);
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["memory"]
+            },
+            new PermissionEvaluationContext(context, approvalGranted: true));
+
+        result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
     public void Evaluate_Should_AllowToolLookupShellCommands_When_PlanningModeIsActive()
     {
         ToolPermissionEvaluator sut = new(

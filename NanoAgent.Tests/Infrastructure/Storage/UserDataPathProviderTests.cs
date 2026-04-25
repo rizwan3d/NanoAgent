@@ -17,14 +17,15 @@ public sealed class UserDataPathProviderTests
     }
 
     [Fact]
-    public void GetMcpConfigurationFilePath_Should_ReturnStorageDirectoryMcpTomlPath()
+    public void GetMcpConfigurationFilePath_Should_ReturnAgentProfileJsonPath()
     {
         UserDataPathProvider sut = new();
 
         string mcpConfigurationFilePath = sut.GetMcpConfigurationFilePath();
 
-        Path.GetFileName(mcpConfigurationFilePath).Should().Be("mcp.toml");
+        Path.GetFileName(mcpConfigurationFilePath).Should().Be("agent-profile.json");
         mcpConfigurationFilePath.Should().Contain("NanoAgent");
+        mcpConfigurationFilePath.Should().Be(sut.GetConfigurationFilePath());
     }
 
     [Fact]

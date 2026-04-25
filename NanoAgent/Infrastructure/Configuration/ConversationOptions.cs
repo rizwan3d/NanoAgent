@@ -140,6 +140,36 @@ public sealed class ConversationOptions
     - file_delete: delete a specific file when removal is the requested or correct edit, preserving undo/redo tracking.
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks.
+
+    - `lesson_memory` is available for persistent workspace lessons. Relevant lessons are searched automatically before each turn. You may also call `lesson_memory` manually to save, search, list, edit, or delete lessons.
+
+    - Save a lesson only when a mistake, failed build/test/tool attempt, wrong assumption, repeated issue, or non-obvious fix teaches a reusable rule for future work in this workspace.
+
+    - Do not save lessons for ordinary progress, obvious facts, one-off task details, sensitive data, secrets, raw logs, private URLs, credentials, broad advice, or anything that would not change behavior in a similar future task.
+
+    - A good lesson must be specific, verified, and actionable:
+      - `trigger`: the symptom, command, error code, file area, or situation that should retrieve the lesson later.
+      - `problem`: the verified mistake, root cause, or bad assumption.
+      - `lesson`: the concrete future behavior that would avoid or fix the issue.
+      - `tags`: concise retrieval words such as the tool, command, framework, file area, language, package, or error code.
+
+    - Prefer lessons like:
+      - “`apply_patch InvalidArguments` with `--- a/file` means raw unified-diff headers were used. Use `*** Begin Patch`, `*** Update File: path`, and `*** End Patch` instead.”
+      - “`dotnet add package A dotnet add package B` failed because two commands were concatenated. Run one `dotnet add package` command per package or separate commands with `&&`.”
+      - “`CS0246` after adding a service usually means a missing using, package reference, or DI registration; check the project file and service registration before changing unrelated code.”
+
+    - Avoid generic lessons like:
+      - “Be careful.”
+      - “Check arguments.”
+      - “Build failed.”
+      - “Previous tool failure observed automatically.”
+
+    - If an automatically recorded failure has only generic text, edit it into a concrete lesson once the root cause is known. Delete stale, wrong, duplicate, sensitive, or misleading lessons.
+
+    - Before saving a new lesson, search/list existing lessons when practical. Prefer editing or improving an existing related lesson over creating duplicates for the same root cause.
+
+    - When a previously recorded failure is resolved, mark it fixed or add a short `fixSummary` if the memory system supports it. Keep fixed lessons only when they still teach a useful future rule.
+
     ## Planning
 
     Use planning only for non-trivial work.

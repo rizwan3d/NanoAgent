@@ -17,15 +17,18 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     private const int MaxSearchTokens = 24;
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly MemorySettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
     public WorkspaceLessonMemoryService(
         IWorkspaceRootProvider workspaceRootProvider,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        MemorySettings? settings = null)
     {
         _workspaceRootProvider = workspaceRootProvider;
         _timeProvider = timeProvider;
+        _settings = NormalizeSettings(settings ?? new MemorySettings());
     }
 
     public string GetStoragePath()
@@ -44,23 +47,28 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
+        if (_settings.Disabled)
+        {
+            throw new InvalidOperationException("Lesson memory is disabled.");
+        }
+
         DateTimeOffset now = _timeProvider.GetUtcNow();
         LessonMemoryEntry entry = NormalizeEntry(new LessonMemoryEntry(
             CreateId(),
             now,
             now,
             NormalizeKind(request.Kind),
-            RequireText(request.Trigger, nameof(request.Trigger)),
-            RequireText(request.Problem, nameof(request.Problem)),
-            RequireText(request.Lesson, nameof(request.Lesson)),
+            RedactIfNeeded(RequireText(request.Trigger, nameof(request.Trigger))),
+            RedactIfNeeded(RequireText(request.Problem, nameof(request.Problem))),
+            RedactIfNeeded(RequireText(request.Lesson, nameof(request.Lesson))),
             NormalizeTags(request.Tags),
             NormalizeOptionalText(request.ToolName),
-            NormalizeOptionalText(request.Command),
-            NormalizeOptionalText(request.FailureSignature),
+            RedactOptionalIfNeeded(NormalizeOptionalText(request.Command)),
+            RedactOptionalIfNeeded(NormalizeOptionalText(request.FailureSignature)),
             NormalizeOptionalText(request.Fingerprint),
             request.IsFixed,
             request.IsFixed ? now : null,
-            NormalizeOptionalText(request.FixSummary)));
+            RedactOptionalIfNeeded(NormalizeOptionalText(request.FixSummary))));
 
         await _gate.WaitAsync(cancellationToken);
         try
@@ -82,6 +90,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (_settings.Disabled)
+        {
+            return [];
+        }
+
         int safeLimit = NormalizeLimit(limit);
         string[] tokens = Tokenize(query);
 
@@ -117,6 +130,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (_settings.Disabled)
+        {
+            return [];
+        }
+
         int safeLimit = NormalizeLimit(limit);
 
         await _gate.WaitAsync(cancellationToken);
@@ -140,6 +158,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_settings.Disabled)
+        {
+            return null;
+        }
 
         string id = RequireText(request.Id, nameof(request.Id));
         DateTimeOffset now = _timeProvider.GetUtcNow();
@@ -170,17 +193,17 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             {
                 UpdatedAtUtc = now,
                 Kind = request.Kind is null ? current.Kind : NormalizeKind(request.Kind),
-                Trigger = request.Trigger is null ? current.Trigger : RequireText(request.Trigger, nameof(request.Trigger)),
-                Problem = request.Problem is null ? current.Problem : RequireText(request.Problem, nameof(request.Problem)),
-                Lesson = request.Lesson is null ? current.Lesson : RequireText(request.Lesson, nameof(request.Lesson)),
+                Trigger = request.Trigger is null ? current.Trigger : RedactIfNeeded(RequireText(request.Trigger, nameof(request.Trigger))),
+                Problem = request.Problem is null ? current.Problem : RedactIfNeeded(RequireText(request.Problem, nameof(request.Problem))),
+                Lesson = request.Lesson is null ? current.Lesson : RedactIfNeeded(RequireText(request.Lesson, nameof(request.Lesson))),
                 Tags = request.Tags is null ? current.Tags : NormalizeTags(request.Tags),
                 ToolName = request.ToolName is null ? current.ToolName : NormalizeOptionalText(request.ToolName),
-                Command = request.Command is null ? current.Command : NormalizeOptionalText(request.Command),
-                FailureSignature = request.FailureSignature is null ? current.FailureSignature : NormalizeOptionalText(request.FailureSignature),
+                Command = request.Command is null ? current.Command : RedactOptionalIfNeeded(NormalizeOptionalText(request.Command)),
+                FailureSignature = request.FailureSignature is null ? current.FailureSignature : RedactOptionalIfNeeded(NormalizeOptionalText(request.FailureSignature)),
                 Fingerprint = request.Fingerprint is null ? current.Fingerprint : NormalizeOptionalText(request.Fingerprint),
                 IsFixed = isFixed,
                 FixedAtUtc = fixedAt,
-                FixSummary = request.FixSummary is null ? current.FixSummary : NormalizeOptionalText(request.FixSummary)
+                FixSummary = request.FixSummary is null ? current.FixSummary : RedactOptionalIfNeeded(NormalizeOptionalText(request.FixSummary))
             });
 
             entries[index] = updated;
@@ -198,6 +221,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (_settings.Disabled)
+        {
+            return false;
+        }
+
         string normalizedId = RequireText(id, nameof(id));
 
         await _gate.WaitAsync(cancellationToken);
@@ -226,6 +254,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string query,
         CancellationToken cancellationToken)
     {
+        if (_settings.Disabled)
+        {
+            return null;
+        }
+
         IReadOnlyList<LessonMemoryEntry> lessons = await SearchAsync(
             query,
             DefaultPromptLessonLimit,
@@ -289,7 +322,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             builder.AppendLine();
         }
 
-        return builder.ToString().Trim();
+        return TrimPrompt(builder.ToString().Trim());
     }
 
     public async Task ObserveToolResultAsync(
@@ -298,6 +331,12 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     {
         ArgumentNullException.ThrowIfNull(invocationResult);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (_settings.Disabled ||
+            !_settings.AllowAutoFailureObservation)
+        {
+            return;
+        }
 
         if (string.Equals(invocationResult.ToolName, AgentToolNames.LessonMemory, StringComparison.Ordinal))
         {
@@ -396,13 +435,13 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                 entries[index] = NormalizeEntry(entries[index] with
                 {
                     UpdatedAtUtc = now,
-                    Trigger = trigger,
-                    Problem = problem,
-                    Lesson = lesson,
+                    Trigger = RedactIfNeeded(trigger),
+                    Problem = RedactIfNeeded(problem),
+                    Lesson = RedactIfNeeded(lesson),
                     Tags = NormalizeTags(entries[index].Tags.Concat(tags)),
                     ToolName = toolName,
-                    Command = NormalizeOptionalText(command),
-                    FailureSignature = NormalizeOptionalText(failureSignature),
+                    Command = RedactOptionalIfNeeded(NormalizeOptionalText(command)),
+                    FailureSignature = RedactOptionalIfNeeded(NormalizeOptionalText(failureSignature)),
                     Fingerprint = fingerprint
                 });
                 await RewriteAsync(entries, cancellationToken);
@@ -414,13 +453,13 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                 now,
                 now,
                 "failure",
-                trigger,
-                problem,
-                lesson,
+                RedactIfNeeded(trigger),
+                RedactIfNeeded(problem),
+                RedactIfNeeded(lesson),
                 NormalizeTags(tags),
                 toolName,
-                NormalizeOptionalText(command),
-                NormalizeOptionalText(failureSignature),
+                RedactOptionalIfNeeded(NormalizeOptionalText(command)),
+                RedactOptionalIfNeeded(NormalizeOptionalText(failureSignature)),
                 fingerprint));
 
             await AppendAsync(entry, cancellationToken);
@@ -459,7 +498,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                     UpdatedAtUtc = now,
                     IsFixed = true,
                     FixedAtUtc = now,
-                    FixSummary = fixSummary,
+                    FixSummary = RedactIfNeeded(fixSummary),
                     Tags = NormalizeTags(entry.Tags.Concat(["fixed"]))
                 });
                 changed = true;
@@ -528,6 +567,20 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string storagePath = GetStoragePath();
         EnsureStorageDirectory(storagePath);
 
+        if (_settings.MaxEntries > 0 && File.Exists(storagePath))
+        {
+            LessonMemoryEntry[] existingEntries = await LoadAsync(cancellationToken);
+            if (existingEntries.Length + 1 > _settings.MaxEntries)
+            {
+                LessonMemoryEntry[] retained = existingEntries
+                    .Skip(Math.Max(0, existingEntries.Length + 1 - _settings.MaxEntries))
+                    .Append(entry)
+                    .ToArray();
+                await RewriteAsync(retained, cancellationToken);
+                return;
+            }
+        }
+
         await using FileStream stream = new(
             storagePath,
             FileMode.Append,
@@ -549,6 +602,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     {
         string storagePath = GetStoragePath();
         EnsureStorageDirectory(storagePath);
+        LessonMemoryEntry[] retainedEntries = _settings.MaxEntries > 0 && entries.Count > _settings.MaxEntries
+            ? entries
+                .Skip(entries.Count - _settings.MaxEntries)
+                .ToArray()
+            : entries.ToArray();
 
         await using FileStream stream = new(
             storagePath,
@@ -559,7 +617,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             FileOptions.Asynchronous);
         await using StreamWriter writer = new(stream, Utf8NoBom);
 
-        foreach (LessonMemoryEntry entry in entries)
+        foreach (LessonMemoryEntry entry in retainedEntries)
         {
             cancellationToken.ThrowIfCancellationRequested();
             string json = JsonSerializer.Serialize(
@@ -725,6 +783,53 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             Fingerprint = NormalizeOptionalText(entry.Fingerprint),
             FixSummary = NormalizeOptionalText(entry.FixSummary)
         };
+    }
+
+    private string RedactIfNeeded(string value)
+    {
+        if (!_settings.RedactSecrets)
+        {
+            return value;
+        }
+
+        string redacted = SensitiveAssignmentRegex()
+            .Replace(value, match => $"{match.Groups[1].Value}=<redacted>");
+        redacted = BearerTokenRegex()
+            .Replace(redacted, "Bearer <redacted>");
+        redacted = OpenAiKeyRegex()
+            .Replace(redacted, "<redacted>");
+        redacted = GitHubTokenRegex()
+            .Replace(redacted, "<redacted>");
+        return redacted;
+    }
+
+    private string? RedactOptionalIfNeeded(string? value)
+    {
+        return value is null
+            ? null
+            : RedactIfNeeded(value);
+    }
+
+    private string TrimPrompt(string prompt)
+    {
+        if (_settings.MaxPromptChars <= 0 ||
+            prompt.Length <= _settings.MaxPromptChars)
+        {
+            return prompt;
+        }
+
+        return prompt[..Math.Max(0, _settings.MaxPromptChars - 3)].TrimEnd() + "...";
+    }
+
+    private static MemorySettings NormalizeSettings(MemorySettings settings)
+    {
+        settings.MaxEntries = settings.MaxEntries <= 0
+            ? 500
+            : Math.Min(settings.MaxEntries, 10_000);
+        settings.MaxPromptChars = settings.MaxPromptChars <= 0
+            ? 12_000
+            : Math.Min(settings.MaxPromptChars, 100_000);
+        return settings;
     }
 
     private static string NormalizeKind(string? value)
@@ -930,6 +1035,18 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
 
     [GeneratedRegex(@"\b(?:CS|TS|MSB|NU|NETSDK|CA|IDE|BC|FS)\d{3,6}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DiagnosticCodeRegex();
+
+    [GeneratedRegex(@"\b([A-Za-z0-9_]*(?:api[_-]?key|token|secret|password|passwd|authorization)[A-Za-z0-9_]*)\s*[:=]\s*[""']?[^ \t\r\n,""']+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex SensitiveAssignmentRegex();
+
+    [GeneratedRegex(@"\bBearer\s+[A-Za-z0-9._~+/=-]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex BearerTokenRegex();
+
+    [GeneratedRegex(@"\bsk-[A-Za-z0-9_-]{16,}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex OpenAiKeyRegex();
+
+    [GeneratedRegex(@"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{16,}\b", RegexOptions.CultureInvariant)]
+    private static partial Regex GitHubTokenRegex();
 
     [GeneratedRegex(@"[A-Za-z0-9_+\-.#]+", RegexOptions.CultureInvariant)]
     private static partial Regex SearchTokenRegex();

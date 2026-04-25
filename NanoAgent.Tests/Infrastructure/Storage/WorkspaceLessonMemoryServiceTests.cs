@@ -79,6 +79,60 @@ public sealed class WorkspaceLessonMemoryServiceTests
         prompt.Should().Contain(".nanoagent/memory/lessons.jsonl");
     }
 
+    [Fact]
+    public async Task ObserveToolResultAsync_Should_RedactSecretsFromAutomaticFailureLessons()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        WorkspaceLessonMemoryService sut = CreateService(
+            workspace.Path,
+            new MemorySettings
+            {
+                RedactSecrets = true
+            });
+
+        await sut.ObserveToolResultAsync(
+            CreateShellInvocation(new ShellCommandExecutionResult(
+                "dotnet test",
+                ".",
+                1,
+                "",
+                "error: token=sk-abcdefghijklmnopqrstuvwxyz123456")),
+            CancellationToken.None);
+
+        IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
+            limit: 10,
+            includeFixed: true,
+            CancellationToken.None);
+
+        lessons.Should().ContainSingle();
+        lessons[0].FailureSignature.Should().Contain("<redacted>");
+        lessons[0].FailureSignature.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+    }
+
+    [Fact]
+    public async Task SaveAsync_Should_RespectMaxEntries()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        WorkspaceLessonMemoryService sut = CreateService(
+            workspace.Path,
+            new MemorySettings
+            {
+                MaxEntries = 2
+            });
+
+        await sut.SaveAsync(new LessonMemorySaveRequest("one", "problem one", "lesson one"), CancellationToken.None);
+        await sut.SaveAsync(new LessonMemorySaveRequest("two", "problem two", "lesson two"), CancellationToken.None);
+        await sut.SaveAsync(new LessonMemorySaveRequest("three", "problem three", "lesson three"), CancellationToken.None);
+
+        IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
+            limit: 10,
+            includeFixed: true,
+            CancellationToken.None);
+
+        lessons.Should().HaveCount(2);
+        lessons.Select(static lesson => lesson.Trigger).Should().BeEquivalentTo("two", "three");
+    }
+
     private static ToolInvocationResult CreateShellInvocation(ShellCommandExecutionResult result)
     {
         return new ToolInvocationResult(
@@ -90,11 +144,14 @@ public sealed class WorkspaceLessonMemoryServiceTests
                 ToolJsonContext.Default.ShellCommandExecutionResult));
     }
 
-    private static WorkspaceLessonMemoryService CreateService(string workspacePath)
+    private static WorkspaceLessonMemoryService CreateService(
+        string workspacePath,
+        MemorySettings? settings = null)
     {
         return new WorkspaceLessonMemoryService(
             new FixedWorkspaceRootProvider(workspacePath),
-            TimeProvider.System);
+            TimeProvider.System,
+            settings);
     }
 
     private sealed class FixedWorkspaceRootProvider : IWorkspaceRootProvider

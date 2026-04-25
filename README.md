@@ -33,7 +33,8 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 
 - **Sandboxed Tool Calls** - Use read-only, workspace-write, or danger-full-access sandbox modes with shell escalation requests
 - **Workspace Instructions** - Load persistent repo guidance from `AGENTS.md` or `.agent/AGENTS.md`
-- **MCP Servers** - Load MCP servers from NanoAgent user and workspace configuration files
+- **MCP Servers** - Load MCP servers from `agent-profile.json`
+- **Lesson Memory** - Keep redacted workspace lessons for recurring mistakes, build failures, and fixes
 - **File Operations** — Search, read, and edit files with full regex support
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
@@ -141,23 +142,48 @@ Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `
 
 NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the workspace root and adds them to the model's system prompt as persistent project instructions.
 
-### MCP Servers
+### Lesson Memory
 
-NanoAgent can connect to MCP servers configured with the `[mcp_servers]` TOML shape. It reads the user-level NanoAgent `mcp.toml` file shown by `/config` and the workspace-local `.nanoagent/config.toml`, then exposes server tools to the model as `mcp__server__tool`.
+NanoAgent stores reusable workspace lessons in `.nanoagent/memory/lessons.jsonl` and automatically retrieves relevant lessons for future turns. Search and list operations are automatic. Automatic failure observations are enabled and redacted by default. Manual lesson writes (`save`, `edit`, `delete`) require user approval unless memory policy is changed.
 
-```toml
-[mcp_servers.context7]
-command = "npx"
-args = ["-y", "@upstash/context7-mcp"]
-startup_timeout_sec = 20
-tool_timeout_sec = 45
-default_tools_approval_mode = "prompt"
+Workspace memory policy lives in `.nanoagent/agent-profile.json`:
 
-[mcp_servers.context7.env]
-MY_ENV_VAR = "MY_ENV_VALUE"
+```json
+{
+  "memory": {
+    "requireApprovalForWrites": true,
+    "allowAutoFailureObservation": true,
+    "allowAutoManualLessons": false,
+    "redactSecrets": true,
+    "maxEntries": 500,
+    "maxPromptChars": 12000,
+    "disabled": false
+  }
+}
 ```
 
-Supported transports are stdio (`command`, `args`, `env`, `env_vars`, `cwd`) and basic streamable HTTP (`url`, `bearer_token_env_var`, `http_headers`, `env_http_headers`). Use `enabled_tools` or `disabled_tools` to filter server tools, and `/mcp` to inspect what loaded.
+### MCP Servers
+
+NanoAgent can connect to MCP servers configured in `agent-profile.json`. It reads the user-level NanoAgent `agent-profile.json` shown by `/config` and the workspace-local `.nanoagent/agent-profile.json`, then exposes server tools to the model as `mcp__server__tool`.
+
+```json
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": ["-y", "@upstash/context7-mcp"],
+      "startupTimeoutSeconds": 20,
+      "toolTimeoutSeconds": 45,
+      "defaultToolsApprovalMode": "prompt",
+      "env": {
+        "MY_ENV_VAR": "MY_ENV_VALUE"
+      }
+    }
+  }
+}
+```
+
+Supported transports are stdio (`command`, `args`, `env`, `envVars`, `cwd`) and basic streamable HTTP (`url`, `bearerTokenEnvVar`, `httpHeaders`, `envHttpHeaders`). Use `enabledTools` or `disabledTools` to filter server tools, and `/mcp` to inspect what loaded.
 
 ---
 

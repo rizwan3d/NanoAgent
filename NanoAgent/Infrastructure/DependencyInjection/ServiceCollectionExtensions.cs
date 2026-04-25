@@ -26,6 +26,10 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IUserDataPathProvider, UserDataPathProvider>();
         services.AddSingleton<IConversationSectionStore, JsonConversationSectionStore>();
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
+        services.AddSingleton(static serviceProvider =>
+            AgentProfileConfigurationReader.LoadMemorySettings(
+                serviceProvider.GetRequiredService<IUserDataPathProvider>(),
+                serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();

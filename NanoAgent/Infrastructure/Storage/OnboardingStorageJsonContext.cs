@@ -6,10 +6,16 @@ namespace NanoAgent.Infrastructure.Storage;
 
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UseStringEnumConverter = true,
     WriteIndented = true)]
 [JsonSerializable(typeof(AgentConfiguration))]
 [JsonSerializable(typeof(AgentProviderProfile))]
+[JsonSerializable(typeof(AgentProfileConfigurationDocument))]
+[JsonSerializable(typeof(MemoryProfileDocument))]
+[JsonSerializable(typeof(McpServerProfileDocument))]
+[JsonSerializable(typeof(McpToolProfileDocument))]
+[JsonSerializable(typeof(MemorySettings))]
 internal sealed partial class OnboardingStorageJsonContext : JsonSerializerContext
 {
 }
