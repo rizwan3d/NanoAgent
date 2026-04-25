@@ -1,7 +1,7 @@
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 
@@ -25,7 +25,7 @@ internal sealed class AgentDelegateTool : ITool
         _tokenEstimator = tokenEstimator;
     }
 
-    public string Description => "Delegate a focused task to a built-in subagent and return its handoff response.";
+    public string Description => "Delegate a focused task to an available subagent and return its handoff response.";
 
     public string Name => AgentToolNames.AgentDelegate;
 
@@ -36,14 +36,26 @@ internal sealed class AgentDelegateTool : ITool
         }
         """;
 
-    public string Schema => """
+    public string Schema => CreateSchema();
+
+    private string CreateSchema()
+    {
+        IReadOnlyList<IAgentProfile> subagentProfiles = ListSubagentProfiles();
+        string subagentDescription = subagentProfiles.Count == 0
+            ? "Subagent to invoke."
+            : $"Subagent to invoke. Available subagents: {FormatProfileSummaries(subagentProfiles)}.";
+        string enumValues = string.Join(
+            ", ",
+            subagentProfiles.Select(static profile => $"\"{EscapeJsonString(profile.Name)}\""));
+
+        return $$"""
         {
           "type": "object",
           "properties": {
             "agent": {
               "type": "string",
-              "description": "Subagent to invoke. Use 'explore' for read-only codebase investigation or 'general' for implementation-capable delegated work.",
-              "enum": ["general", "explore"]
+              "description": "{{EscapeJsonString(subagentDescription)}}",
+              "enum": [{{enumValues}}]
             },
             "task": {
               "type": "string",
@@ -58,6 +70,7 @@ internal sealed class AgentDelegateTool : ITool
           "additionalProperties": false
         }
         """;
+    }
 
     public async Task<ToolResult> ExecuteAsync(
         ToolExecutionContext context,
@@ -68,12 +81,13 @@ internal sealed class AgentDelegateTool : ITool
 
         if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "agent", out string? agentName))
         {
+            IReadOnlyList<IAgentProfile> subagentProfiles = ListSubagentProfiles();
             return ToolResultFactory.InvalidArguments(
                 "missing_agent",
                 "Tool 'agent_delegate' requires a non-empty 'agent' string.",
                 new ToolRenderPayload(
                     "Invalid agent_delegate arguments",
-                    "Provide 'agent' as 'general' or 'explore'."));
+                    $"Provide 'agent' as one of: {FormatProfileNames(subagentProfiles)}."));
         }
 
         if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "task", out string? task))
@@ -93,22 +107,24 @@ internal sealed class AgentDelegateTool : ITool
         }
         catch (ArgumentException)
         {
+            IReadOnlyList<IAgentProfile> subagentProfiles = ListSubagentProfiles();
             return ToolResultFactory.InvalidArguments(
                 "unknown_subagent",
-                $"Unknown subagent '{agentName}'. Available subagents: {FormatProfileNames(BuiltInAgentProfiles.Subagents)}.",
+                $"Unknown subagent '{agentName}'. Available subagents: {FormatProfileNames(subagentProfiles)}.",
                 new ToolRenderPayload(
                     $"Unknown subagent: {agentName}",
-                    $"Use one of: {FormatProfileNames(BuiltInAgentProfiles.Subagents)}."));
+                    $"Use one of: {FormatProfileNames(subagentProfiles)}."));
         }
 
         if (subagentProfile.Mode != AgentProfileMode.Subagent)
         {
+            IReadOnlyList<IAgentProfile> subagentProfiles = ListSubagentProfiles();
             return ToolResultFactory.InvalidArguments(
                 "profile_is_not_subagent",
                 $"Agent profile '{subagentProfile.Name}' is a primary profile and cannot be invoked through agent_delegate.",
                 new ToolRenderPayload(
                     $"Not a subagent: {subagentProfile.Name}",
-                    "Use /profile to switch primary profiles, or delegate to 'general' or 'explore'."));
+                    $"Use /profile to switch primary profiles, or delegate to one of: {FormatProfileNames(subagentProfiles)}."));
         }
 
         if (context.Session.AgentProfile.Mode != AgentProfileMode.Primary)
@@ -124,12 +140,15 @@ internal sealed class AgentDelegateTool : ITool
         if (context.Session.AgentProfile.PermissionIntent.EditMode == AgentProfileEditMode.ReadOnly &&
             subagentProfile.PermissionIntent.EditMode == AgentProfileEditMode.AllowEdits)
         {
+            IReadOnlyList<IAgentProfile> readOnlySubagents = ListSubagentProfiles()
+                .Where(static profile => profile.PermissionIntent.EditMode == AgentProfileEditMode.ReadOnly)
+                .ToArray();
             return ToolResultFactory.PermissionDenied(
                 "readonly_profile_cannot_delegate_edits",
                 $"Agent profile '{context.Session.AgentProfile.Name}' is read-only and cannot delegate to editing subagent '{subagentProfile.Name}'.",
                 new ToolRenderPayload(
                     "Editing subagent blocked",
-                    $"Use '{BuiltInAgentProfiles.ExploreName}' from read-only profiles."));
+                    $"Use a read-only subagent such as: {FormatProfileNames(readOnlySubagents)}."));
         }
 
         ReplSessionContext childSession = CreateChildSession(context.Session, subagentProfile);
@@ -250,9 +269,70 @@ internal sealed class AgentDelegateTool : ITool
         return text;
     }
 
-    private static string FormatProfileNames(IReadOnlyList<IAgentProfile> profiles)
+    private IReadOnlyList<IAgentProfile> ListSubagentProfiles()
+    {
+        return _profileResolver
+            .List()
+            .Where(static profile => profile.Mode == AgentProfileMode.Subagent)
+            .ToArray();
+    }
+
+    private static string FormatProfileNames(IEnumerable<IAgentProfile> profiles)
     {
         return string.Join(", ", profiles.Select(static profile => profile.Name));
+    }
+
+    private static string FormatProfileSummaries(IReadOnlyList<IAgentProfile> profiles)
+    {
+        return string.Join(
+            "; ",
+            profiles.Select(static profile => $"{profile.Name} - {profile.Description}"));
+    }
+
+    private static string EscapeJsonString(string value)
+    {
+        StringBuilder builder = new(value.Length);
+        foreach (char character in value)
+        {
+            switch (character)
+            {
+                case '\\':
+                    builder.Append("\\\\");
+                    break;
+                case '"':
+                    builder.Append("\\\"");
+                    break;
+                case '\b':
+                    builder.Append("\\b");
+                    break;
+                case '\f':
+                    builder.Append("\\f");
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                case '\r':
+                    builder.Append("\\r");
+                    break;
+                case '\t':
+                    builder.Append("\\t");
+                    break;
+                default:
+                    if (char.IsControl(character))
+                    {
+                        builder.Append("\\u");
+                        builder.Append(((int)character).ToString("x4"));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+
+                    break;
+            }
+        }
+
+        return builder.ToString();
     }
 
     private static string Truncate(

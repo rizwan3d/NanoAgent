@@ -16,6 +16,52 @@ namespace NanoAgent.Tests.Application.Tools;
 public sealed class AgentDelegateToolTests
 {
     [Fact]
+    public void Schema_Should_ListWorkspaceSubagents()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        string agentsDirectory = Path.Combine(workspace.Path, ".nanoagent", "agents");
+        Directory.CreateDirectory(agentsDirectory);
+        File.WriteAllText(
+            Path.Combine(agentsDirectory, "code-reviewer.md"),
+            """
+            ---
+            name: code-reviewer
+            mode: subagent
+            description: Reviews code changes for regressions.
+            ---
+            Inspect changes and report findings first.
+            """);
+
+        using ServiceProvider serviceProvider = new ServiceCollection().BuildServiceProvider();
+        AgentDelegateTool sut = new(
+            serviceProvider,
+            new BuiltInAgentProfileResolver(new FixedWorkspaceRootProvider(workspace.Path)),
+            new HeuristicTokenEstimator());
+
+        using JsonDocument schema = JsonDocument.Parse(sut.Schema);
+        string[] agentNames = schema.RootElement
+            .GetProperty("properties")
+            .GetProperty("agent")
+            .GetProperty("enum")
+            .EnumerateArray()
+            .Select(static value => value.GetString())
+            .Where(static value => value is not null)
+            .Select(static value => value!)
+            .ToArray();
+
+        agentNames.Should().Contain("general");
+        agentNames.Should().Contain("explore");
+        agentNames.Should().Contain("code-reviewer");
+        schema.RootElement
+            .GetProperty("properties")
+            .GetProperty("agent")
+            .GetProperty("description")
+            .GetString()
+            .Should()
+            .Contain("code-reviewer - Reviews code changes for regressions.");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_RunRequestedSubagentAndReturnHandoff()
     {
         ReplSessionContext parentSession = CreateSession(BuiltInAgentProfiles.Build);
@@ -202,5 +248,47 @@ public sealed class AgentDelegateToolTests
             "gpt-5-mini",
             ["gpt-5-mini", "gpt-4.1"],
             agentProfile: profile);
+    }
+
+    private sealed class FixedWorkspaceRootProvider : IWorkspaceRootProvider
+    {
+        private readonly string _workspaceRoot;
+
+        public FixedWorkspaceRootProvider(string workspaceRoot)
+        {
+            _workspaceRoot = workspaceRoot;
+        }
+
+        public string GetWorkspaceRoot()
+        {
+            return _workspaceRoot;
+        }
+    }
+
+    private sealed class TempWorkspace : IDisposable
+    {
+        private TempWorkspace(string path)
+        {
+            Path = path;
+        }
+
+        public string Path { get; }
+
+        public static TempWorkspace Create()
+        {
+            string path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "nanoagent-agent-delegate-tests-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return new TempWorkspace(path);
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+        }
     }
 }
