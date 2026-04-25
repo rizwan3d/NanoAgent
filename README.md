@@ -35,6 +35,7 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 - **Workspace Instructions** - Load persistent repo guidance from `AGENTS.md` or `.agent/AGENTS.md`
 - **MCP Servers** - Load MCP servers from `agent-profile.json`
 - **Lesson Memory** - Keep redacted workspace lessons for recurring mistakes, build failures, and fixes
+- **Workspace Skills** - Route by skill name and description, then load full skill instructions on demand
 - **File Operations** — Search, read, and edit files with full regex support
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
@@ -200,6 +201,27 @@ Permission shortcuts can be configured under `Application:Permissions`. They com
     }
   }
 }
+```
+
+### Workspace Skills
+
+Workspace skills live under `.nanoagent/skills`. NanoAgent adds only each skill's name and description to the system prompt as a routing signal. The full skill body is loaded only after the agent calls `skill_load` for that skill.
+
+Supported layouts:
+
+```text
+.nanoagent/skills/dotnet/SKILL.md
+.nanoagent/skills/code-review.md
+```
+
+Use front matter to define routing metadata:
+
+```markdown
+---
+name: dotnet
+description: Use for .NET build, test, package, and project-file work.
+---
+Prefer repo-native `dotnet build` and `dotnet test` commands. Inspect the relevant `.csproj` before changing package references.
 ```
 
 ### Lifecycle Hooks

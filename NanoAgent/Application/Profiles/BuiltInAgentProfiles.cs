@@ -24,6 +24,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
             AgentToolNames.WebRun
@@ -41,6 +42,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.WebRun
         ],
@@ -55,6 +57,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
             AgentToolNames.WebRun
@@ -68,6 +71,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.LessonMemory,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.WebRun
         ],

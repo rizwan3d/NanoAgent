@@ -58,6 +58,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IConversationConfigurationAccessor _configurationAccessor;
     private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
     private readonly ILessonMemoryService _lessonMemoryService;
+    private readonly ISkillService _skillService;
     private readonly ILogger<AgentConversationPipeline> _logger;
 
     public AgentConversationPipeline(
@@ -72,7 +73,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IWorkspaceInstructionsProvider workspaceInstructionsProvider,
         ILessonMemoryService lessonMemoryService,
         ILogger<AgentConversationPipeline> logger,
-        ILifecycleHookService? lifecycleHookService = null)
+        ILifecycleHookService? lifecycleHookService = null,
+        ISkillService? skillService = null)
     {
         _timeProvider = timeProvider;
         _tokenEstimator = tokenEstimator;
@@ -85,6 +87,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _configurationAccessor = configurationAccessor;
         _workspaceInstructionsProvider = workspaceInstructionsProvider;
         _lessonMemoryService = lessonMemoryService;
+        _skillService = skillService ?? DisabledSkillService.Instance;
         _logger = logger;
     }
 
@@ -419,6 +422,11 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         string? workspaceInstructions = await _workspaceInstructionsProvider.LoadAsync(
             session,
             cancellationToken);
+        string? skillRouting = session.AgentProfile.EnabledTools.Contains(AgentToolNames.SkillLoad)
+            ? await _skillService.CreateRoutingPromptAsync(
+                session,
+                cancellationToken)
+            : null;
         string? lessonMemory = await CreateLessonMemoryPromptAsync(
             lessonQuery,
             cancellationToken);
@@ -428,6 +436,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             basePrompt,
             contribution,
             workspaceInstructions,
+            skillRouting,
             lessonMemory,
             statefulContext
         ];
@@ -918,6 +927,36 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             ArgumentNullException.ThrowIfNull(context);
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(LifecycleHookRunResult.Allowed());
+        }
+    }
+
+    private sealed class DisabledSkillService : ISkillService
+    {
+        public static DisabledSkillService Instance { get; } = new();
+
+        public Task<IReadOnlyList<WorkspaceSkillDescriptor>> ListAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<WorkspaceSkillDescriptor>>([]);
+        }
+
+        public Task<string?> CreateRoutingPromptAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task<WorkspaceSkillLoadResult?> LoadAsync(
+            ReplSessionContext session,
+            string name,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<WorkspaceSkillLoadResult?>(null);
         }
     }
 
