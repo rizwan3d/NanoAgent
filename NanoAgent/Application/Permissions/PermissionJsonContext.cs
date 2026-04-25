@@ -11,6 +11,8 @@ namespace NanoAgent.Application.Permissions;
 [JsonSerializable(typeof(PatchPermissionPolicy))]
 [JsonSerializable(typeof(PermissionRule))]
 [JsonSerializable(typeof(PermissionSettings))]
+[JsonSerializable(typeof(ShellPermissionSettings))]
+[JsonSerializable(typeof(ShellCommandPermissionSettings))]
 [JsonSerializable(typeof(ShellCommandPermissionPolicy))]
 [JsonSerializable(typeof(ToolSandboxMode))]
 [JsonSerializable(typeof(WebRequestPermissionPolicy))]

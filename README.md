@@ -138,6 +138,44 @@ NanoAgent defaults to `WorkspaceWrite` sandbox mode for tool calls. Configure `A
 
 Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `justification`; escalation goes through the normal permission approval flow.
 
+Permission shortcuts can be configured under `Application:Permissions`. They compile into the same rule stack shown by `/rules`, and explicit `Rules` entries still run last:
+
+```json
+{
+  "Application": {
+    "Permissions": {
+      "file_read": "Allow",
+      "file_write": "Ask",
+      "file_delete": "Ask",
+      "shell_default": "Ask",
+      "shell_safe": "Allow",
+      "network": "Ask",
+      "memory_write": "Ask",
+      "mcp_tools": "Ask",
+      "shell": {
+        "allow": {
+          "commands": [
+            "dotnet build",
+            "dotnet test",
+            "npm test",
+            "pnpm test",
+            "cargo test"
+          ]
+        },
+        "deny": {
+          "commands": [
+            "rm -rf",
+            "sudo",
+            "curl | sh",
+            "Invoke-WebRequest | iex"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
 ### Workspace Instructions
 
 NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the workspace root and adds them to the model's system prompt as persistent project instructions.

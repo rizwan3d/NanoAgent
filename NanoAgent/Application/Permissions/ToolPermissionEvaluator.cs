@@ -114,6 +114,11 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                 subjects);
         }
 
+        AddMemoryWriteTagIfNeeded(
+            permissionPolicy,
+            context.ToolExecutionContext,
+            dynamicToolTags);
+
         PermissionRequestDescriptor request = CreateRequestDescriptor(
             context.ToolExecutionContext,
             permissionPolicy,
@@ -693,6 +698,15 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             return null;
         }
 
+        if (_settings.MemoryWrite is not null)
+        {
+            return EvaluateConfiguredMemoryWritePolicy(
+                _settings.MemoryWrite.Value,
+                context,
+                request,
+                action!);
+        }
+
         bool requiresApproval =
             _memorySettings.RequireApprovalForWrites ||
             !_memorySettings.AllowAutoManualLessons;
@@ -708,6 +722,29 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             request);
     }
 
+    private static PermissionEvaluationResult? EvaluateConfiguredMemoryWritePolicy(
+        PermissionMode mode,
+        PermissionEvaluationContext context,
+        PermissionRequestDescriptor request,
+        string action)
+    {
+        return mode switch
+        {
+            PermissionMode.Allow => null,
+            PermissionMode.Deny => PermissionEvaluationResult.Denied(
+                "memory_write_denied",
+                $"Tool '{context.ToolExecutionContext.ToolName}' is denied permission to {action} lesson memory.",
+                PermissionMode.Deny,
+                request),
+            PermissionMode.Ask when !context.ApprovalGranted => PermissionEvaluationResult.RequiresApproval(
+                "memory_write_approval_required",
+                $"Tool '{context.ToolExecutionContext.ToolName}' requires approval before it can {action} lesson memory.",
+                PermissionMode.Ask,
+                request),
+            _ => null
+        };
+    }
+
     private static bool IsMemoryTool(
         ToolPermissionPolicy permissionPolicy,
         ToolExecutionContext context)
@@ -715,6 +752,24 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         return string.Equals(context.ToolName, AgentToolNames.LessonMemory, StringComparison.Ordinal) ||
             (permissionPolicy.ToolTags ?? [])
                 .Any(static tag => string.Equals(tag, "memory", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void AddMemoryWriteTagIfNeeded(
+        ToolPermissionPolicy permissionPolicy,
+        ToolExecutionContext context,
+        List<string> dynamicToolTags)
+    {
+        if (!IsMemoryTool(permissionPolicy, context) ||
+            !ToolArguments.TryGetNonEmptyString(context.Arguments, "action", out string? action) ||
+            !MemoryWriteActions.Contains(action!))
+        {
+            return;
+        }
+
+        if (!dynamicToolTags.Contains("memory_write", StringComparer.OrdinalIgnoreCase))
+        {
+            dynamicToolTags.Add("memory_write");
+        }
     }
 
     private static void AddSubject(
