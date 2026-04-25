@@ -2215,6 +2215,7 @@ public sealed class AgentConversationPipelineTests
         }
 
         public Task ObserveToolResultAsync(
+            ConversationToolCall toolCall,
             ToolInvocationResult invocationResult,
             CancellationToken cancellationToken)
         {
@@ -2285,6 +2286,7 @@ public sealed class AgentConversationPipelineTests
         }
 
         public Task ObserveToolResultAsync(
+            ConversationToolCall toolCall,
             ToolInvocationResult invocationResult,
             CancellationToken cancellationToken)
         {

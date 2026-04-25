@@ -125,7 +125,10 @@ public sealed class ToolExecutionPipelineTests
             allowedToolNames,
             CancellationToken.None);
 
-        lessonMemoryService.ObservedResults.Should().Equal(invocationResult);
+        lessonMemoryService.ObservedResults.Should().ContainSingle();
+        lessonMemoryService.ObservedResults[0].ToolCall.Should().BeEquivalentTo(
+            new ConversationToolCall("call_1", "shell_command", "{}"));
+        lessonMemoryService.ObservedResults[0].InvocationResult.Should().Be(invocationResult);
     }
 
     private sealed class TrackingToolInvoker : IToolInvoker
@@ -168,7 +171,7 @@ public sealed class ToolExecutionPipelineTests
 
     private sealed class RecordingLessonMemoryService : ILessonMemoryService
     {
-        public List<ToolInvocationResult> ObservedResults { get; } = [];
+        public List<(ConversationToolCall ToolCall, ToolInvocationResult InvocationResult)> ObservedResults { get; } = [];
 
         public Task<LessonMemoryEntry> SaveAsync(
             LessonMemorySaveRequest request,
@@ -216,10 +219,11 @@ public sealed class ToolExecutionPipelineTests
         }
 
         public Task ObserveToolResultAsync(
+            ConversationToolCall toolCall,
             ToolInvocationResult invocationResult,
             CancellationToken cancellationToken)
         {
-            ObservedResults.Add(invocationResult);
+            ObservedResults.Add((toolCall, invocationResult));
             return Task.CompletedTask;
         }
 

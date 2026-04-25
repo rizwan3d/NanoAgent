@@ -32,6 +32,7 @@ public interface ILessonMemoryService
         CancellationToken cancellationToken);
 
     Task ObserveToolResultAsync(
+        ConversationToolCall toolCall,
         ToolInvocationResult invocationResult,
         CancellationToken cancellationToken);
 

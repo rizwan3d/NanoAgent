@@ -13,10 +13,13 @@ namespace NanoAgent.Infrastructure.Storage;
 internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryService
 {
     private const int DefaultPromptLessonLimit = 5;
+    private const int MaxPendingFailureObservations = 50;
     private const int MaxPromptFieldCharacters = 260;
     private const int MaxSearchTokens = 24;
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly object _pendingFailureGate = new();
+    private readonly Dictionary<string, PendingFailureObservation> _pendingFailures = new(StringComparer.Ordinal);
     private readonly MemorySettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
@@ -326,9 +329,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     }
 
     public async Task ObserveToolResultAsync(
+        ConversationToolCall toolCall,
         ToolInvocationResult invocationResult,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(toolCall);
         ArgumentNullException.ThrowIfNull(invocationResult);
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -351,26 +356,17 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             return;
         }
 
-        string fingerprint = CreateToolFingerprint(invocationResult.ToolName);
         if (invocationResult.Result.IsSuccess)
         {
-            await MarkFixedByFingerprintAsync(
-                fingerprint,
-                $"Tool '{invocationResult.ToolName}' later completed successfully.",
-                cancellationToken);
+            await ObserveSuccessfulToolAsync(toolCall, invocationResult, cancellationToken);
             return;
         }
 
-        await SaveOrUpdateFailureAsync(
-            fingerprint,
-            trigger: $"{invocationResult.ToolName} {invocationResult.Result.Status}",
-            problem: $"Tool '{invocationResult.ToolName}' failed with status {invocationResult.Result.Status}. {invocationResult.Result.Message}",
-            lesson: "Previous tool failure observed automatically. Check the arguments, permissions, and current state before retrying the same tool pattern.",
-            tags: ["auto", "failure", "tool", invocationResult.ToolName],
-            toolName: invocationResult.ToolName,
-            command: null,
-            failureSignature: invocationResult.Result.Status.ToString(),
-            cancellationToken);
+        if (TryCreatePendingToolFailure(toolCall, invocationResult, out PendingFailureObservation? observation) &&
+            observation is not null)
+        {
+            RememberPendingFailure(observation);
+        }
     }
 
     private async Task ObserveShellCommandAsync(
@@ -381,10 +377,21 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
 
         if (result.ExitCode == 0)
         {
-            await MarkFixedByFingerprintAsync(
-                fingerprint,
-                $"Command `{NormalizeWhitespace(result.Command)}` later exited 0.",
-                cancellationToken);
+            if (TryTakePendingFailure(
+                    AgentToolNames.ShellCommand,
+                    fingerprint,
+                    out PendingFailureObservation? observation) &&
+                observation is not null)
+            {
+                string successSummary = RedactIfNeeded(
+                    $"command `{NormalizeWhitespace(result.Command)}` exited 0 in `{NormalizeWhitespace(result.WorkingDirectory)}`");
+                await SaveOrUpdateResolvedLessonAsync(
+                    observation,
+                    BuildResolvedLesson(observation, successSummary),
+                    $"Corrected successful attempt: {successSummary}.",
+                    cancellationToken);
+            }
+
             return;
         }
 
@@ -394,84 +401,81 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         }
 
         string signature = ExtractFailureSignature(result) ?? $"exit {result.ExitCode.ToString(CultureInfo.InvariantCulture)}";
+        string redactedSignature = RedactIfNeeded(signature);
         string category = DetectShellCategory(result.Command);
         string command = NormalizeWhitespace(result.Command);
-        await SaveOrUpdateFailureAsync(
+        string attemptSummary = RedactIfNeeded(
+            $"command `{command}` exited {result.ExitCode.ToString(CultureInfo.InvariantCulture)} in `{NormalizeWhitespace(result.WorkingDirectory)}`");
+        RememberPendingFailure(new PendingFailureObservation(
             fingerprint,
-            trigger: $"{command} -> {signature}",
-            problem: $"Command `{command}` failed with exit code {result.ExitCode.ToString(CultureInfo.InvariantCulture)}. Signature: {signature}.",
-            lesson: "Build/test/toolchain failure observed automatically. Check this failure signature and the matching command before retrying or changing unrelated code.",
-            tags: ["auto", "failure", category, GetFirstCommandName(result.Command), signature],
-            toolName: AgentToolNames.ShellCommand,
-            command: command,
-            failureSignature: signature,
+            _timeProvider.GetUtcNow(),
+            AgentToolNames.ShellCommand,
+            RedactIfNeeded($"{command} -> {signature}"),
+            RedactIfNeeded($"Command `{command}` failed with exit code {result.ExitCode.ToString(CultureInfo.InvariantCulture)}. Signature: {signature}."),
+            attemptSummary,
+            command,
+            signature,
+            NormalizeTags(["auto", "failure", "resolved", category, GetFirstCommandName(result.Command), redactedSignature])));
+    }
+
+    private async Task ObserveSuccessfulToolAsync(
+        ConversationToolCall toolCall,
+        ToolInvocationResult invocationResult,
+        CancellationToken cancellationToken)
+    {
+        if (!TryTakePendingFailure(
+                invocationResult.ToolName,
+                preferredFingerprint: null,
+                out PendingFailureObservation? observation) ||
+            observation is null)
+        {
+            return;
+        }
+
+        string successSummary = SummarizeToolCall(toolCall, invocationResult);
+        await SaveOrUpdateResolvedLessonAsync(
+            observation,
+            BuildResolvedLesson(observation, successSummary),
+            $"Corrected successful attempt: {successSummary}.",
             cancellationToken);
     }
 
-    private async Task SaveOrUpdateFailureAsync(
-        string fingerprint,
-        string trigger,
-        string problem,
-        string lesson,
-        IReadOnlyList<string> tags,
-        string toolName,
-        string? command,
-        string? failureSignature,
-        CancellationToken cancellationToken)
+    private bool TryCreatePendingToolFailure(
+        ConversationToolCall toolCall,
+        ToolInvocationResult invocationResult,
+        out PendingFailureObservation? observation)
     {
-        DateTimeOffset now = _timeProvider.GetUtcNow();
+        observation = null;
 
-        await _gate.WaitAsync(cancellationToken);
-        try
+        if (!IsTrackableToolFailure(invocationResult))
         {
-            LessonMemoryEntry[] entries = await LoadAsync(cancellationToken);
-            int index = Array.FindLastIndex(entries, entry =>
-                !entry.IsFixed &&
-                string.Equals(entry.Kind, "failure", StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(entry.Fingerprint, fingerprint, StringComparison.Ordinal));
-
-            if (index >= 0)
-            {
-                entries[index] = NormalizeEntry(entries[index] with
-                {
-                    UpdatedAtUtc = now,
-                    Trigger = RedactIfNeeded(trigger),
-                    Problem = RedactIfNeeded(problem),
-                    Lesson = RedactIfNeeded(lesson),
-                    Tags = NormalizeTags(entries[index].Tags.Concat(tags)),
-                    ToolName = toolName,
-                    Command = RedactOptionalIfNeeded(NormalizeOptionalText(command)),
-                    FailureSignature = RedactOptionalIfNeeded(NormalizeOptionalText(failureSignature)),
-                    Fingerprint = fingerprint
-                });
-                await RewriteAsync(entries, cancellationToken);
-                return;
-            }
-
-            LessonMemoryEntry entry = NormalizeEntry(new LessonMemoryEntry(
-                CreateId(),
-                now,
-                now,
-                "failure",
-                RedactIfNeeded(trigger),
-                RedactIfNeeded(problem),
-                RedactIfNeeded(lesson),
-                NormalizeTags(tags),
-                toolName,
-                RedactOptionalIfNeeded(NormalizeOptionalText(command)),
-                RedactOptionalIfNeeded(NormalizeOptionalText(failureSignature)),
-                fingerprint));
-
-            await AppendAsync(entry, cancellationToken);
+            return false;
         }
-        finally
-        {
-            _gate.Release();
-        }
+
+        string toolName = invocationResult.ToolName;
+        ToolErrorPayload? error = TryReadToolErrorPayload(invocationResult.Result, out ToolErrorPayload? payload)
+            ? payload
+            : null;
+        string failureSignature = NormalizeOptionalText(error?.Code) ?? invocationResult.Result.Status.ToString();
+        string redactedFailureSignature = RedactIfNeeded(failureSignature);
+        string failureMessage = NormalizeOptionalText(error?.Message) ?? invocationResult.Result.Message;
+        string attemptSummary = SummarizeToolCall(toolCall, invocationResult);
+        observation = new PendingFailureObservation(
+            CreateToolFingerprint(toolName, failureSignature),
+            _timeProvider.GetUtcNow(),
+            toolName,
+            RedactIfNeeded($"{toolName} {failureSignature}"),
+            RedactIfNeeded($"Tool `{toolName}` failed with {failureSignature}: {failureMessage}. Failed pattern: {attemptSummary}."),
+            attemptSummary,
+            Command: null,
+            FailureSignature: failureSignature,
+            Tags: NormalizeTags(["auto", "failure", "resolved", "tool", toolName, redactedFailureSignature]));
+        return true;
     }
 
-    private async Task MarkFixedByFingerprintAsync(
-        string fingerprint,
+    private async Task SaveOrUpdateResolvedLessonAsync(
+        PendingFailureObservation observation,
+        string lesson,
         string fixSummary,
         CancellationToken cancellationToken)
     {
@@ -481,37 +485,346 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         try
         {
             LessonMemoryEntry[] entries = await LoadAsync(cancellationToken);
-            bool changed = false;
+            int index = Array.FindLastIndex(entries, entry =>
+                string.Equals(entry.Fingerprint, observation.Fingerprint, StringComparison.Ordinal));
 
-            for (int index = 0; index < entries.Length; index++)
+            if (index >= 0)
             {
-                LessonMemoryEntry entry = entries[index];
-                if (entry.IsFixed ||
-                    !string.Equals(entry.Kind, "failure", StringComparison.OrdinalIgnoreCase) ||
-                    !string.Equals(entry.Fingerprint, fingerprint, StringComparison.Ordinal))
-                {
-                    continue;
-                }
-
-                entries[index] = NormalizeEntry(entry with
+                entries[index] = NormalizeEntry(entries[index] with
                 {
                     UpdatedAtUtc = now,
+                    Kind = "lesson",
+                    Trigger = RedactIfNeeded(observation.Trigger),
+                    Problem = RedactIfNeeded(observation.Problem),
+                    Lesson = RedactIfNeeded(lesson),
+                    Tags = NormalizeTags(entries[index].Tags.Concat(observation.Tags).Concat(["fixed"])),
+                    ToolName = observation.ToolName,
+                    Command = RedactOptionalIfNeeded(NormalizeOptionalText(observation.Command)),
+                    FailureSignature = RedactOptionalIfNeeded(NormalizeOptionalText(observation.FailureSignature)),
+                    Fingerprint = observation.Fingerprint,
                     IsFixed = true,
-                    FixedAtUtc = now,
-                    FixSummary = RedactIfNeeded(fixSummary),
-                    Tags = NormalizeTags(entry.Tags.Concat(["fixed"]))
+                    FixedAtUtc = entries[index].FixedAtUtc ?? now,
+                    FixSummary = RedactIfNeeded(fixSummary)
                 });
-                changed = true;
+                await RewriteAsync(entries, cancellationToken);
+                return;
             }
 
-            if (changed)
-            {
-                await RewriteAsync(entries, cancellationToken);
-            }
+            LessonMemoryEntry entry = NormalizeEntry(new LessonMemoryEntry(
+                CreateId(),
+                now,
+                now,
+                "lesson",
+                RedactIfNeeded(observation.Trigger),
+                RedactIfNeeded(observation.Problem),
+                RedactIfNeeded(lesson),
+                NormalizeTags(observation.Tags.Concat(["fixed"])),
+                observation.ToolName,
+                RedactOptionalIfNeeded(NormalizeOptionalText(observation.Command)),
+                RedactOptionalIfNeeded(NormalizeOptionalText(observation.FailureSignature)),
+                observation.Fingerprint,
+                IsFixed: true,
+                FixedAtUtc: now,
+                FixSummary: RedactIfNeeded(fixSummary)));
+
+            await RewriteAsync(entries.Append(entry).ToArray(), cancellationToken);
         }
         finally
         {
             _gate.Release();
+        }
+    }
+
+    private void RememberPendingFailure(PendingFailureObservation observation)
+    {
+        lock (_pendingFailureGate)
+        {
+            _pendingFailures[observation.Fingerprint] = observation;
+            if (_pendingFailures.Count <= MaxPendingFailureObservations)
+            {
+                return;
+            }
+
+            string oldestKey = _pendingFailures
+                .OrderBy(static item => item.Value.ObservedAtUtc)
+                .First()
+                .Key;
+            _pendingFailures.Remove(oldestKey);
+        }
+    }
+
+    private bool TryTakePendingFailure(
+        string toolName,
+        string? preferredFingerprint,
+        out PendingFailureObservation? observation)
+    {
+        lock (_pendingFailureGate)
+        {
+            if (!string.IsNullOrWhiteSpace(preferredFingerprint) &&
+                _pendingFailures.Remove(preferredFingerprint, out observation))
+            {
+                return true;
+            }
+
+            string? latestKey = null;
+            PendingFailureObservation? latestObservation = null;
+            foreach (KeyValuePair<string, PendingFailureObservation> item in _pendingFailures)
+            {
+                if (!string.Equals(item.Value.ToolName, toolName, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                if (latestObservation is null ||
+                    item.Value.ObservedAtUtc > latestObservation.ObservedAtUtc)
+                {
+                    latestKey = item.Key;
+                    latestObservation = item.Value;
+                }
+            }
+
+            if (latestKey is null || latestObservation is null)
+            {
+                observation = null;
+                return false;
+            }
+
+            observation = latestObservation;
+            _pendingFailures.Remove(latestKey);
+            return true;
+        }
+    }
+
+    private string BuildResolvedLesson(
+        PendingFailureObservation observation,
+        string successSummary)
+    {
+        string signature = string.IsNullOrWhiteSpace(observation.FailureSignature)
+            ? observation.ToolName
+            : $"{observation.ToolName} {observation.FailureSignature}";
+
+        return RedactIfNeeded(
+            $"When {signature} appears again, do not repeat the failed pattern ({observation.AttemptSummary}). Use the corrected successful pattern: {successSummary}.");
+    }
+
+    private string SummarizeToolCall(
+        ConversationToolCall toolCall,
+        ToolInvocationResult invocationResult)
+    {
+        string argumentSummary = SummarizeToolArguments(toolCall);
+        string resultSummary = TrimForPrompt(invocationResult.Result.Message);
+        string summary = string.IsNullOrWhiteSpace(argumentSummary)
+            ? $"result: {resultSummary}"
+            : $"{argumentSummary}; result: {resultSummary}";
+
+        return RedactIfNeeded(summary);
+    }
+
+    private static string SummarizeToolArguments(ConversationToolCall toolCall)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(toolCall.ArgumentsJson);
+            JsonElement arguments = document.RootElement;
+            if (arguments.ValueKind != JsonValueKind.Object)
+            {
+                return "arguments were not a JSON object";
+            }
+
+            return toolCall.Name switch
+            {
+                AgentToolNames.ApplyPatch => SummarizePatchArguments(arguments),
+                AgentToolNames.FileRead => SummarizePathArguments(arguments, "file_read"),
+                AgentToolNames.FileDelete => SummarizePathArguments(arguments, "file_delete"),
+                AgentToolNames.FileWrite => SummarizeFileWriteArguments(arguments),
+                AgentToolNames.DirectoryList => SummarizeDirectoryListArguments(arguments),
+                AgentToolNames.SearchFiles => SummarizeSearchArguments(arguments, "search_files"),
+                AgentToolNames.TextSearch => SummarizeSearchArguments(arguments, "text_search"),
+                AgentToolNames.ShellCommand => SummarizeShellArguments(arguments),
+                _ => $"arguments: {TrimForPrompt(arguments.GetRawText())}"
+            };
+        }
+        catch (JsonException)
+        {
+            return $"arguments JSON was invalid ({toolCall.ArgumentsJson.Length.ToString(CultureInfo.InvariantCulture)} chars)";
+        }
+    }
+
+    private static string SummarizePatchArguments(JsonElement arguments)
+    {
+        string? patch = GetString(arguments, "patch");
+        if (string.IsNullOrWhiteSpace(patch))
+        {
+            return "apply_patch without patch text";
+        }
+
+        string[] headers = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(static line =>
+                line.StartsWith("*** Add File: ", StringComparison.Ordinal) ||
+                line.StartsWith("*** Delete File: ", StringComparison.Ordinal) ||
+                line.StartsWith("*** Update File: ", StringComparison.Ordinal) ||
+                line.StartsWith("*** Move to: ", StringComparison.Ordinal))
+            .Take(5)
+            .ToArray();
+
+        string targetSummary = headers.Length == 0
+            ? "no file headers"
+            : string.Join(", ", headers);
+        return $"apply_patch ({patch.Length.ToString(CultureInfo.InvariantCulture)} chars, {targetSummary})";
+    }
+
+    private static string SummarizePathArguments(
+        JsonElement arguments,
+        string toolName)
+    {
+        return $"{toolName} path `{GetString(arguments, "path") ?? "<missing>"}`";
+    }
+
+    private static string SummarizeFileWriteArguments(JsonElement arguments)
+    {
+        string path = GetString(arguments, "path") ?? "<missing>";
+        string? content = GetString(arguments, "content");
+        string overwrite = FormatBoolean(GetBoolean(arguments, "overwrite"), defaultValue: "false");
+        string contentLength = content is null
+            ? "missing content"
+            : $"{content.Length.ToString(CultureInfo.InvariantCulture)} chars";
+        return $"file_write path `{path}`, {contentLength}, overwrite {overwrite}";
+    }
+
+    private static string SummarizeDirectoryListArguments(JsonElement arguments)
+    {
+        string path = GetString(arguments, "path") ?? ".";
+        string recursive = FormatBoolean(GetBoolean(arguments, "recursive"), defaultValue: "false");
+        return $"directory_list path `{path}`, recursive {recursive}";
+    }
+
+    private static string SummarizeSearchArguments(
+        JsonElement arguments,
+        string toolName)
+    {
+        string query = GetString(arguments, "query") ?? "<missing>";
+        string path = GetString(arguments, "path") ?? ".";
+        string caseSensitive = FormatBoolean(GetBoolean(arguments, "caseSensitive"), defaultValue: "false");
+        return $"{toolName} query `{query}`, path `{path}`, caseSensitive {caseSensitive}";
+    }
+
+    private static string SummarizeShellArguments(JsonElement arguments)
+    {
+        string command = GetString(arguments, "command") ?? "<missing>";
+        string workingDirectory = GetString(arguments, "workingDirectory") ?? ".";
+        return $"shell_command `{command}` in `{workingDirectory}`";
+    }
+
+    private static string? GetString(
+        JsonElement arguments,
+        string propertyName)
+    {
+        return arguments.TryGetProperty(propertyName, out JsonElement value) &&
+               value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
+    }
+
+    private static bool? GetBoolean(
+        JsonElement arguments,
+        string propertyName)
+    {
+        return arguments.TryGetProperty(propertyName, out JsonElement value) &&
+               value.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? value.GetBoolean()
+            : null;
+    }
+
+    private static string FormatBoolean(
+        bool? value,
+        string defaultValue)
+    {
+        return value is null
+            ? defaultValue
+            : value.Value ? "true" : "false";
+    }
+
+    private static bool IsTrackableToolFailure(ToolInvocationResult invocationResult)
+    {
+        if (invocationResult.Result.IsSuccess ||
+            invocationResult.Result.Status == ToolResultStatus.NotFound)
+        {
+            return false;
+        }
+
+        ToolErrorPayload? error = TryReadToolErrorPayload(invocationResult.Result, out ToolErrorPayload? payload)
+            ? payload
+            : null;
+        string code = error?.Code ?? invocationResult.Result.Status.ToString();
+        string message = error?.Message ?? invocationResult.Result.Message;
+
+        if (IsMissingRequiredArgumentFailure(code, message) ||
+            IsFileLocationMiss(invocationResult.ToolName, code, message) ||
+            IsUserPermissionNoise(code))
+        {
+            return false;
+        }
+
+        return invocationResult.Result.Status is
+            ToolResultStatus.InvalidArguments or
+            ToolResultStatus.ExecutionError or
+            ToolResultStatus.PermissionDenied;
+    }
+
+    private static bool IsMissingRequiredArgumentFailure(
+        string code,
+        string message)
+    {
+        return code.StartsWith("missing_", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("requires a non-empty", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsFileLocationMiss(
+        string toolName,
+        string code,
+        string message)
+    {
+        if (toolName is not (
+                AgentToolNames.FileRead or
+                AgentToolNames.FileDelete or
+                AgentToolNames.DirectoryList or
+                AgentToolNames.SearchFiles or
+                AgentToolNames.TextSearch))
+        {
+            return false;
+        }
+
+        return code.Contains("not_found", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("does not exist", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("cannot find path", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("could not find file", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("no such file", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsUserPermissionNoise(string code)
+    {
+        return code.Equals("permission_denied_by_user", StringComparison.OrdinalIgnoreCase) ||
+            code.Equals("permission_request_cancelled", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryReadToolErrorPayload(
+        ToolResult result,
+        out ToolErrorPayload? error)
+    {
+        try
+        {
+            error = JsonSerializer.Deserialize(
+                result.JsonResult,
+                ToolJsonContext.Default.ToolErrorPayload);
+            return error is not null;
+        }
+        catch (JsonException)
+        {
+            error = null;
+            return false;
         }
     }
 
@@ -899,9 +1212,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         return $"les_{Guid.NewGuid():N}"[..16];
     }
 
-    private static string CreateToolFingerprint(string toolName)
+    private static string CreateToolFingerprint(
+        string toolName,
+        string failureSignature)
     {
-        return $"tool:{toolName.Trim().ToLowerInvariant()}";
+        return $"tool:{toolName.Trim().ToLowerInvariant()}:{NormalizeSearchText(failureSignature)}";
     }
 
     private static string CreateShellFingerprint(string command)
@@ -1032,6 +1347,17 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             ? null
             : TrimForPrompt(line);
     }
+
+    private sealed record PendingFailureObservation(
+        string Fingerprint,
+        DateTimeOffset ObservedAtUtc,
+        string ToolName,
+        string Trigger,
+        string Problem,
+        string AttemptSummary,
+        string? Command,
+        string? FailureSignature,
+        string[] Tags);
 
     [GeneratedRegex(@"\b(?:CS|TS|MSB|NU|NETSDK|CA|IDE|BC|FS)\d{3,6}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DiagnosticCodeRegex();

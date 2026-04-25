@@ -64,7 +64,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
                 allowedToolNames,
                 cancellationToken);
 
-            await ObserveLessonMemoryAsync(result, cancellationToken);
+            await ObserveLessonMemoryAsync(toolCall, result, cancellationToken);
             results.Add(result);
             if (onToolResult is not null)
             {
@@ -76,6 +76,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
     }
 
     private async Task ObserveLessonMemoryAsync(
+        ConversationToolCall toolCall,
         ToolInvocationResult result,
         CancellationToken cancellationToken)
     {
@@ -86,7 +87,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
 
         try
         {
-            await _lessonMemoryService.ObserveToolResultAsync(result, cancellationToken);
+            await _lessonMemoryService.ObserveToolResultAsync(toolCall, result, cancellationToken);
         }
         catch (OperationCanceledException)
         {

@@ -11,12 +11,13 @@ namespace NanoAgent.Tests.Infrastructure.Storage;
 public sealed class WorkspaceLessonMemoryServiceTests
 {
     [Fact]
-    public async Task ObserveToolResultAsync_Should_RecordAndFixShellBuildFailures()
+    public async Task ObserveToolResultAsync_Should_StoreShellBuildLessonOnlyAfterSuccessfulCorrection()
     {
         using TempWorkspace workspace = TempWorkspace.Create();
         WorkspaceLessonMemoryService sut = CreateService(workspace.Path);
 
         await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
             CreateShellInvocation(new ShellCommandExecutionResult(
                 "dotnet build",
                 ".",
@@ -30,13 +31,10 @@ public sealed class WorkspaceLessonMemoryServiceTests
             includeFixed: true,
             CancellationToken.None);
 
-        failures.Should().ContainSingle();
-        failures[0].Kind.Should().Be("failure");
-        failures[0].IsFixed.Should().BeFalse();
-        failures[0].FailureSignature.Should().Be("CS0246");
-        failures[0].Tags.Should().Contain(["auto", "failure", "build"]);
+        failures.Should().BeEmpty();
 
         await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
             CreateShellInvocation(new ShellCommandExecutionResult(
                 "dotnet build",
                 ".",
@@ -51,8 +49,11 @@ public sealed class WorkspaceLessonMemoryServiceTests
             CancellationToken.None);
 
         fixedFailures.Should().ContainSingle();
+        fixedFailures[0].Kind.Should().Be("lesson");
         fixedFailures[0].IsFixed.Should().BeTrue();
         fixedFailures[0].FixedAtUtc.Should().NotBeNull();
+        fixedFailures[0].FailureSignature.Should().Be("CS0246");
+        fixedFailures[0].Lesson.Should().Contain("corrected successful pattern");
         fixedFailures[0].FixSummary.Should().Contain("exited 0");
     }
 
@@ -91,12 +92,23 @@ public sealed class WorkspaceLessonMemoryServiceTests
             });
 
         await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
             CreateShellInvocation(new ShellCommandExecutionResult(
                 "dotnet test",
                 ".",
                 1,
                 "",
                 "error: token=sk-abcdefghijklmnopqrstuvwxyz123456")),
+            CancellationToken.None);
+
+        await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
+            CreateShellInvocation(new ShellCommandExecutionResult(
+                "dotnet test",
+                ".",
+                0,
+                "Passed.",
+                "")),
             CancellationToken.None);
 
         IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
@@ -107,6 +119,89 @@ public sealed class WorkspaceLessonMemoryServiceTests
         lessons.Should().ContainSingle();
         lessons[0].FailureSignature.Should().Contain("<redacted>");
         lessons[0].FailureSignature.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+    }
+
+    [Fact]
+    public async Task ObserveToolResultAsync_Should_StoreToolLessonOnlyAfterCorrectedSuccess()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        WorkspaceLessonMemoryService sut = CreateService(workspace.Path);
+
+        await sut.ObserveToolResultAsync(
+            CreateToolCall(
+                AgentToolNames.ApplyPatch,
+                """{ "patch": "--- a/README.md\n+++ b/README.md" }"""),
+            new ToolInvocationResult(
+                "call_patch_fail",
+                AgentToolNames.ApplyPatch,
+                ToolResultFactory.InvalidArguments(
+                    "invalid_patch",
+                    "Patch text must begin with '*** Begin Patch'.")),
+            CancellationToken.None);
+
+        (await sut.ListAsync(10, includeFixed: true, CancellationToken.None))
+            .Should()
+            .BeEmpty();
+
+        await sut.ObserveToolResultAsync(
+            CreateToolCall(
+                AgentToolNames.ApplyPatch,
+                """{ "patch": "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n+new\n*** End Patch" }"""),
+            new ToolInvocationResult(
+                "call_patch_success",
+                AgentToolNames.ApplyPatch,
+                ToolResultFactory.Success(
+                    "Applied patch to 1 file.",
+                    new WorkspaceApplyPatchResult(1, 1, 1, []),
+                    ToolJsonContext.Default.WorkspaceApplyPatchResult)),
+            CancellationToken.None);
+
+        IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
+            limit: 10,
+            includeFixed: true,
+            CancellationToken.None);
+
+        lessons.Should().ContainSingle();
+        lessons[0].Kind.Should().Be("lesson");
+        lessons[0].IsFixed.Should().BeTrue();
+        lessons[0].Problem.Should().Contain("invalid_patch");
+        lessons[0].Lesson.Should().Contain("corrected successful pattern");
+        lessons[0].FixSummary.Should().Contain("Applied patch to 1 file");
+    }
+
+    [Fact]
+    public async Task ObserveToolResultAsync_Should_IgnoreFileLocationMisses()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        WorkspaceLessonMemoryService sut = CreateService(workspace.Path);
+
+        await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.FileRead, """{ "path": "missing.txt" }"""),
+            new ToolInvocationResult(
+                "call_read_fail",
+                AgentToolNames.FileRead,
+                ToolResultFactory.ExecutionError(
+                    "tool_execution_failed",
+                    "Tool execution failed unexpectedly: File 'missing.txt' does not exist.")),
+            CancellationToken.None);
+
+        await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.FileRead, """{ "path": "README.md" }"""),
+            new ToolInvocationResult(
+                "call_read_success",
+                AgentToolNames.FileRead,
+                ToolResultFactory.Success(
+                    "Read file 'README.md'.",
+                    new WorkspaceFileReadResult("README.md", "hello", 5),
+                    ToolJsonContext.Default.WorkspaceFileReadResult)),
+            CancellationToken.None);
+
+        IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
+            limit: 10,
+            includeFixed: true,
+            CancellationToken.None);
+
+        lessons.Should().BeEmpty();
     }
 
     [Fact]
@@ -142,6 +237,16 @@ public sealed class WorkspaceLessonMemoryServiceTests
                 "shell",
                 result,
                 ToolJsonContext.Default.ShellCommandExecutionResult));
+    }
+
+    private static ConversationToolCall CreateToolCall(
+        string toolName,
+        string argumentsJson)
+    {
+        return new ConversationToolCall(
+            $"call_{toolName}",
+            toolName,
+            argumentsJson);
     }
 
     private static WorkspaceLessonMemoryService CreateService(

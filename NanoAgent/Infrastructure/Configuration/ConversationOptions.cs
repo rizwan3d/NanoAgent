@@ -146,16 +146,25 @@ public sealed class ConversationOptions
     - Save a lesson only when a mistake, failed build/test/tool attempt, wrong assumption, repeated issue, or non-obvious fix teaches a reusable rule for future work in this workspace.
 
     - Do not save lessons for ordinary progress, obvious facts, one-off task details, sensitive data, secrets, raw logs, private URLs, credentials, broad advice, or anything that would not change behavior in a similar future task.
+    - For resolved shell failures, do not simply save “failed command → later successful command.” First identify the reusable root cause. For CLI tools, record whether the fix was command syntax, working directory, project path, missing dependency, or source-code change.
 
-    - A good lesson must be specific, verified, and actionable:
-      - `trigger`: the symptom, command, error code, file area, or situation that should retrieve the lesson later.
+    - Do not treat the next successful shell command as the fix unless it clearly addresses the failed command's root cause. If a build failed due to source code errors such as CSxxxx, RZxxxx, TSxxxx, or compiler diagnostics, the lesson should describe the source-code root cause and code fix, not merely the later successful build command.
+    - Redact absolute local paths from memory. Store workspace-relative paths such as `Views/Home/Index.cshtml`, not paths like `C:\Users\...\repo\...`.
+    - For resolved failures, `fixSummary` should describe the real fix, not just the later command that exited 0.
+
+    - A good lesson must be specific, verified, reusable, and actionable:
+      - `trigger`: the symptom, command pattern, error code, file area, tool failure, or situation that should retrieve the lesson later.
       - `problem`: the verified mistake, root cause, or bad assumption.
       - `lesson`: the concrete future behavior that would avoid or fix the issue.
-      - `tags`: concise retrieval words such as the tool, command, framework, file area, language, package, or error code.
+      - `tags`: concise retrieval words such as the tool, command, framework, file area, language,  package, or error code.
+
+    - Prefer lessons that teach the reusable rule, not only the exact failed command. Generalize package names, file names, or paths when the root cause is broader.
 
     - Prefer lessons like:
       - “`apply_patch InvalidArguments` with `--- a/file` means raw unified-diff headers were used. Use `*** Begin Patch`, `*** Update File: path`, and `*** End Patch` instead.”
-      - “`dotnet add package A dotnet add package B` failed because two commands were concatenated. Run one `dotnet add package` command per package or separate commands with `&&`.”
+      - “`dotnet add package A dotnet add package B` failed because two commands were concatenated  without a shell separator. Run one `dotnet add` command per package, or separate commands with `&&`. Target the real `.csproj` path when working inside a project subdirectory.”
+      - “`dotnet build` with `MSB1003` or `MSB1009` after `dotnet new -o <ProjectDir>` usually means the command ran from the wrong directory or targeted the wrong project path. Use `dotnet build <ProjectDir>/<ProjectDir>.csproj` or `dotnet run --project  <ProjectDir>/<ProjectDir>.csproj`.”
+      - “`file_read Program.cs does not exist` after creating a project in a subdirectory usually means the file tool used the workspace root instead of the project root. Use explicit project-root-prefixed paths such as `<ProjectDir>/Program.cs`.”
       - “`CS0246` after adding a service usually means a missing using, package reference, or DI registration; check the project file and service registration before changing unrelated code.”
 
     - Avoid generic lessons like:
@@ -163,8 +172,18 @@ public sealed class ConversationOptions
       - “Check arguments.”
       - “Build failed.”
       - “Previous tool failure observed automatically.”
+      - “Check this failure signature before retrying.”
+      - “Do not repeat the failed pattern.”
 
-    - If an automatically recorded failure has only generic text, edit it into a concrete lesson once the root cause is known. Delete stale, wrong, duplicate, sensitive, or misleading lessons.
+    - Do not save a “successful pattern” unless it is clearly valid and reusable. If multiple commands  are involved, include the correct separator such as `&&`, or describe them as separate commands. Never record a concatenated command as successful unless the shell actually used a  separator or the command syntax is verified.
+
+    - For command failures, prefer canonical fingerprints/root causes over exact command fingerprints.  For example:
+      - `tool:apply_patch:patch-format`
+      - `dotnet:add-package:concatenated-commands`
+      - `dotnet:project-root-targeting`
+      - `project-root:file-paths-after-dotnet-new`
+
+    - If an automatically recorded failure has only generic text, edit it into a concrete lesson oncethe root cause is known. Delete stale, wrong, duplicate, sensitive, or misleading lessons.
 
     - Before saving a new lesson, search/list existing lessons when practical. Prefer editing or improving an existing related lesson over creating duplicates for the same root cause.
 
