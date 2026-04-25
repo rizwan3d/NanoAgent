@@ -1,3 +1,5 @@
+using NanoAgent.Application.Utilities;
+
 namespace NanoAgent.Application.Models;
 
 public sealed class ConversationSectionTurn
@@ -10,8 +12,8 @@ public sealed class ConversationSectionTurn
         ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
         ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
 
-        UserInput = userInput.Trim();
-        AssistantResponse = assistantResponse.Trim();
+        UserInput = SecretRedactor.Redact(userInput.Trim());
+        AssistantResponse = SecretRedactor.Redact(assistantResponse.Trim());
         ToolCalls = (toolCalls ?? [])
             .Where(static toolCall =>
                 toolCall is not null &&
@@ -21,7 +23,7 @@ public sealed class ConversationSectionTurn
             .Select(static toolCall => new ConversationToolCall(
                 toolCall.Id.Trim(),
                 toolCall.Name.Trim(),
-                toolCall.ArgumentsJson.Trim()))
+                SecretRedactor.Redact(toolCall.ArgumentsJson.Trim())))
             .ToArray();
     }
 

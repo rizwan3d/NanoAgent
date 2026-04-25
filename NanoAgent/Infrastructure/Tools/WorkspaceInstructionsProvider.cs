@@ -61,7 +61,7 @@ internal sealed class WorkspaceInstructionsProvider : IWorkspaceInstructionsProv
             builder.Append("<workspace_instruction path=\"");
             builder.Append(instructionFile.RelativePath);
             builder.AppendLine("\">");
-            builder.AppendLine(instructionFile.Content);
+            builder.AppendLine(SecretRedactor.Redact(instructionFile.Content));
             if (instructionFile.WasTruncated)
             {
                 builder.AppendLine();

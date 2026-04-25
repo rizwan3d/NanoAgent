@@ -170,6 +170,10 @@ Workspace memory and audit policy lives in `.nanoagent/agent-profile.json`:
 
 When `toolAudit.enabled` is true, every completed tool call appends one local JSONL record to `.nanoagent/logs/tool-audit.jsonl`. The audit log is disabled by default.
 
+### Secret Redaction
+
+NanoAgent redacts common secrets before storing or displaying tool output, lesson memory, audit records, logs, conversation history, session state, workspace instructions, and error text. Covered patterns include OpenAI-style `sk-...` keys, GitHub `ghp_...` and `github_pat_...` tokens, Google `AIza...` keys, bearer tokens, secret-looking key/value assignments such as `password=`, `api_key=`, and `access_token=`, `.env` assignment values, and private key blocks.
+
 ### MCP Servers
 
 NanoAgent can connect to MCP servers configured in `agent-profile.json`. It reads the user-level NanoAgent `agent-profile.json` shown by `/config` and the workspace-local `.nanoagent/agent-profile.json`, then exposes server tools to the model as `mcp__server__tool`.

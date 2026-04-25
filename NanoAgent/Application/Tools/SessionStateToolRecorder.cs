@@ -1,5 +1,6 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Tools;
 
@@ -244,7 +245,7 @@ internal static class SessionStateToolRecorder
         string value,
         int maxCharacters)
     {
-        string normalized = value
+        string normalized = SecretRedactor.Redact(value)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Trim();

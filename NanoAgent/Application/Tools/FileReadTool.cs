@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Tools;
 
@@ -67,6 +68,16 @@ internal sealed class FileReadTool : ITool
         Application.Tools.Models.WorkspaceFileReadResult result = await _workspaceFileService.ReadFileAsync(
             safePath,
             cancellationToken);
+        if (SecretRedactor.IsEnvironmentFilePath(result.Path))
+        {
+            string redactedContent = SecretRedactor.RedactEnvironmentFileContent(result.Content);
+            result = result with
+            {
+                Content = redactedContent,
+                CharacterCount = redactedContent.Length
+            };
+        }
+
         SessionStateToolRecorder.RecordFileRead(context.Session, result);
 
         return ToolResultFactory.Success(

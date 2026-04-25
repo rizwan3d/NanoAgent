@@ -1,3 +1,5 @@
+using NanoAgent.Application.Utilities;
+
 namespace NanoAgent.Application.Models;
 
 public sealed class ToolRenderPayload
@@ -7,8 +9,8 @@ public sealed class ToolRenderPayload
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
         ArgumentException.ThrowIfNullOrWhiteSpace(text);
 
-        Title = title.Trim();
-        Text = text.Trim();
+        Title = SecretRedactor.Redact(title.Trim());
+        Text = SecretRedactor.Redact(text.Trim());
     }
 
     public string Text { get; }

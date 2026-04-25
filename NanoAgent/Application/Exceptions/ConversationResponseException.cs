@@ -1,3 +1,5 @@
+using NanoAgent.Application.Utilities;
+
 namespace NanoAgent.Application.Exceptions;
 
 public sealed class ConversationResponseException : Exception
@@ -7,7 +9,7 @@ public sealed class ConversationResponseException : Exception
         bool isRetryableEmptyResponse = false,
         bool isRetryableRawToolCallResponse = false,
         bool isRetryableIncompletePlanResponse = false)
-        : base(message)
+        : base(SecretRedactor.Redact(message))
     {
         IsRetryableEmptyResponse = isRetryableEmptyResponse;
         IsRetryableRawToolCallResponse = isRetryableRawToolCallResponse;
@@ -20,7 +22,7 @@ public sealed class ConversationResponseException : Exception
         bool isRetryableEmptyResponse = false,
         bool isRetryableRawToolCallResponse = false,
         bool isRetryableIncompletePlanResponse = false)
-        : base(message, innerException)
+        : base(SecretRedactor.Redact(message), innerException)
     {
         IsRetryableEmptyResponse = isRetryableEmptyResponse;
         IsRetryableRawToolCallResponse = isRetryableRawToolCallResponse;
