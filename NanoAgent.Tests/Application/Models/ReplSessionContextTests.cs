@@ -336,6 +336,40 @@ public sealed class ReplSessionContextTests
         }
     }
 
+    [Fact]
+    public void GetConversationHistory_Should_CompactOlderTurns_When_HistoryExceedsLimit()
+    {
+        ReplSessionContext session = CreateSession();
+        session.AddConversationTurn(
+            "Question one\nwith extra whitespace",
+            "Reply one.",
+            [
+                new ConversationToolCall(
+                    "call_1",
+                    "file_read",
+                    """{ "path": "README.md" }""")
+            ]);
+        session.AddConversationTurn("Question two", "Reply two.");
+        session.AddConversationTurn("Question three", "Reply three.");
+
+        IReadOnlyList<ConversationRequestMessage> history = session.GetConversationHistory(1);
+
+        history.Should().HaveCount(3);
+        history[0].Role.Should().Be("user");
+        history[0].Content.Should().Contain("Earlier conversation context");
+        history[0].Content.Should().Contain("2 older turns");
+        history[0].Content.Should().Contain("Question one with extra whitespace");
+        history[0].Content.Should().Contain("Reply one.");
+        history[0].Content.Should().Contain("tools: file_read");
+        history[0].Content.Should().Contain("Question two");
+        history[0].Content.Should().Contain("Reply two.");
+        history[0].Content.Should().NotContain("Question three");
+        history[1].Role.Should().Be("user");
+        history[1].Content.Should().Be("Question three");
+        history[2].Role.Should().Be("assistant");
+        history[2].Content.Should().Be("Reply three.");
+    }
+
     private static ReplSessionContext CreateSession(string? workspacePath = null)
     {
         return new ReplSessionContext(

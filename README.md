@@ -73,15 +73,21 @@ curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/i
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
 
-Restart your shell after installation if the `nano` command is not immediately available.
+Restart your shell after installation if the `nanoai` command is not immediately available.
 
 ---
 
 ## Quick Start
 
 ```bash
-# Start the agent
+# Start the interactive terminal UI
 nanoai
+
+# Run one prompt and exit
+nanoai "Summarize this repo"
+
+# Or pipe a prompt from another command
+echo "Review the latest changes" | nanoai --profile review
 ```
 
 ---
