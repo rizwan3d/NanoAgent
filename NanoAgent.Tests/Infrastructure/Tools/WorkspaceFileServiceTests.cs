@@ -121,6 +121,42 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteFileAsync_Should_DenySymlinkDirectoryBreakout()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string outsideRoot = CreateOutsideDirectory();
+        string outsideFile = Path.Combine(outsideRoot, "target.txt");
+        string linkPath = Path.Combine(_workspaceRoot, "linked-outside");
+        await File.WriteAllTextAsync(outsideFile, "outside", CancellationToken.None);
+
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, outsideRoot))
+            {
+                return;
+            }
+
+            Func<Task> act = () => sut.WriteFileAsync(
+                "linked-outside/target.txt",
+                "changed",
+                overwrite: true,
+                CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*workspace*");
+            (await File.ReadAllTextAsync(outsideFile, CancellationToken.None))
+                .Should()
+                .Be("outside");
+        }
+        finally
+        {
+            DeleteDirectorySymlinkIfExists(linkPath);
+            DeleteDirectoryTreeIfExists(outsideRoot);
+        }
+    }
+
+    [Fact]
     public async Task ReadFileAsync_Should_ReadFileContent()
     {
         WorkspaceFileService sut = CreateSut();
@@ -154,6 +190,41 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         result.PreviewLines.Should().ContainInOrder(
             new WorkspaceFileWritePreviewLine(1, "remove", "first"),
             new WorkspaceFileWritePreviewLine(2, "remove", "second"));
+    }
+
+    [Fact]
+    public async Task DeleteFileAsync_Should_DenySymlinkDirectoryBreakout()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string outsideRoot = CreateOutsideDirectory();
+        string outsideFile = Path.Combine(outsideRoot, "target.txt");
+        string linkPath = Path.Combine(_workspaceRoot, "linked-outside");
+        await File.WriteAllTextAsync(outsideFile, "outside", CancellationToken.None);
+
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, outsideRoot))
+            {
+                return;
+            }
+
+            Func<Task> act = () => sut.DeleteFileAsync(
+                "linked-outside/target.txt",
+                CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*workspace*");
+            File.Exists(outsideFile).Should().BeTrue();
+            (await File.ReadAllTextAsync(outsideFile, CancellationToken.None))
+                .Should()
+                .Be("outside");
+        }
+        finally
+        {
+            DeleteDirectorySymlinkIfExists(linkPath);
+            DeleteDirectoryTreeIfExists(outsideRoot);
+        }
     }
 
     [Fact]
@@ -223,6 +294,47 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         (await File.ReadAllTextAsync(existingFile, CancellationToken.None)).Should().Contain("// done");
         (await File.ReadAllTextAsync(Path.Combine(_workspaceRoot, "src", "Notes.txt"), CancellationToken.None))
             .Should().Be("remember the tests");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_DenySymlinkDirectoryBreakout()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string outsideRoot = CreateOutsideDirectory();
+        string outsideFile = Path.Combine(outsideRoot, "target.txt");
+        string linkPath = Path.Combine(_workspaceRoot, "linked-outside");
+        await File.WriteAllTextAsync(outsideFile, "outside\n", CancellationToken.None);
+
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, outsideRoot))
+            {
+                return;
+            }
+
+            Func<Task> act = () => sut.ApplyPatchAsync(
+                """
+                *** Begin Patch
+                *** Update File: linked-outside/target.txt
+                @@
+                -outside
+                +changed
+                *** End Patch
+                """,
+                CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*workspace*");
+            (await File.ReadAllTextAsync(outsideFile, CancellationToken.None))
+                .Should()
+                .Be("outside\n");
+        }
+        finally
+        {
+            DeleteDirectorySymlinkIfExists(linkPath);
+            DeleteDirectoryTreeIfExists(outsideRoot);
+        }
     }
 
     [Fact]
@@ -336,13 +448,95 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     {
         if (Directory.Exists(_workspaceRoot))
         {
-            Directory.Delete(_workspaceRoot, recursive: true);
+            DeleteDirectoryTreeIfExists(_workspaceRoot);
         }
     }
 
     private WorkspaceFileService CreateSut()
     {
         return new WorkspaceFileService(new StubWorkspaceRootProvider(_workspaceRoot));
+    }
+
+    private static string CreateOutsideDirectory()
+    {
+        string outsideRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-Outside-{Guid.NewGuid():N}");
+
+        Directory.CreateDirectory(outsideRoot);
+        return outsideRoot;
+    }
+
+    private static bool TryCreateDirectorySymlink(
+        string linkPath,
+        string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception exception) when (IsSymlinkCreationUnavailable(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSymlinkCreationUnavailable(Exception exception)
+    {
+        return exception is UnauthorizedAccessException or PlatformNotSupportedException ||
+            OperatingSystem.IsWindows() && exception is IOException;
+    }
+
+    private static void DeleteDirectorySymlinkIfExists(string linkPath)
+    {
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(linkPath);
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                Directory.Delete(linkPath);
+                return;
+            }
+
+            File.Delete(linkPath);
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+    }
+
+    private static void DeleteDirectoryTreeIfExists(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        foreach (string entry in Directory.EnumerateFileSystemEntries(directoryPath))
+        {
+            FileAttributes attributes = File.GetAttributes(entry);
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                if (attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    Directory.Delete(entry);
+                }
+                else
+                {
+                    DeleteDirectoryTreeIfExists(entry);
+                }
+
+                continue;
+            }
+
+            File.Delete(entry);
+        }
+
+        Directory.Delete(directoryPath);
     }
 
     private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
