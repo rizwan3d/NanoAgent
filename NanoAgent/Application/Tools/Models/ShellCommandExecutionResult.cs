@@ -7,4 +7,6 @@ public sealed record ShellCommandExecutionResult(
     string StandardOutput,
     string StandardError,
     string SandboxPermissions = "use_default",
-    string? Justification = null);
+    string? Justification = null,
+    string SandboxMode = "workspace-write",
+    string SandboxEnforcement = "none");

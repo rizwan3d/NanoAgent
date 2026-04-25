@@ -4,6 +4,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
+using System.ComponentModel;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
@@ -42,29 +43,64 @@ internal sealed class ShellCommandService : IShellCommandService
 
         string workingDirectory = ResolveWorkspacePath(request.WorkingDirectory, directoryRequired: true);
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        IReadOnlyDictionary<string, string> sandboxEnvironment = BuildSandboxEnvironment(
-            request,
-            workspaceRoot);
+        ToolSandboxMode effectiveSandboxMode = GetEffectiveSandboxMode(request);
         string commandText = OperatingSystem.IsWindows()
             ? BuildWindowsCommandText(request.Command)
             : request.Command;
-        ProcessExecutionRequest processRequest = OperatingSystem.IsWindows()
+        ProcessExecutionRequest shellRequest = OperatingSystem.IsWindows()
             ? new ProcessExecutionRequest(
                 "powershell",
                 ["-NoProfile", "-NonInteractive", "-Command", commandText],
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: MaxOutputCharacters,
-                EnvironmentVariables: sandboxEnvironment)
+                MaxOutputCharacters: MaxOutputCharacters)
             : new ProcessExecutionRequest(
                 "/bin/bash",
                 ["-lc", request.Command],
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: MaxOutputCharacters,
-                EnvironmentVariables: sandboxEnvironment);
+                MaxOutputCharacters: MaxOutputCharacters);
 
-        ProcessExecutionResult result = await _processRunner.RunAsync(
-            processRequest,
-            cancellationToken);
+        ShellCommandSandboxPlan sandboxPlan = ShellCommandSandboxPlanner.Create(
+            shellRequest,
+            effectiveSandboxMode,
+            workspaceRoot,
+            workingDirectory);
+        IReadOnlyDictionary<string, string> sandboxEnvironment = BuildSandboxEnvironment(
+            request,
+            workspaceRoot,
+            effectiveSandboxMode,
+            sandboxPlan.Enforcement);
+        ProcessExecutionRequest processRequest = sandboxPlan.Request with
+        {
+            EnvironmentVariables = sandboxEnvironment
+        };
+
+        if (sandboxPlan.IsUnsupported)
+        {
+            return CreateSandboxFailureResult(
+                request,
+                workingDirectory,
+                sandboxPlan.Enforcement,
+                sandboxPlan.UnsupportedReason!);
+        }
+
+        ProcessExecutionResult result;
+        try
+        {
+            result = await _processRunner.RunAsync(
+                processRequest,
+                cancellationToken);
+        }
+        catch (Win32Exception exception) when (!string.Equals(
+                   sandboxPlan.Enforcement,
+                   ShellCommandSandboxPlanner.NoEnforcement,
+                   StringComparison.Ordinal))
+        {
+            return CreateSandboxFailureResult(
+                request,
+                workingDirectory,
+                sandboxPlan.Enforcement,
+                $"Unable to start OS-level shell sandbox runner '{processRequest.FileName}': {exception.Message}");
+        }
 
         return new ShellCommandExecutionResult(
             request.Command,
@@ -75,16 +111,52 @@ internal sealed class ShellCommandService : IShellCommandService
             ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
             string.IsNullOrWhiteSpace(request.Justification)
                 ? null
-                : request.Justification.Trim());
+                : request.Justification.Trim(),
+            ToWireValue(effectiveSandboxMode),
+            sandboxPlan.Enforcement);
+    }
+
+    private ToolSandboxMode GetEffectiveSandboxMode(ShellCommandExecutionRequest request)
+    {
+        if (request.SandboxPermissions == ShellCommandSandboxPermissions.RequireEscalated)
+        {
+            return ToolSandboxMode.DangerFullAccess;
+        }
+
+        return _permissionSettings.SandboxMode;
+    }
+
+    private ShellCommandExecutionResult CreateSandboxFailureResult(
+        ShellCommandExecutionRequest request,
+        string workingDirectory,
+        string sandboxEnforcement,
+        string standardError)
+    {
+        return new ShellCommandExecutionResult(
+            request.Command,
+            ToWorkspaceRelativePath(workingDirectory),
+            126,
+            string.Empty,
+            TrimOutput(standardError),
+            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
+            string.IsNullOrWhiteSpace(request.Justification)
+                ? null
+                : request.Justification.Trim(),
+            ToWireValue(GetEffectiveSandboxMode(request)),
+            sandboxEnforcement);
     }
 
     private IReadOnlyDictionary<string, string> BuildSandboxEnvironment(
         ShellCommandExecutionRequest request,
-        string workspaceRoot)
+        string workspaceRoot,
+        ToolSandboxMode effectiveSandboxMode,
+        string sandboxEnforcement)
     {
         Dictionary<string, string> environment = new(StringComparer.Ordinal)
         {
             ["NANOAGENT_SANDBOX_MODE"] = ToWireValue(_permissionSettings.SandboxMode),
+            ["NANOAGENT_SANDBOX_EFFECTIVE_MODE"] = ToWireValue(effectiveSandboxMode),
+            ["NANOAGENT_SANDBOX_ENFORCEMENT"] = sandboxEnforcement,
             ["NANOAGENT_SANDBOX_PERMISSIONS"] = ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
             ["NANOAGENT_WORKSPACE_ROOT"] = workspaceRoot
         };

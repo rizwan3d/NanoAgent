@@ -211,7 +211,9 @@ internal sealed class ShellCommandTool : ITool
         string renderText =
             $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +
             $"Session working directory: {context.Session.WorkingDirectory}{Environment.NewLine}" +
+            $"Sandbox mode: {result.SandboxMode}{Environment.NewLine}" +
             $"Sandbox permissions: {result.SandboxPermissions}{Environment.NewLine}" +
+            $"Sandbox enforcement: {result.SandboxEnforcement}{Environment.NewLine}" +
             $"Exit code: {result.ExitCode}{Environment.NewLine}" +
             $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
             $"STDERR:{Environment.NewLine}{result.StandardError}";

@@ -40,10 +40,31 @@ public sealed class ShellCommandServiceTests : IDisposable
             CancellationToken.None);
 
         processRunner.Requests.Should().ContainSingle();
-        processRunner.Requests[0].FileName.Should().Be("/bin/bash");
-        processRunner.Requests[0].Arguments.Should().Equal("-lc", "node -v && npm -v");
-        processRunner.Requests[0].WorkingDirectory.Should().Be(Path.Combine(_workspaceRoot, "src"));
+        ProcessExecutionRequest request = processRunner.Requests[0];
         processRunner.Requests[0].MaxOutputCharacters.Should().Be(8000);
+
+        if (OperatingSystem.IsLinux())
+        {
+            request.FileName.Should().Be("bwrap");
+            request.WorkingDirectory.Should().Be(Path.GetFullPath(_workspaceRoot));
+            request.Arguments.Should().ContainInOrder(
+                "--bind",
+                Path.GetFullPath(_workspaceRoot),
+                Path.GetFullPath(_workspaceRoot),
+                "--chdir",
+                Path.Combine(_workspaceRoot, "src"),
+                "/bin/bash",
+                "-lc",
+                "node -v && npm -v");
+            request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("bubblewrap");
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            request.FileName.Should().Be("sandbox-exec");
+            request.WorkingDirectory.Should().Be(Path.Combine(_workspaceRoot, "src"));
+            request.Arguments.Should().ContainInOrder("/bin/bash", "-lc", "node -v && npm -v");
+            request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("sandbox-exec");
+        }
     }
 
     [Fact]
@@ -58,7 +79,11 @@ public sealed class ShellCommandServiceTests : IDisposable
         processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
         ShellCommandService sut = new(
             processRunner,
-            new StubWorkspaceRootProvider(_workspaceRoot));
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
 
         await sut.ExecuteAsync(
             new ShellCommandExecutionRequest("mkdir todo && cd todo && npm i", null),
@@ -86,7 +111,11 @@ public sealed class ShellCommandServiceTests : IDisposable
 
         ShellCommandService sut = new(
             new ProcessRunner(),
-            new StubWorkspaceRootProvider(_workspaceRoot));
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
 
         ShellCommandExecutionResult result = await sut.ExecuteAsync(
             new ShellCommandExecutionRequest(
@@ -127,12 +156,114 @@ public sealed class ShellCommandServiceTests : IDisposable
         ProcessExecutionRequest request = processRunner.Requests[0];
         request.EnvironmentVariables.Should().NotBeNull();
         request.EnvironmentVariables!["NANOAGENT_SANDBOX_MODE"].Should().Be("read-only");
+        request.EnvironmentVariables["NANOAGENT_SANDBOX_EFFECTIVE_MODE"].Should().Be("danger-full-access");
+        request.EnvironmentVariables["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("none");
         request.EnvironmentVariables["NANOAGENT_SANDBOX_PERMISSIONS"].Should().Be("require_escalated");
         request.EnvironmentVariables["NANOAGENT_SANDBOX_JUSTIFICATION"].Should().Be("needs package cache access");
         request.EnvironmentVariables["NANOAGENT_SANDBOX_PREFIX_RULE"].Should().Be("dotnet test");
         request.EnvironmentVariables["NANOAGENT_WORKSPACE_ROOT"].Should().Be(Path.GetFullPath(_workspaceRoot));
         result.SandboxPermissions.Should().Be("require_escalated");
         result.Justification.Should().Be("needs package cache access");
+        result.SandboxMode.Should().Be("danger-full-access");
+        result.SandboxEnforcement.Should().Be("none");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_BypassSandboxWrapper_When_SandboxModeIsDangerFullAccess()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("node -v && npm -v", "src"),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.FileName.Should().Be("/bin/bash");
+        request.Arguments.Should().Equal("-lc", "node -v && npm -v");
+        request.WorkingDirectory.Should().Be(Path.Combine(_workspaceRoot, "src"));
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("none");
+        result.SandboxMode.Should().Be("danger-full-access");
+        result.SandboxEnforcement.Should().Be("none");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_UseReadOnlySandbox_When_SandboxModeIsReadOnly()
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.ReadOnly
+            });
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("git status --short", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_EFFECTIVE_MODE"].Should().Be("read-only");
+        result.SandboxMode.Should().Be("read-only");
+
+        if (OperatingSystem.IsLinux())
+        {
+            request.FileName.Should().Be("bwrap");
+            request.Arguments.Should().NotContain("--bind");
+            request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("bubblewrap");
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            request.FileName.Should().Be("sandbox-exec");
+            request.Arguments[1].Should().Contain("(deny file-write*)");
+            request.Arguments[1].Should().NotContain("(allow file-write*");
+            request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("sandbox-exec");
+        }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_FailClosed_When_OsSandboxIsUnsupported()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("dotnet --version", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().BeEmpty();
+        result.ExitCode.Should().Be(126);
+        result.StandardError.Should().Contain("OS-level shell sandboxing is not available");
+        result.SandboxMode.Should().Be("workspace-write");
+        result.SandboxEnforcement.Should().Be("unsupported");
     }
 
     public void Dispose()
