@@ -1,20 +1,16 @@
 # NanoAgent Product Documentation
 
 **Product type:** Local-first AI coding agent for desktop and terminal workflows  
-**Audience:** Founders, product managers, designers, support teams, engineering leads, and users evaluating the product  
+**Primary audience:** Users, founders, product managers, designers, support teams, and non-technical stakeholders  
 **Source of truth:** Current repository inspection
 
 ## Executive Summary
 
-NanoAgent is a local-first coding assistant that helps software teams inspect code, make targeted edits, run build and test commands, manage model/provider settings, and preserve work across local workspace sections. The product is delivered as both a desktop application and a terminal experience. Its strongest value is controlled autonomy: users can let an AI agent work directly in a local repository while maintaining permissions, sandboxing, profile modes, and local memory controls.
+NanoAgent is a local-first AI coding assistant that helps users work inside local software projects. It can inspect files, search code, make controlled edits, run build and test commands, manage AI provider and model settings, preserve conversation sections, and use repository-specific guidance. The product is available as a desktop app and as a terminal command named `nanoai`.
 
-## Inspection Scope
+The product's main value is controlled local autonomy: users can ask an AI agent to perform real engineering work in a local workspace while permissions, sandboxing, approval prompts, profiles, and local memory keep the user in control.
 
-The repository inspection covered the product README, solution structure, desktop interface, terminal interface, command surface, onboarding flow, provider and model selection, permission and sandbox behavior, local workspace storage, memory, lifecycle hooks, MCP configuration, custom profiles, workspace skills, visible tests, and existing product-facing documentation.
-
-No web routes, public product APIs, database schema, migrations, hosted admin screens, or email systems were found in the inspected repository surface.
-
-Where behavior could not be confirmed from the current codebase, it is marked as **Needs confirmation**.
+Repository inspection found no hosted web app, public user API, database schema, user-account system, email system, or admin console in this codebase. Where behavior is not clear from the current code, it is marked as **Needs confirmation**.
 
 ## Table of Contents
 
@@ -33,6 +29,12 @@ Where behavior could not be confirmed from the current codebase, it is marked as
 13. [Suggested Product Improvements](#13-suggested-product-improvements)
 14. [Open Questions](#14-open-questions)
 
+## Inspection Scope
+
+The repository inspection covered the README, existing documentation, desktop interface, terminal interface, command surface, onboarding flow, model and provider setup, permission behavior, sandbox behavior, local storage, memory, MCP support, lifecycle hooks, custom profiles, workspace skills, tests, and install scripts.
+
+No web routes, public product APIs, hosted admin screens, database schema, migrations, or email flows were found in the inspected codebase.
+
 ---
 
 ## 1. Product Name
@@ -41,435 +43,579 @@ Where behavior could not be confirmed from the current codebase, it is marked as
 
 **Tagline / positioning:** A local coding agent for desktop and terminal workflows.
 
-**Confidence:** Confirmed from the repository name, README, desktop window title, and user-facing product copy.
+**CLI command:** `nanoai`
 
-**Needs confirmation:** The public command naming should be standardized. Current materials show `nanoai` as the quick-start command and also refer to a `nano` command after installation.
+**Confidence:** Confirmed from the README, install scripts, terminal help, desktop title, and product identity.
 
 ---
 
 ## 2. Product Summary
 
-### What the product does
+NanoAgent helps users complete software engineering tasks in a local repository. A user can open a workspace, ask for help in natural language, let the agent inspect files, make edits, run commands, review code, plan changes, and preserve conversation history across local work sessions.
 
-NanoAgent helps users complete software engineering work inside a local workspace. It can read and search files, edit code, apply focused patches, run build and test commands, use configured model providers, remember local lessons, and operate from either a desktop UI or terminal UI.
+NanoAgent is for people who want AI assistance that can act directly in a local codebase without moving the full workflow into a hosted IDE. It is best understood as a local coding companion for implementation, code review, investigation, planning, and build/test loops.
 
-### Who it is for
+The main problem it solves is workflow fragmentation. Developers often move between chat tools, editors, terminals, documentation, code review tools, and memory notes. NanoAgent combines those activities into a controlled local agent experience.
 
-NanoAgent is primarily for software developers and technical teams who want an AI agent that can work directly with local repositories while remaining under explicit user control.
+The core value proposition is:
 
-### Main problem it solves
-
-Developers often lose time switching between chat assistants, editors, terminals, documentation, and code review workflows. NanoAgent consolidates those activities into a local agent experience that can inspect, act, validate, and remember workspace-specific lessons.
-
-### Core value proposition
-
-NanoAgent provides a local-first coding agent with practical autonomy, provider choice, workspace awareness, permission safeguards, session history, and terminal/desktop access.
-
-### Product positioning
-
-NanoAgent should be described as a local-first AI coding assistant rather than a cloud IDE, project management tool, or general chatbot.
+- Work directly in local repositories.
+- Choose the AI provider and active model.
+- Use either a desktop app or terminal UI.
+- Keep users in control through permissions and sandboxing.
+- Preserve local conversation sections and workspace lessons.
+- Adapt behavior through profiles, skills, workspace instructions, MCP tools, and hooks.
 
 ---
 
 ## 3. Target Users
 
-### Individual software developers
+### Individual Software Developers
 
-Developers can open local projects, ask the agent to inspect code, fix bugs, add features, run tests, and summarize outcomes.
+Developers can open a local project, ask NanoAgent to inspect the codebase, fix bugs, add features, run validation commands, and explain outcomes.
 
-### Engineering leads and senior developers
+### Engineering Leads
 
-Leads can use planning and review profiles to assess changes, investigate risks, and guide safer implementation workflows.
+Engineering leads can use planning and review workflows to assess changes, identify risks, guide implementation plans, and check validation coverage.
 
-### Code reviewers
+### Code Reviewers
 
-Reviewers can run read-only review sessions focused on bugs, regressions, edge cases, missing validation, and missing tests.
+Reviewers can use a read-only review profile to look for bugs, regressions, unsafe changes, missing tests, and edge cases without making edits by default.
 
-### DevOps and build engineers
+### Build and DevOps Engineers
 
-Build-focused users can ask NanoAgent to run build and test commands, inspect failures, and preserve reusable lessons about toolchain issues.
+Build-focused users can ask NanoAgent to run or inspect build, test, restore, lint, and toolchain commands, then capture reusable lessons from failures and fixes.
 
-### Founders and technical product owners
+### Founders and Technical Product Owners
 
-Founders can use NanoAgent to accelerate product implementation while keeping source code local and controlling write permissions.
+Founders can use NanoAgent to accelerate product iteration while keeping code local and approving meaningful changes before they happen.
 
-### Support or documentation teams with technical repositories
+### Support and Documentation Teams
 
-Technical support and documentation teams can inspect repository behavior, generate explanations, and use workspace instructions or skills for repeatable support workflows.
+Technical support or documentation users can inspect product behavior from a repository, summarize workflows, and use workspace instructions or skills for repeatable support tasks.
 
 ---
 
 ## 4. Core Features
 
-### 4.1 First-run provider onboarding
+### 4.1 First-Run Provider Onboarding
 
-**User benefit:** Gets users connected quickly to an AI model provider.
+**User benefit:** Users can connect NanoAgent to their preferred AI provider during first launch.
 
-**How the user uses it:** On first launch, the user selects OpenAI, Google AI Studio, Anthropic, or an OpenAI-compatible provider. The user then enters the required API key and, for custom providers, a base URL.
+**How the user uses it:** The product prompts the user to choose OpenAI, Google AI Studio, Anthropic, or an OpenAI-compatible provider. The user enters an API key. For a custom compatible provider, the user also enters a base URL.
 
-**Expected outcome:** NanoAgent saves local provider settings and can start a model-backed session.
+**Expected outcome:** NanoAgent saves local provider configuration and can start a model-backed session.
 
-**Limits and edge cases:** API key cannot be empty. Custom base URL must be absolute, use HTTP or HTTPS, and cannot include a query string or fragment. Incomplete local setup triggers a reconfiguration prompt.
+**Observed limits and edge cases:** API keys cannot be empty. Custom base URLs must be absolute, use HTTP or HTTPS, and cannot include a query string or fragment. If local provider setup is incomplete, NanoAgent asks whether to reconfigure or cancel startup.
 
-### 4.2 Model discovery and active model selection
+### 4.2 Provider Flexibility
 
-**User benefit:** Lets users choose the model used for future prompts.
+**User benefit:** Users are not locked into one model vendor.
 
-**How the user uses it:** The app discovers models from the configured provider, selects a usable model, and exposes model switching through desktop controls and terminal commands.
+**How the user uses it:** Users select one of the supported provider types during onboarding or configure an OpenAI-compatible endpoint.
 
-**Expected outcome:** The active session runs with the selected model.
+**Expected outcome:** NanoAgent sends model requests through the selected provider profile.
 
-**Limits and edge cases:** If the provider returns no usable models, model discovery fails. Duplicate model IDs are ignored. Availability depends on the provider account and network/API access.
+**Observed limits and edge cases:** Provider availability depends on the user's API key, account access, model availability, and network/API reliability.
 
-### 4.3 Desktop workspace management
+### 4.3 Model Discovery and Switching
 
-**User benefit:** Makes local projects easy to reopen and manage from a visual interface.
+**User benefit:** Users can see and switch between available models for a session.
 
-**How the user uses it:** Users click **Open** to select a local folder. Recent projects appear in the Workspaces list.
+**How the user uses it:** NanoAgent discovers models from the configured provider. Users can view models and switch the active model through the desktop controls or `/models` and `/use` terminal commands.
 
-**Expected outcome:** The selected workspace becomes the active context for chat, file operations, commands, sections, and settings.
+**Expected outcome:** Subsequent prompts use the selected model.
 
-**Limits and edge cases:** Invalid or missing folders are ignored. No remove or rename action for recent projects was visible in the desktop UI.
+**Observed limits and edge cases:** If the provider returns no usable models, discovery fails. Duplicate model IDs are ignored. A requested model can be not found or ambiguous. The product picks the configured preferred model when available, otherwise it falls back to the first returned model.
 
-### 4.4 Conversation sections and history
+### 4.4 Desktop Workspace Management
 
-**User benefit:** Allows users to resume previous work in the same workspace.
+**User benefit:** Users can visually open and return to local repositories.
 
-**How the user uses it:** Users select a section from the Sections list or start a new section. Terminal users can resume with a section identifier.
+**How the user uses it:** In the desktop app, the user clicks **+ Open** and selects a local folder. Recent workspaces appear in the Workspaces list.
 
-**Expected outcome:** Conversation history, section title, model, and workspace association are restored when available.
+**Expected outcome:** The selected folder becomes the active workspace for conversation, sections, commands, and file operations.
 
-**Limits and edge cases:** Sections are stored locally. Missing, unreadable, corrupt, or wrong-workspace section records are skipped. Section IDs must be valid GUIDs.
+**Observed limits and edge cases:** Blank, invalid, or missing folders are ignored. Reopening an existing recent workspace selects it instead of creating a duplicate. No visible desktop action was found for removing or renaming recent workspaces.
 
-### 4.5 Chat-based coding assistance
+### 4.5 Conversation Sections and History
 
-**User benefit:** Turns product requests, bug reports, and technical questions into guided coding work.
+**User benefit:** Users can resume previous work instead of starting over.
 
-**How the user uses it:** Users type a prompt in the desktop input area or terminal and run it against the active workspace.
+**How the user uses it:** The desktop app lists saved sections for the selected workspace. Users can select a section or click **+ New**. Terminal users can resume an existing section with a section ID.
 
-**Expected outcome:** NanoAgent responds with analysis, code changes, validation summaries, and tool output when applicable.
+**Expected outcome:** NanoAgent restores conversation history, section title, active model, profile, thinking mode, and related session state when available.
 
-**Limits and edge cases:** Run is disabled when there is no selected project, the prompt is empty, or another operation is running. Some runs can complete with no visible output.
+**Observed limits and edge cases:** Sections are local. Section IDs must be valid GUIDs. Sections from another workspace are blocked or skipped. Missing, unreadable, malformed, or corrupt section records are ignored. No visible desktop action was found for renaming, deleting, exporting, or sharing a section.
 
-### 4.6 Terminal workflow
+### 4.6 Chat-Based Coding Assistance
 
-**User benefit:** Supports keyboard-first developers who prefer a terminal UI.
+**User benefit:** Users can ask for coding work in natural language.
 
-**How the user uses it:** Users launch the terminal command, complete onboarding if needed, enter prompts, use slash commands, and resume sections.
+**How the user uses it:** The user types a prompt in the desktop composer or terminal UI, then runs it against the active workspace.
 
-**Expected outcome:** A live terminal experience shows conversation, provider/model status, progress, and exit/resume information.
+**Expected outcome:** NanoAgent responds with analysis, file changes when appropriate, tool activity, command results, validation summaries, or review findings.
 
-**Limits and edge cases:** Terminal behavior depends on OS terminal capabilities. Startup can fail if configuration, section, provider, or terminal prerequisites are invalid.
+**Observed limits and edge cases:** A prompt cannot run when no project is selected, the prompt is blank, or NanoAgent is already working. If the model returns no visible text, the UI shows a completed-with-no-output message.
 
-### 4.7 File operations
+### 4.7 Terminal Workflow
 
-**User benefit:** Allows the agent to inspect and change code directly in the local workspace.
+**User benefit:** Keyboard-first users can run NanoAgent without opening the desktop app.
 
-**How the user uses it:** The agent can search files, read files, write files, delete files, and apply patches when permissions allow.
+**How the user uses it:** Users run `nanoai` for the interactive terminal UI, pass a prompt for one-shot mode, pipe prompt text from another command, or use terminal options for section, profile, and thinking settings.
 
-**Expected outcome:** Users get focused repository changes without manually copying code between tools.
+**Expected outcome:** The terminal UI shows conversation history, live activity, provider/model status, progress, prompts, and section resume information.
 
-**Limits and edge cases:** Paths resolving outside the workspace are denied. Writes, deletes, and patches generally require approval unless permission rules allow them.
+**Observed limits and edge cases:** One-shot mode requires a non-empty prompt. `--interactive` requires terminal input. `--stdin` requires redirected standard input. Terminal rendering depends on terminal capabilities.
 
-### 4.8 Shell command execution
+### 4.8 Terminal Utility Commands
 
-**User benefit:** Lets NanoAgent build, test, lint, and inspect projects without leaving the workflow.
+**User benefit:** Users can perform quick local checks inside the terminal interface.
 
-**How the user uses it:** The agent runs workspace shell commands. Users can allow safe command patterns or deny risky ones.
+**How the user uses it:** The terminal UI supports commands such as `/clear`, `/ls`, and `/read <file>` in addition to backend commands.
 
-**Expected outcome:** Build/test loops can be completed in the same session and summarized back to the user.
+**Expected outcome:** Users can clear the screen, list workspace files, or read a file after approving the read prompt.
 
-**Limits and edge cases:** Dangerous commands are denied by built-in rules. Some shell commands require approval. Read-only and workspace-write sandbox behavior is OS-dependent; unsupported platforms may fail closed unless escalated or unrestricted mode is used.
+**Observed limits and edge cases:** `/ls` returns up to 100 files and skips common generated folders. `/read` asks for permission and defaults to deny if the prompt auto-selects after its timeout. These commands are terminal-only and are not listed in the current `/help` output.
 
-### 4.9 Permission controls and sandboxing
+### 4.9 File Operations
 
-**User benefit:** Keeps users in control of what the agent can read, change, execute, or access.
+**User benefit:** NanoAgent can inspect and change local project files without copy/paste.
 
-**How the user uses it:** Users rely on default rules, configure permissions, approve prompts, or use desktop Allow/Deny override controls.
+**How the user uses it:** The agent can list directories, search file names, search text, read files, write files, delete files, and apply focused patches when permissions allow.
 
-**Expected outcome:** Agent actions are allowed, denied, or routed through approval based on tool type, target, rule order, and sandbox mode.
+**Expected outcome:** Users get concrete repository changes or inspection results from the agent.
 
-**Limits and edge cases:** Modes include Allow, Ask, and Deny. Sandbox modes include ReadOnly, WorkspaceWrite, and DangerFullAccess. `.env`-style files are denied by default for reads.
+**Observed limits and edge cases:** File paths must stay inside the current workspace. File reads are limited to UTF-8 text and a maximum readable size. Directory and search results are capped. Writes overwrite by default unless overwrite is disabled. Patch format is strict, and patch context must match existing file content.
 
-### 4.10 Agent profiles
+### 4.10 Shell Command Execution
 
-**User benefit:** Lets users switch behavior based on the task.
+**User benefit:** NanoAgent can build, test, lint, restore dependencies, probe toolchains, and run other workspace commands.
 
-**How the user uses it:** Users select build, plan, or review from desktop controls or terminal commands. Subagents can be invoked for focused delegated work.
+**How the user uses it:** The agent runs shell commands through the current workspace. Users can approve commands, allow safe command patterns, deny risky command patterns, or require escalation for commands that need access outside the configured sandbox.
 
-**Expected outcome:** Build mode supports implementation. Plan and review modes stay read-only and use safe inspection behavior.
+**Expected outcome:** Build/test loops can be completed and summarized in the same session.
 
-**Limits and edge cases:** The desktop profile dropdown appears limited to build, plan, and review. Custom profile visibility in desktop controls needs confirmation.
+**Observed limits and edge cases:** Commands must use allowed command names. Dangerous command patterns are denied by default. Output is capped. Escalated sandbox requests require a justification. Strict shell sandboxing is OS-dependent; unsupported platforms fail closed unless escalation is approved or unrestricted mode is configured.
 
-### 4.11 Subagent delegation
+### 4.11 Permission Controls and Sandboxing
 
-**User benefit:** Improves focus by assigning bounded investigation or implementation tasks to specialized agents.
+**User benefit:** Users control what the agent can read, change, run, access, or remember.
 
-**How the user uses it:** Users or the primary agent invoke subagents such as general or explore, or workspace-defined custom agents.
+**How the user uses it:** NanoAgent evaluates actions against default permissions, configured rules, profile restrictions, sandbox mode, and session overrides. Users respond to approval prompts or add allow/deny overrides.
 
-**Expected outcome:** Subtasks can be handled with a narrower scope and returned to the main conversation.
+**Expected outcome:** Sensitive or risky actions are allowed, blocked, or routed through an approval prompt.
 
-**Limits and edge cases:** Plan and review profiles do not delegate to implementation-capable agents by default. Custom agents must be defined locally and correctly formatted.
+**Observed limits and edge cases:** Permission modes are Allow, Ask, and Deny. Sandbox modes are ReadOnly, WorkspaceWrite, and DangerFullAccess. Later matching rules win. Read-only profiles block edits and unsafe shell work. `.env`-style reads are denied by default, though session overrides can change behavior.
 
-### 4.12 Workspace custom agents
+### 4.12 Approval Prompts
 
-**User benefit:** Allows teams to create local agent behaviors for repeatable workflows.
+**User benefit:** Users can approve risky actions one time or remember a decision for the current agent.
 
-**How the user uses it:** Users add markdown-defined agents under the workspace configuration area with optional name, mode, description, edit behavior, shell behavior, and tool settings.
+**How the user uses it:** When NanoAgent requests approval, the user can choose Allow once, Allow for agent, Deny once, or Deny for agent.
 
-**Expected outcome:** NanoAgent can expose custom primary agents or subagents tailored to a repository.
+**Expected outcome:** The requested action proceeds, is denied, or creates a session-scoped permission override.
 
-**Limits and edge cases:** Malformed, inaccessible, or missing custom agent files are ignored. Defaults are conservative: subagent mode, read-only edits, and safe shell inspection.
+**Observed limits and edge cases:** Approval prompts can be cancelled. The default approval option is selected automatically after a timeout. Session overrides do not appear to persist beyond the active session.
 
-### 4.13 Workspace skills
+### 4.13 Agent Profiles
 
-**User benefit:** Helps the agent follow repository-specific playbooks without overloading every prompt.
+**User benefit:** Users can change NanoAgent's behavior to match the task.
 
-**How the user uses it:** Users define skills in the workspace configuration area. NanoAgent sees skill names/descriptions for routing and loads full instructions only when relevant.
+**How the user uses it:** Users select profiles in the desktop controls or with `/profile` in the terminal.
 
-**Expected outcome:** The agent can use a targeted skill for tasks such as framework-specific build/test/review guidance.
+**Expected outcome:** The active profile changes how NanoAgent approaches subsequent prompts.
 
-**Limits and edge cases:** Descriptions and loaded instructions are length-limited. Duplicate skill names are deduplicated. Missing or unreadable skill files are ignored.
+**Observed limits and edge cases:** Built-in primary profiles are build, plan, and review. The build profile can edit and run normal toolchain work under permissions. Plan and review are read-only and use safe inspection behavior. Desktop profile options appear limited to the built-in primary profiles.
 
-### 4.14 Workspace instructions
+### 4.14 Subagent Delegation
 
-**User benefit:** Lets teams persist repo guidance without repeating it in every prompt.
+**User benefit:** NanoAgent can hand off focused work to a narrower agent.
 
-**How the user uses it:** Users add workspace instruction documents in supported root locations.
+**How the user uses it:** A user or the primary agent can invoke a subagent such as `@general` or `@explore`, or a workspace-defined subagent.
 
-**Expected outcome:** NanoAgent includes those instructions in the session behavior.
+**Expected outcome:** A focused subtask is completed or investigated and returned as a handoff to the main conversation.
 
-**Limits and edge cases:** Exact precedence and conflict handling across multiple instruction sources needs confirmation.
+**Observed limits and edge cases:** Read-only profiles cannot delegate to implementation-capable subagents. Custom subagents must be defined locally and valid. Delegated agents inherit session permissions and workspace context.
 
-### 4.15 Lesson memory
+### 4.15 Workspace Custom Agents
 
-**User benefit:** Reduces repeated mistakes in the same workspace.
+**User benefit:** Teams can tailor NanoAgent to repeatable local workflows.
 
-**How the user uses it:** NanoAgent stores and retrieves local lessons about recurring mistakes, failed commands, fixes, and reusable rules.
+**How the user uses it:** Users define custom agents in the workspace's NanoAgent configuration area, including name, mode, description, edit behavior, shell behavior, and optional tool list.
 
-**Expected outcome:** Relevant lessons can influence future turns and reduce repeated build/tool failures.
+**Expected outcome:** Custom primary agents or subagents become available in the session.
 
-**Limits and edge cases:** Memory is local, capped by settings, redacted by default, and can be disabled. Manual writes require approval by default.
+**Observed limits and edge cases:** Missing, unreadable, malformed, or duplicate custom agent definitions are ignored. Defaults are conservative: subagent mode, read-only edits, and safe shell inspection.
 
-### 4.16 MCP server tools
+### 4.16 Planning Mode and Live Plans
 
-**User benefit:** Extends NanoAgent with external tool capabilities configured by the user or workspace.
+**User benefit:** Users can ask NanoAgent to inspect first, reason through options, and make a concrete task plan.
 
-**How the user uses it:** Users configure MCP servers in local profile configuration and inspect loaded servers/tools with the MCP command.
+**How the user uses it:** Users switch to the plan profile or the agent uses planning behavior during complex work. The agent can publish a live plan with pending, in-progress, and completed steps.
 
-**Expected outcome:** Available MCP tools appear to the agent as additional capabilities.
+**Expected outcome:** Users get a clear implementation plan grounded in the current repository, with risks and validation steps.
 
-**Limits and edge cases:** No MCP servers means no MCP tools. Servers can be disabled, unavailable, filtered, or require approval depending on configuration.
+**Observed limits and edge cases:** Planning mode is read-only. Plans must have at most one in-progress step and must keep statuses in order.
 
-### 4.17 Lifecycle hooks
+### 4.17 Workspace Instructions
 
-**User benefit:** Allows local automation around agent and tool events.
+**User benefit:** Teams can provide persistent repository guidance once instead of repeating it in every prompt.
 
-**How the user uses it:** Users configure commands to run before/after tasks, tool calls, file operations, shell commands, web requests, memory actions, and delegation events.
+**How the user uses it:** Users add supported workspace instruction documents at the workspace root or supported configuration location.
 
-**Expected outcome:** Teams can enforce checks, run custom scripts, or collect local process signals.
+**Expected outcome:** NanoAgent includes those instructions in the model context for the workspace.
 
-**Limits and edge cases:** Before hooks block by default on failure; after hooks continue by default unless configured otherwise. Hooks time out and can be filtered by event, tool, path, or shell command pattern.
+**Observed limits and edge cases:** Instruction content is length-limited and redacted for common secret patterns before being included. Empty or missing instruction documents are ignored.
 
-### 4.18 Undo and redo for file edits
+### 4.18 Workspace Skills
 
-**User benefit:** Provides a safety net for agent-made file changes.
+**User benefit:** Teams can create task-specific playbooks that the agent loads only when relevant.
 
-**How the user uses it:** Users click Undo/Redo in desktop controls or use terminal commands.
+**How the user uses it:** Users define skills in the workspace's NanoAgent skills area. NanoAgent sees skill names and descriptions as routing signals, then loads full skill instructions only when a skill is selected.
 
-**Expected outcome:** Recent tracked file edit transactions can be rolled back or reapplied.
+**Expected outcome:** The agent can follow targeted guidance for recurring work such as testing, review, release, framework-specific implementation, or documentation.
 
-**Limits and edge cases:** Only tracked edit transactions are covered. Exact retention depth and coverage across all edit tools needs confirmation.
+**Observed limits and edge cases:** Skill descriptions and instruction bodies are length-limited. Duplicate names are deduplicated. Missing, unreadable, empty, or invalid skills are ignored.
 
-### 4.19 Secret redaction and audit controls
+### 4.19 Lesson Memory
 
-**User benefit:** Reduces the risk of exposing credentials in logs, memory, and displayed tool output.
+**User benefit:** NanoAgent can avoid repeating local mistakes and remember useful workspace lessons.
 
-**How the user uses it:** NanoAgent redacts common secret patterns and can optionally write local tool audit records.
+**How the user uses it:** The agent can search, list, save, edit, or delete local lessons. It can also observe some failed tool or shell outcomes and later save a lesson when a successful fix is detected.
 
-**Expected outcome:** Sensitive values are less likely to appear in stored product artifacts.
+**Expected outcome:** Future turns can include relevant lessons as hypotheses to verify against current files and fresh tool output.
 
-**Limits and edge cases:** Redaction is pattern-based and should not be treated as a complete data-loss-prevention guarantee. Audit logging is disabled by default.
+**Observed limits and edge cases:** Memory is local, can be disabled, has entry and prompt-size limits, and redacts secrets by default. Manual memory writes require approval by default. Lesson search/list is allowed without approval. Automatic observations are limited to trackable failures.
+
+### 4.20 MCP Tool Integration
+
+**User benefit:** Users can extend NanoAgent with external tool capabilities.
+
+**How the user uses it:** Users configure MCP servers in user-level or workspace-level NanoAgent configuration. The terminal `/mcp` command shows configured servers and discovered tools.
+
+**Expected outcome:** Available MCP tools become accessible to the agent with configured approval behavior.
+
+**Observed limits and edge cases:** MCP servers can be disabled, unavailable, required, filtered by enabled/disabled tool lists, or timed out. If a required MCP server fails, startup can fail. No visual desktop MCP manager was found.
+
+### 4.21 Web and Current-Information Tools
+
+**User benefit:** NanoAgent can look up current or external information when local code is not enough.
+
+**How the user uses it:** The agent can run web search, image search, page open, page find, screenshots, finance lookups, weather, sports schedules/standings, and time checks when permissions allow.
+
+**Expected outcome:** NanoAgent can ground answers in external sources or current data.
+
+**Observed limits and edge cases:** Web requests can fail and return warnings. Search/open/find results are capped and text extraction is limited. Network access is permission-controlled.
+
+### 4.22 Lifecycle Hooks
+
+**User benefit:** Teams can run local automation around agent actions.
+
+**How the user uses it:** Users configure hooks for task, tool, file, shell, web, memory, delegation, and permission events.
+
+**Expected outcome:** Local scripts can enforce checks, capture logs, or react to actions before or after they happen.
+
+**Observed limits and edge cases:** Hooks can be filtered by event, tool, file path, or shell command pattern. Before hooks block by default when they fail. After hooks continue by default unless configured otherwise. Hooks have timeout and output limits.
+
+### 4.23 Undo and Redo for File Edits
+
+**User benefit:** Users have a safety net for tracked agent file changes.
+
+**How the user uses it:** Users click Undo/Redo in the desktop app or use `/undo` and `/redo` in the terminal.
+
+**Expected outcome:** The most recent tracked file edit transaction can be rolled back or reapplied.
+
+**Observed limits and edge cases:** Undo/redo covers tracked file edit transactions. It does not guarantee reversal of untracked external command side effects.
+
+### 4.24 Secret Redaction and Tool Audit Logging
+
+**User benefit:** The product reduces the chance that credentials appear in stored or displayed artifacts.
+
+**How the user uses it:** Secret redaction runs across many outputs and local records. Users can enable local tool audit logging through configuration.
+
+**Expected outcome:** Common secret patterns are replaced with redacted values, and optional audit records can track completed tool calls.
+
+**Observed limits and edge cases:** Redaction is pattern-based and should not be treated as a complete data-loss-prevention guarantee. Audit logging is disabled by default. No visible audit viewer was found.
+
+### 4.25 Desktop Markdown and File References
+
+**User benefit:** Desktop users can read formatted responses and open referenced files quickly.
+
+**How the user uses it:** NanoAgent responses render markdown-like text, lists, code blocks, and detected file references. Clicking a detected file reference opens it through the operating system.
+
+**Expected outcome:** Users can move from an answer to a local file more quickly.
+
+**Observed limits and edge cases:** File opening failures are ignored silently. File reference detection is pattern-based and may miss or over-detect some paths.
 
 ---
 
 ## 5. User Journeys
 
-### 5.1 First run setup
+### 5.1 First Run Setup
 
-1. Launch NanoAgent from desktop or terminal.
-2. Choose a provider: OpenAI, Google AI Studio, Anthropic, or OpenAI-compatible provider.
-3. Enter the provider API key. For a custom provider, enter a valid base URL.
-4. NanoAgent saves local configuration and discovers available models.
-5. The product opens a usable session with a selected model.
+1. The user launches NanoAgent from the desktop app or terminal.
+2. NanoAgent checks for existing local provider configuration and API key.
+3. If setup is missing, the user selects a provider.
+4. The user enters an API key.
+5. If the user selected an OpenAI-compatible provider, the user enters a valid base URL.
+6. NanoAgent saves local configuration and discovers available models.
+7. The user arrives in a ready session.
 
-### 5.2 Open a workspace and run a task in desktop
+### 5.2 Open a Workspace in Desktop
 
-1. Open the desktop app.
-2. Click **Open** and select a local repository folder.
-3. Confirm the selected workspace in the top bar and conversation header.
-4. Type a prompt such as a bug fix, review request, or investigation question.
-5. Click **Run**.
-6. Review conversation output, tool output, activity updates, and any approval prompts.
-7. Use **Undo** if a tracked edit should be rolled back.
+1. The user opens the desktop app.
+2. The user clicks **+ Open**.
+3. The user selects a local repository folder.
+4. NanoAgent adds the workspace to the recent Workspaces list.
+5. NanoAgent loads sections for that workspace if any exist.
+6. The selected workspace appears in the top bar, conversation area, and controls panel.
 
-### 5.3 Resume previous work
+### 5.3 Run a Coding Task in Desktop
 
-1. Select a workspace from the Workspaces list.
-2. Choose an existing section from the Sections list.
-3. NanoAgent loads the section conversation history and active session details.
-4. Continue the conversation from the restored context.
+1. The user selects a workspace.
+2. The user types a prompt in the composer.
+3. The user clicks **Run**.
+4. NanoAgent shows working status and activity.
+5. If an action requires approval, NanoAgent shows an approval prompt.
+6. NanoAgent may inspect files, edit files, run commands, search web information, or update a plan depending on the task and permissions.
+7. NanoAgent shows the response, tool output, progress note, and completion status.
+8. If file edits were made, the user can use Undo if needed.
 
-### 5.4 Switch model, thinking, or profile
+### 5.4 Resume Previous Work
 
-1. Open a workspace session.
-2. Select a model, thinking mode, or profile from the Controls panel.
-3. Click **Apply** for the relevant control.
-4. NanoAgent updates the active session and uses the new choice for subsequent prompts.
+1. The user selects a workspace.
+2. The user chooses a section from the Sections list or starts terminal with a section ID.
+3. NanoAgent restores the section's conversation history and settings.
+4. The user continues from the prior context.
 
-### 5.5 Plan before implementation
+### 5.5 Switch Model, Thinking, or Profile
 
-1. Switch to the plan profile.
-2. Ask for an implementation plan or investigation.
-3. NanoAgent inspects safely without edits or mutating shell commands.
-4. Review the plan, risks, assumptions, and validation path.
-5. Switch to build profile when implementation is ready.
+1. The user opens an active workspace session.
+2. The user selects a model, thinking mode, or profile in desktop controls, or uses terminal commands.
+3. The user applies the change.
+4. NanoAgent uses the new session setting for subsequent prompts.
 
-### 5.6 Review code without editing
+### 5.6 Plan Before Implementation
 
-1. Switch to the review profile.
-2. Ask NanoAgent to review changes, a branch, or a work area.
-3. NanoAgent searches and inspects code without editing.
-4. Review findings, risks, missing tests, and unresolved assumptions.
+1. The user selects the plan profile or asks for a plan.
+2. NanoAgent inspects relevant files and safe environment signals.
+3. NanoAgent avoids edits and mutating shell work.
+4. The user receives a plan with verified facts, assumptions, files/areas, validation steps, and risks.
+5. The user can switch to build mode when ready to implement.
 
-### 5.7 Permission approval and override
+### 5.7 Review Without Editing
 
-1. NanoAgent requests a potentially sensitive action such as editing a file, running a shell command, using a network request, writing memory, or invoking MCP tools.
-2. The user approves, denies, or cancels the prompt.
-3. For repeated behavior, the user can add session-scoped Allow or Deny overrides from the desktop controls or terminal commands.
-4. NanoAgent applies the updated rule stack to future actions in that session.
+1. The user selects the review profile.
+2. The user asks NanoAgent to review changes or inspect a risk area.
+3. NanoAgent searches and reads code without editing by default.
+4. The user receives findings, missing tests, assumptions, and residual risks.
 
-### 5.8 Use terminal workflow
+### 5.8 Approve or Deny a Sensitive Action
 
-1. Launch the terminal command.
-2. Complete onboarding or load existing provider settings.
-3. Enter prompts or slash commands.
-4. Use section resume commands when returning to previous work.
-5. Exit when finished; NanoAgent prints section resume details when available.
+1. NanoAgent requests an action such as editing a file, running a command, escalating sandbox permissions, writing memory, using network access, or calling an MCP tool.
+2. The user chooses Allow once, Allow for agent, Deny once, or Deny for agent.
+3. NanoAgent applies the decision.
+4. If the user chose an agent-level decision, the override affects later matching requests in the current session.
 
-### 5.9 Configure advanced workspace behavior
+### 5.9 Use Terminal One-Shot Mode
 
-1. Add workspace instructions, skills, custom agents, MCP servers, memory settings, permission rules, or lifecycle hooks in local configuration.
-2. Start or refresh a session.
-3. NanoAgent loads the applicable local configuration.
-4. Use commands and prompts to inspect active settings and tools.
+1. The user runs `nanoai` with a prompt argument, `--prompt`, or redirected standard input.
+2. NanoAgent initializes provider and model configuration.
+3. NanoAgent runs the prompt or slash command.
+4. The response prints to the terminal.
+5. The process exits with a success or error code.
+
+### 5.10 Configure Advanced Workspace Behavior
+
+1. The user adds workspace instructions, skills, custom agents, MCP servers, memory policy, audit policy, permission rules, or lifecycle hooks in local configuration.
+2. The user starts or refreshes a session.
+3. NanoAgent loads applicable local configuration.
+4. The user uses prompts or commands to inspect and benefit from the configured behavior.
 
 ---
 
 ## 6. Screens / Pages / Interfaces
 
-### Desktop application
+### Desktop Application
 
-NanoAgent has a single main desktop window with the following visible areas:
+The desktop product is a single main window.
 
-- **Top bar:** Shows the NanoAgent brand, active project name/path, and status such as Ready or Working.
-- **Left sidebar - Workspaces:** Lists local recent projects and includes a **+ Open** button for selecting a folder.
-- **Left sidebar - Sections:** Lists saved workspace sections, shows last updated timing, model/turn summary information, and includes **+ New** to start a fresh section.
-- **Conversation area:** Shows user messages, NanoAgent responses, tool messages, markdown rendering, status notes, and current workspace context.
-- **Prompt composer:** A multi-line input area with **Ask NanoAgent...** placeholder and a **Run** button.
-- **Selection prompt overlay:** Displays action choices, descriptions, default option label, optional countdown, and Cancel when available.
-- **Text prompt overlay:** Collects user input such as API keys or requested text and includes Submit/Cancel controls.
-- **Controls panel:** Includes Refresh, Model selector, Thinking selector, Profile selector, Help, Models, Permissions, Rules, Permission Override, Undo, Redo, and workspace details.
-- **Activity panel:** Shows operational status, command/activity messages, errors, and progress items.
-- **Working status strip:** Appears while NanoAgent is running and displays elapsed time and estimated token count.
+**Top bar:** Shows the NanoAgent brand, current project name/path, and status such as Ready or Working.
 
-### Terminal interface
+**Workspaces sidebar:** Lists recent local projects and includes **+ Open** for selecting a folder.
 
-The terminal interface provides an interactive UI for prompt entry, live status, onboarding prompts, conversation display, progress, and session resume hints.
+**Sections sidebar:** Lists saved sections for the selected workspace, including title, updated time, turn count, model, and workspace path. Includes **+ New** to start a new section.
 
-It supports slash commands for help, configuration, model switching, profile switching, thinking mode, permissions, rules, MCP, undo/redo, and exit.
+**Conversation area:** Shows user messages, NanoAgent responses, tool messages, markdown-style formatting, file reference buttons, and status notes.
 
-It also supports multi-line input and section resume options.
+**Prompt composer:** Multi-line text input with **Run** for sending a prompt.
 
-### Routes, web pages, and API endpoints
+**Selection prompt overlay:** Shows approval or choice prompts with options, descriptions, default option indicators, optional countdown, and Cancel when allowed.
 
-No product web pages, HTTP routes, controllers, public APIs, or hosted admin screens were found in the inspected repository.
+**Text/secret prompt overlay:** Collects user input such as API keys or base URLs. Secret prompts mask input.
 
-**Needs confirmation:** Whether a separate repository or hosted service exists outside this codebase.
+**Controls panel:** Provides Refresh, model selection, thinking mode selection, profile selection, Help, Models, Permissions, Rules, Permission Override, Undo, Redo, and workspace details.
+
+**Activity panel:** Shows status updates, command output summaries, tool activity, errors, and progress items.
+
+**Working status strip:** Shows that NanoAgent is working, elapsed time, and estimated output tokens.
+
+### Terminal Interface
+
+The terminal interface supports an interactive full-screen conversation experience with:
+
+- Prompt entry.
+- Multi-line input.
+- Live activity and status.
+- Conversation scrolling.
+- Modal prompts.
+- Streaming assistant responses.
+- Provider/model session information.
+- Resume hints when exiting.
+
+It also supports one-shot prompt mode and standard input mode.
+
+### Terminal Commands
+
+Confirmed user-facing terminal commands include:
+
+- `/help` to list available backend commands.
+- `/config` to show current provider, session, profile, thinking mode, active model, and config path.
+- `/models` to list available models.
+- `/use <model>` to switch model.
+- `/profile <name>` to show or switch profiles.
+- `/thinking [on|off]` to show or set thinking mode.
+- `/permissions` to show permission summary.
+- `/rules` to show effective permission rules.
+- `/allow <tool-or-tag> [pattern]` to add a session allow override.
+- `/deny <tool-or-tag> [pattern]` to add a session deny override.
+- `/mcp` to show MCP servers and tools.
+- `/undo` to roll back the most recent tracked file edit transaction.
+- `/redo` to reapply the most recently undone file edit transaction.
+- `/exit` to exit.
+
+Terminal-only utility behavior also includes `/clear`, `/ls`, and `/read <file>`.
+
+### Web Pages, Routes, and Public APIs
+
+No hosted product pages, web routes, public API endpoints, controllers, or admin screens were found in the inspected repository.
+
+### Database or Admin Interfaces
+
+No database admin UI, database schema, migrations, or hosted data-management interface was found.
+
+### VS Code Interface
+
+A VS Code product surface could not be confirmed from the inspected repository contents. **Needs confirmation.**
 
 ---
 
 ## 7. Permissions and Roles
 
-### Role model
+### Role Model
 
-No user accounts, organization roles, admin roles, billing roles, or protected web routes were found. NanoAgent appears to be a local single-user product.
+No account system, organization model, admin role, billing role, or role-based access control system was found. NanoAgent appears to be a local single-user product.
 
-### Operational access levels
+### Operational Access Levels
 
-Access is governed by permission modes, sandbox modes, agent profiles, and local configuration rather than user roles.
+Access is controlled through local permission settings, sandbox mode, agent profiles, approval prompts, and session overrides.
 
-### Permission modes
+### Permission Modes
 
-- **Allow:** Permits an action.
-- **Ask:** Requires user approval before the action proceeds.
-- **Deny:** Blocks the action.
+**Allow:** The action can proceed.
 
-### Sandbox modes
+**Ask:** The user must approve before the action proceeds.
 
-- **ReadOnly:** Blocks write-like actions and mutating shell activity.
-- **WorkspaceWrite:** Allows workspace-scoped write behavior under configured rules.
-- **DangerFullAccess:** Removes sandbox restrictions when configured.
+**Deny:** The action is blocked.
 
-### Built-in profile permissions
+### Sandbox Modes
 
-- **Build:** Implementation-capable coding profile.
-- **Plan:** Read-only planning profile for safe inspection and planning.
-- **Review:** Read-only review profile focused on findings and risk.
-- **General:** Implementation-capable subagent for bounded delegated work.
-- **Explore:** Read-only subagent for focused investigation.
+**ReadOnly:** Blocks write-like actions and unsafe/mutating shell behavior.
 
-### Built-in safety rules
+**WorkspaceWrite:** Allows workspace-scoped write behavior under permissions.
 
-Reads are generally allowed. Write, delete, patch, edit, agent, MCP, and external-directory actions generally ask. `.env`-style reads are denied. Safe build/test command patterns are allowed. Dangerous shell command patterns are denied.
+**DangerFullAccess:** Runs without sandbox restrictions when configured or approved through escalation.
 
-### Session overrides
+### Built-In Profiles
 
-Users can add session-scoped allow or deny overrides for a tool/tag and optional target pattern.
+**Build:** Default hands-on coding profile. Can inspect, edit, run toolchain commands, and complete implementation work under permissions.
 
-### Memory and MCP permissions
+**Plan:** Read-only planning profile. Can inspect files and run safe probes, but does not edit or run mutating shell work.
 
-Manual memory writes require approval by default, and memory can be disabled. MCP tools can be filtered and can use default or per-tool approval modes.
+**Review:** Read-only review profile. Focuses on findings, regressions, edge cases, and missing tests without edits by default.
+
+**General:** Implementation-capable subagent for bounded delegated work.
+
+**Explore:** Read-only subagent for focused codebase investigation.
+
+### Built-In Safety Behavior
+
+Confirmed safety behavior includes:
+
+- Reads are generally allowed.
+- File writes, deletes, patches, edits, agent delegation, MCP tools, and external-directory behavior generally require approval unless rules allow them.
+- `.env`-style reads are denied by default.
+- Known safe build/test command patterns can be allowed.
+- Known dangerous shell command patterns are denied.
+- Paths outside the workspace are denied.
+- Planning and review profiles block edits and unsafe shell work.
+- Sandbox escalation requires a justification and approval.
 
 ---
 
 ## 8. Data and Content Model
 
-NanoAgent appears to use local files and local settings rather than a central product database.
+NanoAgent uses local files and platform credential storage rather than a central product database.
 
-### Main product objects
+### Main Product Objects
 
-- **User provider configuration:** Stores selected provider and preferred/active model information locally.
-- **API key secret:** Stores the selected provider credential locally through the product secret-storage layer.
-- **Workspace project:** A local folder opened by the user. Workspaces are remembered in the desktop recent-project list.
-- **Section:** A saved conversation/work session tied to a specific workspace. Sections contain an ID, title, workspace path, active model, last updated time, and turns.
-- **Conversation turn:** A user prompt and NanoAgent response with associated tool activity and estimated metrics.
-- **Model:** A provider-returned model identifier that can be selected as the active model for a session.
-- **Agent profile:** A behavior mode that controls agent purpose, edit ability, shell behavior, and available tools.
-- **Subagent:** A focused agent profile that can handle bounded delegated work.
-- **Permission rule:** A local rule that matches tools/tags and optional target patterns to Allow, Ask, or Deny behavior.
-- **Workspace instruction:** Persistent guidance loaded from supported workspace instruction documents.
-- **Skill:** A locally defined task playbook with name, description, and body instructions loaded on demand.
-- **MCP server:** A configured external tool server with transport settings, environment settings, tool filters, and approval settings.
-- **Lesson memory entry:** A reusable local lesson about a trigger, problem, fix/lesson, tags, tool/command context, and fixed status.
-- **Lifecycle hook:** A local automation rule that runs a command around selected agent/tool events.
-- **Audit record:** Optional local record of completed tool calls when audit logging is enabled.
+**Provider configuration:** The selected provider profile, preferred model, and thinking mode stored locally.
 
-### Database model
+**API key secret:** The provider API key stored through the operating system's credential storage where supported.
 
-No central database, schema, migrations, or hosted storage layer were found. Product state appears to be local-file based.
+**Workspace:** A local folder selected by the user. Desktop remembers recent workspaces locally.
 
-**Needs confirmation:** Whether cloud sync or hosted storage exists outside this repository.
+**Section:** A saved local conversation/work session tied to a workspace. A section contains identity, title, workspace path, model, profile, thinking mode, conversation turns, plan state, and session state.
+
+**Conversation turn:** A user prompt and NanoAgent response, including related tool activity and estimated metrics.
+
+**Model:** A provider-returned model ID that can be active for a session.
+
+**Agent profile:** A behavior mode that controls purpose, editing ability, shell behavior, and tool access.
+
+**Subagent:** A focused profile invoked for one delegated task.
+
+**Permission rule:** A local allow/ask/deny rule matching a tool, tag, command, target, or pattern.
+
+**Permission override:** A session-scoped rule created by the user from a command or approval prompt.
+
+**Workspace instruction:** Persistent repository guidance included in the session context.
+
+**Skill:** A local playbook with a name, description, and body instructions loaded on demand.
+
+**MCP server:** A configured external tool server that can expose tools to NanoAgent.
+
+**Lesson memory entry:** A local reusable lesson about a trigger, problem, lesson, tags, optional command/tool context, and fixed status.
+
+**Lifecycle hook:** A local automation rule that runs a command around selected task/tool events.
+
+**Tool audit record:** An optional local record of completed tool calls.
+
+### Relationships
+
+- A user selects a workspace.
+- A workspace can have multiple sections.
+- A section contains conversation turns and session state.
+- A section uses one active provider profile, model, profile, and thinking mode at a time.
+- A workspace can define instructions, skills, custom agents, memory, hooks, MCP configuration, and audit policy.
+- Permission rules and profile restrictions govern agent actions inside a session.
+
+### Database Model
+
+No central database, schema, or migration system was found. Product state appears to be local-file based.
+
+**Needs confirmation:** Whether any hosted sync, cloud storage, telemetry, or team storage exists outside this repository.
 
 ---
 
@@ -479,161 +625,230 @@ No central database, schema, migrations, or hosted storage layer were found. Pro
 
 No automated email flows were found.
 
-### Push or system notifications
+### Push or System Notifications
 
-No push, mobile, or system notification flows were found.
+No push, mobile, or operating-system notification flows were found.
 
-### In-product prompts
+### In-Product Prompts
 
-NanoAgent shows selection, text, secret, confirmation, and permission prompts during onboarding and action approval.
+NanoAgent shows selection prompts, confirmation prompts, text prompts, secret prompts, permission prompts, error messages, and live activity messages.
 
-### Lifecycle hooks
+### Automatic Section Titles
 
-Users can configure local commands to run before or after task, tool, file, shell, web, memory, and delegation events. Before hooks block by default on failure. After hooks continue by default unless configured otherwise.
+NanoAgent starts background title generation after the first user prompt in a section. The generated title is short, local to the section, and persisted when successful.
 
-### Automatic lesson memory
+### Automatic Lesson Memory
 
-NanoAgent can observe failed tools or shell commands and save resolved lessons when later success suggests a reusable fix.
+NanoAgent can observe some failed commands or tools and later save a resolved lesson when a successful follow-up indicates a reusable fix.
 
-### Tool audit logging
+### Lifecycle Hooks
 
-Optional local audit records can be written for completed tool calls when enabled.
+Users can configure local commands to run before or after task, tool, file, shell, web, memory, permission, and delegation events.
 
-### MCP tool discovery
+### Tool Audit Logging
 
-Configured MCP servers can be loaded and exposed as tools, with availability shown through the MCP command.
+When enabled, NanoAgent writes local audit records for completed tool calls. This is disabled by default.
 
-### Section title generation
+### MCP Discovery
 
-The backend starts title generation for a session after user input.
-
-**Needs confirmation:** Exact timing, model usage, and user visibility of section title generation.
+Configured MCP servers are discovered locally at startup or when tools initialize. Available MCP tools are surfaced to the agent and listed in the MCP command.
 
 ---
 
 ## 10. Settings and Configuration
 
-### User-facing settings
+### User-Facing Settings
 
-- Provider selection: OpenAI, Google AI Studio, Anthropic, or OpenAI-compatible provider.
-- API key and, when applicable, custom provider base URL.
-- Active model selection.
-- Active agent profile: build, plan, review, and supported custom profiles/subagents.
-- Thinking mode.
-- Workspace selection and recent project list.
+Confirmed user-facing settings include:
+
+- Provider selection.
+- API key.
+- Custom provider base URL.
+- Active model.
+- Thinking mode: on or off.
+- Active profile.
+- Workspace selection.
 - Section selection and new section creation.
-- Permission override entries for Allow/Deny decisions.
-- Undo/redo of tracked edit transactions.
-- Workspace skills, custom agents, MCP servers, lifecycle hooks, memory settings, and audit settings through local configuration files.
+- Session permission overrides.
+- Undo/redo for tracked edits.
+- Local workspace instructions.
+- Workspace skills.
+- Workspace custom agents.
+- MCP server configuration.
+- Lesson memory settings.
+- Tool audit settings.
+- Lifecycle hook settings.
+- Sandbox and permission policies.
 
-### Internal or technical configuration
+### Desktop-Exposed Settings
 
-- Logging levels.
-- Conversation system prompt, request timeout, maximum history turns, and maximum tool rounds.
-- Model-selection cache duration.
-- Permission defaults, rule stack, shell allow/deny patterns, and sandbox mode.
-- Memory caps, prompt character limits, redaction behavior, and write-approval policy.
-- Tool audit caps and redaction behavior.
-- Lifecycle hook timeout, output limits, command execution behavior, and event filters.
-- MCP transport, startup timeout, tool timeout, environment variables, headers, and tool filters.
+The desktop app visibly exposes:
 
-### Configuration mismatch needing product decision
+- Recent workspace selection.
+- Section selection.
+- New section creation.
+- Model selection.
+- Thinking on/off.
+- Profile selection for build, plan, and review.
+- Permission override creation.
+- Help, Models, Permissions, and Rules commands.
+- Undo and Redo.
 
-The desktop UI currently exposes a simple on/off thinking choice. Some product copy references broader thinking-effort levels such as none, minimal, low, medium, high, or xhigh. This should be aligned across README, terminal help, desktop controls, and user documentation.
+### Terminal-Exposed Settings
+
+The terminal exposes:
+
+- CLI startup options for interactive mode, prompt input, section resume, profile, and thinking.
+- Slash commands for configuration, model switching, profile switching, thinking, permissions, rules, MCP, undo, redo, and exit.
+
+### Advanced Local Configuration
+
+Advanced behavior is configured locally for:
+
+- Conversation request timeout, history limits, and tool-round limits.
+- Default model selection.
+- Model discovery cache duration.
+- Permission defaults and rule stack.
+- Built-in and custom shell allow/deny command patterns.
+- Sandbox mode.
+- Memory caps and write policy.
+- Tool audit caps and redaction policy.
+- Lifecycle hooks, timeout, filters, and output caps.
+- MCP transports, timeouts, tool filters, headers, environment settings, and approval modes.
+
+### Configuration Mismatches
+
+The current code supports thinking mode as on/off. The README still references broader thinking effort values. This needs product and documentation alignment.
 
 ---
 
 ## 11. Errors, Empty States, and Edge Cases
 
-- **No workspace selected:** Desktop shows “No project open” and “No folder selected.” Run and workspace commands are disabled until a project is selected.
-- **Empty prompt:** Run is disabled when the prompt is blank.
-- **Operation already running:** Most commands and new-section actions are disabled while NanoAgent is working.
-- **Invalid folder path:** Adding a desktop project silently returns when the path is blank or does not exist.
-- **Duplicate recent project:** Opening an already listed workspace selects the existing entry instead of adding a duplicate.
-- **Missing section directory:** Sections list is empty when no local section storage exists.
-- **Unreadable or corrupt section file:** Invalid, inaccessible, or malformed section records are skipped.
-- **Wrong workspace section:** Sections whose stored workspace path does not match the active workspace are ignored. Terminal startup can fail when a section workspace mismatch is detected.
-- **Invalid section ID:** Desktop backend rejects non-GUID section IDs.
-- **Incomplete provider setup:** Startup detects partial provider/API key state and asks whether to reconfigure or cancel.
-- **Invalid onboarding input:** Blank API keys, blank custom base URLs, relative URLs, unsupported schemes, query strings, and fragments are rejected.
-- **No usable models:** If the configured provider returns no usable models, model discovery fails.
-- **No MCP servers/tools:** The MCP command reports no configured servers or available MCP tools.
-- **Permission required:** Actions matching Ask require approval before continuing.
-- **Permission denied:** Deny rules block actions and return a decision message.
-- **Outside workspace path:** File and patch operations resolving outside the workspace are denied.
-- **Read-only sandbox:** Write-like actions and non-safe shell commands are blocked in read-only sandbox mode unless valid escalation is requested and approved.
-- **Shell escalation without justification:** Escalated shell requests require a justification.
-- **Unsupported sandbox runner:** Some shell sandbox modes fail closed on unsupported platforms unless an approved escalation or unrestricted mode is used.
-- **Raw errors in UI:** When backend operations throw, the desktop app displays the exception message as a NanoAgent message and activity error.
-- **Settings read failure:** Corrupt desktop recent-project settings are ignored and the app starts with an empty project list.
+- **No workspace selected:** Desktop shows "No project open" and "No folder selected." Run and workspace commands are disabled.
+- **Empty prompt:** The Run action is disabled.
+- **Agent already working:** New prompts, section changes, and most commands are blocked until work finishes.
+- **Invalid folder:** Desktop ignores blank or missing folder paths.
+- **Duplicate workspace:** Desktop selects the existing workspace entry instead of adding a duplicate.
+- **No saved sections:** The Sections list shows a count of zero and no section cards.
+- **Malformed or unreadable sections:** Invalid section records are skipped.
+- **Wrong-workspace section:** Sections for another workspace are skipped in desktop and can block resume in terminal.
+- **Invalid section ID:** Resume fails when a section ID is not a valid GUID.
+- **Incomplete provider setup:** NanoAgent asks whether to reconfigure or cancel startup.
+- **Invalid API key input:** Empty API keys are rejected.
+- **Invalid custom provider URL:** Empty, relative, non-HTTP, query-string, or fragment URLs are rejected.
+- **No usable models:** Startup/model discovery can fail.
+- **Unavailable model:** The user is told to use `/models` to see valid choices.
+- **Ambiguous model request:** A partial model match can be ambiguous and requires a more specific model ID.
+- **Unknown command:** The user is told to use `/help`.
+- **No MCP servers:** The MCP command reports that no servers are configured.
+- **No MCP tools:** The MCP command reports that no tools are available.
+- **Permission required:** The user must approve the action before it proceeds.
+- **Permission denied:** The action is blocked and a denial result is returned.
+- **Path outside workspace:** File and shell working-directory operations are blocked.
+- **Read-only profile or sandbox:** Edits and unsafe/mutating shell behavior are blocked.
+- **Shell escalation without justification:** The request is rejected.
+- **Unsupported shell sandbox:** The command fails closed with guidance to use approved escalation or full access.
+- **Pseudo-terminal unsupported:** Shell execution returns a failure result instead of silently falling back.
+- **Web request failure:** Web operations return warnings and empty results where possible.
+- **Corrupt desktop settings:** Recent project settings are ignored and desktop starts with an empty recent list.
+- **Raw backend errors in desktop:** Desktop may display exception messages directly as NanoAgent messages and activity errors.
+- **File open failure from markdown:** Desktop silently ignores failed file-open attempts.
 
 ---
 
 ## 12. Product Limitations
 
-### Confirmed limitations from current codebase
+### Confirmed Limitations From Current Codebase
 
-- No account system, organization management, billing, role-based access control, or hosted admin console was found.
-- No web UI, HTTP routes, public product API, database schema, or migrations were found.
-- The desktop app appears to be a single main-window experience rather than a multi-page application with dedicated settings screens.
-- No built-in email, push notification, or reminder system was found.
-- Recent projects can be added and selected, but no visible desktop action was found to remove or rename recent projects.
-- Sections can be selected and newly started, but no visible desktop action was found to rename, delete, export, or share sections.
-- Desktop profile options appear hard-coded to build, plan, and review, even though the product supports custom profiles and subagents through local configuration.
-- The desktop thinking selector shows a simple on/off model, while product copy also references broader thinking-effort levels. This mismatch needs product decision and documentation alignment.
-- Provider/model setup requires user-managed API keys; no OAuth, hosted credential broker, or team credential management was found.
-- Sandbox behavior depends on operating system support. Windows and unsupported platforms may require approved escalation or unrestricted mode for shell execution under strict sandbox settings.
+- No account system, team management, organization roles, billing, or admin console was found.
+- No hosted web app, public API, database schema, or migrations were found.
+- No email, push notification, or reminder system was found.
+- The desktop app is a single-window product rather than a multi-page application.
+- Desktop has no visible dedicated Settings screen.
+- Desktop recent workspaces can be added and selected, but no visible remove or rename action was found.
+- Desktop sections can be created and selected, but no visible rename, delete, export, search, or share action was found.
+- Desktop profile selection appears limited to build, plan, and review even though custom profiles can exist.
+- Desktop does not expose visual management for skills, custom agents, MCP servers, memory, audit logging, lifecycle hooks, or full permission policies.
+- Thinking mode is on/off in the code, while the README references broader thinking effort values.
+- API keys are user-managed; no OAuth, hosted credential broker, or team credential management was found.
 - Model discovery depends on provider availability and usable model-list responses.
-- Local state can be skipped or reset silently when settings, sections, skills, agents, or memory files are unreadable or malformed.
-- Audit logs are disabled by default and no visible audit viewer was found.
-- Secret redaction is pattern-based and should not be marketed as a complete security guarantee.
-- No integrated update checker, release manager, or auto-updater behavior was confirmed from the inspected product code.
+- Strict OS-level shell sandboxing is not available on all platforms. Windows shell sandboxing for ReadOnly and WorkspaceWrite appears unsupported and fails closed unless escalation or full access is used.
+- Local unreadable or malformed sections, skills, agents, memory, settings, and configuration can be skipped without a rich recovery UI.
+- Audit logs are disabled by default and no visual audit viewer was found.
+- Secret redaction is pattern-based and not a complete data-loss-prevention guarantee.
+- No integrated desktop auto-updater was confirmed.
+- A VS Code product surface could not be confirmed from inspected source.
+- Undo/redo applies to tracked file edits, not arbitrary side effects from shell commands or external tools.
 
-### Assumptions or areas needing confirmation
+### Needs Confirmation
 
-- Whether NanoAgent is intended for solo developers only or for managed team/company deployments.
-- Whether future hosted sync, collaboration, policy management, or admin controls are planned.
-- Whether desktop should expose full custom profile, custom subagent, skill, MCP, memory, and hook management rather than relying on local configuration files.
-- Whether the public CLI command should be positioned as `nanoai`, `nano`, or both.
-- Whether all README-described thinking-effort levels remain part of the product roadmap or should be simplified to on/off in public docs.
+- Whether NanoAgent is intended as a solo-developer tool, team tool, open-source developer tool, commercial product, or a mix.
+- Whether cloud sync, collaboration, enterprise policy, or hosted management exists outside this repository.
+- Whether future desktop releases should expose all advanced local configuration visually.
+- Whether the VS Code folder represents a planned extension, generated artifact, or unsupported product surface.
 
 ---
 
 ## 13. Suggested Product Improvements
 
-- **Add a first-run setup checklist:** Show provider, API key status, model discovery, workspace selection, permissions, and next recommended action in one guided screen.
-- **Create a dedicated Settings screen:** Move provider/model/profile/thinking/permissions/MCP/memory/hook settings into a clear UI instead of relying mostly on commands and files.
-- **Improve section management:** Add rename, delete, duplicate, pin, export, and search for sections.
-- **Add recent-project management:** Let users remove missing workspaces, rename display labels, and clear history.
-- **Clarify thinking modes:** Align README, terminal commands, desktop controls, and product language around either simple on/off thinking or multi-level thinking effort.
-- **Expose custom agents and skills in the desktop UI:** List detected workspace agents/skills, show descriptions, and provide validation warnings for malformed local definitions.
-- **Add permission preview and diff review:** Before writes or patches, show affected files, target paths, and a human-readable change summary.
-- **Improve error messages:** Convert backend exceptions into user-facing recovery guidance, especially for provider, model, section, permission, and sandbox failures.
-- **Add an audit viewer:** Provide a local screen for tool audit records, permission decisions, memory writes, and hook failures.
-- **Add onboarding templates:** Provide sample workspace instructions, skills, custom agents, MCP configs, and hook recipes.
-- **Add privacy guidance:** Make clear what stays local and what is sent to the selected model provider.
-- **Add platform support matrix:** Document desktop installers, CLI support, shell sandbox behavior, pseudo-terminal support, and known limitations by OS.
-- **Add export/share options:** Allow users to export a section summary, conversation transcript, audit trail, or implementation report.
-- **Add tests/status surfaced to users:** When validation commands run, show a structured pass/fail validation panel instead of relying only on conversation text.
-- **Add command palette:** A desktop command palette could expose Help, Models, Permissions, Rules, MCP, Undo, Redo, Profile, Thinking, and section commands consistently.
-- **Strengthen documentation:** Publish persona-based quickstarts for bug fixing, code review, planning, MCP setup, workspace skills, and safe permission profiles.
+### Product Clarity
+
+- Align README, terminal help, desktop controls, and documentation around the current thinking mode model.
+- Add a concise privacy section explaining what stays local and what is sent to the selected model provider.
+- Add a platform support matrix for desktop installers, CLI support, shell sandbox behavior, and pseudo-terminal support.
+- Clarify whether "sections" should be called sessions, threads, tasks, or sections in user-facing language.
+
+### Onboarding and Setup
+
+- Add a first-run setup checklist covering provider, API key, model discovery, workspace selection, permissions, and first recommended prompt.
+- Add recovery guidance when provider setup is incomplete, model discovery fails, or configuration files are malformed.
+- Add recommended provider/model guidance for first-time users. **Needs confirmation** from product owner.
+
+### Desktop Usability
+
+- Add a dedicated Settings screen for provider, model, profile, thinking, permissions, MCP, memory, hooks, and audit settings.
+- Add recent workspace management: remove, rename display label, clear missing workspaces, and pin.
+- Add section management: rename, delete, search, pin, duplicate, export, and share.
+- Add a command palette for Help, Models, Permissions, Rules, MCP, Undo, Redo, Profile, Thinking, and section actions.
+- Surface custom agents and skills in the desktop UI with validation warnings.
+
+### Safety and Trust
+
+- Add a clearer permission preview before edits, patches, shell escalation, memory writes, and MCP calls.
+- Show a structured diff preview for file changes before approval.
+- Add an audit viewer for tool calls, permission decisions, memory writes, hook failures, and MCP activity.
+- Improve user-facing error messages so they provide recovery steps instead of raw exception text.
+
+### Workflow Completeness
+
+- Add a validation panel that summarizes commands run, pass/fail state, and remaining risks.
+- Add transcript and section summary export.
+- Add templates for workspace instructions, skills, custom agents, MCP servers, and lifecycle hooks.
+- Add better discoverability for terminal-only commands such as `/clear`, `/ls`, and `/read`.
+
+### Documentation
+
+- Publish persona-based quickstarts for bug fixing, feature implementation, planning, code review, MCP setup, permissions, custom agents, workspace skills, and memory.
+- Document retention behavior for sections, memory, audit logs, and recent projects.
+- Document the difference between read-only review/planning, build mode, subagents, and permission overrides.
 
 ---
 
 ## 14. Open Questions
 
-- What is the canonical public product name and CLI command naming: NanoAgent, `nanoai`, `nano`, or a combination?
-- Is NanoAgent positioned as a solo-developer tool, team tool, open-source developer tool, commercial product, or all of these?
-- What privacy promise should be made regarding local code, prompts, tool output, and third-party model providers?
-- Which model providers and model families should be recommended for first-time users?
-- Should the desktop app support full profile, custom agent, skill, MCP, hook, memory, and audit configuration visually?
-- Are workspace sections intended to be user-facing “threads,” “sessions,” “tasks,” or another product concept?
-- Should sections be shareable/exportable, or strictly local?
-- What is the intended retention policy for conversation history, sections, memory, and audit logs?
-- Should read-only review/planning be marketed as separate modes or as permission presets?
-- Should the product include team-level policy presets for safe commands, denied commands, MCP tools, and memory writes?
-- What is the expected behavior when provider model discovery fails: block startup, fall back to cached models, or prompt for manual model entry?
-- Should missing/corrupt local files be silently ignored or surfaced with recovery actions?
-- Is there an intended auto-update path for desktop installers?
-- Should MCP server setup include a marketplace, template library, or validation wizard?
-- What level of auditability is required for users who run NanoAgent in professional or enterprise environments?
+- What is the intended market positioning: solo developer tool, team tool, enterprise-controlled local agent, or open-source utility?
+- What is the official privacy promise for prompts, code excerpts, tool output, model requests, memory, and audit logs?
+- Which providers and models should be recommended to new users?
+- Should desktop expose full management for providers, custom agents, skills, MCP, memory, hooks, audit logs, and permissions?
+- Should "sections" remain the user-facing term, or should the product use sessions, threads, tasks, or another label?
+- Should sections be shareable or strictly local?
+- What is the expected retention policy for recent projects, sections, conversation history, memory, logs, and audit records?
+- Should read-only planning and review be marketed as separate modes or as permission presets?
+- Should team-level policy presets exist for safe commands, denied commands, MCP tools, memory writes, and sandbox mode?
+- What should happen when provider model discovery fails: block startup, use cached models, or allow manual model entry?
+- Should missing or corrupt local files be silently ignored or surfaced with recovery actions?
+- Is a desktop auto-update flow planned?
+- Is a VS Code extension planned or supported?
+- Should MCP configuration include a template library, marketplace, or validation wizard?
+- What auditability level is required for professional or enterprise use?
+- Should one-shot terminal mode support richer structured output for automation?
