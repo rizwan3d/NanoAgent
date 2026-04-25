@@ -8,7 +8,7 @@ namespace NanoAgent.CLI;
 
 public static partial class Program
 {
-    private const string DefaultCompletionNote = "(0s · 0 tokens)";
+    private const string DefaultCompletionNote = "(0s \u00b7 0 tokens)";
     private const double EstimatedLiveTokensPerSecond = 4d;
     private const int HeaderDividerWidth = 53;
     private const int HeaderPanelSize = 10;
@@ -40,9 +40,45 @@ public static partial class Program
         "/"
     ];
 
-    public static async Task Main(string[]? args)
+    public static async Task<int> Main(string[]? args)
     {
         Console.OutputEncoding = Encoding.UTF8;
+
+        CliInvocation invocation;
+        try
+        {
+            invocation = CliInvocation.Parse(
+                args ?? [],
+                Console.IsInputRedirected,
+                Console.In.ReadToEnd);
+        }
+        catch (ArgumentException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            Console.Error.WriteLine();
+            WriteUsage(Console.Error);
+            return 2;
+        }
+
+        if (invocation.ShowHelp)
+        {
+            WriteUsage(Console.Out);
+            return 0;
+        }
+
+        if (invocation.Mode == CliMode.SingleTurn)
+        {
+            return await RunSingleTurnAsync(
+                invocation.BackendArgs,
+                invocation.Prompt ?? string.Empty);
+        }
+
+        await RunInteractiveAsync(invocation.BackendArgs);
+        return 0;
+    }
+
+    private static async Task RunInteractiveAsync(string[] args)
+    {
         Console.CursorVisible = false;
         EnableTerminalWheelScrolling();
 
@@ -98,6 +134,119 @@ public static partial class Program
                 WriteExitResumeHint(state);
             }
         }
+    }
+
+    private static async Task<int> RunSingleTurnAsync(
+        string[] args,
+        string prompt)
+    {
+        if (string.IsNullOrWhiteSpace(prompt))
+        {
+            Console.Error.WriteLine("No prompt was provided.");
+            return 2;
+        }
+
+        ConsoleBridge uiBridge = new();
+        await using INanoAgentBackend backend = new NanoAgentBackend(args);
+        using CancellationTokenSource cancellation = new();
+        ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+        };
+
+        Console.CancelKeyPress += cancelKeyPressHandler;
+
+        try
+        {
+            await backend.InitializeAsync(uiBridge, cancellation.Token);
+
+            string normalizedPrompt = prompt.Trim();
+            if (normalizedPrompt.StartsWith("/", StringComparison.Ordinal))
+            {
+                BackendCommandResult commandResult = await backend.RunCommandAsync(
+                    normalizedPrompt,
+                    cancellation.Token);
+
+                WriteCommandResult(commandResult.CommandResult);
+                return commandResult.CommandResult.FeedbackKind == ReplFeedbackKind.Error ? 1 : 0;
+            }
+
+            ConversationTurnResult result = await backend.RunTurnAsync(
+                normalizedPrompt,
+                uiBridge,
+                cancellation.Token);
+
+            Console.WriteLine(result.ResponseText);
+            return 0;
+        }
+        catch (PromptCancelledException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            return 1;
+        }
+        catch (OperationCanceledException)
+        {
+            Console.Error.WriteLine("Cancelled.");
+            return 130;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"NanoAgent error: {exception.Message}");
+            return 1;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancelKeyPressHandler;
+        }
+    }
+
+    private static void WriteCommandResult(ReplCommandResult result)
+    {
+        if (string.IsNullOrWhiteSpace(result.Message))
+        {
+            return;
+        }
+
+        TextWriter writer = result.FeedbackKind == ReplFeedbackKind.Info
+            ? Console.Out
+            : Console.Error;
+
+        string prefix = result.FeedbackKind switch
+        {
+            ReplFeedbackKind.Error => "Error: ",
+            ReplFeedbackKind.Warning => "Warning: ",
+            _ => string.Empty
+        };
+
+        writer.WriteLine(prefix + result.Message.Trim());
+    }
+
+    private static void WriteUsage(TextWriter writer)
+    {
+        writer.WriteLine(
+            """
+            NanoAgent CLI
+
+            Usage:
+              nanoai [options]                    Start the interactive terminal UI
+              nanoai [options] "<prompt>"         Run one prompt and print the response
+              nanoai [options] --prompt "<text>"  Run one prompt and print the response
+              echo "<prompt>" | nanoai [options]  Run one prompt from standard input
+
+            Options:
+              --interactive        Start the terminal UI explicitly
+              --stdin              Read the one-shot prompt from standard input
+              -p, --prompt <text>  One-shot prompt text
+              --section <id>       Resume an existing section
+              --session <id>       Alias for --section
+              --profile <name>     Use an agent profile
+              --thinking <effort>  Override thinking effort
+              -h, --help           Show help
+
+            Note:
+              Run nanoai once to complete provider setup before using one-shot prompts.
+            """);
     }
 
     private static void WriteFatalExitMessage(AppState state)
