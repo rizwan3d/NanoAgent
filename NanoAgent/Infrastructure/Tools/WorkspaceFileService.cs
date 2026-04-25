@@ -5,6 +5,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
+using NanoAgent.Infrastructure.Workspaces;
 
 namespace NanoAgent.Infrastructure.Tools;
 
@@ -203,9 +204,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: true, fileRequired: false);
+        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        EnsurePathNotIgnored(fullPath, isDirectory: true, ignoreMatcher);
         return new WorkspaceDirectoryListResult(
             ToWorkspaceRelativePath(fullPath),
-            ListDirectoryManaged(fullPath, recursive));
+            ListDirectoryManaged(fullPath, recursive, ignoreMatcher));
     }
 
     public async Task<WorkspaceFileReadResult> ReadFileAsync(
@@ -215,6 +218,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true);
+        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
         FileInfo fileInfo = new(fullPath);
         if (fileInfo.Length > MaxFileReadBytes)
         {
@@ -240,6 +244,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true);
+        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
         string previousContent = await File.ReadAllTextAsync(
             fullPath,
             Encoding.UTF8,
@@ -266,10 +271,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
+        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        if (File.Exists(fullPath) || Directory.Exists(fullPath))
+        {
+            EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
+        }
+
         return new WorkspaceFileSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            SearchFilesManaged(request, fullPath));
+            SearchFilesManaged(request, fullPath, ignoreMatcher));
     }
 
     public async Task<WorkspaceTextSearchResult> SearchTextAsync(
@@ -280,10 +291,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
+        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        if (File.Exists(fullPath) || Directory.Exists(fullPath))
+        {
+            EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
+        }
+
         return new WorkspaceTextSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            await SearchTextManagedAsync(fullPath, request, cancellationToken));
+            await SearchTextManagedAsync(fullPath, request, ignoreMatcher, cancellationToken));
     }
 
     public async Task<WorkspaceFileWriteResult> WriteFileAsync(
@@ -296,6 +313,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         ArgumentNullException.ThrowIfNull(content);
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+        EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
         bool fileExists = File.Exists(fullPath);
         string? previousContent = null;
         if (fileExists && !overwrite)
@@ -352,6 +370,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         CancellationToken cancellationToken)
     {
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+        EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
         if (Directory.Exists(fullPath))
         {
             throw new InvalidOperationException(
@@ -382,6 +401,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         CancellationToken cancellationToken)
     {
         string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: false);
+        EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
         if (File.Exists(fullPath))
         {
             throw new InvalidOperationException(
@@ -409,6 +429,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         CancellationToken cancellationToken)
     {
         string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true);
+        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
         string previousContent = await File.ReadAllTextAsync(
             fullPath,
             Encoding.UTF8,
@@ -429,6 +450,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         CancellationToken cancellationToken)
     {
         string currentFullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true);
+        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        EnsurePathNotIgnored(currentFullPath, isDirectory: false, ignoreMatcher);
         string previousContent = await File.ReadAllTextAsync(
             currentFullPath,
             Encoding.UTF8,
@@ -438,6 +461,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string destinationFullPath = operation.MoveToPath is null
             ? currentFullPath
             : ResolveWorkspacePath(operation.MoveToPath, directoryRequired: false, fileRequired: false);
+        EnsurePathNotIgnored(destinationFullPath, Directory.Exists(destinationFullPath), ignoreMatcher);
 
         if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
             File.Exists(destinationFullPath))
@@ -491,9 +515,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private WorkspaceDirectoryEntry[] ListDirectoryManaged(
         string fullPath,
-        bool recursive)
+        bool recursive,
+        WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        IEnumerable<string> entries = EnumerateFileSystemEntriesSafely(fullPath, recursive);
+        IEnumerable<string> entries = EnumerateFileSystemEntriesSafely(
+            fullPath,
+            recursive,
+            ignoreMatcher);
 
         return entries
             .OrderBy(static entry => entry, StringComparer.Ordinal)
@@ -506,7 +534,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private IReadOnlyList<string> SearchFilesManaged(
         WorkspaceFileSearchRequest request,
-        string fullPath)
+        string fullPath,
+        WorkspaceIgnoreMatcher ignoreMatcher)
     {
         StringComparison comparison = request.CaseSensitive
             ? StringComparison.Ordinal
@@ -515,7 +544,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         IEnumerable<string> files = File.Exists(fullPath)
             ? [fullPath]
             : Directory.Exists(fullPath)
-                ? EnumerateFilesSafely(fullPath, recursive: true)
+                ? EnumerateFilesSafely(fullPath, recursive: true, ignoreMatcher)
                 : throw new FileNotFoundException(
                     $"Search path '{request.Path ?? "."}' does not exist.");
 
@@ -530,6 +559,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private async Task<IReadOnlyList<WorkspaceTextSearchMatch>> SearchTextManagedAsync(
         string fullPath,
         WorkspaceTextSearchRequest request,
+        WorkspaceIgnoreMatcher ignoreMatcher,
         CancellationToken cancellationToken)
     {
         List<string> filesToSearch = [];
@@ -540,7 +570,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
         else if (Directory.Exists(fullPath))
         {
-            filesToSearch.AddRange(EnumerateFilesSafely(fullPath, recursive: true));
+            filesToSearch.AddRange(EnumerateFilesSafely(
+                fullPath,
+                recursive: true,
+                ignoreMatcher));
         }
         else
         {
@@ -610,15 +643,17 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static IEnumerable<string> EnumerateFilesSafely(
         string root,
-        bool recursive)
+        bool recursive,
+        WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        return EnumerateFileSystemEntriesSafely(root, recursive)
+        return EnumerateFileSystemEntriesSafely(root, recursive, ignoreMatcher)
             .Where(static entry => File.Exists(entry));
     }
 
     private static IEnumerable<string> EnumerateFileSystemEntriesSafely(
         string root,
-        bool recursive)
+        bool recursive,
+        WorkspaceIgnoreMatcher ignoreMatcher)
     {
         Stack<string> pendingDirectories = new();
         pendingDirectories.Push(root);
@@ -638,9 +673,27 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             foreach (string entry in entries)
             {
+                FileAttributes attributes;
+                try
+                {
+                    attributes = File.GetAttributes(entry);
+                }
+                catch (Exception exception) when (IsFileSystemAccessException(exception))
+                {
+                    continue;
+                }
+
+                bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
+                if (ignoreMatcher.IsIgnored(entry, isDirectory))
+                {
+                    continue;
+                }
+
                 yield return entry;
 
-                if (recursive && ShouldRecurseIntoDirectory(entry))
+                if (recursive &&
+                    isDirectory &&
+                    !attributes.HasFlag(FileAttributes.ReparsePoint))
                 {
                     pendingDirectories.Push(entry);
                 }
@@ -665,20 +718,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         catch (Exception exception) when (IsFileSystemAccessException(exception))
         {
             length = 0;
-            return false;
-        }
-    }
-
-    private static bool ShouldRecurseIntoDirectory(string path)
-    {
-        try
-        {
-            FileAttributes attributes = File.GetAttributes(path);
-            return attributes.HasFlag(FileAttributes.Directory) &&
-                !attributes.HasFlag(FileAttributes.ReparsePoint);
-        }
-        catch (Exception exception) when (IsFileSystemAccessException(exception))
-        {
             return false;
         }
     }
@@ -713,6 +752,25 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return fullPath;
+    }
+
+    private WorkspaceIgnoreMatcher LoadWorkspaceIgnoreMatcher()
+    {
+        return WorkspaceIgnoreMatcher.Load(GetWorkspaceRoot());
+    }
+
+    private void EnsurePathNotIgnored(
+        string fullPath,
+        bool isDirectory,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        if (!ignoreMatcher.IsIgnored(fullPath, isDirectory))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by .nanoagent/.nanoignore.");
     }
 
     private static void EnsureResolvedPathStaysWithinWorkspace(
@@ -820,8 +878,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private string ToWorkspaceRelativePath(string fullPath)
     {
-        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        return WorkspacePath.ToRelativePath(workspaceRoot, fullPath);
+        return WorkspacePath.ToRelativePath(GetWorkspaceRoot(), fullPath);
+    }
+
+    private string GetWorkspaceRoot()
+    {
+        return Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
     }
 
     private static void EnsureParentDirectory(string fullPath)

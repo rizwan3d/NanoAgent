@@ -8,6 +8,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
+using NanoAgent.Infrastructure.Workspaces;
 
 namespace NanoAgent.Infrastructure.CodeIntelligence;
 
@@ -37,6 +38,12 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
             throw new FileNotFoundException(
                 $"Source file '{request.Path}' does not exist.",
                 request.Path);
+        }
+
+        if (WorkspaceIgnoreMatcher.Load(workspaceRoot).IsIgnored(fullPath, isDirectory: false))
+        {
+            throw new UnauthorizedAccessException(
+                $"Source file '{WorkspacePath.ToRelativePath(workspaceRoot, fullPath)}' is excluded by .nanoagent/.nanoignore.");
         }
 
         LanguageServerDefinition[] servers = GetLanguageServers(fullPath).ToArray();

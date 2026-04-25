@@ -444,6 +444,115 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         File.Exists(Path.Combine(_workspaceRoot, "docs", "notes.txt")).Should().BeFalse();
     }
 
+    [Fact]
+    public async Task ListDirectoryAsync_Should_ExcludeNanoIgnoredPaths()
+    {
+        await WriteNanoIgnoreAsync(
+            """
+            *.secret
+            ignored/
+            [Bb]in/
+            !keep.secret
+            """);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "public.txt"), "visible", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "token.secret"), "hidden", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "keep.secret"), "visible", CancellationToken.None);
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "note.txt"), "hidden", CancellationToken.None);
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "bin"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "bin", "app.dll"), "hidden", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceDirectoryListResult result = await sut.ListDirectoryAsync(
+            ".",
+            recursive: true,
+            CancellationToken.None);
+
+        result.Entries.Select(static entry => entry.Path)
+            .Should()
+            .BeEquivalentTo([".nanoagent", ".nanoagent/.nanoignore", "keep.secret", "public.txt"]);
+    }
+
+    [Fact]
+    public async Task ReadFileAsync_Should_DenyNanoIgnoredPath()
+    {
+        await WriteNanoIgnoreAsync("*.secret");
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "token.secret"), "hidden", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.ReadFileAsync(
+            "token.secret",
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .nanoagent/.nanoignore*");
+    }
+
+    [Fact]
+    public async Task SearchTextAsync_Should_ExcludeNanoIgnoredFiles()
+    {
+        await WriteNanoIgnoreAsync(
+            """
+            secrets/
+            *.log
+            !visible.log
+            """);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "README.md"), "needle", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "app.log"), "needle", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "visible.log"), "needle", CancellationToken.None);
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "secrets"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "secrets", "token.txt"), "needle", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceTextSearchResult result = await sut.SearchTextAsync(
+            new WorkspaceTextSearchRequest("needle", ".", CaseSensitive: false),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path)
+            .Should()
+            .BeEquivalentTo(["README.md", "visible.log"]);
+    }
+
+    [Fact]
+    public async Task WriteFileAsync_Should_DenyNanoIgnoredPath()
+    {
+        await WriteNanoIgnoreAsync("secrets/");
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.WriteFileAsync(
+            "secrets/token.txt",
+            "hidden",
+            overwrite: true,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .nanoagent/.nanoignore*");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_DenyNanoIgnoredPath()
+    {
+        await WriteNanoIgnoreAsync("*.secret");
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Add File: token.secret
+            +hidden
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .nanoagent/.nanoignore*");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
@@ -455,6 +564,16 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     private WorkspaceFileService CreateSut()
     {
         return new WorkspaceFileService(new StubWorkspaceRootProvider(_workspaceRoot));
+    }
+
+    private async Task WriteNanoIgnoreAsync(string content)
+    {
+        string nanoAgentDirectory = Path.Combine(_workspaceRoot, ".nanoagent");
+        Directory.CreateDirectory(nanoAgentDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(nanoAgentDirectory, ".nanoignore"),
+            content,
+            CancellationToken.None);
     }
 
     private static string CreateOutsideDirectory()

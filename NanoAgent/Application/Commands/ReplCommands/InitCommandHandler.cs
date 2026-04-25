@@ -62,6 +62,12 @@ internal sealed class InitCommandHandler : IReplCommandHandler
                 cancellationToken);
             await EnsureFileAsync(
                 workspaceRoot,
+                Path.Combine(workspaceDirectory, ".nanoignore"),
+                NanoIgnoreTemplate,
+                summary,
+                cancellationToken);
+            await EnsureFileAsync(
+                workspaceRoot,
                 Path.Combine(workspaceDirectory, "agents", "code-reviewer.md.template"),
                 AgentTemplate,
                 summary,
@@ -226,6 +232,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         This directory stores workspace-local NanoAgent configuration.
 
         - `agent-profile.json`: workspace memory, audit, and MCP server settings.
+        - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
         - `memory/lessons.jsonl`: reusable local lessons about mistakes, failures, and fixes.
@@ -239,6 +246,92 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         logs/*.jsonl
         memory/*.jsonl
         *.local.json
+        """;
+
+    private const string NanoIgnoreTemplate =
+        """
+        # Local secrets and environment files
+        .env
+        .env.*
+        *.env
+        *.local
+        *.secret
+        *.secrets
+        secrets.*
+        secret.*
+        credentials.*
+        credential.*
+        appsettings.*.local.json
+        appsettings.*.secrets.json
+        appsettings.Production.json
+        appsettings.Staging.json
+
+        # Credential and signing material
+        *.pem
+        *.key
+        *.p12
+        *.pfx
+        *.cer
+        *.crt
+        *.der
+        *.keystore
+        *.jks
+        *.publishsettings
+        *.pubxml
+        PublishScripts/
+
+        # User and IDE state
+        .vs/
+        .vscode/*.local.json
+        *.suo
+        *.user
+        *.userosscache
+        *.rsuser
+        *.userprefs
+        *.DotSettings.user
+        .localhistory/
+
+        # Build, test, and generated output
+        [Bb]in/
+        [Oo]bj/
+        [Dd]ebug/
+        [Rr]elease/
+        [Rr]eleases/
+        artifacts/
+        publish/
+        TestResults/
+        [Tt]est[Rr]esult*/
+        BenchmarkDotNet.Artifacts/
+        coverage/
+        coverage*.json
+        coverage*.xml
+        coverage*.info
+        *.coverage
+        *.coveragexml
+        *.binlog
+        *.log
+
+        # Package and dependency caches
+        node_modules/
+        packages/
+        **/[Pp]ackages/*
+        *.nupkg
+        *.snupkg
+        .nuget/
+
+        # NanoAgent local runtime data
+        .nanoagent/sessions/
+        .nanoagent/logs/
+        .nanoagent/cache/
+        .nanoagent/tmp/
+        .nanoagent/temp/
+        .nanoagent/memory/
+
+        # VCS and OS metadata
+        .git/
+        .DS_Store
+        Thumbs.db
+        desktop.ini
         """;
 
     private const string AgentTemplate =

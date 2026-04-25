@@ -279,6 +279,10 @@ Supported events include `before_task_start`, `after_task_complete`, `after_task
 
 NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the workspace root and adds them to the model's system prompt as persistent project instructions.
 
+### Workspace Ignore
+
+NanoAgent reads `.nanoagent/.nanoignore` from the workspace root and excludes matching paths from built-in file tools such as file read, directory list, file search, text search, file write/delete, apply patch, and code intelligence. The file uses gitignore-style patterns including comments, `!` negation, directory rules ending in `/`, `*`, `?`, `**`, and character classes such as `[Bb]in/`.
+
 ### Lesson Memory
 
 NanoAgent stores reusable workspace lessons in `.nanoagent/memory/lessons.jsonl` and automatically retrieves relevant lessons for future turns. Search and list operations are automatic. Automatic failure observations are enabled and redacted by default. Manual lesson writes (`save`, `edit`, `delete`) require user approval unless memory policy is changed.
