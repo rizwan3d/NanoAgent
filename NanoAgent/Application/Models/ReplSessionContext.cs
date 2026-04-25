@@ -35,14 +35,16 @@ public sealed class ReplSessionContext
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
         IAgentProfile? agentProfile = null,
-        string? reasoningEffort = null)
+        string? reasoningEffort = null,
+        string? workspacePath = null)
         : this(
             DefaultApplicationName,
             providerProfile,
             activeModelId,
             availableModelIds,
             agentProfile: agentProfile,
-            reasoningEffort: reasoningEffort)
+            reasoningEffort: reasoningEffort,
+            workspacePath: workspacePath)
     {
     }
 
@@ -169,10 +171,13 @@ public sealed class ReplSessionContext
 
     public string WorkspacePath { get; }
 
+    public string WorkingDirectory { get; private set; } = ".";
+
     public SessionStateSnapshot SessionState => new(
         _fileContexts.ToArray(),
         _editContexts.ToArray(),
-        _terminalHistory.ToArray());
+        _terminalHistory.ToArray(),
+        WorkingDirectory);
 
     public string SectionTitle { get; private set; }
 
@@ -246,6 +251,80 @@ public sealed class ReplSessionContext
     public bool ClearReasoningEffort()
     {
         return SetReasoningEffort(ReasoningEffortOptions.Off);
+    }
+
+    public string ResolvePathFromWorkingDirectory(string? requestedPath)
+    {
+        return ResolvePathFromWorkingDirectory(requestedPath, WorkingDirectory);
+    }
+
+    public string ResolvePathFromWorkingDirectory(
+        string? requestedPath,
+        string baseWorkingDirectory)
+    {
+        string normalizedBaseDirectory = string.IsNullOrWhiteSpace(baseWorkingDirectory)
+            ? "."
+            : baseWorkingDirectory.Trim();
+        string baseFullPath = NanoAgent.Application.Utilities.WorkspacePath.Resolve(
+            WorkspacePath,
+            normalizedBaseDirectory);
+        string normalizedRequestedPath = string.IsNullOrWhiteSpace(requestedPath)
+            ? "."
+            : requestedPath.Trim();
+
+        string fullPath = Path.GetFullPath(
+            Path.IsPathRooted(normalizedRequestedPath)
+                ? normalizedRequestedPath
+                : Path.Combine(baseFullPath, normalizedRequestedPath));
+
+        if (!NanoAgent.Application.Utilities.WorkspacePath.IsSamePathOrDescendant(WorkspacePath, fullPath))
+        {
+            throw new InvalidOperationException("Tool paths must stay within the current workspace.");
+        }
+
+        return NanoAgent.Application.Utilities.WorkspacePath.ToRelativePath(WorkspacePath, fullPath);
+    }
+
+    public bool TrySetWorkingDirectory(
+        string requestedPath,
+        out string? error)
+    {
+        return TrySetWorkingDirectory(requestedPath, WorkingDirectory, out error);
+    }
+
+    public bool TrySetWorkingDirectory(
+        string requestedPath,
+        string baseWorkingDirectory,
+        out string? error)
+    {
+        error = null;
+
+        string resolvedPath;
+        try
+        {
+            resolvedPath = ResolvePathFromWorkingDirectory(requestedPath, baseWorkingDirectory);
+        }
+        catch (InvalidOperationException exception)
+        {
+            error = exception.Message;
+            return false;
+        }
+
+        string fullPath = NanoAgent.Application.Utilities.WorkspacePath.Resolve(WorkspacePath, resolvedPath);
+        if (!Directory.Exists(fullPath))
+        {
+            error = $"Directory '{resolvedPath}' does not exist.";
+            return false;
+        }
+
+        if (string.Equals(WorkingDirectory, resolvedPath, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        WorkingDirectory = resolvedPath;
+        IsPersistedStateDirty = true;
+        return true;
     }
 
     public void SetAgentProfile(IAgentProfile agentProfile)
@@ -379,7 +458,8 @@ public sealed class ReplSessionContext
     {
         if (_fileContexts.Count == 0 &&
             _editContexts.Count == 0 &&
-            _terminalHistory.Count == 0)
+            _terminalHistory.Count == 0 &&
+            IsWorkspaceRootWorkingDirectory())
         {
             return null;
         }
@@ -387,6 +467,7 @@ public sealed class ReplSessionContext
         StringBuilder builder = new();
         builder.AppendLine("Session state:");
         builder.AppendLine("Compact memory from previous tool use in this section. Use it to maintain continuity across turns; re-read files or rerun commands when exact current contents or fresh output matter.");
+        AppendWorkingDirectoryPrompt(builder);
 
         AppendFileContextPrompt(builder);
         AppendEditContextPrompt(builder);
@@ -645,7 +726,14 @@ public sealed class ReplSessionContext
 
     private void RestoreSessionState(SessionStateSnapshot? sessionState)
     {
-        if (sessionState is null || sessionState.IsEmpty)
+        if (sessionState is null)
+        {
+            return;
+        }
+
+        RestoreWorkingDirectory(sessionState.WorkingDirectory);
+
+        if (sessionState.IsEmpty)
         {
             return;
         }
@@ -707,6 +795,37 @@ public sealed class ReplSessionContext
         TrimOldest(_fileContexts, MaxFileContextEntries);
         TrimOldest(_editContexts, MaxEditContextEntries);
         TrimOldest(_terminalHistory, MaxTerminalHistoryEntries);
+    }
+
+    private void RestoreWorkingDirectory(string? workingDirectory)
+    {
+        string resolvedPath;
+        try
+        {
+            resolvedPath = ResolvePathFromWorkingDirectory(workingDirectory, ".");
+        }
+        catch (InvalidOperationException)
+        {
+            WorkingDirectory = ".";
+            return;
+        }
+
+        string fullPath = NanoAgent.Application.Utilities.WorkspacePath.Resolve(WorkspacePath, resolvedPath);
+        WorkingDirectory = Directory.Exists(fullPath)
+            ? resolvedPath
+            : ".";
+    }
+
+    private void AppendWorkingDirectoryPrompt(StringBuilder builder)
+    {
+        if (IsWorkspaceRootWorkingDirectory())
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine($"Current working directory: {WorkingDirectory}");
+        builder.AppendLine("Relative file paths and shell commands default to this directory unless an explicit path says otherwise.");
     }
 
     private void AppendFileContextPrompt(StringBuilder builder)
@@ -862,6 +981,11 @@ public sealed class ReplSessionContext
         }
 
         values.RemoveRange(0, values.Count - maxCount);
+    }
+
+    private bool IsWorkspaceRootWorkingDirectory()
+    {
+        return string.Equals(WorkingDirectory, ".", StringComparison.Ordinal);
     }
 
     private static WorkspaceFileEditTransaction MergeTransactions(

@@ -110,7 +110,7 @@ internal sealed class ShellCommandTool : ITool
             },
             "workingDirectory": {
               "type": "string",
-              "description": "Optional working directory relative to the workspace root."
+              "description": "Optional working directory relative to the current session working directory. Defaults to the current session working directory."
             },
             "sandbox_permissions": {
               "type": "string",
@@ -177,31 +177,115 @@ internal sealed class ShellCommandTool : ITool
         }
 
         IReadOnlyList<string> prefixRule = ToolArguments.GetOptionalStringArray(context.Arguments, "prefix_rule");
+        string? requestedWorkingDirectory = ToolArguments.GetOptionalString(context.Arguments, "workingDirectory");
+        string effectiveWorkingDirectory;
+        try
+        {
+            effectiveWorkingDirectory = context.Session.ResolvePathFromWorkingDirectory(requestedWorkingDirectory);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return ToolResultFactory.InvalidArguments(
+                "path_outside_workspace",
+                exception.Message,
+                new ToolRenderPayload(
+                    "Invalid shell_command arguments",
+                    exception.Message));
+        }
 
         ShellCommandExecutionResult result = await _shellCommandService.ExecuteAsync(
             new ShellCommandExecutionRequest(
                 safeCommand,
-                ToolArguments.GetOptionalString(context.Arguments, "workingDirectory"),
+                effectiveWorkingDirectory,
                 sandboxPermissions,
                 justification,
                 prefixRule),
             cancellationToken);
         SessionStateToolRecorder.RecordShellCommand(context.Session, result);
 
+        string? sessionDirectoryUpdate = UpdateSessionWorkingDirectoryAfterCd(
+            context.Session,
+            safeCommand,
+            effectiveWorkingDirectory,
+            result.ExitCode);
         string renderText =
             $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +
+            $"Session working directory: {context.Session.WorkingDirectory}{Environment.NewLine}" +
             $"Sandbox permissions: {result.SandboxPermissions}{Environment.NewLine}" +
             $"Exit code: {result.ExitCode}{Environment.NewLine}" +
             $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
             $"STDERR:{Environment.NewLine}{result.StandardError}";
+        string message = $"Executed shell command '{result.Command}' with exit code {result.ExitCode}.";
+        if (!string.IsNullOrWhiteSpace(sessionDirectoryUpdate))
+        {
+            message += " " + sessionDirectoryUpdate;
+        }
 
         return ToolResultFactory.Success(
-            $"Executed shell command '{result.Command}' with exit code {result.ExitCode}.",
+            message,
             result,
             ToolJsonContext.Default.ShellCommandExecutionResult,
             new ToolRenderPayload(
                 $"Shell command: {result.Command}",
                 renderText));
+    }
+
+    private static string? UpdateSessionWorkingDirectoryAfterCd(
+        ReplSessionContext session,
+        string command,
+        string commandWorkingDirectory,
+        int exitCode)
+    {
+        if (exitCode != 0 ||
+            !TryGetCdTarget(command, out string? targetPath))
+        {
+            return null;
+        }
+
+        return session.TrySetWorkingDirectory(targetPath!, commandWorkingDirectory, out string? error)
+            ? $"Session working directory is now '{session.WorkingDirectory}'."
+            : $"Session working directory stayed '{session.WorkingDirectory}': {error}";
+    }
+
+    private static bool TryGetCdTarget(
+        string command,
+        out string? targetPath)
+    {
+        targetPath = null;
+
+        IReadOnlyList<ShellCommandSegment> segments = ShellCommandText.ParseSegments(command);
+        if (segments.Count != 1 ||
+            segments[0].Condition != ShellCommandSegmentCondition.Always)
+        {
+            return false;
+        }
+
+        string[] tokens = ShellCommandText.Tokenize(segments[0].CommandText);
+        if (tokens.Length < 2)
+        {
+            return false;
+        }
+
+        string commandName = ShellCommandText.NormalizeCommandToken(tokens[0]);
+        if (!string.Equals(commandName, "cd", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (tokens.Length == 2)
+        {
+            targetPath = tokens[1];
+            return true;
+        }
+
+        if (tokens.Length == 3 &&
+            string.Equals(tokens[1], "/d", StringComparison.OrdinalIgnoreCase))
+        {
+            targetPath = tokens[2];
+            return true;
+        }
+
+        return false;
     }
 
 }

@@ -14,7 +14,7 @@ internal sealed class SearchFilesTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Search for files in the current workspace by name or relative path fragment.";
+    public string Description => "Search for files from the current session working directory by name or relative path fragment.";
 
     public string Name => AgentToolNames.SearchFiles;
 
@@ -42,7 +42,7 @@ internal sealed class SearchFilesTool : ITool
             },
             "path": {
               "type": "string",
-              "description": "Optional file or directory path relative to the workspace root."
+              "description": "Optional file or directory path relative to the current session working directory."
             },
             "caseSensitive": {
               "type": "boolean",
@@ -74,7 +74,8 @@ internal sealed class SearchFilesTool : ITool
         WorkspaceFileSearchResult result = await _workspaceFileService.SearchFilesAsync(
             new WorkspaceFileSearchRequest(
                 query!,
-                ToolArguments.GetOptionalString(context.Arguments, "path"),
+                context.Session.ResolvePathFromWorkingDirectory(
+                    ToolArguments.GetOptionalString(context.Arguments, "path")),
                 ToolArguments.GetBoolean(context.Arguments, "caseSensitive")),
             cancellationToken);
         SessionStateToolRecorder.RecordFileSearch(context.Session, result);

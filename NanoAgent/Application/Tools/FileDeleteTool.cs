@@ -14,7 +14,7 @@ internal sealed class FileDeleteTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Delete a file from the current workspace.";
+    public string Description => "Delete a file from the current session working directory in the workspace.";
 
     public string Name => AgentToolNames.FileDelete;
 
@@ -38,7 +38,7 @@ internal sealed class FileDeleteTool : ITool
           "properties": {
             "path": {
               "type": "string",
-              "description": "Path to the file to delete, relative to the workspace root."
+              "description": "Path to the file to delete, relative to the current session working directory."
             }
           },
           "required": ["path"],
@@ -63,8 +63,10 @@ internal sealed class FileDeleteTool : ITool
                     "Provide a non-empty 'path' string."));
         }
 
+        string safePath = context.Session.ResolvePathFromWorkingDirectory(path!);
+
         WorkspaceFileDeleteExecutionResult executionResult = await _workspaceFileService.DeleteFileWithTrackingAsync(
-            path!,
+            safePath,
             cancellationToken);
         context.Session.RecordFileEditTransaction(executionResult.EditTransaction);
 

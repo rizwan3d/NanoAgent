@@ -76,6 +76,91 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void Evaluate_Should_ResolveFilePathsFromSessionWorkingDirectory()
+    {
+        ReplSessionContext session = CreateSession(workspacePath: _workspaceRoot);
+        session.TrySetWorkingDirectory("src", out string? error).Should().BeTrue(error);
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Read,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext("""{ "path": "../docs/readme.md" }""", session)));
+
+        result.IsAllowed.Should().BeTrue();
+        result.Request.Should().NotBeNull();
+        result.Request!.Subjects.Should().Contain("docs/readme.md");
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyFilePathsOutsideWorkspace_When_ResolvedFromSessionWorkingDirectory()
+    {
+        ReplSessionContext session = CreateSession(workspacePath: _workspaceRoot);
+        session.TrySetWorkingDirectory("src", out string? error).Should().BeTrue(error);
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Read,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext("""{ "path": "../../outside.txt" }""", session)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("path_outside_workspace");
+    }
+
+    [Fact]
+    public void Evaluate_Should_ResolvePatchPathsFromSessionWorkingDirectory()
+    {
+        ReplSessionContext session = CreateSession(workspacePath: _workspaceRoot);
+        session.TrySetWorkingDirectory("src", out string? error).Should().BeTrue(error);
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                Patch = new PatchPermissionPolicy
+                {
+                    PatchArgumentName = "patch",
+                    Kind = ToolPathAccessKind.Write,
+                    AllowedRoots = ["."]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "patch": "*** Begin Patch\n*** Update File: Program.cs\n@@\n-old\n+new\n*** End Patch" }""",
+                session)));
+
+        result.IsAllowed.Should().BeTrue();
+        result.Request.Should().NotBeNull();
+        result.Request!.Subjects.Should().Contain("src/Program.cs");
+    }
+
+    [Fact]
     public void Evaluate_Should_ReturnRequiresApproval_When_PolicyRequiresApproval()
     {
         ToolPermissionEvaluator sut = new(
@@ -771,13 +856,16 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
             executionPhase);
     }
 
-    private static ReplSessionContext CreateSession(IAgentProfile? agentProfile = null)
+    private static ReplSessionContext CreateSession(
+        IAgentProfile? agentProfile = null,
+        string? workspacePath = null)
     {
         return new ReplSessionContext(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5-mini",
             ["gpt-5-mini"],
-            agentProfile);
+            agentProfile,
+            workspacePath: workspacePath);
     }
 
     private static PermissionSettings CreatePermissionSettings(PermissionSettings? settings = null)

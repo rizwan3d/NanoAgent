@@ -440,10 +440,12 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             return PermissionEvaluationResult.Allowed();
         }
 
+        string sessionRelativePath;
         string candidatePath;
         try
         {
-            candidatePath = WorkspacePath.Resolve(workspaceRoot, requestedPath!);
+            sessionRelativePath = context.Session.ResolvePathFromWorkingDirectory(requestedPath!);
+            candidatePath = WorkspacePath.Resolve(workspaceRoot, sessionRelativePath);
         }
         catch (InvalidOperationException)
         {
@@ -483,10 +485,12 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 
         foreach (string path in ExtractPatchPaths(patchText!))
         {
+            string sessionRelativePath;
             string candidatePath;
             try
             {
-                candidatePath = WorkspacePath.Resolve(workspaceRoot, path);
+                sessionRelativePath = context.Session.ResolvePathFromWorkingDirectory(path);
+                candidatePath = WorkspacePath.Resolve(workspaceRoot, sessionRelativePath);
             }
             catch (InvalidOperationException)
             {

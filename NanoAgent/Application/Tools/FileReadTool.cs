@@ -13,7 +13,7 @@ internal sealed class FileReadTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Read a UTF-8 text file from the current workspace.";
+    public string Description => "Read a UTF-8 text file from the current session working directory in the workspace.";
 
     public string Name => AgentToolNames.FileRead;
 
@@ -37,7 +37,7 @@ internal sealed class FileReadTool : ITool
           "properties": {
             "path": {
               "type": "string",
-              "description": "Path to the file, relative to the workspace root."
+              "description": "Path to the file, relative to the current session working directory."
             }
           },
           "required": ["path"],
@@ -62,7 +62,7 @@ internal sealed class FileReadTool : ITool
                     "Provide a non-empty 'path' string."));
         }
 
-        string safePath = path!;
+        string safePath = context.Session.ResolvePathFromWorkingDirectory(path!);
 
         Application.Tools.Models.WorkspaceFileReadResult result = await _workspaceFileService.ReadFileAsync(
             safePath,

@@ -214,12 +214,90 @@ public sealed class ReplSessionContextTests
         resumedSession.CreateStatefulContextPrompt().Should().Contain("dotnet test NanoAgent.slnx");
     }
 
-    private static ReplSessionContext CreateSession()
+    [Fact]
+    public void ResolvePathFromWorkingDirectory_Should_UseCurrentSessionDirectory()
+    {
+        string workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-SessionCwd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(workspaceRoot, "src", "api"));
+
+        try
+        {
+            ReplSessionContext session = CreateSession(workspaceRoot);
+
+            session.TrySetWorkingDirectory("src", out string? error).Should().BeTrue(error);
+
+            session.WorkingDirectory.Should().Be("src");
+            session.ResolvePathFromWorkingDirectory("Program.cs").Should().Be("src/Program.cs");
+            session.ResolvePathFromWorkingDirectory("../README.md").Should().Be("README.md");
+
+            session.TrySetWorkingDirectory("api", out error).Should().BeTrue(error);
+
+            session.WorkingDirectory.Should().Be("src/api");
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void SessionState_Should_PersistWorkingDirectory_InSnapshot()
+    {
+        string workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-SessionStateCwd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(workspaceRoot, "ToDoApp"));
+
+        try
+        {
+            ReplSessionContext session = CreateSession(workspaceRoot);
+            session.TrySetWorkingDirectory("ToDoApp", out string? error).Should().BeTrue(error);
+
+            ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+                session.SectionCreatedAtUtc.AddMinutes(1));
+            ReplSessionContext resumedSession = new(
+                "NanoAgent",
+                snapshot.ProviderProfile,
+                snapshot.ActiveModelId,
+                snapshot.AvailableModelIds,
+                snapshot.SectionId,
+                snapshot.Title,
+                snapshot.CreatedAtUtc,
+                snapshot.UpdatedAtUtc,
+                snapshot.TotalEstimatedOutputTokens,
+                snapshot.Turns,
+                snapshot.PendingExecutionPlan,
+                isResumedSection: true,
+                agentProfile: BuiltInAgentProfiles.Resolve(snapshot.AgentProfileName),
+                reasoningEffort: snapshot.ReasoningEffort,
+                sessionState: snapshot.SessionState,
+                workspacePath: workspaceRoot);
+
+            snapshot.SessionState.WorkingDirectory.Should().Be("ToDoApp");
+            resumedSession.WorkingDirectory.Should().Be("ToDoApp");
+            resumedSession.CreateStatefulContextPrompt().Should().Contain("Current working directory: ToDoApp");
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    private static ReplSessionContext CreateSession(string? workspacePath = null)
     {
         return new ReplSessionContext(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
             "gpt-5-mini",
-            ["gpt-5-mini"]);
+            ["gpt-5-mini"],
+            workspacePath: workspacePath);
     }
 
     private static WorkspaceFileEditTransaction CreateTransaction(string description)

@@ -14,7 +14,7 @@ internal sealed class FileWriteTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Write UTF-8 text content to a file in the current workspace.";
+    public string Description => "Write UTF-8 text content to a file from the current session working directory in the workspace.";
 
     public string Name => AgentToolNames.FileWrite;
 
@@ -38,7 +38,7 @@ internal sealed class FileWriteTool : ITool
           "properties": {
             "path": {
               "type": "string",
-              "description": "Path to the file, relative to the workspace root."
+              "description": "Path to the file, relative to the current session working directory."
             },
             "content": {
               "type": "string",
@@ -81,7 +81,7 @@ internal sealed class FileWriteTool : ITool
                     "Provide a 'content' string to write."));
         }
 
-        string safePath = path!;
+        string safePath = context.Session.ResolvePathFromWorkingDirectory(path!);
         string safeContent = content!;
 
         bool overwrite = ToolArguments.GetBoolean(context.Arguments, "overwrite", defaultValue: true);

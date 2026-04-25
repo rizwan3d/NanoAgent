@@ -13,7 +13,7 @@ internal sealed class DirectoryListTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "List files and directories from the current workspace.";
+    public string Description => "List files and directories from the current session working directory in the workspace.";
 
     public string Name => AgentToolNames.DirectoryList;
 
@@ -37,7 +37,7 @@ internal sealed class DirectoryListTool : ITool
           "properties": {
             "path": {
               "type": "string",
-              "description": "Directory path relative to the workspace root. Defaults to the workspace root."
+              "description": "Directory path relative to the current session working directory. Defaults to the current session working directory."
             },
             "recursive": {
               "type": "boolean",
@@ -57,9 +57,10 @@ internal sealed class DirectoryListTool : ITool
 
         string? path = ToolArguments.GetOptionalString(context.Arguments, "path");
         bool recursive = ToolArguments.GetBoolean(context.Arguments, "recursive");
+        string safePath = context.Session.ResolvePathFromWorkingDirectory(path);
 
         Application.Tools.Models.WorkspaceDirectoryListResult result = await _workspaceFileService.ListDirectoryAsync(
-            path,
+            safePath,
             recursive,
             cancellationToken);
         SessionStateToolRecorder.RecordDirectoryList(context.Session, result);

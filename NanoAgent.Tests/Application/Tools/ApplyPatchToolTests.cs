@@ -92,6 +92,62 @@ public sealed class ApplyPatchToolTests
         result.RenderPayload.Text.Should().Contain("final non-empty line must be exactly '*** End Patch'");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_ResolvePatchPathsFromSessionWorkingDirectory()
+    {
+        string workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-PatchCwd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(workspaceRoot, "ToDoApp"));
+
+        try
+        {
+            ReplSessionContext session = TestSessionFactory.Create(workspaceRoot);
+            session.TrySetWorkingDirectory("ToDoApp", out string? error).Should().BeTrue(error);
+
+            Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+            workspaceFileService
+                .Setup(service => service.ApplyPatchWithTrackingAsync(
+                    "*** Begin Patch\n*** Update File: ToDoApp/Program.cs\n@@\n-old\n+new\n*** End Patch",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new WorkspaceApplyPatchExecutionResult(
+                    new WorkspaceApplyPatchResult(
+                        1,
+                        1,
+                        1,
+                        [
+                            new WorkspaceApplyPatchFileResult(
+                                "ToDoApp/Program.cs",
+                                "update",
+                                null,
+                                1,
+                                1,
+                                [],
+                                0)
+                        ]),
+                    new WorkspaceFileEditTransaction(
+                        "apply_patch (1 file)",
+                        [new WorkspaceFileEditState("ToDoApp/Program.cs", exists: true, content: "old")],
+                        [new WorkspaceFileEditState("ToDoApp/Program.cs", exists: true, content: "new")])));
+
+            ApplyPatchTool sut = new(workspaceFileService.Object);
+
+            ToolResult result = await sut.ExecuteAsync(
+                CreateContext("""{ "patch": "*** Begin Patch\n*** Update File: Program.cs\n@@\n-old\n+new\n*** End Patch" }""", session),
+                CancellationToken.None);
+
+            result.Status.Should().Be(ToolResultStatus.Success);
+            workspaceFileService.VerifyAll();
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
     private static ToolExecutionContext CreateContext(
         string argumentsJson,
         ReplSessionContext? session = null)

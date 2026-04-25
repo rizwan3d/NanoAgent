@@ -88,6 +88,78 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_UpdateSessionWorkingDirectory_ForFollowUpFileTools()
+    {
+        string workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-ShellCwd-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(Path.Combine(workspaceRoot, "ToDoApp"));
+
+        try
+        {
+            ReplSessionContext session = TestSessionFactory.Create(workspaceRoot);
+            Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+            shellCommandService
+                .Setup(service => service.ExecuteAsync(
+                    It.Is<ShellCommandExecutionRequest>(request =>
+                        request.Command == "cd ToDoApp" &&
+                        request.WorkingDirectory == "."),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new ShellCommandExecutionResult(
+                    "cd ToDoApp",
+                    ".",
+                    0,
+                    string.Empty,
+                    string.Empty));
+
+            ShellCommandTool shellTool = new(shellCommandService.Object);
+            ToolResult shellResult = await shellTool.ExecuteAsync(
+                CreateContext("""{ "command": "cd ToDoApp" }""", session),
+                CancellationToken.None);
+
+            shellResult.Status.Should().Be(ToolResultStatus.Success);
+            shellResult.Message.Should().Contain("Session working directory is now 'ToDoApp'");
+            session.WorkingDirectory.Should().Be("ToDoApp");
+
+            Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+            workspaceFileService
+                .Setup(service => service.WriteFileWithTrackingAsync(
+                    "ToDoApp/Program.cs",
+                    "class Program {}",
+                    true,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new WorkspaceFileWriteExecutionResult(
+                    new WorkspaceFileWriteResult(
+                        "ToDoApp/Program.cs",
+                        false,
+                        16,
+                        1,
+                        0,
+                        [new WorkspaceFileWritePreviewLine(1, "add", "class Program {}")],
+                        0),
+                    new WorkspaceFileEditTransaction(
+                        "file_write (ToDoApp/Program.cs)",
+                        [new WorkspaceFileEditState("ToDoApp/Program.cs", exists: false, content: null)],
+                        [new WorkspaceFileEditState("ToDoApp/Program.cs", exists: true, content: "class Program {}")])));
+
+            FileWriteTool fileWriteTool = new(workspaceFileService.Object);
+            ToolResult writeResult = await fileWriteTool.ExecuteAsync(
+                CreateFileWriteContext("""{ "path": "Program.cs", "content": "class Program {}" }""", session),
+                CancellationToken.None);
+
+            writeResult.Status.Should().Be(ToolResultStatus.Success);
+            workspaceFileService.VerifyAll();
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ForwardSandboxEscalationArguments_When_Provided()
     {
         Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
@@ -178,13 +250,27 @@ public sealed class ShellCommandToolTests
         ]);
     }
 
-    private static ToolExecutionContext CreateContext(string argumentsJson)
+    private static ToolExecutionContext CreateContext(
+        string argumentsJson,
+        ReplSessionContext? session = null)
     {
         using JsonDocument document = JsonDocument.Parse(argumentsJson);
         return new ToolExecutionContext(
             "call_1",
             "shell_command",
             document.RootElement.Clone(),
-            TestSessionFactory.Create());
+            session ?? TestSessionFactory.Create());
+    }
+
+    private static ToolExecutionContext CreateFileWriteContext(
+        string argumentsJson,
+        ReplSessionContext session)
+    {
+        using JsonDocument document = JsonDocument.Parse(argumentsJson);
+        return new ToolExecutionContext(
+            "call_2",
+            "file_write",
+            document.RootElement.Clone(),
+            session);
     }
 }

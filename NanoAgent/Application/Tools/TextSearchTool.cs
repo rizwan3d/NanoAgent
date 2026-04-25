@@ -14,7 +14,7 @@ internal sealed class TextSearchTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Search text recursively within files in the current workspace.";
+    public string Description => "Search text recursively from the current session working directory in the workspace.";
 
     public string Name => AgentToolNames.TextSearch;
 
@@ -42,7 +42,7 @@ internal sealed class TextSearchTool : ITool
             },
             "path": {
               "type": "string",
-              "description": "Optional file or directory path relative to the workspace root."
+              "description": "Optional file or directory path relative to the current session working directory."
             },
             "caseSensitive": {
               "type": "boolean",
@@ -76,7 +76,8 @@ internal sealed class TextSearchTool : ITool
         WorkspaceTextSearchResult result = await _workspaceFileService.SearchTextAsync(
             new WorkspaceTextSearchRequest(
                 safeQuery,
-                ToolArguments.GetOptionalString(context.Arguments, "path"),
+                context.Session.ResolvePathFromWorkingDirectory(
+                    ToolArguments.GetOptionalString(context.Arguments, "path")),
                 ToolArguments.GetBoolean(context.Arguments, "caseSensitive")),
             cancellationToken);
         SessionStateToolRecorder.RecordTextSearch(context.Session, result);

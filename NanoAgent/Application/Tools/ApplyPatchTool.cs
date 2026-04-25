@@ -14,7 +14,7 @@ internal sealed class ApplyPatchTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Apply a focused multi-file patch within the current workspace. Patch text must start with *** Begin Patch and end with *** End Patch.";
+    public string Description => "Apply a focused multi-file patch from the current session working directory within the workspace. Patch text must start with *** Begin Patch and end with *** End Patch.";
 
     public string Name => AgentToolNames.ApplyPatch;
 
@@ -36,7 +36,7 @@ internal sealed class ApplyPatchTool : ITool
           "properties": {
             "patch": {
               "type": "string",
-              "description": "Patch text using the apply_patch format. The first non-empty line must be exactly *** Begin Patch and the final non-empty line must be exactly *** End Patch."
+              "description": "Patch text using the apply_patch format. File paths in patch headers are relative to the current session working directory. The first non-empty line must be exactly *** Begin Patch and the final non-empty line must be exactly *** End Patch."
             }
           },
           "required": ["patch"],
@@ -61,11 +61,26 @@ internal sealed class ApplyPatchTool : ITool
                     "Provide a non-empty 'patch' string."));
         }
 
+        string safePatch;
+        try
+        {
+            safePatch = ResolvePatchPathsFromWorkingDirectory(patch!, context.Session);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return ToolResultFactory.InvalidArguments(
+                "path_outside_workspace",
+                exception.Message,
+                new ToolRenderPayload(
+                    "Patch rejected",
+                    exception.Message));
+        }
+
         WorkspaceApplyPatchExecutionResult executionResult;
         try
         {
             executionResult = await _workspaceFileService.ApplyPatchWithTrackingAsync(
-                patch!,
+                safePatch,
                 cancellationToken);
         }
         catch (FormatException exception)
@@ -101,6 +116,45 @@ internal sealed class ApplyPatchTool : ITool
             new ToolRenderPayload(
                 $"Applied patch ({result.FileCount} {(result.FileCount == 1 ? "file" : "files")})",
                 renderText));
+    }
+
+    private static string ResolvePatchPathsFromWorkingDirectory(
+        string patch,
+        ReplSessionContext session)
+    {
+        string[] lines = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None);
+
+        for (int index = 0; index < lines.Length; index++)
+        {
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Add File: ", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Delete File: ", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Update File: ", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Move to: ", session);
+        }
+
+        return string.Join("\n", lines);
+    }
+
+    private static string ResolvePatchHeaderPath(
+        string line,
+        string header,
+        ReplSessionContext session)
+    {
+        if (!line.StartsWith(header, StringComparison.Ordinal))
+        {
+            return line;
+        }
+
+        string path = line[header.Length..].Trim();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return line;
+        }
+
+        return header + session.ResolvePathFromWorkingDirectory(path);
     }
 
     private static string BuildPatchRepairGuidance(string parserMessage)
