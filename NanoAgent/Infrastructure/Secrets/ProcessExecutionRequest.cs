@@ -6,4 +6,5 @@ internal sealed record ProcessExecutionRequest(
     string? StandardInput = null,
     string? WorkingDirectory = null,
     int? MaxOutputCharacters = null,
-    IReadOnlyDictionary<string, string>? EnvironmentVariables = null);
+    IReadOnlyDictionary<string, string>? EnvironmentVariables = null,
+    bool UsePseudoTerminal = false);

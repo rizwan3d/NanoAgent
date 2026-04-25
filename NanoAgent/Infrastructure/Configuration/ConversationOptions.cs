@@ -140,7 +140,7 @@ public sealed class ConversationOptions
     - file_write: create a new file or replace a whole file when a targeted patch would be less clear than writing the final content directly.
     - file_delete: delete a specific file when removal is the requested or correct edit, preserving undo/redo tracking.
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
-    - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks.
+    - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks; set `pty: true` only when terminal-aware output is needed.
     - skill_load: load the full body instructions for a workspace skill only after its name and description indicate that it is relevant.
 
     - `lesson_memory` is available for persistent workspace lessons. Relevant lessons are searched automatically before each turn. You may also call `lesson_memory` manually to save, search, list, edit, or delete lessons.
