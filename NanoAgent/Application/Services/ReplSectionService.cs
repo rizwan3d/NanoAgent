@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Profiles;
 using Microsoft.Extensions.Logging;
 using NanoAgent.Domain.Models;
 
@@ -30,6 +29,7 @@ internal sealed class ReplSectionService : IReplSectionService
     private readonly IApiKeySecretStore _secretStore;
     private readonly IConversationProviderClient _providerClient;
     private readonly IConversationResponseMapper _responseMapper;
+    private readonly IAgentProfileResolver _profileResolver;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ReplSectionService> _logger;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sectionLocks = new(StringComparer.Ordinal);
@@ -40,6 +40,7 @@ internal sealed class ReplSectionService : IReplSectionService
         IApiKeySecretStore secretStore,
         IConversationProviderClient providerClient,
         IConversationResponseMapper responseMapper,
+        IAgentProfileResolver profileResolver,
         TimeProvider timeProvider,
         ILogger<ReplSectionService> logger)
     {
@@ -47,6 +48,7 @@ internal sealed class ReplSectionService : IReplSectionService
         _secretStore = secretStore;
         _providerClient = providerClient;
         _responseMapper = responseMapper;
+        _profileResolver = profileResolver;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -141,7 +143,7 @@ internal sealed class ReplSectionService : IReplSectionService
             snapshot.Turns,
             snapshot.PendingExecutionPlan,
             isResumedSection: true,
-            agentProfile: profileOverride ?? BuiltInAgentProfiles.Resolve(snapshot.AgentProfileName),
+            agentProfile: profileOverride ?? _profileResolver.Resolve(snapshot.AgentProfileName),
             reasoningEffort: snapshot.ReasoningEffort,
             sessionState: snapshot.SessionState,
             workspacePath: snapshot.WorkspacePath);

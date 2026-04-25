@@ -39,7 +39,7 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
 - **Thinking Effort** — Configure thinking effort: none, minimal, low, medium, high, or xhigh
-- **Subagent Delegation** — Delegate focused tasks to `general` or `explore` subagents
+- **Subagent Delegation** - Delegate focused tasks to built-in or workspace agents in `.nanoagent/agents`
 - **Provider Flexibility** — OpenAI, Anthropic, Google AI Studio, or any OpenAI-compatible API
 - **Desktop UI** — Use workspace sections, colorful tool output, and permission prompts in a native app
 - **Session History** — Preserve conversation context across workspace sections
@@ -105,6 +105,7 @@ nanoai
 | `/profile build` | Switch to build profile |
 | `/profile plan` | Switch to planning profile |
 | `/profile review` | Switch to review profile |
+| `/profile dotnet-expert` | Switch to a workspace custom profile |
 
 ### Delegate to Subagents
 
@@ -112,6 +113,29 @@ nanoai
 |--------|-------------|
 | `@general` | Hand one turn to general-purpose subagent |
 | `@explore` | Hand one turn to read-only explorer |
+| `@code-reviewer` | Hand one turn to a workspace custom subagent |
+
+### Custom Agents
+
+Workspace custom agents live in `.nanoagent/agents/*.md`. The markdown body becomes the agent's system prompt, and optional front matter controls the profile:
+
+```markdown
+---
+name: code-reviewer
+mode: subagent
+description: Read-only reviewer for bugs, regressions, edge cases, and missing tests.
+editMode: readOnly
+shellMode: safeInspectionOnly
+tools:
+  - directory_list
+  - file_read
+  - shell_command
+  - text_search
+---
+Review the requested code or change set with a findings-first posture.
+```
+
+If front matter is omitted, the agent name is derived from the file name, the mode defaults to `subagent`, edits default to `readOnly`, and shell access defaults to `safeInspectionOnly`. Subagents can be invoked with `@agent-name` or through `agent_delegate`.
 
 ### Shell Commands
 
@@ -122,7 +146,7 @@ nanoai
 | `/mcp` | Show configured MCP servers and discovered MCP tools |
 | `/models` | Show available models |
 | `/use <model>` | Switch active model |
-| `/profile <name>` | Switch active profile (build, plan, review) |
+| `/profile <name>` | Switch active profile |
 | `/thinking` | Set thinking effort (none, minimal, low, medium, high, xhigh) |
 | `/permissions` | Show permission summary |
 | `/allow <tool>` | Allow a tool override |
