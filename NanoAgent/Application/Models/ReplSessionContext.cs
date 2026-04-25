@@ -18,6 +18,9 @@ public sealed class ReplSessionContext
     private const int MaxPromptEditContextEntries = 12;
     private const int MaxPromptTerminalHistoryEntries = 12;
     private const int MaxPromptFieldCharacters = 600;
+    private const int MaxCompactedHistoryTurns = 8;
+    private const int MaxCompactedHistoryCharacters = 4_000;
+    private const int MaxCompactedHistoryFieldCharacters = 500;
     private readonly object _syncRoot = new();
     public const string DefaultSectionTitle = "Untitled section";
     private readonly HashSet<string> _availableModelIds;
@@ -581,9 +584,116 @@ public sealed class ReplSessionContext
             return _conversationHistory.ToArray();
         }
 
-        return _conversationHistory
+        ConversationRequestMessage[] recentHistory = _conversationHistory
             .Skip(_conversationHistory.Count - maxMessageCount)
             .ToArray();
+        string? compactedHistory = CreateCompactedConversationHistory(maxHistoryTurns);
+
+        return string.IsNullOrWhiteSpace(compactedHistory)
+            ? recentHistory
+            : [ConversationRequestMessage.User(compactedHistory), .. recentHistory];
+    }
+
+    private string? CreateCompactedConversationHistory(int retainedHistoryTurns)
+    {
+        int compactedTurnCount = _conversationTurns.Count - retainedHistoryTurns;
+        if (compactedTurnCount <= 0)
+        {
+            return null;
+        }
+
+        int skippedCompactedTurns = Math.Max(0, compactedTurnCount - MaxCompactedHistoryTurns);
+        ConversationSectionTurn[] compactedTurns = _conversationTurns
+            .Skip(skippedCompactedTurns)
+            .Take(compactedTurnCount - skippedCompactedTurns)
+            .ToArray();
+        if (compactedTurns.Length == 0)
+        {
+            return null;
+        }
+
+        StringBuilder builder = new();
+        builder.Append("Earlier conversation context (compacted; ");
+        builder.Append(compactedTurnCount.ToString(CultureInfo.InvariantCulture));
+        builder.Append(compactedTurnCount == 1 ? " older turn" : " older turns");
+        if (skippedCompactedTurns > 0)
+        {
+            builder.Append(", showing the most recent ");
+            builder.Append(compactedTurns.Length.ToString(CultureInfo.InvariantCulture));
+        }
+        builder.AppendLine("; full transcript omitted):");
+        builder.AppendLine("Use this for continuity only; inspect files or rerun commands when exact current state matters.");
+
+        for (int index = 0; index < compactedTurns.Length; index++)
+        {
+            ConversationSectionTurn turn = compactedTurns[index];
+            int originalTurnNumber = skippedCompactedTurns + index + 1;
+            builder.Append("- Turn ");
+            builder.Append(originalTurnNumber.ToString(CultureInfo.InvariantCulture));
+            builder.Append(" user: ");
+            builder.AppendLine(CompactHistoryField(turn.UserInput));
+            builder.Append("  assistant: ");
+            builder.AppendLine(CompactHistoryField(turn.AssistantResponse));
+
+            if (turn.ToolCalls.Count > 0)
+            {
+                string toolNames = string.Join(
+                    ", ",
+                    turn.ToolCalls
+                        .Select(static toolCall => toolCall.Name)
+                        .Where(static name => !string.IsNullOrWhiteSpace(name))
+                        .Distinct(StringComparer.Ordinal)
+                        .Take(8));
+
+                if (!string.IsNullOrWhiteSpace(toolNames))
+                {
+                    builder.Append("  tools: ");
+                    builder.AppendLine(toolNames);
+                }
+            }
+
+            if (builder.Length >= MaxCompactedHistoryCharacters)
+            {
+                break;
+            }
+        }
+
+        string compactedHistory = builder.ToString().Trim();
+        return compactedHistory.Length <= MaxCompactedHistoryCharacters
+            ? compactedHistory
+            : compactedHistory[..Math.Max(0, MaxCompactedHistoryCharacters - 3)].TrimEnd() + "...";
+    }
+
+    private static string CompactHistoryField(string value)
+    {
+        string normalized = NormalizeWhitespace(value);
+        return normalized.Length <= MaxCompactedHistoryFieldCharacters
+            ? normalized
+            : normalized[..Math.Max(0, MaxCompactedHistoryFieldCharacters - 3)].TrimEnd() + "...";
+    }
+
+    private static string NormalizeWhitespace(string value)
+    {
+        StringBuilder builder = new(value.Length);
+        bool previousWasWhitespace = false;
+        foreach (char character in value)
+        {
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasWhitespace)
+                {
+                    builder.Append(' ');
+                    previousWasWhitespace = true;
+                }
+
+                continue;
+            }
+
+            builder.Append(character);
+            previousWasWhitespace = false;
+        }
+
+        return builder.ToString().Trim();
     }
 
     public void RecordFileEditTransaction(WorkspaceFileEditTransaction transaction)

@@ -1929,7 +1929,7 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_TrimStoredHistory_When_MaxHistoryTurnsIsLimited()
+    public async Task ProcessAsync_Should_CompactOlderHistory_When_MaxHistoryTurnsIsLimited()
     {
         ReplSessionContext session = CreateSession();
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
@@ -1984,13 +1984,15 @@ public sealed class AgentConversationPipelineTests
         await ProcessAsync(sut, "Question three", session);
 
         requests.Should().HaveCount(3);
-        requests[2].Messages.Should().HaveCount(3);
-        requests[2].Messages[0].Content.Should().Be("Question two");
-        requests[2].Messages[1].Content.Should().Be("Reply two.");
-        requests[2].Messages[2].Content.Should().Be("Question three");
-        requests[2].Messages.Select(static message => message.Content)
-            .Should()
-            .NotContain("Question one");
+        requests[2].Messages.Should().HaveCount(4);
+        requests[2].Messages[0].Role.Should().Be("user");
+        requests[2].Messages[0].Content.Should().Contain("Earlier conversation context");
+        requests[2].Messages[0].Content.Should().Contain("Question one");
+        requests[2].Messages[0].Content.Should().Contain("Reply one.");
+        requests[2].Messages[0].Content.Should().NotContain("Question two");
+        requests[2].Messages[1].Content.Should().Be("Question two");
+        requests[2].Messages[2].Content.Should().Be("Reply two.");
+        requests[2].Messages[3].Content.Should().Be("Question three");
     }
 
     [Fact]
