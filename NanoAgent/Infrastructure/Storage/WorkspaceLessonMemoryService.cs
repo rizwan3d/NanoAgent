@@ -24,15 +24,18 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     private readonly MemorySettings _settings;
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
+    private readonly ILessonFailureClassifier? _failureClassifier;
 
     public WorkspaceLessonMemoryService(
         IWorkspaceRootProvider workspaceRootProvider,
         TimeProvider timeProvider,
-        MemorySettings? settings = null)
+        MemorySettings? settings = null,
+        ILessonFailureClassifier? failureClassifier = null)
     {
         _workspaceRootProvider = workspaceRootProvider;
         _timeProvider = timeProvider;
         _settings = NormalizeSettings(settings ?? new MemorySettings());
+        _failureClassifier = failureClassifier;
     }
 
     public string GetStoragePath()
@@ -332,7 +335,8 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     public async Task ObserveToolResultAsync(
         ConversationToolCall toolCall,
         ToolInvocationResult invocationResult,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ReplSessionContext? session = null)
     {
         ArgumentNullException.ThrowIfNull(toolCall);
         ArgumentNullException.ThrowIfNull(invocationResult);
@@ -353,7 +357,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             TryReadShellCommandResult(invocationResult, out ShellCommandExecutionResult? shellResult) &&
             shellResult is not null)
         {
-            await ObserveShellCommandAsync(shellResult, cancellationToken);
+            await ObserveShellCommandAsync(shellResult, session, cancellationToken);
             return;
         }
 
@@ -366,12 +370,13 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         if (TryCreatePendingToolFailure(toolCall, invocationResult, out PendingFailureObservation? observation) &&
             observation is not null)
         {
-            RememberPendingFailure(observation);
+            RememberPendingFailure(StartFailureClassification(observation, session, cancellationToken));
         }
     }
 
     private async Task ObserveShellCommandAsync(
         ShellCommandExecutionResult result,
+        ReplSessionContext? session,
         CancellationToken cancellationToken)
     {
         string fingerprint = CreateShellFingerprint(result.Command);
@@ -388,7 +393,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                     $"command `{NormalizeWhitespace(result.Command)}` exited 0 in `{NormalizeWhitespace(result.WorkingDirectory)}`");
                 await SaveOrUpdateResolvedLessonAsync(
                     observation,
-                    BuildResolvedLesson(observation, successSummary),
+                    successSummary,
                     $"Corrected successful attempt: {successSummary}.",
                     cancellationToken);
             }
@@ -407,7 +412,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string command = NormalizeWhitespace(result.Command);
         string attemptSummary = RedactIfNeeded(
             $"command `{command}` exited {result.ExitCode.ToString(CultureInfo.InvariantCulture)} in `{NormalizeWhitespace(result.WorkingDirectory)}`");
-        RememberPendingFailure(new PendingFailureObservation(
+        PendingFailureObservation failureObservation = new(
             fingerprint,
             _timeProvider.GetUtcNow(),
             AgentToolNames.ShellCommand,
@@ -416,7 +421,9 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             attemptSummary,
             command,
             signature,
-            NormalizeTags(["auto", "failure", "resolved", category, GetFirstCommandName(result.Command), redactedSignature])));
+            NormalizeTags(["auto", "failure", "resolved", category, GetFirstCommandName(result.Command), redactedSignature]),
+            ClassificationTask: null);
+        RememberPendingFailure(StartFailureClassification(failureObservation, session, cancellationToken));
     }
 
     private async Task ObserveSuccessfulToolAsync(
@@ -436,7 +443,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string successSummary = SummarizeToolCall(toolCall, invocationResult);
         await SaveOrUpdateResolvedLessonAsync(
             observation,
-            BuildResolvedLesson(observation, successSummary),
+            successSummary,
             $"Corrected successful attempt: {successSummary}.",
             cancellationToken);
     }
@@ -470,17 +477,56 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             attemptSummary,
             Command: null,
             FailureSignature: failureSignature,
-            Tags: NormalizeTags(["auto", "failure", "resolved", "tool", toolName, redactedFailureSignature]));
+            Tags: NormalizeTags(["auto", "failure", "resolved", "tool", toolName, redactedFailureSignature]),
+            ClassificationTask: null);
         return true;
     }
 
     private async Task SaveOrUpdateResolvedLessonAsync(
         PendingFailureObservation observation,
-        string lesson,
+        string successSummary,
+        string fixSummary,
+        CancellationToken cancellationToken)
+    {
+        string fallbackLesson = BuildResolvedLesson(observation, successSummary);
+        LessonFailureClassification? classification = TryGetCompletedClassification(observation);
+
+        await SaveOrUpdateResolvedLessonCoreAsync(
+            observation,
+            classification,
+            fallbackLesson,
+            fixSummary,
+            cancellationToken);
+
+        if (classification is null &&
+            observation.ClassificationTask is not null)
+        {
+            _ = UpdateResolvedLessonFromClassificationAsync(
+                observation,
+                fixSummary);
+        }
+    }
+
+    private async Task SaveOrUpdateResolvedLessonCoreAsync(
+        PendingFailureObservation observation,
+        LessonFailureClassification? classification,
+        string fallbackLesson,
         string fixSummary,
         CancellationToken cancellationToken)
     {
         DateTimeOffset now = _timeProvider.GetUtcNow();
+        string trigger = classification is null
+            ? observation.Trigger
+            : classification.Trigger;
+        string problem = classification is null
+            ? observation.Problem
+            : classification.Problem;
+        string lesson = classification is null
+            ? fallbackLesson
+            : classification.Lesson;
+        IEnumerable<string> tags = classification is null
+            ? observation.Tags
+            : observation.Tags.Concat(classification.Tags).Concat(["classified"]);
 
         await _gate.WaitAsync(cancellationToken);
         try
@@ -495,10 +541,10 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                 {
                     UpdatedAtUtc = now,
                     Kind = "lesson",
-                    Trigger = RedactIfNeeded(observation.Trigger),
-                    Problem = RedactIfNeeded(observation.Problem),
+                    Trigger = RedactIfNeeded(trigger),
+                    Problem = RedactIfNeeded(problem),
                     Lesson = RedactIfNeeded(lesson),
-                    Tags = NormalizeTags(entries[index].Tags.Concat(observation.Tags).Concat(["fixed"])),
+                    Tags = NormalizeTags(entries[index].Tags.Concat(tags).Concat(["fixed"])),
                     ToolName = observation.ToolName,
                     Command = RedactOptionalIfNeeded(NormalizeOptionalText(observation.Command)),
                     FailureSignature = RedactOptionalIfNeeded(NormalizeOptionalText(observation.FailureSignature)),
@@ -516,10 +562,10 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                 now,
                 now,
                 "lesson",
-                RedactIfNeeded(observation.Trigger),
-                RedactIfNeeded(observation.Problem),
+                RedactIfNeeded(trigger),
+                RedactIfNeeded(problem),
                 RedactIfNeeded(lesson),
-                NormalizeTags(observation.Tags.Concat(["fixed"])),
+                NormalizeTags(tags.Concat(["fixed"])),
                 observation.ToolName,
                 RedactOptionalIfNeeded(NormalizeOptionalText(observation.Command)),
                 RedactOptionalIfNeeded(NormalizeOptionalText(observation.FailureSignature)),
@@ -534,6 +580,144 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         {
             _gate.Release();
         }
+    }
+
+    private async Task UpdateResolvedLessonFromClassificationAsync(
+        PendingFailureObservation observation,
+        string fixSummary)
+    {
+        LessonFailureClassification? classification = null;
+        try
+        {
+            classification = await observation.ClassificationTask!;
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            return;
+        }
+
+        if (classification is null)
+        {
+            return;
+        }
+
+        classification = NormalizeClassification(classification);
+        if (classification is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await SaveOrUpdateResolvedLessonCoreAsync(
+                observation,
+                classification,
+                BuildResolvedLesson(observation, observation.AttemptSummary),
+                fixSummary,
+                CancellationToken.None);
+        }
+        catch
+        {
+            // Background classification should never make lesson memory observation noisy.
+        }
+    }
+
+    private PendingFailureObservation StartFailureClassification(
+        PendingFailureObservation observation,
+        ReplSessionContext? session,
+        CancellationToken cancellationToken)
+    {
+        if (_failureClassifier is null || session is null)
+        {
+            return observation;
+        }
+
+        return observation with
+        {
+            ClassificationTask = ClassifyFailureSafelyAsync(
+                observation,
+                session,
+                cancellationToken)
+        };
+    }
+
+    private async Task<LessonFailureClassification?> ClassifyFailureSafelyAsync(
+        PendingFailureObservation observation,
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            LessonFailureClassification? classification = await _failureClassifier!.ClassifyAsync(
+                session,
+                new LessonFailureClassificationRequest(
+                    observation.ToolName,
+                    observation.Trigger,
+                    observation.Problem,
+                    observation.AttemptSummary,
+                    observation.Command,
+                    observation.FailureSignature,
+                    observation.Tags),
+                cancellationToken);
+
+            return NormalizeClassification(classification);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static LessonFailureClassification? TryGetCompletedClassification(
+        PendingFailureObservation observation)
+    {
+        if (observation.ClassificationTask is not { IsCompletedSuccessfully: true } task)
+        {
+            return null;
+        }
+
+        return NormalizeClassification(task.Result);
+    }
+
+    private static LessonFailureClassification? NormalizeClassification(
+        LessonFailureClassification? classification)
+    {
+        if (classification is null ||
+            string.IsNullOrWhiteSpace(classification.Trigger) ||
+            string.IsNullOrWhiteSpace(classification.Problem) ||
+            string.IsNullOrWhiteSpace(classification.Lesson))
+        {
+            return null;
+        }
+
+        string lesson = NormalizeWhitespace(classification.Lesson);
+        if (IsGenericLesson(lesson))
+        {
+            return null;
+        }
+
+        return classification with
+        {
+            Trigger = NormalizeWhitespace(classification.Trigger),
+            Problem = NormalizeWhitespace(classification.Problem),
+            Lesson = lesson,
+            Tags = NormalizeTags(classification.Tags)
+        };
+    }
+
+    private static bool IsGenericLesson(string lesson)
+    {
+        return lesson.Equals("Be careful.", StringComparison.OrdinalIgnoreCase) ||
+            lesson.Equals("Check arguments.", StringComparison.OrdinalIgnoreCase) ||
+            lesson.Contains("do not repeat the failed pattern", StringComparison.OrdinalIgnoreCase);
     }
 
     private void RememberPendingFailure(PendingFailureObservation observation)
@@ -1350,7 +1534,8 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string AttemptSummary,
         string? Command,
         string? FailureSignature,
-        string[] Tags);
+        string[] Tags,
+        Task<LessonFailureClassification?>? ClassificationTask);
 
     [GeneratedRegex(@"\b(?:CS|TS|MSB|NU|NETSDK|CA|IDE|BC|FS)\d{3,6}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DiagnosticCodeRegex();

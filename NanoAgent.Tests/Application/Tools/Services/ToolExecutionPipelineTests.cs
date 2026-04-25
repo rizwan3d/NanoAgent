@@ -430,7 +430,8 @@ public sealed class ToolExecutionPipelineTests
         public Task ObserveToolResultAsync(
             ConversationToolCall toolCall,
             ToolInvocationResult invocationResult,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ReplSessionContext? session = null)
         {
             ObservedResults.Add((toolCall, invocationResult));
             return Task.CompletedTask;

@@ -232,6 +232,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         await ObserveLessonMemoryAsync(
             record.ToolCall,
             record.InvocationResult,
+            session,
             cancellationToken);
         await RecordToolAuditAsync(
             record.ToolCall,
@@ -261,6 +262,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
     private async Task ObserveLessonMemoryAsync(
         ConversationToolCall toolCall,
         ToolInvocationResult result,
+        ReplSessionContext session,
         CancellationToken cancellationToken)
     {
         if (_lessonMemoryService is null)
@@ -270,7 +272,11 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
 
         try
         {
-            await _lessonMemoryService.ObserveToolResultAsync(toolCall, result, cancellationToken);
+            await _lessonMemoryService.ObserveToolResultAsync(
+                toolCall,
+                result,
+                cancellationToken,
+                session);
         }
         catch (OperationCanceledException)
         {

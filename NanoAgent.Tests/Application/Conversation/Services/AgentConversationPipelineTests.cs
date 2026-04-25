@@ -2366,7 +2366,8 @@ public sealed class AgentConversationPipelineTests
         public Task ObserveToolResultAsync(
             ConversationToolCall toolCall,
             ToolInvocationResult invocationResult,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ReplSessionContext? session = null)
         {
             return Task.CompletedTask;
         }
@@ -2437,7 +2438,8 @@ public sealed class AgentConversationPipelineTests
         public Task ObserveToolResultAsync(
             ConversationToolCall toolCall,
             ToolInvocationResult invocationResult,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            ReplSessionContext? session = null)
         {
             return Task.CompletedTask;
         }

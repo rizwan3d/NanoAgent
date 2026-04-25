@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<ISkillService, WorkspaceSkillService>();
         services.AddSingleton<ILifecycleHookService, ShellLifecycleHookService>();
+        services.AddSingleton<ILessonFailureClassifier, LessonFailureClassifier>();
         services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();
         services.AddSingleton<IToolAuditLogService, WorkspaceToolAuditLogService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();

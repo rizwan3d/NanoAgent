@@ -4,6 +4,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Infrastructure.Storage;
+using NanoAgent.Domain.Models;
 using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
@@ -172,6 +173,62 @@ public sealed class WorkspaceLessonMemoryServiceTests
     }
 
     [Fact]
+    public async Task ObserveToolResultAsync_Should_UseParallelClassifierResult_ForResolvedLesson()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        ControlledLessonFailureClassifier classifier = new();
+        WorkspaceLessonMemoryService sut = CreateService(
+            workspace.Path,
+            failureClassifier: classifier);
+        ReplSessionContext session = CreateSession(workspace.Path);
+
+        Task observeFailureTask = sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
+            CreateShellInvocation(new ShellCommandExecutionResult(
+                "dotnet build",
+                ".",
+                1,
+                "",
+                "Program.cs(10,5): error CS0246: The type or namespace name 'MissingType' could not be found.")),
+            CancellationToken.None,
+            session);
+
+        await observeFailureTask.WaitAsync(TimeSpan.FromSeconds(1));
+        classifier.Requests.Should().ContainSingle();
+        (await sut.ListAsync(10, includeFixed: true, CancellationToken.None))
+            .Should()
+            .BeEmpty();
+
+        classifier.Complete(new LessonFailureClassification(
+            "CS0246 during dotnet build",
+            "A referenced type or namespace is missing from the project context.",
+            "For CS0246, inspect the missing symbol's namespace, package reference, and project reference before editing unrelated code.",
+            ["csharp", "dotnet", "cs0246"]));
+
+        await sut.ObserveToolResultAsync(
+            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
+            CreateShellInvocation(new ShellCommandExecutionResult(
+                "dotnet build",
+                ".",
+                0,
+                "Build succeeded.",
+                "")),
+            CancellationToken.None,
+            session);
+
+        IReadOnlyList<LessonMemoryEntry> lessons = await WaitForLessonAsync(
+            sut,
+            lesson => lesson.Trigger == "CS0246 during dotnet build");
+
+        lessons.Should().ContainSingle();
+        lessons[0].Trigger.Should().Be("CS0246 during dotnet build");
+        lessons[0].Problem.Should().Contain("referenced type");
+        lessons[0].Lesson.Should().Contain("inspect the missing symbol");
+        lessons[0].Tags.Should().Contain("classified");
+        lessons[0].Tags.Should().Contain("cs0246");
+    }
+
+    [Fact]
     public async Task ObserveToolResultAsync_Should_IgnoreFileLocationMisses()
     {
         using TempWorkspace workspace = TempWorkspace.Create();
@@ -204,6 +261,30 @@ public sealed class WorkspaceLessonMemoryServiceTests
             CancellationToken.None);
 
         lessons.Should().BeEmpty();
+    }
+
+    private static async Task<IReadOnlyList<LessonMemoryEntry>> WaitForLessonAsync(
+        WorkspaceLessonMemoryService service,
+        Func<LessonMemoryEntry, bool> predicate)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(2);
+        IReadOnlyList<LessonMemoryEntry> lessons = [];
+
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            lessons = await service.ListAsync(
+                limit: 10,
+                includeFixed: true,
+                CancellationToken.None);
+            if (lessons.Any(predicate))
+            {
+                return lessons;
+            }
+
+            await Task.Delay(25);
+        }
+
+        return lessons;
     }
 
     [Fact]
@@ -253,12 +334,45 @@ public sealed class WorkspaceLessonMemoryServiceTests
 
     private static WorkspaceLessonMemoryService CreateService(
         string workspacePath,
-        MemorySettings? settings = null)
+        MemorySettings? settings = null,
+        ILessonFailureClassifier? failureClassifier = null)
     {
         return new WorkspaceLessonMemoryService(
             new FixedWorkspaceRootProvider(workspacePath),
             TimeProvider.System,
-            settings);
+            settings,
+            failureClassifier);
+    }
+
+    private static ReplSessionContext CreateSession(string workspacePath)
+    {
+        return new ReplSessionContext(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "gpt-test",
+            ["gpt-test"],
+            workspacePath: workspacePath);
+    }
+
+    private sealed class ControlledLessonFailureClassifier : ILessonFailureClassifier
+    {
+        private readonly TaskCompletionSource<LessonFailureClassification?> _completion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public List<LessonFailureClassificationRequest> Requests { get; } = [];
+
+        public Task<LessonFailureClassification?> ClassifyAsync(
+            ReplSessionContext session,
+            LessonFailureClassificationRequest request,
+            CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return _completion.Task;
+        }
+
+        public void Complete(LessonFailureClassification? classification)
+        {
+            _completion.TrySetResult(classification);
+        }
     }
 
     private sealed class FixedWorkspaceRootProvider : IWorkspaceRootProvider

@@ -34,7 +34,8 @@ public interface ILessonMemoryService
     Task ObserveToolResultAsync(
         ConversationToolCall toolCall,
         ToolInvocationResult invocationResult,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        ReplSessionContext? session = null);
 
     string GetStoragePath();
 }
