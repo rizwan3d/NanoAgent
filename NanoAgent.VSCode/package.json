@@ -1,0 +1,204 @@
+{
+  "name": "nanoagent-vscode",
+  "displayName": "NanoAgent",
+  "description": "VS Code companion extension for NanoAgent.",
+  "version": "0.1.0",
+  "publisher": "rizwan3d",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rizwan3d/NanoAgent.git"
+  },
+  "engines": {
+    "vscode": "^1.86.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "activationEvents": [
+    "onCommand:nanoAgent.start",
+    "onCommand:nanoAgent.restart",
+    "onCommand:nanoAgent.ask",
+    "onCommand:nanoAgent.explainSelection",
+    "onCommand:nanoAgent.fixSelection",
+    "onCommand:nanoAgent.askAboutFile",
+    "onCommand:nanoAgent.reviewWorkspace",
+    "onCommand:nanoAgent.openSettings"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nanoAgent.start",
+        "title": "NanoAgent: Start"
+      },
+      {
+        "command": "nanoAgent.restart",
+        "title": "NanoAgent: New Terminal Session"
+      },
+      {
+        "command": "nanoAgent.ask",
+        "title": "NanoAgent: Ask"
+      },
+      {
+        "command": "nanoAgent.explainSelection",
+        "title": "NanoAgent: Explain Selection"
+      },
+      {
+        "command": "nanoAgent.fixSelection",
+        "title": "NanoAgent: Fix Selection"
+      },
+      {
+        "command": "nanoAgent.askAboutFile",
+        "title": "NanoAgent: Ask About File"
+      },
+      {
+        "command": "nanoAgent.reviewWorkspace",
+        "title": "NanoAgent: Review Workspace"
+      },
+      {
+        "command": "nanoAgent.openSettings",
+        "title": "NanoAgent: Open Settings"
+      }
+    ],
+    "configuration": {
+      "title": "NanoAgent",
+      "properties": {
+        "nanoAgent.command": {
+          "type": "string",
+          "default": "nanoai",
+          "markdownDescription": "Shell command used to start NanoAgent. If the CLI is not on `PATH`, set this to the full command you normally run in a terminal."
+        },
+        "nanoAgent.defaultProfile": {
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "build",
+            "plan",
+            "review"
+          ],
+          "enumItemLabels": [
+            "Default",
+            "Build",
+            "Plan",
+            "Review"
+          ],
+          "markdownDescription": "Optional NanoAgent profile passed as `--profile <name>` when starting a new terminal session."
+        },
+        "nanoAgent.thinking": {
+          "type": "string",
+          "default": "",
+          "enum": [
+            "",
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ],
+          "enumItemLabels": [
+            "Default",
+            "None",
+            "Minimal",
+            "Low",
+            "Medium",
+            "High",
+            "XHigh"
+          ],
+          "markdownDescription": "Optional thinking effort passed as `--thinking <value>` when starting a new terminal session."
+        },
+        "nanoAgent.extraArgs": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Additional raw CLI arguments appended when starting NanoAgent, such as `--section <id>`."
+        },
+        "nanoAgent.promptSendDelayMs": {
+          "type": "number",
+          "default": 1200,
+          "minimum": 0,
+          "maximum": 10000,
+          "markdownDescription": "Delay before sending the first prompt after a new NanoAgent terminal starts."
+        },
+        "nanoAgent.reuseTerminal": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Reuse the existing NanoAgent terminal for commands instead of creating a fresh terminal each time."
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "nanoAgent.ask",
+        "key": "ctrl+alt+n",
+        "mac": "cmd+alt+n"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "nanoAgent.start"
+        },
+        {
+          "command": "nanoAgent.restart"
+        },
+        {
+          "command": "nanoAgent.ask"
+        },
+        {
+          "command": "nanoAgent.explainSelection"
+        },
+        {
+          "command": "nanoAgent.fixSelection"
+        },
+        {
+          "command": "nanoAgent.askAboutFile"
+        },
+        {
+          "command": "nanoAgent.reviewWorkspace"
+        },
+        {
+          "command": "nanoAgent.openSettings"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "nanoAgent.explainSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@50"
+        },
+        {
+          "command": "nanoAgent.fixSelection",
+          "when": "editorHasSelection",
+          "group": "navigation@51"
+        },
+        {
+          "command": "nanoAgent.askAboutFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@52"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "nanoAgent.askAboutFile",
+          "when": "resourceScheme == file",
+          "group": "navigation@50"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.86.0",
+    "@vscode/vsce": "2.25.0",
+    "typescript": "^5.4.5"
+  }
+}

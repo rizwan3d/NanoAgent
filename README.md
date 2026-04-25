@@ -34,6 +34,7 @@ NanoAgent is a local coding agent that helps with day-to-day software engineerin
 - **Sandboxed Tool Calls** - Use read-only, workspace-write, or danger-full-access sandbox modes with shell escalation requests
 - **Workspace Instructions** - Load persistent repo guidance from `AGENTS.md` or `.agent/AGENTS.md`
 - **MCP Servers** - Load MCP servers from NanoAgent user and workspace configuration files
+- **VS Code Extension** - Use the companion extension from `NanoAgent.VSCode`
 - **File Operations** — Search, read, and edit files with full regex support
 - **Shell Execution** — Run build/test commands directly from your terminal
 - **Multi-Agent Profiles** — Switch between `build`, `plan`, and `review` profiles for different workflows
@@ -72,6 +73,20 @@ irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.
 ```
 
 Restart your shell after installation if the `nano` command is not immediately available.
+
+---
+
+## VS Code Extension
+
+The VS Code companion extension lives in [`NanoAgent.VSCode`](NanoAgent.VSCode). It starts `nanoai` in the integrated terminal and can send prompts from the command palette, editor selections, and Explorer files.
+
+```bash
+cd NanoAgent.VSCode
+npm install
+npm run compile
+```
+
+Open the extension folder in VS Code and press `F5` to launch an Extension Development Host.
 
 ---
 
