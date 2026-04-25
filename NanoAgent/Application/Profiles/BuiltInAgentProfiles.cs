@@ -20,6 +20,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
             AgentToolNames.FileWrite,
+            AgentToolNames.LessonMemory,
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
@@ -36,6 +37,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
             AgentToolNames.FileWrite,
+            AgentToolNames.LessonMemory,
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
@@ -49,6 +51,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.AgentDelegate,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,
+            AgentToolNames.LessonMemory,
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
@@ -62,6 +65,7 @@ internal static class BuiltInAgentProfiles
         [
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,
+            AgentToolNames.LessonMemory,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
             AgentToolNames.TextSearch,
@@ -77,6 +81,7 @@ internal static class BuiltInAgentProfiles
         Active agent profile: build.
         Operate as a hands-on coding agent: inspect before changing, edit confidently when the evidence is clear, and finish the requested implementation when practical.
         Use the repo and tool output as the source of truth. When work is non-trivial, keep a live plan synchronized and work one concrete step at a time.
+        Relevant lesson memory is retrieved automatically. Use lesson_memory when a mistake teaches a reusable future rule, when you need to search/list memory manually, or when a bad lesson should be edited or deleted.
         When you want a plan-first pass, call `planning_mode` instead of writing a freeform plan in assistant text.
         Delegate focused, self-contained side tasks with agent_delegate when another agent can inspect or implement a bounded slice independently. Use explore for fast read-only codebase investigation and general for implementation-capable delegated work.
         Before using an unfamiliar build tool, framework, library, SDK, or external API, use web_run to verify the current official documentation when the workspace does not already establish the correct usage.

@@ -249,6 +249,74 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_IncludeRelevantLessonMemoryInSystemPrompt()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_lessons"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Checked the remembered build failure.",
+                [],
+                "resp_lessons"));
+
+        FixedLessonMemoryService lessonMemoryService = new(
+            "Relevant lesson memory:\n- [les_123; lesson; active] Trigger: CS0246. Problem: DI registration was missing. Lesson: Check DI registration first.");
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            lessonMemoryService: lessonMemoryService);
+
+        await ProcessAsync(
+            sut,
+            "Fix the build",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Relevant lesson memory:");
+        requests[0].SystemPrompt.Should().Contain("CS0246");
+        requests[0].SystemPrompt.Should().Contain("Check DI registration first");
+        lessonMemoryService.Queries.Should().Equal("Fix the build");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_IncludeSessionStateInSystemPrompt_When_ToolContextExists()
     {
         ReplSessionContext session = CreateSession();
@@ -1973,7 +2041,8 @@ public sealed class AgentConversationPipelineTests
         IToolExecutionPipeline toolExecutionPipeline,
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
-        IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null)
+        IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null,
+        ILessonMemoryService? lessonMemoryService = null)
     {
         return new AgentConversationPipeline(
             timeProvider,
@@ -1985,6 +2054,7 @@ public sealed class AgentConversationPipelineTests
             toolRegistry,
             configurationAccessor,
             workspaceInstructionsProvider ?? new EmptyWorkspaceInstructionsProvider(),
+            lessonMemoryService ?? new EmptyLessonMemoryService(),
             NullLogger<AgentConversationPipeline>.Instance);
     }
 
@@ -2094,6 +2164,136 @@ public sealed class AgentConversationPipelineTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(_instructions);
+        }
+    }
+
+    private sealed class EmptyLessonMemoryService : ILessonMemoryService
+    {
+        public Task<LessonMemoryEntry> SaveAsync(
+            LessonMemorySaveRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<LessonMemoryEntry>> SearchAsync(
+            string query,
+            int limit,
+            bool includeFixed,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<LessonMemoryEntry>>([]);
+        }
+
+        public Task<IReadOnlyList<LessonMemoryEntry>> ListAsync(
+            int limit,
+            bool includeFixed,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<LessonMemoryEntry>>([]);
+        }
+
+        public Task<LessonMemoryEntry?> EditAsync(
+            LessonMemoryEditRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<LessonMemoryEntry?>(null);
+        }
+
+        public Task<bool> DeleteAsync(
+            string id,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(false);
+        }
+
+        public Task<string?> CreatePromptAsync(
+            string query,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task ObserveToolResultAsync(
+            ToolInvocationResult invocationResult,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public string GetStoragePath()
+        {
+            return ".nanoagent/memory/lessons.jsonl";
+        }
+    }
+
+    private sealed class FixedLessonMemoryService : ILessonMemoryService
+    {
+        private readonly string? _prompt;
+
+        public FixedLessonMemoryService(string? prompt)
+        {
+            _prompt = prompt;
+        }
+
+        public List<string> Queries { get; } = [];
+
+        public Task<LessonMemoryEntry> SaveAsync(
+            LessonMemorySaveRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<LessonMemoryEntry>> SearchAsync(
+            string query,
+            int limit,
+            bool includeFixed,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<LessonMemoryEntry>>([]);
+        }
+
+        public Task<IReadOnlyList<LessonMemoryEntry>> ListAsync(
+            int limit,
+            bool includeFixed,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<LessonMemoryEntry>>([]);
+        }
+
+        public Task<LessonMemoryEntry?> EditAsync(
+            LessonMemoryEditRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<LessonMemoryEntry?>(null);
+        }
+
+        public Task<bool> DeleteAsync(
+            string id,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(false);
+        }
+
+        public Task<string?> CreatePromptAsync(
+            string query,
+            CancellationToken cancellationToken)
+        {
+            Queries.Add(query);
+            return Task.FromResult(_prompt);
+        }
+
+        public Task ObserveToolResultAsync(
+            ToolInvocationResult invocationResult,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public string GetStoragePath()
+        {
+            return ".nanoagent/memory/lessons.jsonl";
         }
     }
 }

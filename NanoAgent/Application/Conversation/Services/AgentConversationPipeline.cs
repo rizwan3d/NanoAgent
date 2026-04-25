@@ -56,6 +56,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IToolRegistry _toolRegistry;
     private readonly IConversationConfigurationAccessor _configurationAccessor;
     private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
+    private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ILogger<AgentConversationPipeline> _logger;
 
     public AgentConversationPipeline(
@@ -68,6 +69,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
         IWorkspaceInstructionsProvider workspaceInstructionsProvider,
+        ILessonMemoryService lessonMemoryService,
         ILogger<AgentConversationPipeline> logger)
     {
         _timeProvider = timeProvider;
@@ -79,6 +81,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _toolRegistry = toolRegistry;
         _configurationAccessor = configurationAccessor;
         _workspaceInstructionsProvider = workspaceInstructionsProvider;
+        _lessonMemoryService = lessonMemoryService;
         _logger = logger;
     }
 
@@ -98,9 +101,11 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "Conversation cannot start because the API key is missing.");
 
         ConversationSettings settings = _configurationAccessor.GetSettings();
+        string normalizedInput = input.Trim();
         string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
             settings.SystemPrompt,
             session,
+            CreateLessonQuery(normalizedInput),
             cancellationToken);
         IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
         IReadOnlySet<string> availableToolNames = availableToolDefinitions
@@ -109,7 +114,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeoutSource.CancelAfter(settings.RequestTimeout);
         DateTimeOffset startedAt = _timeProvider.GetUtcNow();
-        string normalizedInput = input.Trim();
 
         if (session.PendingExecutionPlan is not null &&
             PlanningModePolicy.IsExecutionApproval(normalizedInput))
@@ -206,6 +210,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 await CreateProfileSystemPromptAsync(
                     settings.SystemPrompt,
                     session,
+                    CreateLessonQuery(normalizedInput, pendingPlan),
                     cancellationToken),
                 pendingPlan.PlanningSummary),
             allToolDefinitions,
@@ -293,11 +298,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private async Task<string?> CreateProfileSystemPromptAsync(
         string? basePrompt,
         ReplSessionContext session,
+        string lessonQuery,
         CancellationToken cancellationToken)
     {
         string? contribution = session.AgentProfile.SystemPrompt;
         string? workspaceInstructions = await _workspaceInstructionsProvider.LoadAsync(
             session,
+            cancellationToken);
+        string? lessonMemory = await CreateLessonMemoryPromptAsync(
+            lessonQuery,
             cancellationToken);
         string? statefulContext = session.CreateStatefulContextPrompt();
         string?[] promptSections =
@@ -305,6 +314,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             basePrompt,
             contribution,
             workspaceInstructions,
+            lessonMemory,
             statefulContext
         ];
 
@@ -318,6 +328,45 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             : string.Join(
                 $"{Environment.NewLine}{Environment.NewLine}",
                 normalizedSections);
+    }
+
+    private async Task<string?> CreateLessonMemoryPromptAsync(
+        string lessonQuery,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _lessonMemoryService.CreatePromptAsync(
+                lessonQuery,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string CreateLessonQuery(
+        string normalizedInput,
+        PendingExecutionPlan? pendingPlan = null)
+    {
+        if (pendingPlan is null)
+        {
+            return normalizedInput;
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            [
+                normalizedInput,
+                pendingPlan.SourceUserInput,
+                pendingPlan.PlanningSummary,
+                string.Join(Environment.NewLine, pendingPlan.Tasks)
+            ]);
     }
 
     private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)

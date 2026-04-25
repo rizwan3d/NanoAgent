@@ -28,6 +28,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
+        services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
         services.AddSingleton<NanoAgentMcpConfigLoader>();
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();

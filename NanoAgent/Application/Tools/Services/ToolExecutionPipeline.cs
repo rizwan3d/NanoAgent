@@ -5,11 +5,15 @@ namespace NanoAgent.Application.Tools.Services;
 
 internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
 {
+    private readonly ILessonMemoryService? _lessonMemoryService;
     private readonly IToolInvoker _toolInvoker;
 
-    public ToolExecutionPipeline(IToolInvoker toolInvoker)
+    public ToolExecutionPipeline(
+        IToolInvoker toolInvoker,
+        ILessonMemoryService? lessonMemoryService = null)
     {
         _toolInvoker = toolInvoker;
+        _lessonMemoryService = lessonMemoryService;
     }
 
     public Task<ToolExecutionBatchResult> ExecuteAsync(
@@ -60,6 +64,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
                 allowedToolNames,
                 cancellationToken);
 
+            await ObserveLessonMemoryAsync(result, cancellationToken);
             results.Add(result);
             if (onToolResult is not null)
             {
@@ -68,5 +73,29 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         }
 
         return new ToolExecutionBatchResult(results);
+    }
+
+    private async Task ObserveLessonMemoryAsync(
+        ToolInvocationResult result,
+        CancellationToken cancellationToken)
+    {
+        if (_lessonMemoryService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _lessonMemoryService.ObserveToolResultAsync(result, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Lesson memory is helpful context, but tool execution should not fail because
+            // the local memory file is temporarily unavailable or malformed.
+        }
     }
 }

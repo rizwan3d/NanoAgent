@@ -92,6 +92,42 @@ public sealed class ToolExecutionPipelineTests
         transaction.AfterStates.Select(static state => state.Path).Should().Equal("README.md", "src/App.js");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_ObserveToolResultsWithLessonMemory()
+    {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["shell_command"],
+            StringComparer.Ordinal);
+        ToolInvocationResult invocationResult = new(
+            "call_1",
+            "shell_command",
+            ToolResultFactory.InvalidArguments(
+                "missing_command",
+                "Tool 'shell_command' requires a command."));
+        Mock<IToolInvoker> toolInvoker = new(MockBehavior.Strict);
+        toolInvoker
+            .Setup(invoker => invoker.InvokeAsync(
+                It.IsAny<ConversationToolCall>(),
+                Session,
+                ConversationExecutionPhase.Execution,
+                allowedToolNames,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invocationResult);
+        RecordingLessonMemoryService lessonMemoryService = new();
+        ToolExecutionPipeline sut = new(
+            toolInvoker.Object,
+            lessonMemoryService);
+
+        await sut.ExecuteAsync(
+            [new ConversationToolCall("call_1", "shell_command", "{}")],
+            Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        lessonMemoryService.ObservedResults.Should().Equal(invocationResult);
+    }
+
     private sealed class TrackingToolInvoker : IToolInvoker
     {
         public Task<ToolInvocationResult> InvokeAsync(
@@ -127,6 +163,69 @@ public sealed class ToolExecutionPipelineTests
                     "ok",
                     new ToolErrorPayload("ok", "ok"),
                     ToolJsonContext.Default.ToolErrorPayload)));
+        }
+    }
+
+    private sealed class RecordingLessonMemoryService : ILessonMemoryService
+    {
+        public List<ToolInvocationResult> ObservedResults { get; } = [];
+
+        public Task<LessonMemoryEntry> SaveAsync(
+            LessonMemorySaveRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<LessonMemoryEntry>> SearchAsync(
+            string query,
+            int limit,
+            bool includeFixed,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<LessonMemoryEntry>>([]);
+        }
+
+        public Task<IReadOnlyList<LessonMemoryEntry>> ListAsync(
+            int limit,
+            bool includeFixed,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<LessonMemoryEntry>>([]);
+        }
+
+        public Task<LessonMemoryEntry?> EditAsync(
+            LessonMemoryEditRequest request,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<LessonMemoryEntry?>(null);
+        }
+
+        public Task<bool> DeleteAsync(
+            string id,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(false);
+        }
+
+        public Task<string?> CreatePromptAsync(
+            string query,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<string?>(null);
+        }
+
+        public Task ObserveToolResultAsync(
+            ToolInvocationResult invocationResult,
+            CancellationToken cancellationToken)
+        {
+            ObservedResults.Add(invocationResult);
+            return Task.CompletedTask;
+        }
+
+        public string GetStoragePath()
+        {
+            return ".nanoagent/memory/lessons.jsonl";
         }
     }
 }
