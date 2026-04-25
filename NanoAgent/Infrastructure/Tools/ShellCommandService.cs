@@ -76,15 +76,6 @@ internal sealed class ShellCommandService : IShellCommandService
             EnvironmentVariables = sandboxEnvironment
         };
 
-        if (sandboxPlan.IsUnsupported)
-        {
-            return CreateExecutionFailureResult(
-                request,
-                workingDirectory,
-                sandboxPlan.Enforcement,
-                sandboxPlan.UnsupportedReason!);
-        }
-
         ProcessExecutionResult result;
         try
         {
@@ -108,16 +99,21 @@ internal sealed class ShellCommandService : IShellCommandService
                 sandboxPlan.Enforcement,
                 $"Unable to start PTY shell execution: {exception.Message}");
         }
-        catch (Win32Exception exception) when (!string.Equals(
-                   sandboxPlan.Enforcement,
-                   ShellCommandSandboxPlanner.NoEnforcement,
-                   StringComparison.Ordinal))
+        catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(sandboxPlan.Enforcement))
         {
             return CreateExecutionFailureResult(
                 request,
                 workingDirectory,
                 sandboxPlan.Enforcement,
                 $"Unable to start OS-level shell sandbox runner '{processRequest.FileName}': {exception.Message}");
+        }
+        catch (Win32Exception exception)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                workingDirectory,
+                sandboxPlan.Enforcement,
+                $"Unable to start shell '{processRequest.FileName}': {exception.Message}");
         }
 
         return new ShellCommandExecutionResult(
@@ -293,5 +289,17 @@ internal sealed class ShellCommandService : IShellCommandService
         }
 
         return normalizedValue[..MaxOutputCharacters] + "...";
+    }
+
+    private static bool IsSandboxRunnerEnforcement(string enforcement)
+    {
+        return string.Equals(
+                   enforcement,
+                   ShellCommandSandboxPlanner.BubblewrapEnforcement,
+                   StringComparison.Ordinal) ||
+               string.Equals(
+                   enforcement,
+                   ShellCommandSandboxPlanner.SandboxExecEnforcement,
+                   StringComparison.Ordinal);
     }
 }

@@ -190,7 +190,7 @@ internal static class ShellCommandSandboxPlanner
         return new ShellCommandSandboxPlan(
             shellRequest,
             UnsupportedEnforcement,
-            $"{reason} The effective sandbox mode is '{ToWireValue(effectiveSandboxMode)}'. Re-run with sandbox_permissions='require_escalated' after approval or configure DangerFullAccess to execute without sandbox enforcement.");
+            $"{reason} The effective sandbox mode is '{ToWireValue(effectiveSandboxMode)}'. The command will run after NanoAgent permission approval without OS-level sandbox enforcement.");
     }
 
     private static string ToSandboxString(string value)

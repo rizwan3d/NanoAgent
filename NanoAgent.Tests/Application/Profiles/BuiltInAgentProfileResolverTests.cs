@@ -162,6 +162,18 @@ public sealed class BuiltInAgentProfileResolverTests
     }
 
     [Fact]
+    public void BuiltInProfiles_Should_ExposeCodeIntelligenceGuidance()
+    {
+        foreach (IAgentProfile profile in BuiltInAgentProfiles.All)
+        {
+            profile.EnabledTools.Should().Contain(AgentToolNames.CodeIntelligence);
+            profile.SystemPrompt.Should().Contain("code_intelligence");
+            profile.SystemPrompt.Should().Contain("semantic navigation");
+            profile.SystemPrompt.Should().Contain("language server is unavailable");
+        }
+    }
+
+    [Fact]
     public void BuildProfile_Should_DescribeNonInteractiveScaffoldingBehavior()
     {
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("fully specified, non-interactive commands");

@@ -228,6 +228,35 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ExplainUnsupportedSandboxFallback()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ExecuteAsync(
+                It.IsAny<ShellCommandExecutionRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "ls -F TodoApp",
+                ".",
+                0,
+                "Program.cs",
+                string.Empty,
+                SandboxEnforcement: "unsupported"));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "command": "ls -F TodoApp" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.Message.Should().Contain("without OS-level sandbox enforcement");
+        result.RenderPayload!.Text.Should().Contain("Sandbox enforcement: unsupported");
+        result.RenderPayload.Text.Should().Contain("Sandbox note:");
+        result.RenderPayload.Text.Should().Contain("without OS-level sandbox enforcement");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_EscalationJustificationIsMissing()
     {
         ShellCommandTool sut = new(Mock.Of<IShellCommandService>());

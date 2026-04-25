@@ -49,11 +49,15 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("Use `web_run` when current external facts or documentation are required");
         result.SystemPrompt.Should().Contain("Before using unfamiliar build tools, frameworks, libraries, SDKs, or APIs");
         result.SystemPrompt.Should().Contain("official documentation or domain references");
+        result.SystemPrompt.Should().Contain("Sandbox enforcement: unsupported");
+        result.SystemPrompt.Should().Contain("without OS-level sandbox enforcement");
         result.SystemPrompt.Should().Contain("- planning_mode:");
         result.SystemPrompt.Should().Contain("- update_plan:");
         result.SystemPrompt.Should().Contain("- file_delete:");
         result.SystemPrompt.Should().Contain("- web_run:");
         result.SystemPrompt.Should().Contain("- shell_command:");
+        result.SystemPrompt.Should().Contain("- code_intelligence:");
+        result.SystemPrompt.Should().Contain("document symbols, definitions, references, or hover details");
         result.SystemPrompt.Should().Contain("Developed by: Rizwan3D");
         result.SystemPrompt.Should().NotContain("Always use planning_mode for tasks.");
         result.SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
