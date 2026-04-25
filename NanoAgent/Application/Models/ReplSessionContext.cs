@@ -18,6 +18,7 @@ public sealed class ReplSessionContext
     private const int MaxPromptEditContextEntries = 12;
     private const int MaxPromptTerminalHistoryEntries = 12;
     private const int MaxPromptFieldCharacters = 600;
+    private readonly object _syncRoot = new();
     public const string DefaultSectionTitle = "Untitled section";
     private readonly HashSet<string> _availableModelIds;
     private List<WorkspaceFileEditTransaction>? _batchedFileEditTransactions;
@@ -162,7 +163,16 @@ public sealed class ReplSessionContext
 
     public PendingExecutionPlan? PendingExecutionPlan { get; private set; }
 
-    public IReadOnlyList<PermissionRule> PermissionOverrides => _permissionOverrides;
+    public IReadOnlyList<PermissionRule> PermissionOverrides
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return _permissionOverrides.ToArray();
+            }
+        }
+    }
 
     public DateTimeOffset SectionCreatedAtUtc { get; }
 
@@ -174,11 +184,20 @@ public sealed class ReplSessionContext
 
     public string WorkingDirectory { get; private set; } = ".";
 
-    public SessionStateSnapshot SessionState => new(
-        _fileContexts.ToArray(),
-        _editContexts.ToArray(),
-        _terminalHistory.ToArray(),
-        WorkingDirectory);
+    public SessionStateSnapshot SessionState
+    {
+        get
+        {
+            lock (_syncRoot)
+            {
+                return new SessionStateSnapshot(
+                    _fileContexts.ToArray(),
+                    _editContexts.ToArray(),
+                    _terminalHistory.ToArray(),
+                    WorkingDirectory);
+            }
+        }
+    }
 
     public string SectionTitle { get; private set; }
 
@@ -202,7 +221,10 @@ public sealed class ReplSessionContext
     public void AddPermissionOverride(PermissionRule rule)
     {
         ArgumentNullException.ThrowIfNull(rule);
-        _permissionOverrides.Add(rule);
+        lock (_syncRoot)
+        {
+            _permissionOverrides.Add(rule);
+        }
     }
 
     public void ClearPendingExecutionPlan()
@@ -256,7 +278,13 @@ public sealed class ReplSessionContext
 
     public string ResolvePathFromWorkingDirectory(string? requestedPath)
     {
-        return ResolvePathFromWorkingDirectory(requestedPath, WorkingDirectory);
+        string workingDirectory;
+        lock (_syncRoot)
+        {
+            workingDirectory = WorkingDirectory;
+        }
+
+        return ResolvePathFromWorkingDirectory(requestedPath, workingDirectory);
     }
 
     public string ResolvePathFromWorkingDirectory(
@@ -390,18 +418,21 @@ public sealed class ReplSessionContext
             Summary = NormalizeStateText(context.Summary, MaxStateTextCharacters)
         };
 
-        int existingIndex = _fileContexts.FindIndex(existing =>
-            string.Equals(existing.Path, normalizedContext.Path, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(existing.Activity, normalizedContext.Activity, StringComparison.Ordinal));
-
-        if (existingIndex >= 0)
+        lock (_syncRoot)
         {
-            _fileContexts.RemoveAt(existingIndex);
-        }
+            int existingIndex = _fileContexts.FindIndex(existing =>
+                string.Equals(existing.Path, normalizedContext.Path, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(existing.Activity, normalizedContext.Activity, StringComparison.Ordinal));
 
-        _fileContexts.Add(normalizedContext);
-        TrimOldest(_fileContexts, MaxFileContextEntries);
-        IsPersistedStateDirty = true;
+            if (existingIndex >= 0)
+            {
+                _fileContexts.RemoveAt(existingIndex);
+            }
+
+            _fileContexts.Add(normalizedContext);
+            TrimOldest(_fileContexts, MaxFileContextEntries);
+            IsPersistedStateDirty = true;
+        }
     }
 
     public void RecordEditContext(SessionEditContext context)
@@ -427,9 +458,12 @@ public sealed class ReplSessionContext
             RemovedLineCount = Math.Max(0, context.RemovedLineCount)
         };
 
-        _editContexts.Add(normalizedContext);
-        TrimOldest(_editContexts, MaxEditContextEntries);
-        IsPersistedStateDirty = true;
+        lock (_syncRoot)
+        {
+            _editContexts.Add(normalizedContext);
+            TrimOldest(_editContexts, MaxEditContextEntries);
+            IsPersistedStateDirty = true;
+        }
     }
 
     public void RecordTerminalCommand(SessionTerminalCommand command)
@@ -450,9 +484,12 @@ public sealed class ReplSessionContext
             StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters)
         };
 
-        _terminalHistory.Add(normalizedCommand);
-        TrimOldest(_terminalHistory, MaxTerminalHistoryEntries);
-        IsPersistedStateDirty = true;
+        lock (_syncRoot)
+        {
+            _terminalHistory.Add(normalizedCommand);
+            TrimOldest(_terminalHistory, MaxTerminalHistoryEntries);
+            IsPersistedStateDirty = true;
+        }
     }
 
     public string? CreateStatefulContextPrompt()

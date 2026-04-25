@@ -16,6 +16,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
     private readonly ILifecycleHookService _lifecycleHookService;
     private readonly IPermissionApprovalPrompt _permissionApprovalPrompt;
     private readonly IPermissionEvaluator _permissionEvaluator;
+    private readonly SemaphoreSlim _permissionApprovalSemaphore = new(1, 1);
     private readonly IToolRegistry _toolRegistry;
 
     public RegistryBackedToolInvoker(
@@ -118,11 +119,19 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
 
         if (permissionResult.Decision == PermissionEvaluationDecision.RequiresApproval)
         {
-            permissionResult = await ResolveApprovalAsync(
-                registration.PermissionPolicy,
-                executionContext,
-                permissionResult,
-                cancellationToken);
+            await _permissionApprovalSemaphore.WaitAsync(cancellationToken);
+            try
+            {
+                permissionResult = await ResolveApprovalAsync(
+                    registration.PermissionPolicy,
+                    executionContext,
+                    permissionResult,
+                    cancellationToken);
+            }
+            finally
+            {
+                _permissionApprovalSemaphore.Release();
+            }
         }
 
         if (!permissionResult.IsAllowed)
