@@ -122,6 +122,8 @@ echo "Review the latest changes" | nanoai --profile review
 | `@explore` | Hand one turn to read-only explorer |
 | `@code-reviewer` | Hand one turn to a workspace custom subagent |
 
+Primary profiles can also use `agent_delegate` for one focused handoff or `agent_orchestrate` for several coordinated subtasks. Orchestration runs read-only subtasks in parallel when possible, keeps editing-capable subtasks controlled, and records delegated file edits for undo.
+
 ### Custom Agents
 
 Workspace custom agents live in `.nanoagent/agents/*.md`. The markdown body becomes the agent's system prompt, and optional front matter controls the profile:
@@ -142,7 +144,7 @@ tools:
 Review the requested code or change set with a findings-first posture.
 ```
 
-If front matter is omitted, the agent name is derived from the file name, the mode defaults to `subagent`, edits default to `readOnly`, and shell access defaults to `safeInspectionOnly`. Subagents can be invoked with `@agent-name` or through `agent_delegate`.
+If front matter is omitted, the agent name is derived from the file name, the mode defaults to `subagent`, edits default to `readOnly`, and shell access defaults to `safeInspectionOnly`. Subagents can be invoked with `@agent-name`, `agent_delegate`, or coordinated through `agent_orchestrate`.
 
 ### Shell Commands
 

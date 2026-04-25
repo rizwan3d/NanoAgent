@@ -39,7 +39,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --section <section-guid> to resume a saved section.\n" +
             "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +
-            "Invoke subagents for one turn with @<subagent-name>; primary agents can also delegate focused work with agent_delegate.";
+            "Invoke subagents for one turn with @<subagent-name>; primary agents can also delegate focused work with agent_delegate or coordinate several tasks with agent_orchestrate.";
 
         return Task.FromResult(ReplCommandResult.Continue(
             $"Active agent profile: {context.Session.AgentProfile.Name}\n\n{HelpText}"));

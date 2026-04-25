@@ -41,6 +41,10 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"text search: \"{query}\"",
             "file_write" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file write: {path}",
+            "agent_delegate" when TryGetArgumentString(toolCall.ArgumentsJson, "agent", out string agent) =>
+                $"subagent: {agent}",
+            "agent_orchestrate" when TryGetArgumentArrayCount(toolCall.ArgumentsJson, "tasks", out int taskCount) =>
+                $"subagent orchestration: {taskCount} {(taskCount == 1 ? "task" : "tasks")}",
             "web_run" => DescribeWebRunCall(toolCall.ArgumentsJson),
             _ => name
         };
@@ -1141,6 +1145,32 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             }
 
             return false;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryGetArgumentArrayCount(
+        string argumentsJson,
+        string propertyName,
+        out int count)
+    {
+        count = 0;
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(argumentsJson);
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty(propertyName, out JsonElement property) ||
+                property.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            count = property.GetArrayLength();
+            return true;
         }
         catch (JsonException)
         {

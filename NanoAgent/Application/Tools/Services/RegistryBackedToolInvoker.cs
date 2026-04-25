@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
@@ -221,7 +222,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
             return TimeSpan.FromMinutes(10);
         }
 
-        return string.Equals(toolName, AgentToolNames.AgentDelegate, StringComparison.Ordinal)
+        return toolName is AgentToolNames.AgentDelegate or AgentToolNames.AgentOrchestrate
             ? AgentDelegateTimeout
             : _defaultTimeout;
     }
@@ -316,6 +317,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                 break;
 
             case AgentToolNames.AgentDelegate:
+            case AgentToolNames.AgentOrchestrate:
                 events.Add(before ? LifecycleHookEvents.BeforeAgentDelegate : LifecycleHookEvents.AfterAgentDelegate);
                 break;
         }
@@ -414,6 +416,13 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
             ToolArguments.TryGetNonEmptyString(executionContext.Arguments, "task", out string? delegatedTask))
         {
             context.Metadata["delegatedTask"] = delegatedTask!;
+        }
+
+        if (string.Equals(executionContext.ToolName, AgentToolNames.AgentOrchestrate, StringComparison.Ordinal) &&
+            executionContext.Arguments.TryGetProperty("tasks", out JsonElement tasksElement) &&
+            tasksElement.ValueKind == JsonValueKind.Array)
+        {
+            context.Metadata["delegatedTaskCount"] = tasksElement.GetArrayLength().ToString(CultureInfo.InvariantCulture);
         }
     }
 

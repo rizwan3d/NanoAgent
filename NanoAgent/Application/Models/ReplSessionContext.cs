@@ -206,7 +206,7 @@ public sealed class ReplSessionContext
 
     public DateTimeOffset SectionUpdatedAtUtc { get; private set; }
 
-    public string SectionResumeCommand => $"nano --section {SectionId}";
+    public string SectionResumeCommand => $"nanoai --section {SectionId}";
 
     public int TotalEstimatedOutputTokens { get; private set; }
 

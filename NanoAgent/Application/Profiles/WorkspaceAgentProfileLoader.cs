@@ -12,6 +12,7 @@ internal static class WorkspaceAgentProfileLoader
     private static readonly IReadOnlySet<string> PrimaryEditingTools = new HashSet<string>(
         [
             AgentToolNames.AgentDelegate,
+            AgentToolNames.AgentOrchestrate,
             AgentToolNames.ApplyPatch,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
@@ -32,6 +33,7 @@ internal static class WorkspaceAgentProfileLoader
     private static readonly IReadOnlySet<string> PrimaryReadOnlyTools = new HashSet<string>(
         [
             AgentToolNames.AgentDelegate,
+            AgentToolNames.AgentOrchestrate,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,

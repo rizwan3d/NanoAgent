@@ -158,6 +158,7 @@ public sealed class BuiltInAgentProfileResolverTests
         BuiltInAgentProfiles.General.EnabledTools.Should().Contain(AgentToolNames.FileDelete);
         BuiltInAgentProfiles.General.EnabledTools.Should().Contain(AgentToolNames.FileWrite);
         BuiltInAgentProfiles.General.EnabledTools.Should().NotContain(AgentToolNames.AgentDelegate);
+        BuiltInAgentProfiles.General.EnabledTools.Should().NotContain(AgentToolNames.AgentOrchestrate);
         BuiltInAgentProfiles.General.EnabledTools.Should().NotContain(AgentToolNames.UpdatePlan);
     }
 
@@ -178,6 +179,7 @@ public sealed class BuiltInAgentProfileResolverTests
     {
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("fully specified, non-interactive commands");
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("agent_delegate");
+        BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("agent_orchestrate");
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("project name, template or preset, and any confirmation flags");
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("finish the requested implementation when practical");
         BuiltInAgentProfiles.Build.SystemPrompt.Should().Contain("do not stop at analysis if you can safely continue");

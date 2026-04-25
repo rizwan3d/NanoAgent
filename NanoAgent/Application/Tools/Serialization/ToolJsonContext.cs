@@ -7,6 +7,8 @@ namespace NanoAgent.Application.Tools.Serialization;
 [JsonSerializable(typeof(JsonElement))]
 [JsonSerializable(typeof(ToolErrorPayload))]
 [JsonSerializable(typeof(AgentDelegationResult))]
+[JsonSerializable(typeof(AgentOrchestrationResult))]
+[JsonSerializable(typeof(AgentOrchestrationTaskResult))]
 [JsonSerializable(typeof(CodeIntelligenceItem))]
 [JsonSerializable(typeof(CodeIntelligenceResult))]
 [JsonSerializable(typeof(NanoAgent.Application.Models.LessonMemoryEntry))]

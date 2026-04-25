@@ -228,15 +228,15 @@ Technical support or documentation users can inspect product behavior from a rep
 
 **Observed limits and edge cases:** Built-in primary profiles are build, plan, and review. The build profile can edit and run normal toolchain work under permissions. Plan and review are read-only and use safe inspection behavior. Desktop profile options appear limited to the built-in primary profiles.
 
-### 4.14 Subagent Delegation
+### 4.14 Subagent Delegation And Orchestration
 
-**User benefit:** NanoAgent can hand off focused work to a narrower agent.
+**User benefit:** NanoAgent can hand off focused work to narrower agents and coordinate several independent subtasks as one workflow.
 
-**How the user uses it:** A user or the primary agent can invoke a subagent such as `@general` or `@explore`, or a workspace-defined subagent.
+**How the user uses it:** A user or the primary agent can invoke a subagent such as `@general` or `@explore`, or a workspace-defined subagent. Primary agents can use `agent_delegate` for one handoff or `agent_orchestrate` for multiple focused handoffs.
 
-**Expected outcome:** A focused subtask is completed or investigated and returned as a handoff to the main conversation.
+**Expected outcome:** A focused subtask is completed or investigated and returned as a handoff to the main conversation. With orchestration, read-only subtasks can run in parallel, editing-capable subtasks are kept controlled, and delegated file edits are recorded for undo.
 
-**Observed limits and edge cases:** Read-only profiles cannot delegate to implementation-capable subagents. Custom subagents must be defined locally and valid. Delegated agents inherit session permissions and workspace context.
+**Observed limits and edge cases:** Read-only profiles cannot delegate to implementation-capable subagents. Custom subagents must be defined locally and valid. Delegated agents inherit session permissions, workspace path, and working directory. Subagents cannot start nested delegation.
 
 ### 4.15 Workspace Custom Agents
 
@@ -549,6 +549,8 @@ Access is controlled through local permission settings, sandbox mode, agent prof
 
 **Explore:** Read-only subagent for focused codebase investigation.
 
+**Orchestration:** Primary profiles can coordinate multiple subagent tasks with `agent_orchestrate`. The automatic strategy runs consecutive read-only tasks in parallel and runs editing-capable tasks one at a time.
+
 ### Built-In Safety Behavior
 
 Confirmed safety behavior includes:
@@ -700,6 +702,7 @@ The terminal exposes:
 
 - CLI startup options for interactive mode, prompt input, section resume, profile, and thinking.
 - Slash commands for configuration, model switching, profile switching, thinking, permissions, rules, MCP, undo, redo, and exit.
+- One-turn subagent handoff with `@agent-name`, plus model-driven `agent_delegate` and `agent_orchestrate` tool use from primary profiles.
 
 ### Advanced Local Configuration
 

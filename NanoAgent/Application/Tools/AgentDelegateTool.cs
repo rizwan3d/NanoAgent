@@ -9,8 +9,6 @@ namespace NanoAgent.Application.Tools;
 
 internal sealed class AgentDelegateTool : ITool
 {
-    private const int MaxTaskDescriptionLength = 80;
-
     private readonly IServiceProvider _serviceProvider;
     private readonly IAgentProfileResolver _profileResolver;
     private readonly ITokenEstimator _tokenEstimator;
@@ -151,9 +149,14 @@ internal sealed class AgentDelegateTool : ITool
                     $"Use a read-only subagent such as: {FormatProfileNames(readOnlySubagents)}."));
         }
 
-        ReplSessionContext childSession = CreateChildSession(context.Session, subagentProfile);
+        ReplSessionContext childSession = AgentDelegationSupport.CreateChildSession(
+            context.Session,
+            subagentProfile);
         string? delegatedContext = ToolArguments.GetOptionalString(context.Arguments, "context");
-        string delegatedInput = CreateDelegatedInput(context.Session, task!, delegatedContext);
+        string delegatedInput = AgentDelegationSupport.CreateDelegatedInput(
+            context.Session,
+            task!,
+            delegatedContext);
 
         IConversationPipeline conversationPipeline = _serviceProvider.GetRequiredService<IConversationPipeline>();
         ConversationTurnResult turnResult = await conversationPipeline.ProcessAsync(
@@ -162,20 +165,16 @@ internal sealed class AgentDelegateTool : ITool
             NoOpConversationProgressSink.Instance,
             cancellationToken);
 
-        bool recordedFileEdits = TryRecordChildFileEdits(
+        bool recordedFileEdits = AgentDelegationSupport.TryRecordChildFileEdits(
             childSession,
             context.Session,
             subagentProfile.Name,
             task!);
 
-        string[] executedTools = turnResult.ToolExecutionResult?.Results
-            .Select(static result => result.ToolName)
-            .Where(static tool => !string.IsNullOrWhiteSpace(tool))
-            .Distinct(StringComparer.Ordinal)
-            .ToArray() ?? [];
-
-        int estimatedOutputTokens = turnResult.Metrics?.EstimatedOutputTokens ??
-            _tokenEstimator.Estimate(turnResult.ResponseText);
+        string[] executedTools = AgentDelegationSupport.GetExecutedTools(turnResult);
+        int estimatedOutputTokens = AgentDelegationSupport.GetEstimatedOutputTokens(
+            turnResult,
+            _tokenEstimator);
 
         AgentDelegationResult result = new(
             subagentProfile.Name,
@@ -192,64 +191,6 @@ internal sealed class AgentDelegateTool : ITool
             new ToolRenderPayload(
                 $"Subagent {subagentProfile.Name} completed",
                 CreateRenderText(result)));
-    }
-
-    private static ReplSessionContext CreateChildSession(
-        ReplSessionContext parentSession,
-        IAgentProfile subagentProfile)
-    {
-        ReplSessionContext childSession = new(
-            parentSession.ApplicationName,
-            parentSession.ProviderProfile,
-            parentSession.ActiveModelId,
-            parentSession.AvailableModelIds,
-            agentProfile: subagentProfile,
-            reasoningEffort: parentSession.ReasoningEffort);
-
-        foreach (PermissionRule rule in parentSession.PermissionOverrides)
-        {
-            childSession.AddPermissionOverride(rule);
-        }
-
-        return childSession;
-    }
-
-    private static string CreateDelegatedInput(
-        ReplSessionContext parentSession,
-        string task,
-        string? context)
-    {
-        string instructions =
-            $"Delegated task from parent agent '{parentSession.AgentProfile.Name}'.{Environment.NewLine}{Environment.NewLine}" +
-            $"Task:{Environment.NewLine}{task.Trim()}{Environment.NewLine}{Environment.NewLine}" +
-            "Return your final response as a concise handoff to the parent agent.";
-
-        if (string.IsNullOrWhiteSpace(context))
-        {
-            return instructions;
-        }
-
-        return
-            $"{instructions}{Environment.NewLine}{Environment.NewLine}" +
-            $"Additional context:{Environment.NewLine}{context.Trim()}";
-    }
-
-    private static bool TryRecordChildFileEdits(
-        ReplSessionContext childSession,
-        ReplSessionContext parentSession,
-        string subagentName,
-        string task)
-    {
-        if (!childSession.TryCreateFileEditTransactionSnapshot(
-                $"subagent {subagentName}: {Truncate(task, MaxTaskDescriptionLength)}",
-                out WorkspaceFileEditTransaction? transaction) ||
-            transaction is null)
-        {
-            return false;
-        }
-
-        parentSession.RecordFileEditTransaction(transaction);
-        return true;
     }
 
     private static string CreateRenderText(AgentDelegationResult result)
@@ -333,19 +274,6 @@ internal sealed class AgentDelegateTool : ITool
         }
 
         return builder.ToString();
-    }
-
-    private static string Truncate(
-        string value,
-        int maxLength)
-    {
-        string normalized = value.Trim();
-        if (normalized.Length <= maxLength)
-        {
-            return normalized;
-        }
-
-        return normalized[..Math.Max(0, maxLength - 3)] + "...";
     }
 
     private sealed class NoOpConversationProgressSink : IConversationProgressSink
