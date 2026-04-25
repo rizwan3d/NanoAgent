@@ -200,6 +200,34 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ForwardPseudoTerminal_When_Requested()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ExecuteAsync(
+                It.Is<ShellCommandExecutionRequest>(request =>
+                    request.Command == "npm test" &&
+                    request.PseudoTerminal),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "npm test",
+                ".",
+                0,
+                "Passed!",
+                string.Empty,
+                PseudoTerminal: true));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "command": "npm test", "pty": true }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.RenderPayload!.Text.Should().Contain("Pseudo terminal: True");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_EscalationJustificationIsMissing()
     {
         ShellCommandTool sut = new(Mock.Of<IShellCommandService>());

@@ -201,6 +201,33 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ForwardPseudoTerminalToProcessRunner_When_Requested()
+    {
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest(
+                "dotnet test",
+                null,
+                PseudoTerminal: true),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.UsePseudoTerminal.Should().BeTrue();
+        request.EnvironmentVariables!["NANOAGENT_SHELL_PTY"].Should().Be("1");
+        result.PseudoTerminal.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_UseReadOnlySandbox_When_SandboxModeIsReadOnly()
     {
         if (OperatingSystem.IsWindows())

@@ -14,7 +14,7 @@ internal sealed class ShellCommandTool : ITool
         _shellCommandService = shellCommandService;
     }
 
-    public string Description => "Run an OS-native shell command in the current workspace to inspect files, probe toolchains, scaffold projects, install or restore dependencies, build, test, lint, or execute short multi-command chains, and capture stdout, stderr, and exit code.";
+    public string Description => "Run an OS-native shell command in the current workspace to inspect files, probe toolchains, scaffold projects, install or restore dependencies, build, test, lint, or execute short multi-command chains, optionally attached to a pseudo-terminal, and capture stdout, stderr, and exit code.";
 
     public string Name => AgentToolNames.ShellCommand;
 
@@ -125,6 +125,10 @@ internal sealed class ShellCommandTool : ITool
               "type": "array",
               "items": { "type": "string" },
               "description": "Optional command prefix that may be reused for similar future approvals."
+            },
+            "pty": {
+              "type": "boolean",
+              "description": "When true, run the command attached to a pseudo-terminal so terminal-aware programs can emit interactive-style output."
             }
           },
           "required": ["command"],
@@ -177,6 +181,7 @@ internal sealed class ShellCommandTool : ITool
         }
 
         IReadOnlyList<string> prefixRule = ToolArguments.GetOptionalStringArray(context.Arguments, "prefix_rule");
+        bool pseudoTerminal = ToolArguments.GetBoolean(context.Arguments, "pty");
         string? requestedWorkingDirectory = ToolArguments.GetOptionalString(context.Arguments, "workingDirectory");
         string effectiveWorkingDirectory;
         try
@@ -199,7 +204,8 @@ internal sealed class ShellCommandTool : ITool
                 effectiveWorkingDirectory,
                 sandboxPermissions,
                 justification,
-                prefixRule),
+                prefixRule,
+                pseudoTerminal),
             cancellationToken);
         SessionStateToolRecorder.RecordShellCommand(context.Session, result);
 
@@ -214,6 +220,7 @@ internal sealed class ShellCommandTool : ITool
             $"Sandbox mode: {result.SandboxMode}{Environment.NewLine}" +
             $"Sandbox permissions: {result.SandboxPermissions}{Environment.NewLine}" +
             $"Sandbox enforcement: {result.SandboxEnforcement}{Environment.NewLine}" +
+            $"Pseudo terminal: {result.PseudoTerminal}{Environment.NewLine}" +
             $"Exit code: {result.ExitCode}{Environment.NewLine}" +
             $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
             $"STDERR:{Environment.NewLine}{result.StandardError}";

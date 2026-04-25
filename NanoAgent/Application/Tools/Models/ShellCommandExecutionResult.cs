@@ -9,4 +9,5 @@ public sealed record ShellCommandExecutionResult(
     string SandboxPermissions = "use_default",
     string? Justification = null,
     string SandboxMode = "workspace-write",
-    string SandboxEnforcement = "none");
+    string SandboxEnforcement = "none",
+    bool PseudoTerminal = false);

@@ -52,12 +52,14 @@ internal sealed class ShellCommandService : IShellCommandService
                 "powershell",
                 ["-NoProfile", "-NonInteractive", "-Command", commandText],
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: MaxOutputCharacters)
+                MaxOutputCharacters: MaxOutputCharacters,
+                UsePseudoTerminal: request.PseudoTerminal)
             : new ProcessExecutionRequest(
                 "/bin/bash",
                 ["-lc", request.Command],
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: MaxOutputCharacters);
+                MaxOutputCharacters: MaxOutputCharacters,
+                UsePseudoTerminal: request.PseudoTerminal);
 
         ShellCommandSandboxPlan sandboxPlan = ShellCommandSandboxPlanner.Create(
             shellRequest,
@@ -76,7 +78,7 @@ internal sealed class ShellCommandService : IShellCommandService
 
         if (sandboxPlan.IsUnsupported)
         {
-            return CreateSandboxFailureResult(
+            return CreateExecutionFailureResult(
                 request,
                 workingDirectory,
                 sandboxPlan.Enforcement,
@@ -90,12 +92,28 @@ internal sealed class ShellCommandService : IShellCommandService
                 processRequest,
                 cancellationToken);
         }
+        catch (PlatformNotSupportedException exception) when (processRequest.UsePseudoTerminal)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                workingDirectory,
+                sandboxPlan.Enforcement,
+                $"Unable to start PTY shell execution: {exception.Message}");
+        }
+        catch (Win32Exception exception) when (processRequest.UsePseudoTerminal)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                workingDirectory,
+                sandboxPlan.Enforcement,
+                $"Unable to start PTY shell execution: {exception.Message}");
+        }
         catch (Win32Exception exception) when (!string.Equals(
                    sandboxPlan.Enforcement,
                    ShellCommandSandboxPlanner.NoEnforcement,
                    StringComparison.Ordinal))
         {
-            return CreateSandboxFailureResult(
+            return CreateExecutionFailureResult(
                 request,
                 workingDirectory,
                 sandboxPlan.Enforcement,
@@ -113,7 +131,8 @@ internal sealed class ShellCommandService : IShellCommandService
                 ? null
                 : request.Justification.Trim(),
             ToWireValue(effectiveSandboxMode),
-            sandboxPlan.Enforcement);
+            sandboxPlan.Enforcement,
+            request.PseudoTerminal);
     }
 
     private ToolSandboxMode GetEffectiveSandboxMode(ShellCommandExecutionRequest request)
@@ -126,7 +145,7 @@ internal sealed class ShellCommandService : IShellCommandService
         return _permissionSettings.SandboxMode;
     }
 
-    private ShellCommandExecutionResult CreateSandboxFailureResult(
+    private ShellCommandExecutionResult CreateExecutionFailureResult(
         ShellCommandExecutionRequest request,
         string workingDirectory,
         string sandboxEnforcement,
@@ -143,7 +162,8 @@ internal sealed class ShellCommandService : IShellCommandService
                 ? null
                 : request.Justification.Trim(),
             ToWireValue(GetEffectiveSandboxMode(request)),
-            sandboxEnforcement);
+            sandboxEnforcement,
+            request.PseudoTerminal);
     }
 
     private IReadOnlyDictionary<string, string> BuildSandboxEnvironment(
@@ -169,6 +189,11 @@ internal sealed class ShellCommandService : IShellCommandService
         if (request.PrefixRule is { Count: > 0 })
         {
             environment["NANOAGENT_SANDBOX_PREFIX_RULE"] = string.Join(" ", request.PrefixRule);
+        }
+
+        if (request.PseudoTerminal)
+        {
+            environment["NANOAGENT_SHELL_PTY"] = "1";
         }
 
         return environment;

@@ -163,6 +163,8 @@ NanoAgent defaults to `WorkspaceWrite` sandbox mode for tool calls. Configure `A
 
 Shell tool calls can request `sandbox_permissions: "require_escalated"` with a `justification`; escalation goes through the normal permission approval flow.
 
+Shell tool calls can also set `pty: true` when a command needs a pseudo-terminal for terminal-aware output, such as color, progress, or TTY detection. On Windows this uses ConPTY; on Linux this uses the platform `script` command. Unsupported platforms report a normal shell failure instead of silently falling back.
+
 For non-escalated shell execution, NanoAgent launches commands through the platform sandbox runner before the shell starts. Linux uses `bubblewrap` (`bwrap`) to mount the host read-only and re-bind the workspace only for `WorkspaceWrite`; macOS uses `sandbox-exec` to deny file writes outside the allowed roots. Platforms without an OS sandbox runner, including Windows, fail closed for `ReadOnly` and `WorkspaceWrite` shell calls; use an approved `require_escalated` request or `DangerFullAccess` when a command intentionally needs unrestricted execution.
 
 Permission shortcuts can be configured under `Application:Permissions`. They compile into the same rule stack shown by `/rules`, and explicit `Rules` entries still run last:

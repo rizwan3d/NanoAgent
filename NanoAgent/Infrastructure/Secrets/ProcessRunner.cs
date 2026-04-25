@@ -1,16 +1,43 @@
+using System.Collections;
+using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace NanoAgent.Infrastructure.Secrets;
 
 internal sealed class ProcessRunner : IProcessRunner
 {
+    private const uint CreateUnicodeEnvironment = 0x00000400;
+    private const uint ExtendedStartupInfoPresent = 0x00080000;
+    private const uint WaitObject0 = 0x00000000;
+    private const uint WaitTimeout = 0x00000102;
+    private const uint WaitFailed = 0xFFFFFFFF;
+    private static readonly IntPtr ProcThreadAttributePseudoConsole = 0x00020016;
+
     public async Task<ProcessExecutionResult> RunAsync(
         ProcessExecutionRequest request,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        if (request.UsePseudoTerminal)
+        {
+            return await RunWithPseudoTerminalAsync(
+                request,
+                cancellationToken);
+        }
+
+        return await RunDirectAsync(
+            request,
+            cancellationToken);
+    }
+
+    private async Task<ProcessExecutionResult> RunDirectAsync(
+        ProcessExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
         ProcessStartInfo startInfo = new()
         {
             FileName = request.FileName,
@@ -79,6 +106,418 @@ internal sealed class ProcessRunner : IProcessRunner
             process.ExitCode,
             await standardOutputTask,
             await standardErrorTask);
+    }
+
+    private async Task<ProcessExecutionResult> RunWithPseudoTerminalAsync(
+        ProcessExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                return await RunWithWindowsPseudoTerminalAsync(
+                    request,
+                    cancellationToken);
+            }
+            catch (EntryPointNotFoundException exception)
+            {
+                throw new PlatformNotSupportedException(
+                    "Windows ConPTY is not available on this version of Windows.",
+                    exception);
+            }
+        }
+
+        if (OperatingSystem.IsLinux())
+        {
+            return await RunWithLinuxPseudoTerminalAsync(
+                request,
+                cancellationToken);
+        }
+
+        throw new PlatformNotSupportedException(
+            "PTY process execution is not supported on this platform.");
+    }
+
+    private Task<ProcessExecutionResult> RunWithLinuxPseudoTerminalAsync(
+        ProcessExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        ProcessExecutionRequest scriptRequest = new(
+            "script",
+            ["-q", "-e", "-c", BuildPosixCommandLine(request), "/dev/null"],
+            StandardInput: request.StandardInput,
+            WorkingDirectory: request.WorkingDirectory,
+            MaxOutputCharacters: request.MaxOutputCharacters,
+            EnvironmentVariables: request.EnvironmentVariables);
+
+        return RunDirectAsync(
+            scriptRequest,
+            cancellationToken);
+    }
+
+    private async Task<ProcessExecutionResult> RunWithWindowsPseudoTerminalAsync(
+        ProcessExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        using WindowsPseudoTerminalProcess process = StartWindowsPseudoTerminal(request);
+        await using FileStream outputStream = new(
+            process.OutputReader,
+            FileAccess.Read,
+            bufferSize: 4096,
+            isAsync: true);
+        using StreamReader outputReader = new(
+            outputStream,
+            Encoding.UTF8,
+            detectEncodingFromByteOrderMarks: false);
+        Task<string> standardOutputTask = ReadToEndCappedAsync(
+            outputReader,
+            request.MaxOutputCharacters,
+            cancellationToken);
+
+        if (request.StandardInput is not null)
+        {
+            await using FileStream inputStream = new(
+                process.InputWriter,
+                FileAccess.Write,
+                bufferSize: 4096,
+                isAsync: true);
+            byte[] inputBytes = Encoding.UTF8.GetBytes(request.StandardInput);
+            await inputStream.WriteAsync(inputBytes, cancellationToken);
+            await inputStream.FlushAsync(cancellationToken);
+        }
+        else
+        {
+            process.InputWriter.Dispose();
+        }
+
+        int exitCode;
+        try
+        {
+            exitCode = await WaitForWindowsProcessExitAsync(
+                process,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            process.TryKill();
+            throw;
+        }
+        finally
+        {
+            process.ClosePseudoConsole();
+        }
+
+        return new ProcessExecutionResult(
+            exitCode,
+            await standardOutputTask,
+            string.Empty);
+    }
+
+    private static WindowsPseudoTerminalProcess StartWindowsPseudoTerminal(
+        ProcessExecutionRequest request)
+    {
+        if (!CreatePipe(out SafeFileHandle inputRead, out SafeFileHandle inputWrite, IntPtr.Zero, 0))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        if (!CreatePipe(out SafeFileHandle outputRead, out SafeFileHandle outputWrite, IntPtr.Zero, 0))
+        {
+            inputRead.Dispose();
+            inputWrite.Dispose();
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        IntPtr pseudoConsole = IntPtr.Zero;
+        IntPtr attributeList = IntPtr.Zero;
+        IntPtr environmentBlock = IntPtr.Zero;
+        ProcessInformation processInformation = default;
+
+        try
+        {
+            int result = CreatePseudoConsole(
+                new Coord(120, 30),
+                inputRead,
+                outputWrite,
+                0,
+                out pseudoConsole);
+            if (result != 0)
+            {
+                throw new PlatformNotSupportedException(
+                    $"Windows ConPTY could not be created (HRESULT 0x{result:X8}).");
+            }
+
+            inputRead.Dispose();
+            outputWrite.Dispose();
+
+            attributeList = CreatePseudoConsoleAttributeList(pseudoConsole);
+            environmentBlock = CreateWindowsEnvironmentBlock(request.EnvironmentVariables);
+
+            StartupInfoEx startupInfo = new()
+            {
+                StartupInfo =
+                {
+                    cb = Marshal.SizeOf<StartupInfoEx>()
+                },
+                lpAttributeList = attributeList
+            };
+            string commandLineText = BuildWindowsCommandLine(request);
+            StringBuilder commandLine = new(commandLineText, commandLineText.Length + 1);
+
+            bool created = CreateProcessW(
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                false,
+                ExtendedStartupInfoPresent | CreateUnicodeEnvironment,
+                environmentBlock,
+                string.IsNullOrWhiteSpace(request.WorkingDirectory) ? null : request.WorkingDirectory,
+                ref startupInfo,
+                out processInformation);
+            if (!created)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return new WindowsPseudoTerminalProcess(
+                pseudoConsole,
+                inputWrite,
+                outputRead,
+                processInformation.hProcess,
+                processInformation.hThread,
+                processInformation.dwProcessId);
+        }
+        catch
+        {
+            if (processInformation.hThread != IntPtr.Zero)
+            {
+                CloseHandle(processInformation.hThread);
+            }
+
+            if (processInformation.hProcess != IntPtr.Zero)
+            {
+                CloseHandle(processInformation.hProcess);
+            }
+
+            if (pseudoConsole != IntPtr.Zero)
+            {
+                ClosePseudoConsoleNative(pseudoConsole);
+            }
+
+            inputWrite.Dispose();
+            outputRead.Dispose();
+            throw;
+        }
+        finally
+        {
+            inputRead.Dispose();
+            outputWrite.Dispose();
+            FreePseudoConsoleAttributeList(attributeList);
+
+            if (environmentBlock != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(environmentBlock);
+            }
+        }
+    }
+
+    private static IntPtr CreatePseudoConsoleAttributeList(IntPtr pseudoConsole)
+    {
+        IntPtr size = IntPtr.Zero;
+        _ = InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+        if (size == IntPtr.Zero)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        IntPtr attributeList = Marshal.AllocHGlobal(size);
+        bool initialized = false;
+
+        try
+        {
+            if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref size))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            initialized = true;
+            if (!UpdateProcThreadAttribute(
+                    attributeList,
+                    0,
+                    ProcThreadAttributePseudoConsole,
+                    pseudoConsole,
+                    (IntPtr)IntPtr.Size,
+                    IntPtr.Zero,
+                    IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return attributeList;
+        }
+        catch
+        {
+            if (initialized)
+            {
+                DeleteProcThreadAttributeList(attributeList);
+            }
+
+            Marshal.FreeHGlobal(attributeList);
+            throw;
+        }
+    }
+
+    private static void FreePseudoConsoleAttributeList(IntPtr attributeList)
+    {
+        if (attributeList == IntPtr.Zero)
+        {
+            return;
+        }
+
+        DeleteProcThreadAttributeList(attributeList);
+        Marshal.FreeHGlobal(attributeList);
+    }
+
+    private static IntPtr CreateWindowsEnvironmentBlock(
+        IReadOnlyDictionary<string, string>? environmentVariables)
+    {
+        if (environmentVariables is null || environmentVariables.Count == 0)
+        {
+            return IntPtr.Zero;
+        }
+
+        Dictionary<string, string> mergedEnvironment = new(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
+        {
+            if (entry.Key is string key && entry.Value is string value)
+            {
+                mergedEnvironment[key] = value;
+            }
+        }
+
+        foreach (KeyValuePair<string, string> environmentVariable in environmentVariables)
+        {
+            if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
+            {
+                mergedEnvironment[environmentVariable.Key] = environmentVariable.Value;
+            }
+        }
+
+        string[] entries = mergedEnvironment
+            .OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(static item => $"{item.Key}={item.Value}")
+            .ToArray();
+        string block = string.Join('\0', entries) + "\0\0";
+        byte[] bytes = Encoding.Unicode.GetBytes(block);
+        IntPtr buffer = Marshal.AllocHGlobal(bytes.Length);
+        Marshal.Copy(bytes, 0, buffer, bytes.Length);
+        return buffer;
+    }
+
+    private static async Task<int> WaitForWindowsProcessExitAsync(
+        WindowsPseudoTerminalProcess process,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            uint waitResult = WaitForSingleObject(process.ProcessHandle, 50);
+            if (waitResult == WaitObject0)
+            {
+                return GetWindowsProcessExitCode(process.ProcessHandle);
+            }
+
+            if (waitResult == WaitFailed)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            if (waitResult != WaitTimeout)
+            {
+                throw new InvalidOperationException(
+                    $"Unexpected WaitForSingleObject result '{waitResult}'.");
+            }
+
+            await Task.Delay(50, cancellationToken);
+        }
+    }
+
+    private static int GetWindowsProcessExitCode(IntPtr processHandle)
+    {
+        if (!GetExitCodeProcess(processHandle, out uint exitCode))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        return unchecked((int)exitCode);
+    }
+
+    private static string BuildPosixCommandLine(ProcessExecutionRequest request)
+    {
+        return string.Join(
+            " ",
+            new[] { request.FileName }
+                .Concat(request.Arguments)
+                .Select(QuotePosixArgument));
+    }
+
+    private static string QuotePosixArgument(string value)
+    {
+        return value.Length == 0
+            ? "''"
+            : "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+    }
+
+    private static string BuildWindowsCommandLine(ProcessExecutionRequest request)
+    {
+        return string.Join(
+            " ",
+            new[] { request.FileName }
+                .Concat(request.Arguments)
+                .Select(QuoteWindowsArgument));
+    }
+
+    private static string QuoteWindowsArgument(string value)
+    {
+        if (value.Length == 0)
+        {
+            return "\"\"";
+        }
+
+        if (!value.Any(static character => char.IsWhiteSpace(character) || character == '"'))
+        {
+            return value;
+        }
+
+        StringBuilder builder = new();
+        builder.Append('"');
+        int backslashes = 0;
+
+        foreach (char character in value)
+        {
+            if (character == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (character == '"')
+            {
+                builder.Append('\\', (backslashes * 2) + 1);
+                builder.Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            builder.Append('\\', backslashes);
+            backslashes = 0;
+            builder.Append(character);
+        }
+
+        builder.Append('\\', backslashes * 2);
+        builder.Append('"');
+        return builder.ToString();
     }
 
     private static void TryKillProcess(Process process)
@@ -160,4 +599,202 @@ internal sealed class ProcessRunner : IProcessRunner
         {
         }
     }
+
+    private sealed class WindowsPseudoTerminalProcess : IDisposable
+    {
+        private IntPtr _pseudoConsole;
+        private IntPtr _threadHandle;
+
+        public WindowsPseudoTerminalProcess(
+            IntPtr pseudoConsole,
+            SafeFileHandle inputWriter,
+            SafeFileHandle outputReader,
+            IntPtr processHandle,
+            IntPtr threadHandle,
+            int processId)
+        {
+            _pseudoConsole = pseudoConsole;
+            InputWriter = inputWriter;
+            OutputReader = outputReader;
+            ProcessHandle = processHandle;
+            _threadHandle = threadHandle;
+            ProcessId = processId;
+        }
+
+        public SafeFileHandle InputWriter { get; }
+
+        public SafeFileHandle OutputReader { get; }
+
+        public IntPtr ProcessHandle { get; private set; }
+
+        private int ProcessId { get; }
+
+        public void ClosePseudoConsole()
+        {
+            if (_pseudoConsole == IntPtr.Zero)
+            {
+                return;
+            }
+
+            ClosePseudoConsoleNative(_pseudoConsole);
+            _pseudoConsole = IntPtr.Zero;
+        }
+
+        public void TryKill()
+        {
+            try
+            {
+                Process.GetProcessById(ProcessId).Kill(entireProcessTree: true);
+            }
+            catch (ArgumentException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Win32Exception)
+            {
+            }
+        }
+
+        public void Dispose()
+        {
+            ClosePseudoConsole();
+            InputWriter.Dispose();
+            OutputReader.Dispose();
+
+            if (_threadHandle != IntPtr.Zero)
+            {
+                CloseHandle(_threadHandle);
+                _threadHandle = IntPtr.Zero;
+            }
+
+            if (ProcessHandle != IntPtr.Zero)
+            {
+                CloseHandle(ProcessHandle);
+                ProcessHandle = IntPtr.Zero;
+            }
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Coord
+    {
+        public Coord(short x, short y)
+        {
+            X = x;
+            Y = y;
+        }
+
+        public short X;
+
+        public short Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StartupInfo
+    {
+        public int cb;
+        public IntPtr lpReserved;
+        public IntPtr lpDesktop;
+        public IntPtr lpTitle;
+        public int dwX;
+        public int dwY;
+        public int dwXSize;
+        public int dwYSize;
+        public int dwXCountChars;
+        public int dwYCountChars;
+        public int dwFillAttribute;
+        public int dwFlags;
+        public short wShowWindow;
+        public short cbReserved2;
+        public IntPtr lpReserved2;
+        public IntPtr hStdInput;
+        public IntPtr hStdOutput;
+        public IntPtr hStdError;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct StartupInfoEx
+    {
+        public StartupInfo StartupInfo;
+
+        public IntPtr lpAttributeList;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessInformation
+    {
+        public IntPtr hProcess;
+
+        public IntPtr hThread;
+
+        public int dwProcessId;
+
+        public int dwThreadId;
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CreatePipe(
+        out SafeFileHandle hReadPipe,
+        out SafeFileHandle hWritePipe,
+        IntPtr lpPipeAttributes,
+        int nSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern int CreatePseudoConsole(
+        Coord size,
+        SafeFileHandle hInput,
+        SafeFileHandle hOutput,
+        uint dwFlags,
+        out IntPtr phPC);
+
+    [DllImport("kernel32.dll")]
+    private static extern void ClosePseudoConsoleNative(IntPtr hPC);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool InitializeProcThreadAttributeList(
+        IntPtr lpAttributeList,
+        int dwAttributeCount,
+        int dwFlags,
+        ref IntPtr lpSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool UpdateProcThreadAttribute(
+        IntPtr lpAttributeList,
+        uint dwFlags,
+        IntPtr attribute,
+        IntPtr lpValue,
+        IntPtr cbSize,
+        IntPtr lpPreviousValue,
+        IntPtr lpReturnSize);
+
+    [DllImport("kernel32.dll")]
+    private static extern void DeleteProcThreadAttributeList(IntPtr lpAttributeList);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateProcessW(
+        string? lpApplicationName,
+        StringBuilder lpCommandLine,
+        IntPtr lpProcessAttributes,
+        IntPtr lpThreadAttributes,
+        bool bInheritHandles,
+        uint dwCreationFlags,
+        IntPtr lpEnvironment,
+        string? lpCurrentDirectory,
+        ref StartupInfoEx lpStartupInfo,
+        out ProcessInformation lpProcessInformation);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(
+        IntPtr hHandle,
+        uint dwMilliseconds);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(
+        IntPtr hProcess,
+        out uint lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CloseHandle(IntPtr hObject);
 }
