@@ -20,8 +20,7 @@ concurrency:
   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
-permissions:
-  contents: write
+permissions: {}
 
 env:
   CONFIGURATION: Release
@@ -36,15 +35,17 @@ jobs:
   validate:
     name: Validate release build
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           ref: ${{ env.RELEASE_REF }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
           global-json-file: global.json
           cache: true
@@ -70,17 +71,33 @@ jobs:
 
       - name: Upload validation test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-test-results
           path: artifacts/test-results
           if-no-files-found: warn
           retention-days: 14
 
+  release-approval:
+    name: Approve production release
+    needs: validate
+    runs-on: ubuntu-24.04
+    environment:
+      name: production-release
+    permissions: {}
+
+    steps:
+      - name: Approval complete
+        run: echo "Production release approved for $RELEASE_TAG."
+
   publish:
     name: Publish ${{ matrix.display_name }} ${{ matrix.rid }}
-    needs: validate
+    needs:
+      - validate
+      - release-approval
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -167,12 +184,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           ref: ${{ env.RELEASE_REF }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
         with:
           global-json-file: global.json
           cache: true
@@ -196,6 +213,173 @@ jobs:
           --runtime ${{ matrix.rid }}
           --self-contained true
           --output ./artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}
+
+      - name: Prepare Windows signing certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_BASE64: ${{ secrets.WINDOWS_CODESIGN_CERT_BASE64 }}
+          WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_BASE64)) {
+            throw "WINDOWS_CODESIGN_CERT_BASE64 is required for Windows release signing."
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_PASSWORD)) {
+            throw "WINDOWS_CODESIGN_CERT_PASSWORD is required for Windows release signing."
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP "nanoagent-authenticode.pfx"
+          [IO.File]::WriteAllBytes(
+            $certificatePath,
+            [Convert]::FromBase64String($env:WINDOWS_CODESIGN_CERT_BASE64))
+
+          "WINDOWS_CODESIGN_CERT_PATH=$certificatePath" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Sign Windows executables
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
+          WINDOWS_CODESIGN_TIMESTAMP_URL: ${{ secrets.WINDOWS_CODESIGN_TIMESTAMP_URL }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_PATH) -or -not (Test-Path $env:WINDOWS_CODESIGN_CERT_PATH)) {
+            throw "Windows signing certificate was not prepared."
+          }
+
+          $timestampUrl = $env:WINDOWS_CODESIGN_TIMESTAMP_URL
+          if ([string]::IsNullOrWhiteSpace($timestampUrl)) {
+            $timestampUrl = "http://timestamp.digicert.com"
+          }
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found on the Windows runner."
+          }
+
+          $publishDir = Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}"
+          $executables = Get-ChildItem -Path $publishDir -Recurse -File |
+            Where-Object { $_.Extension -ieq ".exe" } |
+            Sort-Object FullName
+
+          if ($executables.Count -eq 0) {
+            throw "No Windows executables were found to sign in $publishDir."
+          }
+
+          foreach ($executable in $executables) {
+            & $signtool.FullName sign `
+              /fd SHA256 `
+              /tr $timestampUrl `
+              /td SHA256 `
+              /f $env:WINDOWS_CODESIGN_CERT_PATH `
+              /p $env:WINDOWS_CODESIGN_CERT_PASSWORD `
+              /v `
+              $executable.FullName
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to Authenticode sign $($executable.FullName)."
+            }
+
+            & $signtool.FullName verify /pa /v $executable.FullName
+            if ($LASTEXITCODE -ne 0) {
+              throw "Authenticode verification failed for $($executable.FullName)."
+            }
+          }
+
+      - name: Prepare macOS signing certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_DEVELOPER_ID_CERTIFICATE_BASE64: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 }}
+          MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD }}
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          for name in \
+            MACOS_DEVELOPER_ID_CERTIFICATE_BASE64 \
+            MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD \
+            MACOS_CODESIGN_IDENTITY
+          do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required for macOS release signing." >&2
+              exit 1
+            fi
+          done
+
+          certificate_path="$RUNNER_TEMP/nanoagent-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/nanoagent-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+
+          printf '%s' "$MACOS_DEVELOPER_ID_CERTIFICATE_BASE64" | base64 -D > "$certificate_path"
+
+          security create-keychain -p "$keychain_password" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$keychain_password" "$keychain_path"
+          security import "$certificate_path" \
+            -P "$MACOS_DEVELOPER_ID_CERTIFICATE_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$keychain_path"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$keychain_password" \
+            "$keychain_path"
+
+          security find-identity -v -p codesigning "$keychain_path"
+
+          {
+            echo "MACOS_SIGNING_KEYCHAIN=$keychain_path"
+          } >> "$GITHUB_ENV"
+
+      - name: Sign macOS binaries
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_CODESIGN_IDENTITY: ${{ secrets.MACOS_CODESIGN_IDENTITY }}
+        run: |
+          set -euo pipefail
+
+          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}"
+          signed_count=0
+
+          while IFS= read -r -d '' file_path; do
+            if file "$file_path" | grep -q "Mach-O"; then
+              codesign \
+                --force \
+                --timestamp \
+                --options runtime \
+                --keychain "$MACOS_SIGNING_KEYCHAIN" \
+                --sign "$MACOS_CODESIGN_IDENTITY" \
+                "$file_path"
+              codesign --verify --strict --verbose=2 "$file_path"
+              signed_count=$((signed_count + 1))
+            fi
+          done < <(find "$publish_dir" -type f -print0)
+
+          while IFS= read -r -d '' app_bundle; do
+            codesign \
+              --force \
+              --deep \
+              --strict \
+              --timestamp \
+              --options runtime \
+              --keychain "$MACOS_SIGNING_KEYCHAIN" \
+              --sign "$MACOS_CODESIGN_IDENTITY" \
+              "$app_bundle"
+            codesign --verify --deep --strict --verbose=2 "$app_bundle"
+          done < <(find "$publish_dir" -type d -name "*.app" -print0)
+
+          if [[ "$signed_count" -eq 0 ]]; then
+            echo "No Mach-O binaries were found to sign in $publish_dir." >&2
+            exit 1
+          fi
 
       - name: Package published output on Windows
         if: runner.os == 'Windows'
@@ -264,18 +448,137 @@ jobs:
 
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $scriptPath
 
+      - name: Sign Windows desktop installer
+        if: runner.os == 'Windows' && matrix.app_id == 'desktop'
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_CERT_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_CERT_PASSWORD }}
+          WINDOWS_CODESIGN_TIMESTAMP_URL: ${{ secrets.WINDOWS_CODESIGN_TIMESTAMP_URL }}
+        run: |
+          $timestampUrl = $env:WINDOWS_CODESIGN_TIMESTAMP_URL
+          if ([string]::IsNullOrWhiteSpace($timestampUrl)) {
+            $timestampUrl = "http://timestamp.digicert.com"
+          }
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "\\x64\\signtool\.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found on the Windows runner."
+          }
+
+          $installerPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/packages/NanoAgent.Desktop-${{ matrix.rid }}-setup.exe"
+          if (-not (Test-Path $installerPath)) {
+            throw "Windows desktop installer was not found at $installerPath."
+          }
+
+          & $signtool.FullName sign `
+            /fd SHA256 `
+            /tr $timestampUrl `
+            /td SHA256 `
+            /f $env:WINDOWS_CODESIGN_CERT_PATH `
+            /p $env:WINDOWS_CODESIGN_CERT_PASSWORD `
+            /v `
+            $installerPath
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to Authenticode sign $installerPath."
+          }
+
+          & $signtool.FullName verify /pa /v $installerPath
+          if ($LASTEXITCODE -ne 0) {
+            throw "Authenticode verification failed for $installerPath."
+          }
+
       - name: Package published output on Linux and macOS
         if: runner.os != 'Windows'
         shell: bash
         run: |
+          set -euo pipefail
+
           archive_path="$GITHUB_WORKSPACE/artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}.zip"
           publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}"
 
-          cd "$publish_dir"
-          zip -r "$archive_path" .
+          rm -f "$archive_path"
+
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            ditto -c -k --sequesterRsrc "$publish_dir" "$archive_path"
+          else
+            cd "$publish_dir"
+            zip -r "$archive_path" .
+          fi
+
+      - name: Notarize macOS package
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          for name in MACOS_NOTARY_APPLE_ID MACOS_NOTARY_TEAM_ID MACOS_NOTARY_PASSWORD
+          do
+            if [[ -z "${!name:-}" ]]; then
+              echo "$name is required for macOS notarization." >&2
+              exit 1
+            fi
+          done
+
+          archive_path="$GITHUB_WORKSPACE/artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}.zip"
+          publish_dir="$GITHUB_WORKSPACE/artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}"
+
+          xcrun notarytool submit "$archive_path" \
+            --apple-id "$MACOS_NOTARY_APPLE_ID" \
+            --team-id "$MACOS_NOTARY_TEAM_ID" \
+            --password "$MACOS_NOTARY_PASSWORD" \
+            --wait \
+            --timeout 30m
+
+          stapled_app=0
+          while IFS= read -r -d '' app_bundle; do
+            xcrun stapler staple "$app_bundle"
+            xcrun stapler validate "$app_bundle"
+            stapled_app=1
+          done < <(find "$publish_dir" -type d -name "*.app" -print0)
+
+          if [[ "$stapled_app" -eq 1 ]]; then
+            rm -f "$archive_path"
+            ditto -c -k --sequesterRsrc "$publish_dir" "$archive_path"
+          fi
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0
+        with:
+          path: ./artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}
+          format: cyclonedx-json
+          output-file: ./artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}.sbom.cdx.json
+          upload-artifact: false
+          upload-release-assets: false
+          dependency-snapshot: false
+
+      - name: Remove Windows signing certificate
+        if: always() && runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_CERT_PATH) -and (Test-Path $env:WINDOWS_CODESIGN_CERT_PATH)) {
+            Remove-Item -LiteralPath $env:WINDOWS_CODESIGN_CERT_PATH -Force
+          }
+
+      - name: Remove macOS signing keychain
+        if: always() && runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -n "${MACOS_SIGNING_KEYCHAIN:-}" && -f "$MACOS_SIGNING_KEYCHAIN" ]]; then
+            security delete-keychain "$MACOS_SIGNING_KEYCHAIN"
+          fi
 
       - name: Upload packaged artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: ${{ matrix.artifact_name }}
           path: ./artifacts/packages/${{ matrix.package_name }}-${{ matrix.rid }}*
@@ -286,23 +589,78 @@ jobs:
     name: Publish GitHub release
     needs: publish
     runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           ref: ${{ env.RELEASE_REF }}
           fetch-depth: 0
 
       - name: Download packaged artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
         with:
           path: ./artifacts/release
+
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_dir="$GITHUB_WORKSPACE/artifacts/release-assets"
+          mkdir -p "$release_dir"
+
+          while IFS= read -r asset_path; do
+            asset_name="$(basename "$asset_path")"
+            destination="$release_dir/$asset_name"
+
+            if [[ -e "$destination" ]]; then
+              echo "Duplicate release asset name detected: $asset_name" >&2
+              exit 1
+            fi
+
+            cp "$asset_path" "$destination"
+          done < <(
+            find "$GITHUB_WORKSPACE/artifacts/release" -type f \
+              \( -name '*.zip' -o -name '*.exe' -o -name '*.sbom.cdx.json' \) |
+              sort
+          )
+
+          asset_count="$(find "$release_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          if [[ "$asset_count" -eq 0 ]]; then
+            echo "No release assets were found." >&2
+            exit 1
+          fi
+
+      - name: Create SHA256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_dir="$GITHUB_WORKSPACE/artifacts/release-assets"
+
+          (
+            cd "$release_dir"
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' |
+              sort -z |
+              xargs -0 sha256sum
+          ) > "$release_dir/SHA256SUMS"
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-checksums: ./artifacts/release-assets/SHA256SUMS
 
       - name: Create release notes
         id: release_notes
         shell: bash
         run: |
+          set -euo pipefail
+
           notes_file="$RUNNER_TEMP/release-notes.md"
           previous_tag="$(git tag --sort=-creatordate | grep -Fxv "$RELEASE_TAG" | head -n 1 || true)"
 
@@ -312,20 +670,26 @@ jobs:
             commit_lines="$(git log HEAD --pretty=format:'- %s (%h)' --no-merges)"
           fi
 
-          package_lines="$(
-            find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) |
+          asset_lines="$(
+            find "$GITHUB_WORKSPACE/artifacts/release-assets" -maxdepth 1 -type f |
               sort |
-              while IFS= read -r package_path; do
-                printf -- '- %s\n' "$(basename "$package_path")"
+              while IFS= read -r asset_path; do
+                printf -- '- %s\n' "$(basename "$asset_path")"
               done
           )"
 
           {
             echo "# NanoAgent $RELEASE_TAG"
             echo
-            echo "## Packages"
+            echo "## Release assets"
             echo
-            echo "${package_lines:-- No packages were produced.}"
+            echo "${asset_lines:-- No release assets were produced.}"
+            echo
+            echo "## Verification"
+            echo
+            echo "- SHA256 hashes are published in SHA256SUMS."
+            echo "- CycloneDX SBOM files are published beside the packages."
+            echo "- GitHub artifact attestations are generated for the checksummed assets."
             echo
             echo "## Commit messages"
             echo
@@ -339,13 +703,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
           tag="$RELEASE_TAG"
           title="NanoAgent $tag"
           target_sha="$(git rev-parse HEAD)"
-          mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) | sort)
+          mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release-assets" -maxdepth 1 -type f | sort)
 
           if [[ "${#assets[@]}" -eq 0 ]]; then
-            echo "No packaged artifacts were found." >&2
+            echo "No release assets were found." >&2
             exit 1
           fi
 
