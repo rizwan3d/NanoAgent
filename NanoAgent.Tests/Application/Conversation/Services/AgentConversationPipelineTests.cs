@@ -1498,6 +1498,8 @@ public sealed class AgentConversationPipelineTests
         result.ToolExecutionResult!.Results.Select(static item => item.ToolName)
             .Should()
             .Equal(AgentToolNames.PlanningMode, AgentToolNames.FileWrite);
+        result.ToolExecutionResult.Results[1].Result.RenderPayload.Should().NotBeNull();
+        result.ToolExecutionResult.Results[1].Result.RenderPayload!.Title.Should().Be("File write complete");
         progressSink.PlanProgressUpdates.Should().BeEmpty();
         progressSink.StartedToolBatches.Should().HaveCount(2);
         progressSink.CompletedToolBatches.Should().HaveCount(2);
@@ -1516,7 +1518,7 @@ public sealed class AgentConversationPipelineTests
         toolFeedback.GetProperty("IsSuccess").GetBoolean().Should().BeTrue();
         toolFeedback.GetProperty("ConsecutiveFailureCount").GetInt32().Should().Be(0);
         toolFeedback.GetProperty("Message").GetString().Should().Be("Created README.md.");
-        toolFeedback.GetProperty("Render").GetProperty("Title").GetString().Should().Be("File write complete");
+        toolFeedback.TryGetProperty("Render", out _).Should().BeFalse();
         toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("ok");
         session.ConversationHistory.Should().HaveCount(2);
         session.ConversationHistory[1].Content.Should().Be("Implemented the requested change.");

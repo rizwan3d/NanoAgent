@@ -10,8 +10,7 @@ public sealed class ToolFeedbackPayload
         bool isSuccess,
         int consecutiveFailureCount,
         string message,
-        JsonElement data,
-        ToolRenderPayload? render = null)
+        JsonElement data)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
         ArgumentException.ThrowIfNullOrWhiteSpace(message);
@@ -22,7 +21,6 @@ public sealed class ToolFeedbackPayload
         ConsecutiveFailureCount = Math.Max(0, consecutiveFailureCount);
         Message = message.Trim();
         Data = data.Clone();
-        Render = render;
     }
 
     public int ConsecutiveFailureCount { get; }
@@ -32,8 +30,6 @@ public sealed class ToolFeedbackPayload
     public bool IsSuccess { get; }
 
     public string Message { get; }
-
-    public ToolRenderPayload? Render { get; }
 
     public ToolResultStatus Status { get; }
 

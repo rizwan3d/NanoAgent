@@ -513,8 +513,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             invocationResult.Result.IsSuccess,
             consecutiveFailureCount,
             invocationResult.Result.Message,
-            dataDocument.RootElement.Clone(),
-            invocationResult.Result.RenderPayload);
+            dataDocument.RootElement.Clone());
 
         return JsonSerializer.Serialize(
             payload,
