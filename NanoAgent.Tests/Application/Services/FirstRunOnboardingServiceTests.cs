@@ -132,6 +132,79 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveOpenAiChatGptAccountConfiguration_When_AccountProviderIsSelected()
+    {
+        AgentProviderProfile profile = new(ProviderKind.OpenAiChatGptAccount, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        selectionPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OnboardingProviderChoice.OpenAiChatGptAccount);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: OpenAI ChatGPT Plus/Pro.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(profile, null),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateOpenAiChatGptAccount()).Returns(profile);
+
+        Mock<IOpenAiChatGptAccountAuthenticator> authenticator = new(MockBehavior.Strict);
+        authenticator
+            .Setup(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("credential-json");
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object,
+            authenticator.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(profile, true));
+        profileFactory.Verify(factory => factory.CreateOpenAiChatGptAccount(), Times.Once);
+        authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        secretPrompt.VerifyNoOtherCalls();
+        inputValidator.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveGoogleAiStudioConfiguration_When_GoogleAiStudioIsSelected()
     {
         AgentProviderProfile googleAiStudioProfile = new(ProviderKind.GoogleAiStudio, null);
@@ -418,7 +491,8 @@ public sealed class FirstRunOnboardingServiceTests
         IOnboardingInputValidator inputValidator,
         IAgentConfigurationStore configurationStore,
         IApiKeySecretStore secretStore,
-        IAgentProviderProfileFactory profileFactory)
+        IAgentProviderProfileFactory profileFactory,
+        IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null)
     {
         return new FirstRunOnboardingService(
             selectionPrompt,
@@ -430,6 +504,7 @@ public sealed class FirstRunOnboardingServiceTests
             configurationStore,
             secretStore,
             profileFactory,
-            NullLogger<FirstRunOnboardingService>.Instance);
+            NullLogger<FirstRunOnboardingService>.Instance,
+            openAiChatGptAccountAuthenticator);
     }
 }

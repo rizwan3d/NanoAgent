@@ -4,6 +4,7 @@ using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
+using NanoAgent.Infrastructure.OpenAi;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.Models;
@@ -55,6 +56,15 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
+        services.AddHttpClient<OpenAiChatGptAccountCredentialService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
+        services.AddTransient<IOpenAiChatGptAccountCredentialService>(serviceProvider =>
+            serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
+        services.AddTransient<IOpenAiChatGptAccountAuthenticator>(serviceProvider =>
+            serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
         services.AddHttpClient("NanoAgent.Mcp", client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;

@@ -5,5 +5,6 @@ public enum ProviderKind
     OpenAi = 1,
     OpenAiCompatible = 2,
     GoogleAiStudio = 3,
-    Anthropic = 4
+    Anthropic = 4,
+    OpenAiChatGptAccount = 5
 }

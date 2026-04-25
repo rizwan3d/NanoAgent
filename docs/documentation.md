@@ -102,11 +102,11 @@ Technical support or documentation users can inspect product behavior from a rep
 
 **User benefit:** Users can connect NanoAgent to their preferred AI provider during first launch.
 
-**How the user uses it:** The product prompts the user to choose OpenAI, Google AI Studio, Anthropic, or an OpenAI-compatible provider. The user enters an API key. For a custom compatible provider, the user also enters a base URL.
+**How the user uses it:** The product prompts the user to choose OpenAI, OpenAI ChatGPT Plus/Pro, Google AI Studio, Anthropic, or an OpenAI-compatible provider. API-key providers ask for an API key. The ChatGPT Plus/Pro provider opens a browser sign-in flow. For a custom compatible provider, the user also enters a base URL.
 
 **Expected outcome:** NanoAgent saves local provider configuration and can start a model-backed session.
 
-**Observed limits and edge cases:** API keys cannot be empty. Custom base URLs must be absolute, use HTTP or HTTPS, and cannot include a query string or fragment. If local provider setup is incomplete, NanoAgent asks whether to reconfigure or cancel startup.
+**Observed limits and edge cases:** API keys cannot be empty. Custom base URLs must be absolute, use HTTP or HTTPS, and cannot include a query string or fragment. Browser sign-in requires the local callback port to be available. If local provider setup is incomplete, NanoAgent asks whether to reconfigure or cancel startup.
 
 ### 4.2 Provider Flexibility
 
@@ -116,7 +116,7 @@ Technical support or documentation users can inspect product behavior from a rep
 
 **Expected outcome:** NanoAgent sends model requests through the selected provider profile.
 
-**Observed limits and edge cases:** Provider availability depends on the user's API key, account access, model availability, and network/API reliability.
+**Observed limits and edge cases:** Provider availability depends on the user's API key or signed-in account, account access, model availability, and network/API reliability.
 
 ### 4.3 Model Discovery and Switching
 
@@ -355,9 +355,9 @@ Technical support or documentation users can inspect product behavior from a rep
 ### 5.1 First Run Setup
 
 1. The user launches NanoAgent from the desktop app or terminal.
-2. NanoAgent checks for existing local provider configuration and API key.
+2. NanoAgent checks for existing local provider configuration and stored provider credentials.
 3. If setup is missing, the user selects a provider.
-4. The user enters an API key.
+4. The user enters an API key or completes browser sign-in for OpenAI ChatGPT Plus/Pro.
 5. If the user selected an OpenAI-compatible provider, the user enters a valid base URL.
 6. NanoAgent saves local configuration and discovers available models.
 7. The user arrives in a ready session.
@@ -574,7 +574,7 @@ NanoAgent uses local files and platform credential storage rather than a central
 
 **Provider configuration:** The selected provider profile, preferred model, and thinking mode stored locally.
 
-**API key secret:** The provider API key stored through the operating system's credential storage where supported.
+**Provider secret:** The provider API key or OpenAI ChatGPT Plus/Pro OAuth credentials stored through the operating system's credential storage where supported.
 
 **Workspace:** A local folder selected by the user. Desktop remembers recent workspaces locally.
 
@@ -773,7 +773,7 @@ The current code supports thinking mode as on/off. The README still references b
 - Desktop profile selection appears limited to build, plan, and review even though custom profiles can exist.
 - Desktop does not expose visual management for skills, custom agents, MCP servers, memory, audit logging, lifecycle hooks, or full permission policies.
 - Thinking mode is on/off in the code, while the README references broader thinking effort values.
-- API keys are user-managed; no OAuth, hosted credential broker, or team credential management was found.
+- API keys are user-managed. OpenAI ChatGPT Plus/Pro uses local browser sign-in and stores refreshable OAuth credentials locally; no hosted credential broker or team credential management was found.
 - Model discovery depends on provider availability and usable model-list responses.
 - Strict OS-level shell sandboxing is not available on all platforms. Windows shell sandboxing for ReadOnly and WorkspaceWrite appears unsupported and fails closed unless escalation or full access is used.
 - Local unreadable or malformed sections, skills, agents, memory, settings, and configuration can be skipped without a rich recovery UI.
@@ -803,7 +803,7 @@ The current code supports thinking mode as on/off. The README still references b
 
 ### Onboarding and Setup
 
-- Add a first-run setup checklist covering provider, API key, model discovery, workspace selection, permissions, and first recommended prompt.
+- Add a first-run setup checklist covering provider credentials, model discovery, workspace selection, permissions, and first recommended prompt.
 - Add recovery guidance when provider setup is incomplete, model discovery fails, or configuration files are malformed.
 - Add recommended provider/model guidance for first-time users. **Needs confirmation** from product owner.
 

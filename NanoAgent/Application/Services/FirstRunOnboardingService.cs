@@ -17,6 +17,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenAi,
             "Use the official OpenAI API with only an API key."),
         new(
+            "OpenAI ChatGPT Plus/Pro",
+            OnboardingProviderChoice.OpenAiChatGptAccount,
+            "Use browser sign-in for a ChatGPT Plus or Pro account."),
+        new(
             "Google AI Studio",
             OnboardingProviderChoice.GoogleAiStudio,
             "Use Gemini through Google AI Studio with only a Gemini API key."),
@@ -39,6 +43,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IAgentConfigurationStore _configurationStore;
     private readonly IApiKeySecretStore _secretStore;
     private readonly IAgentProviderProfileFactory _profileFactory;
+    private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -51,7 +56,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         IAgentConfigurationStore configurationStore,
         IApiKeySecretStore secretStore,
         IAgentProviderProfileFactory profileFactory,
-        ILogger<FirstRunOnboardingService> logger)
+        ILogger<FirstRunOnboardingService> logger,
+        IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -62,6 +68,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _configurationStore = configurationStore;
         _secretStore = secretStore;
         _profileFactory = profileFactory;
+        _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
         _logger = logger;
     }
 
@@ -121,6 +128,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         AgentProviderProfile profile = providerChoice switch
         {
             OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
+            OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
             OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
@@ -135,19 +143,21 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
         };
 
-        string apiKey = await PromptUntilValidAsync(
-            cancellationToken => _secretPrompt.PromptAsync(
-                new SecretPromptRequest(
-                    "API key",
-                    "Paste the API key for the selected provider."),
-                cancellationToken),
-            _inputValidator.ValidateApiKey,
-            cancellationToken);
+        string providerSecret = providerChoice == OnboardingProviderChoice.OpenAiChatGptAccount
+            ? await AuthenticateOpenAiChatGptAccountAsync(cancellationToken)
+            : await PromptUntilValidAsync(
+                cancellationToken => _secretPrompt.PromptAsync(
+                    new SecretPromptRequest(
+                        "API key",
+                        "Paste the API key for the selected provider."),
+                    cancellationToken),
+                _inputValidator.ValidateApiKey,
+                cancellationToken);
 
         await _configurationStore.SaveAsync(
             new AgentConfiguration(profile, PreferredModelId: null),
             cancellationToken);
-        await _secretStore.SaveAsync(apiKey, cancellationToken);
+        await _secretStore.SaveAsync(providerSecret, cancellationToken);
 
         await _statusMessageWriter.ShowSuccessAsync(
             $"Onboarding complete. Provider: {profile.ProviderKind.ToDisplayName()}.",
@@ -156,6 +166,17 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         ApplicationLogMessages.OnboardingCompleted(_logger, profile.ProviderKind.ToDisplayName());
 
         return new OnboardingResult(profile, WasOnboardedDuringCurrentRun: true);
+    }
+
+    private async Task<string> AuthenticateOpenAiChatGptAccountAsync(CancellationToken cancellationToken)
+    {
+        if (_openAiChatGptAccountAuthenticator is null)
+        {
+            throw new InvalidOperationException(
+                "OpenAI ChatGPT Plus/Pro authentication is unavailable in this runtime.");
+        }
+
+        return await _openAiChatGptAccountAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
     private async Task<string> PromptUntilValidAsync(

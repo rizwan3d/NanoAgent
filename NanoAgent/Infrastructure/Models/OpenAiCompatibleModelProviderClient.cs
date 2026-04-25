@@ -3,6 +3,7 @@ using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure.OpenAi;
 using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.Models;
@@ -10,16 +11,36 @@ namespace NanoAgent.Infrastructure.Models;
 internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 {
     private const string AnthropicVersion = "2023-06-01";
+    private static readonly AvailableModel[] OpenAiChatGptAccountModels =
+    [
+        new("gpt-5.3-codex"),
+        new("gpt-5.3-codex-spark"),
+        new("gpt-5.5"),
+        new("gpt-5.4"),
+        new("gpt-5.4-mini"),
+        new("gpt-5.2"),
+        new("gpt-5.2-codex"),
+        new("gpt-5.1"),
+        new("gpt-5.1-codex-max"),
+        new("gpt-5.1-codex"),
+        new("gpt-5.1-codex-mini"),
+        new("gpt-5"),
+        new("gpt-5-codex"),
+        new("gpt-5-codex-mini")
+    ];
 
     private readonly HttpClient _httpClient;
+    private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
     public OpenAiCompatibleModelProviderClient(
         HttpClient httpClient,
-        ILogger<OpenAiCompatibleModelProviderClient> logger)
+        ILogger<OpenAiCompatibleModelProviderClient> logger,
+        IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
     }
 
     public async Task<IReadOnlyList<AvailableModel>> GetAvailableModelsAsync(
@@ -29,6 +50,21 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     {
         ArgumentNullException.ThrowIfNull(providerProfile);
         ArgumentException.ThrowIfNullOrWhiteSpace(apiKey);
+
+        if (providerProfile.ProviderKind == ProviderKind.OpenAiChatGptAccount)
+        {
+            if (_openAiChatGptAccountCredentialService is null)
+            {
+                throw new ModelProviderException(
+                    "OpenAI ChatGPT Plus/Pro credentials cannot be resolved in this runtime.");
+            }
+
+            await _openAiChatGptAccountCredentialService.ResolveAsync(
+                apiKey,
+                forceRefresh: false,
+                cancellationToken);
+            return OpenAiChatGptAccountModels;
+        }
 
         Uri baseUri = providerProfile.ResolveBaseUri();
         using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));

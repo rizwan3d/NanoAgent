@@ -175,6 +175,83 @@ public sealed class OpenAiConversationResponseMapperTests
     }
 
     [Fact]
+    public void Map_Should_ReturnAssistantMessageAndToolCalls_When_ResponsesPayloadContainsOutputItems()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiChatGptAccount,
+            """
+            {
+              "id": "resp_account",
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "I will inspect the file."
+                    }
+                  ]
+                },
+                {
+                  "type": "function_call",
+                  "call_id": "call_1",
+                  "name": "file_read",
+                  "arguments": "{ \"path\": \"README.md\" }"
+                }
+              ],
+              "usage": {
+                "input_tokens": 22,
+                "output_tokens": 9,
+                "total_tokens": 31
+              }
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("I will inspect the file.");
+        response.ToolCalls.Should().ContainSingle();
+        response.ToolCalls[0].Id.Should().Be("call_1");
+        response.ToolCalls[0].Name.Should().Be("file_read");
+        response.ToolCalls[0].ArgumentsJson.Should().Be("{ \"path\": \"README.md\" }");
+        response.ResponseId.Should().Be("resp_account");
+        response.PromptTokens.Should().Be(22);
+        response.CompletionTokens.Should().Be(9);
+        response.TotalTokens.Should().Be(31);
+    }
+
+    [Fact]
+    public void Map_Should_IgnoreNullError_When_ResponsesPayloadContainsOutput()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiChatGptAccount,
+            """
+            {
+              "id": "resp_account",
+              "error": null,
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "Completed successfully."
+                    }
+                  ]
+                }
+              ]
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("Completed successfully.");
+        response.ResponseId.Should().Be("resp_account");
+    }
+
+    [Fact]
     public void Map_Should_ThrowConversationResponseException_When_ResponseHasNoMessageAndNoToolCalls()
     {
         OpenAiConversationResponseMapper sut = new();

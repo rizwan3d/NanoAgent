@@ -6,6 +6,8 @@ public interface IAgentProviderProfileFactory
 {
     AgentProviderProfile CreateOpenAi();
 
+    AgentProviderProfile CreateOpenAiChatGptAccount();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

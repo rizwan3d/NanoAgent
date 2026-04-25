@@ -17,6 +17,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateOpenAiChatGptAccount_Should_ReturnOpenAiChatGptAccountProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateOpenAiChatGptAccount();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

@@ -3,8 +3,10 @@ using System.Net.Http;
 using System.Text;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Models;
+using NanoAgent.Infrastructure.OpenAi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace NanoAgent.Tests.Infrastructure.Models;
 
@@ -101,11 +103,40 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         models.Select(model => model.Id).Should().Equal("claude-sonnet-4-6");
     }
 
-    private static OpenAiCompatibleModelProviderClient CreateSut(HttpClient httpClient)
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_ReturnAccountBackedModels_When_OpenAiChatGptAccountProviderIsConfigured()
+    {
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", "acct_123"));
+
+        HttpClient httpClient = new(new ThrowingHandler());
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+            "stored-credentials",
+            CancellationToken.None);
+
+        models.Take(2).Select(model => model.Id).Should().Equal([
+            "gpt-5.3-codex",
+            "gpt-5.3-codex-spark"
+        ]);
+        credentialService.VerifyAll();
+    }
+
+    private static OpenAiCompatibleModelProviderClient CreateSut(
+        HttpClient httpClient,
+        IOpenAiChatGptAccountCredentialService? credentialService = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
-            NullLogger<OpenAiCompatibleModelProviderClient>.Instance);
+            NullLogger<OpenAiCompatibleModelProviderClient>.Instance,
+            credentialService);
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
@@ -144,6 +175,16 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             };
 
             return Task.FromResult(response);
+        }
+    }
+
+    private sealed class ThrowingHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("No HTTP request should be sent for this provider.");
         }
     }
 }

@@ -6,8 +6,10 @@ using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Conversation;
+using NanoAgent.Infrastructure.OpenAi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace NanoAgent.Tests.Infrastructure.Conversation;
 
@@ -205,6 +207,165 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostResponsesRequestWithAccountHeaders_When_OpenAiChatGptAccountProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_account",
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    { "type": "output_text", "text": "Done." }
+                  ]
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", "acct_123"));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+                "stored-credentials",
+                "gpt-5.3-codex",
+                [
+                    ConversationRequestMessage.User("Read the file."),
+                    ConversationRequestMessage.AssistantToolCalls([
+                        new ConversationToolCall("call_1", "file_read", """{"path":"README.md"}""")
+                    ]),
+                    ConversationRequestMessage.ToolResult("call_1", """{"content":"hello"}""")
+                ],
+                "You are helpful.",
+                [CreateToolDefinition("file_read")],
+                "on"),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://chatgpt.com/backend-api/codex/responses"));
+        handler.RequestMethod.Should().Be(HttpMethod.Post);
+        handler.AuthorizationHeader.Should().Be("Bearer access-token");
+        handler.AccountIdHeader.Should().Be("acct_123");
+        handler.OriginatorHeader.Should().Be("nanoagent");
+        handler.SessionIdHeader.Should().NotBeNullOrWhiteSpace();
+        payload.ProviderKind.Should().Be(ProviderKind.OpenAiChatGptAccount);
+
+        using JsonDocument requestDocument = JsonDocument.Parse(handler.RequestBody!);
+        JsonElement root = requestDocument.RootElement;
+        root.GetProperty("model").GetString().Should().Be("gpt-5.3-codex");
+        root.GetProperty("stream").GetBoolean().Should().BeTrue();
+        root.GetProperty("store").GetBoolean().Should().BeFalse();
+        root.GetProperty("instructions").GetString().Should().Be("You are helpful.");
+        root.GetProperty("reasoning").GetProperty("effort").GetString().Should().Be("high");
+        root.GetProperty("input")[0].GetProperty("content")[0].GetProperty("type").GetString().Should().Be("input_text");
+        root.GetProperty("input")[1].GetProperty("type").GetString().Should().Be("function_call");
+        root.GetProperty("input")[2].GetProperty("type").GetString().Should().Be("function_call_output");
+        root.GetProperty("tools")[0].GetProperty("strict").GetBoolean().Should().BeTrue();
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_ReturnResponsesPayload_When_OpenAiChatGptAccountReturnsEventStream()
+    {
+        RecordingHandler handler = new("""
+            event: response.created
+            data: {"type":"response.created","response":{"id":"resp_stream"}}
+
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","content":[{"type":"output_text","text":"Done from stream."}]}}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_stream","error":null,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}
+
+            data: [DONE]
+
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", null));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+                "stored-credentials",
+                "gpt-5.3-codex",
+                [ConversationRequestMessage.User("Say done.")],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        payload.RawContent.Should().NotContain("data:");
+
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("Done from stream.");
+        response.ResponseId.Should().Be("resp_stream");
+        response.PromptTokens.Should().Be(5);
+        response.CompletionTokens.Should().Be(3);
+        response.TotalTokens.Should().Be(8);
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_UseTextDeltas_When_OpenAiChatGptAccountCompletedEventHasNoOutputItems()
+    {
+        RecordingHandler handler = new("""
+            event: response.created
+            data: {"type":"response.created","response":{"id":"resp_delta"}}
+
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","response_id":"resp_delta","delta":"Hello "}
+
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","response_id":"resp_delta","delta":"from deltas."}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_delta","error":null,"output":[]}}
+
+            data: [DONE]
+
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", null));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+                "stored-credentials",
+                "gpt-5.3-codex",
+                [ConversationRequestMessage.User("Say hello.")],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("Hello from deltas.");
+        response.ResponseId.Should().Be("resp_delta");
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PreserveStructuredToolFeedbackJson_When_ToolMessagesContainStatusMetadata()
     {
         RecordingHandler handler = new("""
@@ -395,6 +556,18 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
     private static OpenAiCompatibleConversationProviderClient CreateSut(
         HttpClient httpClient,
+        IOpenAiChatGptAccountCredentialService credentialService)
+    {
+        return new OpenAiCompatibleConversationProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance,
+            delayAsync: null,
+            nextJitter: null,
+            openAiChatGptAccountCredentialService: credentialService);
+    }
+
+    private static OpenAiCompatibleConversationProviderClient CreateSut(
+        HttpClient httpClient,
         Func<TimeSpan, CancellationToken, Task>? delayAsync,
         Func<double>? nextJitter)
     {
@@ -439,11 +612,17 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         public string? AuthorizationHeader { get; private set; }
 
+        public string? AccountIdHeader { get; private set; }
+
+        public string? OriginatorHeader { get; private set; }
+
         public string? RequestBody { get; private set; }
 
         public HttpMethod? RequestMethod { get; private set; }
 
         public Uri? RequestUri { get; private set; }
+
+        public string? SessionIdHeader { get; private set; }
 
         protected override async Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -452,6 +631,15 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             RequestUri = request.RequestUri;
             RequestMethod = request.Method;
             AuthorizationHeader = request.Headers.Authorization?.ToString();
+            AccountIdHeader = request.Headers.TryGetValues("ChatGPT-Account-Id", out IEnumerable<string>? accountIdValues)
+                ? accountIdValues.FirstOrDefault()
+                : null;
+            OriginatorHeader = request.Headers.TryGetValues("originator", out IEnumerable<string>? originatorValues)
+                ? originatorValues.FirstOrDefault()
+                : null;
+            SessionIdHeader = request.Headers.TryGetValues("session_id", out IEnumerable<string>? sessionIdValues)
+                ? sessionIdValues.FirstOrDefault()
+                : null;
             RequestBody = request.Content is null
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken);
