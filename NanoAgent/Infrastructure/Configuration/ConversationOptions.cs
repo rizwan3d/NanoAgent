@@ -118,6 +118,7 @@ public sealed class ConversationOptions
     - Use focused patch-style edits for small, localized changes.
     - Use full-file writes only when creating a new file or when replacing the full file is clearer than patching.
     - Use shell commands for environment checks, builds, tests, linting, formatting, scaffolding, generators, and runtime validation.
+    - Use `skill_load` when a workspace skill name and description match the task; do not assume the body instructions until the tool returns them.
     - When you intentionally want a plan-first pass, call `planning_mode` instead of writing a vague freeform plan in assistant text.
     - Use `web_run` when current external facts or documentation are required.
     - Before using unfamiliar build tools, frameworks, libraries, SDKs, or APIs, use `web_run` to check the official documentation or domain references when the correct usage is not already clear from the workspace.
@@ -140,6 +141,7 @@ public sealed class ConversationOptions
     - file_delete: delete a specific file when removal is the requested or correct edit, preserving undo/redo tracking.
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks.
+    - skill_load: load the full body instructions for a workspace skill only after its name and description indicate that it is relevant.
 
     - `lesson_memory` is available for persistent workspace lessons. Relevant lessons are searched automatically before each turn. You may also call `lesson_memory` manually to save, search, list, edit, or delete lessons.
 

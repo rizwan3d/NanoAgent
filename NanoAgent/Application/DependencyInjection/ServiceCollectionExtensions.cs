@@ -37,6 +37,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, PlanningModeTool>();
         services.AddSingleton<ITool, SearchFilesTool>();
         services.AddSingleton<ITool, FileWriteTool>();
+        services.AddSingleton<ITool, SkillLoadTool>();
         services.AddSingleton<ITool, TextSearchTool>();
         services.AddSingleton<ITool, UpdatePlanTool>();
         services.AddSingleton<ITool, WebRunTool>();

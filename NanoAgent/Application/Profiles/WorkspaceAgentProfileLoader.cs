@@ -21,6 +21,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
             AgentToolNames.WebRun
@@ -36,6 +37,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
             AgentToolNames.WebRun
@@ -53,6 +55,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.PlanningMode,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.WebRun
         ],
@@ -65,6 +68,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.LessonMemory,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
+            AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.WebRun
         ],

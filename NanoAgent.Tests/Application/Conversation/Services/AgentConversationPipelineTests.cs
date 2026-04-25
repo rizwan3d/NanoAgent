@@ -380,6 +380,74 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_IncludeSkillRoutingPromptWithoutSkillBody()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.SkillLoad)]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_skills"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Loaded the right routing context.",
+                [],
+                "resp_skills"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            skillService: new FixedSkillService(
+                "Workspace skills:\n<workspace_skill name=\"dotnet\" path=\".nanoagent/skills/dotnet/SKILL.md\">\nUse for .NET tasks.\n</workspace_skill>"));
+
+        await ProcessAsync(
+            sut,
+            "Fix the dotnet tests.",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Workspace skills:");
+        requests[0].SystemPrompt.Should().Contain("Use for .NET tasks.");
+        requests[0].SystemPrompt.Should().NotContain("Run dotnet test after every edit.");
+        requests[0].AvailableTools.Select(static tool => tool.Name)
+            .Should()
+            .Equal(AgentToolNames.SkillLoad);
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_IncludeSessionStateInSystemPrompt_When_ToolContextExists()
     {
         ReplSessionContext session = CreateSession();
@@ -2106,7 +2174,8 @@ public sealed class AgentConversationPipelineTests
         IConversationConfigurationAccessor configurationAccessor,
         IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null,
         ILessonMemoryService? lessonMemoryService = null,
-        ILifecycleHookService? lifecycleHookService = null)
+        ILifecycleHookService? lifecycleHookService = null,
+        ISkillService? skillService = null)
     {
         return new AgentConversationPipeline(
             timeProvider,
@@ -2120,7 +2189,8 @@ public sealed class AgentConversationPipelineTests
             workspaceInstructionsProvider ?? new EmptyWorkspaceInstructionsProvider(),
             lessonMemoryService ?? new EmptyLessonMemoryService(),
             NullLogger<AgentConversationPipeline>.Instance,
-            lifecycleHookService);
+            lifecycleHookService,
+            skillService);
     }
 
     private static Task<ConversationTurnResult> ProcessAsync(
@@ -2375,6 +2445,49 @@ public sealed class AgentConversationPipelineTests
         public string GetStoragePath()
         {
             return ".nanoagent/memory/lessons.jsonl";
+        }
+    }
+
+    private sealed class FixedSkillService : ISkillService
+    {
+        private readonly string? _routingPrompt;
+
+        public FixedSkillService(string? routingPrompt)
+        {
+            _routingPrompt = routingPrompt;
+        }
+
+        public Task<IReadOnlyList<WorkspaceSkillDescriptor>> ListAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<IReadOnlyList<WorkspaceSkillDescriptor>>([
+                new WorkspaceSkillDescriptor(
+                    "dotnet",
+                    "Use for .NET tasks.",
+                    ".nanoagent/skills/dotnet/SKILL.md")
+            ]);
+        }
+
+        public Task<string?> CreateRoutingPromptAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_routingPrompt);
+        }
+
+        public Task<WorkspaceSkillLoadResult?> LoadAsync(
+            ReplSessionContext session,
+            string name,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult<WorkspaceSkillLoadResult?>(new WorkspaceSkillLoadResult(
+                "dotnet",
+                "Use for .NET tasks.",
+                ".nanoagent/skills/dotnet/SKILL.md",
+                "Run dotnet test after every edit.",
+                33,
+                false));
         }
     }
 }
