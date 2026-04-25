@@ -10,6 +10,8 @@ public sealed class ApplicationOptions
 
     public ApplicationDefaultsOptions Defaults { get; set; } = new();
 
+    public LifecycleHookSettings Hooks { get; set; } = new();
+
     public ModelSelectionOptions ModelSelection { get; set; } = new();
 
     public PermissionSettings Permissions { get; set; } = new();

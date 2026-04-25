@@ -1,6 +1,8 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
+using NanoAgent.Application.Tools;
+using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Services;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
@@ -114,6 +116,80 @@ public sealed class RegistryBackedToolInvokerTests
 
         result.Result.Status.Should().Be(ToolResultStatus.Success);
         tool.WasExecuted.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_RunLifecycleHooksAroundToolCall()
+    {
+        RecordingLifecycleHookService hookService = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([new EchoTool()], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce),
+            lifecycleHookService: hookService);
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", "echo_tool", "{}"),
+            Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("echo_tool"),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        hookService.Events.Should().Equal(
+            LifecycleHookEvents.BeforeToolCall,
+            LifecycleHookEvents.AfterToolCall);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_BlockTool_When_BeforeHookBlocks()
+    {
+        HookVisibleTool tool = new(AgentToolNames.FileWrite);
+        RecordingLifecycleHookService hookService = new(LifecycleHookEvents.BeforeFileWrite);
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce),
+            lifecycleHookService: hookService);
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", AgentToolNames.FileWrite, """{ "path": "src/app.cs" }"""),
+            Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(AgentToolNames.FileWrite),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.ExecutionError);
+        result.Result.JsonResult.Should().Contain("lifecycle_hook_blocked");
+        tool.WasExecuted.Should().BeFalse();
+        hookService.Events.Should().Equal(
+            LifecycleHookEvents.BeforeToolCall,
+            LifecycleHookEvents.BeforeFileWrite);
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_RunShellFailureHook_When_ShellExitsNonZero()
+    {
+        RecordingLifecycleHookService hookService = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([new ShellResultTool(exitCode: 2)], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce),
+            lifecycleHookService: hookService);
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", AgentToolNames.ShellCommand, """{ "command": "dotnet test" }"""),
+            Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(AgentToolNames.ShellCommand),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        hookService.Events.Should().Contain(LifecycleHookEvents.AfterShellFailure);
+        hookService.Contexts.Should().Contain(context =>
+            context.EventName == LifecycleHookEvents.AfterShellFailure &&
+            context.ShellCommand == "dotnet test" &&
+            context.ShellExitCode == 2);
     }
 
     [Fact]
@@ -337,6 +413,105 @@ public sealed class RegistryBackedToolInvokerTests
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
+        }
+    }
+
+    private sealed class HookVisibleTool : ITool
+    {
+        private readonly string _name;
+
+        public HookVisibleTool(string name)
+        {
+            _name = name;
+        }
+
+        public bool WasExecuted { get; private set; }
+
+        public string Description => "Hook visible tool";
+
+        public string Name => _name;
+
+        public string PermissionRequirements => """{ "approvalMode": "Automatic" }""";
+
+        public string Schema => """{ "type": "object", "properties": { "path": { "type": "string" } }, "additionalProperties": false }""";
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            WasExecuted = true;
+            return Task.FromResult(ToolResultFactory.Success(
+                "Executed.",
+                new ToolErrorPayload("ok", "ok"),
+                ToolJsonContext.Default.ToolErrorPayload));
+        }
+    }
+
+    private sealed class ShellResultTool : ITool
+    {
+        private readonly int _exitCode;
+
+        public ShellResultTool(int exitCode)
+        {
+            _exitCode = exitCode;
+        }
+
+        public string Description => "Shell result tool";
+
+        public string Name => AgentToolNames.ShellCommand;
+
+        public string PermissionRequirements => """
+            {
+              "approvalMode": "Automatic",
+              "toolTags": ["bash"],
+              "shell": {
+                "commandArgumentName": "command",
+                "allowedCommands": ["dotnet"]
+              }
+            }
+            """;
+
+        public string Schema => """{ "type": "object", "properties": { "command": { "type": "string" } }, "additionalProperties": false }""";
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(ToolResultFactory.Success(
+                "Shell completed.",
+                new ShellCommandExecutionResult("dotnet test", ".", _exitCode, string.Empty, "failed"),
+                ToolJsonContext.Default.ShellCommandExecutionResult));
+        }
+    }
+
+    private sealed class RecordingLifecycleHookService : ILifecycleHookService
+    {
+        private readonly string? _blockedEvent;
+
+        public RecordingLifecycleHookService(string? blockedEvent = null)
+        {
+            _blockedEvent = blockedEvent;
+        }
+
+        public List<LifecycleHookContext> Contexts { get; } = [];
+
+        public IReadOnlyList<string> Events => Contexts.Select(static context => context.EventName).ToArray();
+
+        public Task<LifecycleHookRunResult> RunAsync(
+            LifecycleHookContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Contexts.Add(context);
+
+            if (string.Equals(context.EventName, _blockedEvent, StringComparison.Ordinal))
+            {
+                return Task.FromResult(LifecycleHookRunResult.Blocked(
+                    "test-hook",
+                    $"Blocked {context.EventName}."));
+            }
+
+            return Task.FromResult(LifecycleHookRunResult.Allowed());
         }
     }
 

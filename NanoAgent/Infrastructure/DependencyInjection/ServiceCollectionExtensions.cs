@@ -1,5 +1,6 @@
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
+using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.Secrets;
@@ -36,6 +37,7 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
+        services.AddSingleton<ILifecycleHookService, ShellLifecycleHookService>();
         services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();
         services.AddSingleton<IToolAuditLogService, WorkspaceToolAuditLogService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();

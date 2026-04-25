@@ -52,6 +52,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IApiKeySecretStore _secretStore;
     private readonly IConversationProviderClient _providerClient;
     private readonly IConversationResponseMapper _responseMapper;
+    private readonly ILifecycleHookService _lifecycleHookService;
     private readonly IToolExecutionPipeline _toolExecutionPipeline;
     private readonly IToolRegistry _toolRegistry;
     private readonly IConversationConfigurationAccessor _configurationAccessor;
@@ -70,13 +71,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IConversationConfigurationAccessor configurationAccessor,
         IWorkspaceInstructionsProvider workspaceInstructionsProvider,
         ILessonMemoryService lessonMemoryService,
-        ILogger<AgentConversationPipeline> logger)
+        ILogger<AgentConversationPipeline> logger,
+        ILifecycleHookService? lifecycleHookService = null)
     {
         _timeProvider = timeProvider;
         _tokenEstimator = tokenEstimator;
         _secretStore = secretStore;
         _providerClient = providerClient;
         _responseMapper = responseMapper;
+        _lifecycleHookService = lifecycleHookService ?? DisabledLifecycleHookService.Instance;
         _toolExecutionPipeline = toolExecutionPipeline;
         _toolRegistry = toolRegistry;
         _configurationAccessor = configurationAccessor;
@@ -96,80 +99,100 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ArgumentNullException.ThrowIfNull(progressSink);
         cancellationToken.ThrowIfCancellationRequested();
 
-        string apiKey = await _secretStore.LoadAsync(cancellationToken)
-            ?? throw new ConversationPipelineException(
-                "Conversation cannot start because the API key is missing.");
-
-        ConversationSettings settings = _configurationAccessor.GetSettings();
         string normalizedInput = input.Trim();
-        string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
-            settings.SystemPrompt,
-            session,
-            CreateLessonQuery(normalizedInput),
-            cancellationToken);
-        IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
-        IReadOnlySet<string> availableToolNames = availableToolDefinitions
-            .Select(static definition => definition.Name)
-            .ToHashSet(StringComparer.Ordinal);
-        using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutSource.CancelAfter(settings.RequestTimeout);
-        DateTimeOffset startedAt = _timeProvider.GetUtcNow();
+        await RunBeforeTaskStartHookAsync(normalizedInput, session, cancellationToken);
 
-        if (session.PendingExecutionPlan is not null &&
-            PlanningModePolicy.IsExecutionApproval(normalizedInput))
+        try
         {
-            return await ExecuteApprovedPlanAsync(
-                normalizedInput,
+            string apiKey = await _secretStore.LoadAsync(cancellationToken)
+                ?? throw new ConversationPipelineException(
+                    "Conversation cannot start because the API key is missing.");
+
+            ConversationSettings settings = _configurationAccessor.GetSettings();
+            string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
+                settings.SystemPrompt,
                 session,
-                progressSink,
-                settings,
+                CreateLessonQuery(normalizedInput),
+                cancellationToken);
+            IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
+            IReadOnlySet<string> availableToolNames = availableToolDefinitions
+                .Select(static definition => definition.Name)
+                .ToHashSet(StringComparer.Ordinal);
+            using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutSource.CancelAfter(settings.RequestTimeout);
+            DateTimeOffset startedAt = _timeProvider.GetUtcNow();
+
+            if (session.PendingExecutionPlan is not null &&
+                PlanningModePolicy.IsExecutionApproval(normalizedInput))
+            {
+                ConversationTurnResult approvedResult = await ExecuteApprovedPlanAsync(
+                    normalizedInput,
+                    session,
+                    progressSink,
+                    settings,
+                    apiKey,
+                    availableToolDefinitions,
+                    availableToolNames,
+                    timeoutSource,
+                    startedAt,
+                    cancellationToken);
+
+                await RunAfterTaskCompleteHookAsync(normalizedInput, session, approvedResult, cancellationToken);
+                return approvedResult;
+            }
+
+            List<ConversationRequestMessage> messages =
+            [
+                .. session.GetConversationHistory(settings.MaxHistoryTurns),
+                ConversationRequestMessage.User(normalizedInput)
+            ];
+
+            ApplicationLogMessages.ConversationRequestStarted(
+                _logger,
+                session.ProviderName,
+                session.ActiveModelId);
+
+            PhaseExecutionResult result = await RunPhaseAsync(
                 apiKey,
+                session,
+                messages,
+                PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(profileSystemPrompt),
                 availableToolDefinitions,
                 availableToolNames,
+                ConversationExecutionPhase.Execution,
+                progressSink,
+                settings,
                 timeoutSource,
-                startedAt,
+                executionPlanTracker: null,
                 cancellationToken);
-        }
 
-        List<ConversationRequestMessage> messages =
-        [
-            .. session.GetConversationHistory(settings.MaxHistoryTurns),
-            ConversationRequestMessage.User(normalizedInput)
-        ];
-
-        ApplicationLogMessages.ConversationRequestStarted(
-            _logger,
-            session.ProviderName,
-            session.ActiveModelId);
-
-        PhaseExecutionResult result = await RunPhaseAsync(
-            apiKey,
-            session,
-            messages,
-            PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(profileSystemPrompt),
-            availableToolDefinitions,
-            availableToolNames,
-            ConversationExecutionPhase.Execution,
-            progressSink,
-            settings,
-            timeoutSource,
-            executionPlanTracker: null,
-            cancellationToken);
-
-        ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
-        session.ClearPendingExecutionPlan();
-        session.AddConversationTurn(
-            normalizedInput,
-            result.AssistantMessage,
-            result.ToolCalls);
-
-        return ConversationTurnResult.AssistantMessage(
-            result.AssistantMessage,
-            CreateBatchResult(result.ExecutedToolResults),
-            CreateMetrics(
-                startedAt,
+            ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
+            session.ClearPendingExecutionPlan();
+            session.AddConversationTurn(
+                normalizedInput,
                 result.AssistantMessage,
-                GetCompletionTokens(result)));
+                result.ToolCalls);
+
+            ConversationTurnResult turnResult = ConversationTurnResult.AssistantMessage(
+                result.AssistantMessage,
+                CreateBatchResult(result.ExecutedToolResults),
+                CreateMetrics(
+                    startedAt,
+                    result.AssistantMessage,
+                    GetCompletionTokens(result)));
+
+            await RunAfterTaskCompleteHookAsync(normalizedInput, session, turnResult, cancellationToken);
+            return turnResult;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await RunAfterTaskFailedHookAsync(normalizedInput, session, exception, cancellationToken);
+            throw;
+        }
     }
 
     private async Task<ConversationTurnResult> ExecuteApprovedPlanAsync(
@@ -255,6 +278,97 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             ? completionTokens.Value
             : _tokenEstimator.Estimate(responseText);
         return new ConversationTurnMetrics(elapsed, estimatedOutputTokens);
+    }
+
+    private async Task RunBeforeTaskStartHookAsync(
+        string input,
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        LifecycleHookRunResult result = await _lifecycleHookService.RunAsync(
+            CreateTaskHookContext(LifecycleHookEvents.BeforeTaskStart, input, session),
+            cancellationToken);
+        if (!result.IsAllowed)
+        {
+            throw new ConversationPipelineException(
+                result.Message ?? $"Lifecycle hook '{result.FailedHookName}' blocked the task.");
+        }
+    }
+
+    private async Task RunAfterTaskCompleteHookAsync(
+        string input,
+        ReplSessionContext session,
+        ConversationTurnResult result,
+        CancellationToken cancellationToken)
+    {
+        LifecycleHookRunResult hookResult;
+        try
+        {
+            hookResult = await _lifecycleHookService.RunAsync(
+                CreateTaskHookContext(LifecycleHookEvents.AfterTaskComplete, input, session, result),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // A broken hook implementation should not turn a completed assistant turn into a failed turn.
+            return;
+        }
+
+        if (!hookResult.IsAllowed)
+        {
+            throw new ConversationPipelineException(
+                hookResult.Message ?? $"Lifecycle hook '{hookResult.FailedHookName}' rejected the completed task.");
+        }
+    }
+
+    private async Task RunAfterTaskFailedHookAsync(
+        string input,
+        ReplSessionContext session,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _lifecycleHookService.RunAsync(
+                CreateTaskHookContext(LifecycleHookEvents.AfterTaskFailed, input, session, result: null, exception),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // The original task failure is more important than a follow-up hook issue.
+        }
+    }
+
+    private static LifecycleHookContext CreateTaskHookContext(
+        string eventName,
+        string input,
+        ReplSessionContext session,
+        ConversationTurnResult? result = null,
+        Exception? exception = null)
+    {
+        return new LifecycleHookContext
+        {
+            ApplicationName = session.ApplicationName,
+            ErrorMessage = exception?.Message,
+            ErrorType = exception?.GetType().Name,
+            EventName = eventName,
+            ModelId = session.ActiveModelId,
+            OutputTokens = result?.Metrics?.EstimatedOutputTokens,
+            ProviderName = session.ProviderName,
+            ResponseText = result?.ResponseText,
+            ResultStatus = result?.Kind.ToString(),
+            ResultSuccess = result is not null && exception is null,
+            SessionId = session.SessionId,
+            TaskInput = input
+        };
     }
 
     private static string CreateProviderRetrySystemPrompt(
@@ -791,6 +905,20 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return results.Count == 0
             ? null
             : new ToolExecutionBatchResult(results.ToArray());
+    }
+
+    private sealed class DisabledLifecycleHookService : ILifecycleHookService
+    {
+        public static DisabledLifecycleHookService Instance { get; } = new();
+
+        public Task<LifecycleHookRunResult> RunAsync(
+            LifecycleHookContext context,
+            CancellationToken cancellationToken)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(LifecycleHookRunResult.Allowed());
+        }
     }
 
     private sealed class ExecutionPlanTracker

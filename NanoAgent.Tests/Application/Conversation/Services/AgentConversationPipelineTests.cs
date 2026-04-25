@@ -122,6 +122,69 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_RunTaskLifecycleHooks()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_1"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_1"));
+
+        RecordingLifecycleHookService hookService = new();
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            lifecycleHookService: hookService);
+
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
+            "Ship it.",
+            session);
+
+        result.ResponseText.Should().Be("Done.");
+        hookService.Contexts.Select(static context => context.EventName)
+            .Should()
+            .Equal(LifecycleHookEvents.BeforeTaskStart, LifecycleHookEvents.AfterTaskComplete);
+        hookService.Contexts[0].TaskInput.Should().Be("Ship it.");
+        hookService.Contexts[1].ResponseText.Should().Be("Done.");
+    }
+
+
+    [Fact]
     public async Task ProcessAsync_Should_PassThinkingEffortToProviderRequest()
     {
         ReplSessionContext session = CreateSession();
@@ -2042,7 +2105,8 @@ public sealed class AgentConversationPipelineTests
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
         IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null,
-        ILessonMemoryService? lessonMemoryService = null)
+        ILessonMemoryService? lessonMemoryService = null,
+        ILifecycleHookService? lifecycleHookService = null)
     {
         return new AgentConversationPipeline(
             timeProvider,
@@ -2055,7 +2119,8 @@ public sealed class AgentConversationPipelineTests
             configurationAccessor,
             workspaceInstructionsProvider ?? new EmptyWorkspaceInstructionsProvider(),
             lessonMemoryService ?? new EmptyLessonMemoryService(),
-            NullLogger<AgentConversationPipeline>.Instance);
+            NullLogger<AgentConversationPipeline>.Instance,
+            lifecycleHookService);
     }
 
     private static Task<ConversationTurnResult> ProcessAsync(
@@ -2164,6 +2229,20 @@ public sealed class AgentConversationPipelineTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(_instructions);
+        }
+    }
+
+    private sealed class RecordingLifecycleHookService : ILifecycleHookService
+    {
+        public List<LifecycleHookContext> Contexts { get; } = [];
+
+        public Task<LifecycleHookRunResult> RunAsync(
+            LifecycleHookContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Contexts.Add(context);
+            return Task.FromResult(LifecycleHookRunResult.Allowed());
         }
     }
 

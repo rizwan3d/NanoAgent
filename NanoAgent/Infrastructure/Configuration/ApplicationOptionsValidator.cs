@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Options;
+using NanoAgent.Application.Models;
 
 namespace NanoAgent.Infrastructure.Configuration;
 
@@ -42,6 +43,47 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
         if (options.Permissions is null)
         {
             failures.Add($"{ApplicationOptions.SectionName}:Permissions must be provided.");
+        }
+
+        if (options.Hooks is null)
+        {
+            failures.Add($"{ApplicationOptions.SectionName}:Hooks must be provided.");
+        }
+        else
+        {
+            if (options.Hooks.DefaultTimeoutSeconds <= 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Hooks:DefaultTimeoutSeconds must be greater than zero.");
+            }
+
+            if (options.Hooks.MaxOutputCharacters < 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Hooks:MaxOutputCharacters must be zero or greater.");
+            }
+
+            foreach ((LifecycleHookRule rule, int index) in (options.Hooks.Rules ?? []).Select((rule, index) => (rule, index)))
+            {
+                if (rule is null)
+                {
+                    failures.Add($"{ApplicationOptions.SectionName}:Hooks:Rules:{index} must be provided.");
+                    continue;
+                }
+
+                if (rule.Enabled && string.IsNullOrWhiteSpace(rule.Command))
+                {
+                    failures.Add($"{ApplicationOptions.SectionName}:Hooks:Rules:{index}:Command must be provided for enabled hook rules.");
+                }
+
+                if (rule.TimeoutSeconds is <= 0)
+                {
+                    failures.Add($"{ApplicationOptions.SectionName}:Hooks:Rules:{index}:TimeoutSeconds must be greater than zero when provided.");
+                }
+
+                if (rule.MaxOutputCharacters is < 0)
+                {
+                    failures.Add($"{ApplicationOptions.SectionName}:Hooks:Rules:{index}:MaxOutputCharacters must be zero or greater when provided.");
+                }
+            }
         }
 
         return failures.Count == 0

@@ -21,6 +21,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentTurnService, AgentTurnService>();
         services.AddSingleton<ISessionAppService, SessionAppService>();
         services.AddSingleton<IConversationPipeline, AgentConversationPipeline>();
+        services.AddSingleton<ILifecycleHookService, NoOpLifecycleHookService>();
         services.AddSingleton<IPermissionParser, ToolPermissionParser>();
         services.AddSingleton<IPermissionEvaluator, ToolPermissionEvaluator>();
         services.AddSingleton<IPermissionApprovalPrompt, SelectionPermissionApprovalPrompt>();

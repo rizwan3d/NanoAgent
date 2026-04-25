@@ -176,6 +176,46 @@ Permission shortcuts can be configured under `Application:Permissions`. They com
 }
 ```
 
+### Lifecycle Hooks
+
+Lifecycle hooks run local automation at key points in a turn. A hook receives a JSON payload on standard input and selected `NANOAGENT_*` environment variables such as `NANOAGENT_HOOK_EVENT`, `NANOAGENT_TOOL_NAME`, `NANOAGENT_PATH`, and `NANOAGENT_SHELL_EXIT_CODE`.
+
+Before hooks block the action by default when the command exits non-zero. After hooks continue by default unless `continueOnError` is set to `false`.
+
+```json
+{
+  "Application": {
+    "Hooks": {
+      "enabled": true,
+      "defaultTimeoutSeconds": 30,
+      "maxOutputCharacters": 12000,
+      "rules": [
+        {
+          "name": "check-write",
+          "events": ["before_file_write", "after_file_write"],
+          "command": "scripts/check-write.ps1",
+          "pathPatterns": ["src/**", "NanoAgent/**"]
+        },
+        {
+          "name": "shell-failure",
+          "event": "after_shell_failure",
+          "command": "scripts/on-shell-failure.ps1",
+          "shellCommandPatterns": ["dotnet test*", "npm test*"]
+        },
+        {
+          "name": "task-complete",
+          "event": "after_task_complete",
+          "command": "scripts/after-task.ps1",
+          "continueOnError": true
+        }
+      ]
+    }
+  }
+}
+```
+
+Supported events include `before_task_start`, `after_task_complete`, `after_task_failed`, `before_tool_call`, `after_tool_call`, `after_tool_failure`, `on_permission_denied`, `before_file_read`, `after_file_read`, `before_file_write`, `after_file_write`, `before_file_delete`, `after_file_delete`, `before_file_search`, `after_file_search`, `before_shell_command`, `after_shell_command`, `after_shell_failure`, `before_web_request`, `after_web_request`, `before_memory_save`, `after_memory_save`, `before_memory_write`, `after_memory_write`, `before_agent_delegate`, and `after_agent_delegate`.
+
 ### Workspace Instructions
 
 NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the workspace root and adds them to the model's system prompt as persistent project instructions.
