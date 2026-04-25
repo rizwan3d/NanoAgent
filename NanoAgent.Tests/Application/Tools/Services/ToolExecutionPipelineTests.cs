@@ -64,6 +64,72 @@ public sealed class ToolExecutionPipelineTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_RunParallelSafeToolCallsConcurrently()
+    {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_read", "text_search"],
+            StringComparer.Ordinal);
+        ParallelGateToolInvoker toolInvoker = new(["call_1", "call_2"]);
+        ToolExecutionPipeline sut = new(
+            toolInvoker,
+            maxParallelToolExecutions: 2);
+
+        Task<ToolExecutionBatchResult> executionTask = sut.ExecuteAsync(
+            [
+                new ConversationToolCall("call_1", "file_read", """{ "path": "README.md" }"""),
+                new ConversationToolCall("call_2", "text_search", """{ "query": "NanoAgent" }""")
+            ],
+            Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        await toolInvoker.AllBlockedCallsStarted.WaitAsync(TimeSpan.FromSeconds(2));
+        toolInvoker.ReleaseBlockedCalls();
+
+        ToolExecutionBatchResult result = await executionTask;
+
+        result.Results.Select(static item => item.ToolCallId).Should().Equal("call_1", "call_2");
+        toolInvoker.StartedCalls.Should().ContainInOrder("call_1", "call_2");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_KeepUnsafeToolCallsAsSequentialBarriers()
+    {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_read", "shell_command", "text_search"],
+            StringComparer.Ordinal);
+        SequentialBarrierToolInvoker toolInvoker = new();
+        ToolExecutionPipeline sut = new(
+            toolInvoker,
+            maxParallelToolExecutions: 3);
+
+        Task<ToolExecutionBatchResult> executionTask = sut.ExecuteAsync(
+            [
+                new ConversationToolCall("call_1", "file_read", """{ "path": "README.md" }"""),
+                new ConversationToolCall("call_2", "shell_command", """{ "command": "cd src" }"""),
+                new ConversationToolCall("call_3", "text_search", """{ "query": "NanoAgent" }""")
+            ],
+            Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        await toolInvoker.ShellStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Task firstCompleted = await Task.WhenAny(
+            toolInvoker.TextSearchStarted.Task,
+            Task.Delay(TimeSpan.FromMilliseconds(150)));
+        firstCompleted.Should().NotBe(toolInvoker.TextSearchStarted.Task);
+
+        toolInvoker.ReleaseShell();
+        ToolExecutionBatchResult result = await executionTask;
+
+        result.Results.Select(static item => item.ToolCallId).Should().Equal("call_1", "call_2", "call_3");
+        toolInvoker.TextSearchStarted.Task.IsCompleted.Should().BeTrue();
+        toolInvoker.TextSearchStartedAfterShellCompleted.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_GroupTrackedFileEditsIntoOneUndoTransaction()
     {
         ReplSessionContext session = new(
@@ -209,6 +275,107 @@ public sealed class ToolExecutionPipelineTests
                     new ToolErrorPayload("ok", "ok"),
                     ToolJsonContext.Default.ToolErrorPayload)));
         }
+    }
+
+    private sealed class ParallelGateToolInvoker : IToolInvoker
+    {
+        private readonly HashSet<string> _blockedCallIds;
+        private readonly TaskCompletionSource _allBlockedCallsStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseBlockedCalls = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _blockedStartedCount;
+
+        public ParallelGateToolInvoker(IEnumerable<string> blockedCallIds)
+        {
+            _blockedCallIds = new HashSet<string>(blockedCallIds, StringComparer.Ordinal);
+        }
+
+        public Task AllBlockedCallsStarted => _allBlockedCallsStarted.Task;
+
+        public List<string> StartedCalls { get; } = [];
+
+        public void ReleaseBlockedCalls()
+        {
+            _releaseBlockedCalls.TrySetResult();
+        }
+
+        public async Task<ToolInvocationResult> InvokeAsync(
+            ConversationToolCall toolCall,
+            ReplSessionContext session,
+            ConversationExecutionPhase executionPhase,
+            IReadOnlySet<string> allowedToolNames,
+            CancellationToken cancellationToken)
+        {
+            lock (StartedCalls)
+            {
+                StartedCalls.Add(toolCall.Id);
+            }
+
+            if (_blockedCallIds.Contains(toolCall.Id) &&
+                Interlocked.Increment(ref _blockedStartedCount) == _blockedCallIds.Count)
+            {
+                _allBlockedCallsStarted.TrySetResult();
+            }
+
+            if (_blockedCallIds.Contains(toolCall.Id))
+            {
+                await _releaseBlockedCalls.Task.WaitAsync(cancellationToken);
+            }
+
+            return CreateSuccessResult(toolCall);
+        }
+    }
+
+    private sealed class SequentialBarrierToolInvoker : IToolInvoker
+    {
+        private readonly TaskCompletionSource _releaseShell = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ShellStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource TextSearchStarted { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool TextSearchStartedAfterShellCompleted { get; private set; }
+
+        private bool ShellCompleted { get; set; }
+
+        public void ReleaseShell()
+        {
+            _releaseShell.TrySetResult();
+        }
+
+        public async Task<ToolInvocationResult> InvokeAsync(
+            ConversationToolCall toolCall,
+            ReplSessionContext session,
+            ConversationExecutionPhase executionPhase,
+            IReadOnlySet<string> allowedToolNames,
+            CancellationToken cancellationToken)
+        {
+            if (string.Equals(toolCall.Name, "shell_command", StringComparison.Ordinal))
+            {
+                ShellStarted.TrySetResult();
+                await _releaseShell.Task.WaitAsync(cancellationToken);
+                ShellCompleted = true;
+                return CreateSuccessResult(toolCall);
+            }
+
+            if (string.Equals(toolCall.Name, "text_search", StringComparison.Ordinal))
+            {
+                TextSearchStartedAfterShellCompleted = ShellCompleted;
+                TextSearchStarted.TrySetResult();
+            }
+
+            return CreateSuccessResult(toolCall);
+        }
+    }
+
+    private static ToolInvocationResult CreateSuccessResult(ConversationToolCall toolCall)
+    {
+        return new ToolInvocationResult(
+            toolCall.Id,
+            toolCall.Name,
+            ToolResultFactory.Success(
+                "ok",
+                new ToolErrorPayload("ok", "ok"),
+                ToolJsonContext.Default.ToolErrorPayload));
     }
 
     private sealed class RecordingLessonMemoryService : ILessonMemoryService

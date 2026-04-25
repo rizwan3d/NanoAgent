@@ -1,12 +1,16 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools;
 
 namespace NanoAgent.Application.Tools.Services;
 
 internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
 {
+    private const int DefaultMaxParallelToolExecutions = 4;
+
     private readonly IToolAuditLogService? _toolAuditLogService;
     private readonly ILessonMemoryService? _lessonMemoryService;
+    private readonly int _maxParallelToolExecutions;
     private readonly TimeProvider _timeProvider;
     private readonly IToolInvoker _toolInvoker;
 
@@ -14,12 +18,14 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         IToolInvoker toolInvoker,
         ILessonMemoryService? lessonMemoryService = null,
         IToolAuditLogService? toolAuditLogService = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        int maxParallelToolExecutions = DefaultMaxParallelToolExecutions)
     {
         _toolInvoker = toolInvoker;
         _lessonMemoryService = lessonMemoryService;
         _toolAuditLogService = toolAuditLogService;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _maxParallelToolExecutions = Math.Max(1, maxParallelToolExecutions);
     }
 
     public Task<ToolExecutionBatchResult> ExecuteAsync(
@@ -56,39 +62,200 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
             return new ToolExecutionBatchResult([]);
         }
 
-        List<ToolInvocationResult> results = new(toolCalls.Count);
+        ToolInvocationResult?[] results = new ToolInvocationResult?[toolCalls.Count];
         using IDisposable _ = session.BeginFileEditTransactionBatch();
 
-        foreach (ConversationToolCall toolCall in toolCalls)
+        int index = 0;
+        while (index < toolCalls.Count)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            DateTimeOffset startedAtUtc = _timeProvider.GetUtcNow();
-            ToolInvocationResult result = await _toolInvoker.InvokeAsync(
-                toolCall,
+            if (!CanRunInParallel(toolCalls[index]))
+            {
+                ToolExecutionRecord record = await InvokeToolAsync(
+                    toolCalls[index],
+                    session,
+                    executionPhase,
+                    allowedToolNames,
+                    cancellationToken);
+                results[index] = record.InvocationResult;
+                await CompleteToolExecutionAsync(
+                    record,
+                    session,
+                    executionPhase,
+                    onToolResult,
+                    cancellationToken);
+                index++;
+                continue;
+            }
+
+            int groupStartIndex = index;
+            while (index < toolCalls.Count &&
+                   CanRunInParallel(toolCalls[index]))
+            {
+                index++;
+            }
+
+            await ExecuteParallelGroupAsync(
+                toolCalls,
+                groupStartIndex,
+                index,
+                session,
+                executionPhase,
+                allowedToolNames,
+                results,
+                onToolResult,
+                cancellationToken);
+        }
+
+        return new ToolExecutionBatchResult(results.Select(static result =>
+            result ?? throw new InvalidOperationException("Tool execution completed without a result.")).ToArray());
+    }
+
+    private async Task ExecuteParallelGroupAsync(
+        IReadOnlyList<ConversationToolCall> toolCalls,
+        int startIndex,
+        int endIndex,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
+        ToolInvocationResult?[] results,
+        Func<ToolInvocationResult, CancellationToken, Task>? onToolResult,
+        CancellationToken cancellationToken)
+    {
+        int groupCount = endIndex - startIndex;
+        if (groupCount <= 1)
+        {
+            ToolExecutionRecord record = await InvokeToolAsync(
+                toolCalls[startIndex],
                 session,
                 executionPhase,
                 allowedToolNames,
                 cancellationToken);
-            DateTimeOffset completedAtUtc = _timeProvider.GetUtcNow();
-
-            await ObserveLessonMemoryAsync(toolCall, result, cancellationToken);
-            await RecordToolAuditAsync(
-                toolCall,
-                result,
+            results[startIndex] = record.InvocationResult;
+            await CompleteToolExecutionAsync(
+                record,
                 session,
                 executionPhase,
-                startedAtUtc,
-                completedAtUtc,
+                onToolResult,
                 cancellationToken);
-            results.Add(result);
-            if (onToolResult is not null)
-            {
-                await onToolResult(result, cancellationToken);
-            }
+            return;
         }
 
-        return new ToolExecutionBatchResult(results);
+        using SemaphoreSlim concurrency = new(_maxParallelToolExecutions, _maxParallelToolExecutions);
+        List<Task<IndexedToolExecutionRecord>> pendingTasks = new(groupCount);
+        for (int index = startIndex; index < endIndex; index++)
+        {
+            int toolIndex = index;
+            pendingTasks.Add(InvokeParallelToolAsync(
+                toolCalls[toolIndex],
+                toolIndex,
+                session,
+                executionPhase,
+                allowedToolNames,
+                concurrency,
+                cancellationToken));
+        }
+
+        while (pendingTasks.Count > 0)
+        {
+            Task<IndexedToolExecutionRecord> completedTask = await Task.WhenAny(pendingTasks);
+            pendingTasks.Remove(completedTask);
+            IndexedToolExecutionRecord indexedRecord = await completedTask;
+            results[indexedRecord.Index] = indexedRecord.Record.InvocationResult;
+            await CompleteToolExecutionAsync(
+                indexedRecord.Record,
+                session,
+                executionPhase,
+                onToolResult,
+                cancellationToken);
+        }
+    }
+
+    private async Task<IndexedToolExecutionRecord> InvokeParallelToolAsync(
+        ConversationToolCall toolCall,
+        int index,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
+        SemaphoreSlim concurrency,
+        CancellationToken cancellationToken)
+    {
+        await concurrency.WaitAsync(cancellationToken);
+        try
+        {
+            return new IndexedToolExecutionRecord(
+                index,
+                await InvokeToolAsync(
+                    toolCall,
+                    session,
+                    executionPhase,
+                    allowedToolNames,
+                    cancellationToken));
+        }
+        finally
+        {
+            concurrency.Release();
+        }
+    }
+
+    private async Task<ToolExecutionRecord> InvokeToolAsync(
+        ConversationToolCall toolCall,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = _timeProvider.GetUtcNow();
+        ToolInvocationResult result = await _toolInvoker.InvokeAsync(
+            toolCall,
+            session,
+            executionPhase,
+            allowedToolNames,
+            cancellationToken);
+        DateTimeOffset completedAtUtc = _timeProvider.GetUtcNow();
+
+        return new ToolExecutionRecord(
+            toolCall,
+            result,
+            startedAtUtc,
+            completedAtUtc);
+    }
+
+    private async Task CompleteToolExecutionAsync(
+        ToolExecutionRecord record,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        Func<ToolInvocationResult, CancellationToken, Task>? onToolResult,
+        CancellationToken cancellationToken)
+    {
+        await ObserveLessonMemoryAsync(
+            record.ToolCall,
+            record.InvocationResult,
+            cancellationToken);
+        await RecordToolAuditAsync(
+            record.ToolCall,
+            record.InvocationResult,
+            session,
+            executionPhase,
+            record.StartedAtUtc,
+            record.CompletedAtUtc,
+            cancellationToken);
+
+        if (onToolResult is not null)
+        {
+            await onToolResult(record.InvocationResult, cancellationToken);
+        }
+    }
+
+    private static bool CanRunInParallel(ConversationToolCall toolCall)
+    {
+        return toolCall.Name is AgentToolNames.FileRead or
+            AgentToolNames.DirectoryList or
+            AgentToolNames.SearchFiles or
+            AgentToolNames.TextSearch or
+            AgentToolNames.WebRun or
+            AgentToolNames.SkillLoad;
     }
 
     private async Task ObserveLessonMemoryAsync(
@@ -151,4 +318,14 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
             // not turn a completed tool call into a failed agent turn.
         }
     }
+
+    private sealed record ToolExecutionRecord(
+        ConversationToolCall ToolCall,
+        ToolInvocationResult InvocationResult,
+        DateTimeOffset StartedAtUtc,
+        DateTimeOffset CompletedAtUtc);
+
+    private sealed record IndexedToolExecutionRecord(
+        int Index,
+        ToolExecutionRecord Record);
 }
