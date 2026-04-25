@@ -13,6 +13,7 @@ internal static class WorkspaceAgentProfileLoader
         [
             AgentToolNames.AgentDelegate,
             AgentToolNames.ApplyPatch,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
@@ -31,6 +32,7 @@ internal static class WorkspaceAgentProfileLoader
     private static readonly IReadOnlySet<string> PrimaryReadOnlyTools = new HashSet<string>(
         [
             AgentToolNames.AgentDelegate,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,
             AgentToolNames.LessonMemory,
@@ -47,6 +49,7 @@ internal static class WorkspaceAgentProfileLoader
     private static readonly IReadOnlySet<string> SubagentEditingTools = new HashSet<string>(
         [
             AgentToolNames.ApplyPatch,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
@@ -64,6 +67,7 @@ internal static class WorkspaceAgentProfileLoader
     private static readonly IReadOnlySet<string> SubagentReadOnlyTools = new HashSet<string>(
         [
             AgentToolNames.DirectoryList,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.FileRead,
             AgentToolNames.LessonMemory,
             AgentToolNames.SearchFiles,

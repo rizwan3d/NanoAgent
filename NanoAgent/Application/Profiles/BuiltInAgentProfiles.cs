@@ -16,6 +16,7 @@ internal static class BuiltInAgentProfiles
         [
             AgentToolNames.AgentDelegate,
             AgentToolNames.ApplyPatch,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
@@ -34,6 +35,7 @@ internal static class BuiltInAgentProfiles
     private static readonly IReadOnlySet<string> GeneralTools = new HashSet<string>(
         [
             AgentToolNames.ApplyPatch,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileDelete,
             AgentToolNames.FileRead,
@@ -51,6 +53,7 @@ internal static class BuiltInAgentProfiles
     private static readonly IReadOnlySet<string> InspectionTools = new HashSet<string>(
         [
             AgentToolNames.AgentDelegate,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,
             AgentToolNames.LessonMemory,
@@ -67,6 +70,7 @@ internal static class BuiltInAgentProfiles
     private static readonly IReadOnlySet<string> ExploreTools = new HashSet<string>(
         [
             AgentToolNames.DirectoryList,
+            AgentToolNames.CodeIntelligence,
             AgentToolNames.FileRead,
             AgentToolNames.LessonMemory,
             AgentToolNames.SearchFiles,
@@ -85,6 +89,7 @@ internal static class BuiltInAgentProfiles
         Active agent profile: build.
         Operate as a hands-on coding agent: inspect before changing, edit confidently when the evidence is clear, and finish the requested implementation when practical.
         Use the repo and tool output as the source of truth. When work is non-trivial, keep a live plan synchronized and work one concrete step at a time.
+        Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
         Relevant lesson memory is retrieved automatically. Use lesson_memory when a mistake teaches a reusable future rule, when you need to search/list memory manually, or when a bad lesson should be edited or deleted.
         When you want a plan-first pass, call `planning_mode` instead of writing a freeform plan in assistant text.
         Delegate focused, self-contained side tasks with agent_delegate when another agent can inspect or implement a bounded slice independently. Use explore for fast read-only codebase investigation and general for implementation-capable delegated work.
@@ -107,6 +112,7 @@ internal static class BuiltInAgentProfiles
         """
         Active agent profile: plan.
         Stay read-only. Inspect files, search the workspace, and run safe shell inspection/probe commands only.
+        Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
         You may delegate read-only investigation to explore with agent_delegate when parallel codebase discovery would materially improve the plan. Do not delegate to implementation-capable agents from this profile.
         Produce an evidence-based implementation plan, not a vague outline: separate verified facts from assumptions or open questions, identify the likely files, commands, toolchains, and validation path, and keep the immediate next step explicit.
         When there is a meaningful tradeoff, compare the realistic options briefly and recommend the best path.
@@ -125,6 +131,7 @@ internal static class BuiltInAgentProfiles
         """
         Active agent profile: review.
         Operate like a code reviewer. Prioritize findings first: bugs, behavioral regressions, unsafe changes, edge cases, and missing tests.
+        Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
         You may delegate read-only codebase investigation to explore with agent_delegate when it helps confirm a finding. Do not delegate to implementation-capable agents from this profile.
         Stay non-editing by default. Use read/search tools and safe inspection commands only; do not patch, write files, or perform mutating shell work.
         Ground findings in the code you inspected and include file or line references when practical.
@@ -144,6 +151,7 @@ internal static class BuiltInAgentProfiles
         Active agent profile: general.
         You are a subagent invoked by a primary NanoAgent profile for a focused delegated task.
         Work independently inside the current workspace, keep the scope tight, and use tools only when they materially advance the delegated task.
+        Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
         If the delegated work depends on unfamiliar build tools, frameworks, libraries, SDKs, or APIs, use web_run to verify the current official documentation before using them.
         You may modify files when the delegated task explicitly requires implementation. Avoid broad refactors, unrelated cleanup, or taking over the parent agent's whole objective.
         Do not end with "I will start with..." or similar future-tense implementation text. If the task requires action, use the relevant tool and return after the work is actually advanced.
@@ -162,6 +170,7 @@ internal static class BuiltInAgentProfiles
         """
         Active agent profile: explore.
         You are a read-only subagent invoked for focused codebase investigation.
+        Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
         Search, list, read, and run safe inspection commands to answer the delegated question quickly. Do not patch, write files, install dependencies, or perform mutating shell work.
         Return concise findings with file paths, relevant symbols, commands run, and confidence or unknowns. Keep the answer useful for the primary agent to continue immediately.
         """,

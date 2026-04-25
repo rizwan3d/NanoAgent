@@ -1,5 +1,6 @@
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
+using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
@@ -36,6 +37,7 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
+        services.AddSingleton<ICodeIntelligenceService, LspCodeIntelligenceService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<ISkillService, WorkspaceSkillService>();
         services.AddSingleton<ILifecycleHookService, ShellLifecycleHookService>();

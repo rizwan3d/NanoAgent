@@ -86,6 +86,26 @@ internal static class SessionStateToolRecorder
             $"Found {result.Matches.Count} text matches: {matches}"));
     }
 
+    public static void RecordCodeIntelligence(
+        ReplSessionContext session,
+        CodeIntelligenceResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string summary = result.Items.Count == 0
+            ? string.IsNullOrWhiteSpace(result.HoverText)
+                ? "No results found."
+                : $"Hover text: {NormalizeForState(result.HoverText!, 240)}"
+            : $"Results: {FormatItems(result.Items.Select(FormatCodeIntelligenceItem), MaxSearchMatches)}";
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            $"code intelligence '{result.Action}'",
+            DateTimeOffset.UtcNow,
+            $"{result.ServerName} ({result.LanguageId}). {summary}"));
+    }
+
     public static void RecordFileWrite(
         ReplSessionContext session,
         WorkspaceFileWriteResult result)
@@ -230,6 +250,15 @@ internal static class SessionStateToolRecorder
         return selectedValues.Length > maxCount
             ? $"{formatted}, ... more"
             : formatted;
+    }
+
+    private static string FormatCodeIntelligenceItem(CodeIntelligenceItem item)
+    {
+        string name = string.IsNullOrWhiteSpace(item.Name)
+            ? item.Kind
+            : $"{item.Kind} {item.Name}";
+
+        return $"{name} at {item.Path}:{item.StartLine}";
     }
 
     private static string? NormalizeOptionalForState(

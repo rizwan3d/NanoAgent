@@ -142,6 +142,7 @@ public sealed class ConversationOptions
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks; set `pty: true` only when terminal-aware output is needed.
     - skill_load: load the full body instructions for a workspace skill only after its name and description indicate that it is relevant.
+    - Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
 
     - `lesson_memory` is available for persistent workspace lessons. Relevant lessons are searched automatically before each turn. You may also call `lesson_memory` manually to save, search, list, edit, or delete lessons.
 

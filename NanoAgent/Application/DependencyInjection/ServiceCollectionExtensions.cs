@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IToolExecutionPipeline, ToolExecutionPipeline>();
         services.AddSingleton<ITool, AgentDelegateTool>();
         services.AddSingleton<ITool, ApplyPatchTool>();
+        services.AddSingleton<ITool, CodeIntelligenceTool>();
         services.AddSingleton<ITool, FileDeleteTool>();
         services.AddSingleton<ITool, FileReadTool>();
         services.AddSingleton<ITool, DirectoryListTool>();
