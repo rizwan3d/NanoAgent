@@ -1,4 +1,5 @@
 using System.Text.Json;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Models;
 
@@ -14,9 +15,11 @@ public sealed class ToolResult
         ArgumentException.ThrowIfNullOrWhiteSpace(jsonResult);
 
         Status = status;
-        Message = message.Trim();
         EnsureValidJson(jsonResult);
-        JsonResult = jsonResult.Trim();
+        string redactedJsonResult = SecretRedactor.Redact(jsonResult.Trim());
+        EnsureValidJson(redactedJsonResult);
+        Message = SecretRedactor.Redact(message.Trim());
+        JsonResult = redactedJsonResult;
         RenderPayload = renderPayload;
     }
 

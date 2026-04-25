@@ -2,6 +2,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Tools;
 
@@ -80,6 +81,7 @@ internal sealed class TextSearchTool : ITool
                     ToolArguments.GetOptionalString(context.Arguments, "path")),
                 ToolArguments.GetBoolean(context.Arguments, "caseSensitive")),
             cancellationToken);
+        result = RedactTextSearchResult(result);
         SessionStateToolRecorder.RecordTextSearch(context.Session, result);
 
         string renderText = result.Matches.Count == 0
@@ -95,6 +97,22 @@ internal sealed class TextSearchTool : ITool
             new ToolRenderPayload(
                 $"Search results for '{result.Query}'",
                 renderText));
+    }
+
+    private static WorkspaceTextSearchResult RedactTextSearchResult(WorkspaceTextSearchResult result)
+    {
+        if (result.Matches.Count == 0)
+        {
+            return result;
+        }
+
+        WorkspaceTextSearchMatch[] matches = result.Matches
+            .Select(static match => SecretRedactor.IsEnvironmentFilePath(match.Path)
+                ? match with { LineText = SecretRedactor.RedactEnvironmentFileContent(match.LineText) }
+                : match with { LineText = SecretRedactor.Redact(match.LineText) })
+            .ToArray();
+
+        return result with { Matches = matches };
     }
 
 }

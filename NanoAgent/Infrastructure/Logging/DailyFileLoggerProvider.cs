@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Utilities;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -144,7 +145,7 @@ internal sealed class DailyFileLoggerProvider : ILoggerProvider
         {
             builder
                 .Append(' ')
-                .Append(message.Trim());
+                .Append(SecretRedactor.Redact(message.Trim()));
         }
 
         builder.AppendLine();
@@ -152,7 +153,7 @@ internal sealed class DailyFileLoggerProvider : ILoggerProvider
         if (exception is not null)
         {
             builder
-                .AppendLine(exception.ToString());
+                .AppendLine(SecretRedactor.Redact(exception.ToString()));
         }
 
         return builder.ToString();

@@ -1,3 +1,5 @@
+using NanoAgent.Application.Utilities;
+
 namespace NanoAgent.Application.Models;
 
 public sealed class ConversationRequestMessage
@@ -19,6 +21,10 @@ public sealed class ConversationRequestMessage
             ? []
             : toolCalls
                 .Where(static toolCall => toolCall is not null)
+                .Select(static toolCall => new ConversationToolCall(
+                    toolCall.Id,
+                    toolCall.Name,
+                    SecretRedactor.Redact(toolCall.ArgumentsJson)))
                 .ToArray();
 
         switch (normalizedRole)
@@ -67,7 +73,7 @@ public sealed class ConversationRequestMessage
         Role = normalizedRole;
         Content = string.IsNullOrWhiteSpace(content)
             ? null
-            : content.Trim();
+            : SecretRedactor.Redact(content.Trim());
         ToolCallId = string.IsNullOrWhiteSpace(toolCallId)
             ? null
             : toolCallId.Trim();

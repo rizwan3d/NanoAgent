@@ -7,6 +7,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Infrastructure.Storage;
 
@@ -1105,15 +1106,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             return value;
         }
 
-        string redacted = SensitiveAssignmentRegex()
-            .Replace(value, match => $"{match.Groups[1].Value}=<redacted>");
-        redacted = BearerTokenRegex()
-            .Replace(redacted, "Bearer <redacted>");
-        redacted = OpenAiKeyRegex()
-            .Replace(redacted, "<redacted>");
-        redacted = GitHubTokenRegex()
-            .Replace(redacted, "<redacted>");
-        return redacted;
+        return SecretRedactor.Redact(value);
     }
 
     private string? RedactOptionalIfNeeded(string? value)
@@ -1361,18 +1354,6 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
 
     [GeneratedRegex(@"\b(?:CS|TS|MSB|NU|NETSDK|CA|IDE|BC|FS)\d{3,6}\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex DiagnosticCodeRegex();
-
-    [GeneratedRegex(@"\b([A-Za-z0-9_]*(?:api[_-]?key|token|secret|password|passwd|authorization)[A-Za-z0-9_]*)\s*[:=]\s*[""']?[^ \t\r\n,""']+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex SensitiveAssignmentRegex();
-
-    [GeneratedRegex(@"\bBearer\s+[A-Za-z0-9._~+/=-]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex BearerTokenRegex();
-
-    [GeneratedRegex(@"\bsk-[A-Za-z0-9_-]{16,}\b", RegexOptions.CultureInvariant)]
-    private static partial Regex OpenAiKeyRegex();
-
-    [GeneratedRegex(@"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{16,}\b", RegexOptions.CultureInvariant)]
-    private static partial Regex GitHubTokenRegex();
 
     [GeneratedRegex(@"[A-Za-z0-9_+\-.#]+", RegexOptions.CultureInvariant)]
     private static partial Regex SearchTokenRegex();

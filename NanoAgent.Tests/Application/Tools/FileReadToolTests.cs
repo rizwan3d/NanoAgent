@@ -44,6 +44,31 @@ public sealed class FileReadToolTests
         result.RenderPayload!.Text.Should().Be("hello");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_RedactEnvironmentFileContents()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ReadFileAsync(".env", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WorkspaceFileReadResult(
+                ".env",
+                "NODE_ENV=development\nDATABASE_URL=postgres://user:pass@example/db",
+                63));
+
+        FileReadTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": ".env" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.JsonResult.Should().Contain("NODE_ENV");
+        result.JsonResult.Should().Contain("DATABASE_URL");
+        result.JsonResult.Should().Contain("redacted");
+        result.JsonResult.Should().NotContain("postgres://");
+        result.RenderPayload!.Text.Should().NotContain("development");
+    }
+
     private static ToolExecutionContext CreateContext(string argumentsJson)
     {
         using JsonDocument document = JsonDocument.Parse(argumentsJson);

@@ -1,3 +1,5 @@
+using NanoAgent.Application.Utilities;
+
 namespace NanoAgent.Application.Exceptions;
 
 public sealed class SectionWorkspaceMismatchException : InvalidOperationException
@@ -8,9 +10,10 @@ public sealed class SectionWorkspaceMismatchException : InvalidOperationExceptio
         string currentWorkspacePath,
         string sectionWorkspacePath)
         : base(
+            SecretRedactor.Redact(
             $"{DefaultMessage}{Environment.NewLine}" +
             $"Current working directory: {currentWorkspacePath}{Environment.NewLine}" +
-            $"Section working directory: {sectionWorkspacePath}")
+            $"Section working directory: {sectionWorkspacePath}"))
     {
         CurrentWorkspacePath = currentWorkspacePath;
         SectionWorkspacePath = sectionWorkspacePath;

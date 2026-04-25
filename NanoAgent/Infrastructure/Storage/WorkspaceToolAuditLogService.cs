@@ -1,12 +1,12 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Infrastructure.Storage;
 
-internal sealed partial class WorkspaceToolAuditLogService : IToolAuditLogService
+internal sealed class WorkspaceToolAuditLogService : IToolAuditLogService
 {
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -95,7 +95,7 @@ internal sealed partial class WorkspaceToolAuditLogService : IToolAuditLogServic
         int maxChars)
     {
         string prepared = _settings.RedactSecrets
-            ? RedactSecrets(value)
+            ? SecretRedactor.Redact(value)
             : value;
 
         return TrimField(prepared, maxChars);
@@ -132,29 +132,4 @@ internal sealed partial class WorkspaceToolAuditLogService : IToolAuditLogServic
 
         return value[..Math.Max(0, maxChars - 3)] + "...";
     }
-
-    private static string RedactSecrets(string value)
-    {
-        string redacted = SensitiveAssignmentRegex()
-            .Replace(value, match => $"{match.Groups[1].Value}=<redacted>");
-        redacted = BearerTokenRegex()
-            .Replace(redacted, "Bearer <redacted>");
-        redacted = OpenAiKeyRegex()
-            .Replace(redacted, "<redacted>");
-        redacted = GitHubTokenRegex()
-            .Replace(redacted, "<redacted>");
-        return redacted;
-    }
-
-    [GeneratedRegex(@"\b([A-Za-z0-9_]*(?:api[_-]?key|token|secret|password|passwd|authorization)[A-Za-z0-9_]*)\s*[:=]\s*[""']?[^ \t\r\n,""']+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex SensitiveAssignmentRegex();
-
-    [GeneratedRegex(@"\bBearer\s+[A-Za-z0-9._~+/=-]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
-    private static partial Regex BearerTokenRegex();
-
-    [GeneratedRegex(@"\bsk-[A-Za-z0-9_-]{16,}\b", RegexOptions.CultureInvariant)]
-    private static partial Regex OpenAiKeyRegex();
-
-    [GeneratedRegex(@"\b(?:ghp|gho|ghu|ghs|ghr|github_pat)_[A-Za-z0-9_]{16,}\b", RegexOptions.CultureInvariant)]
-    private static partial Regex GitHubTokenRegex();
 }

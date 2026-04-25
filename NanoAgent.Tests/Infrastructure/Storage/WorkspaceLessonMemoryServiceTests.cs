@@ -98,7 +98,7 @@ public sealed class WorkspaceLessonMemoryServiceTests
                 ".",
                 1,
                 "",
-                "error: token=sk-abcdefghijklmnopqrstuvwxyz123456")),
+                "error: token=sk-abcdefghijklmnopqrstuvwxyz123456 github_pat_abcdefghijklmnopqrstuvwxyz1234567890 AIzaabcdefghijklmnopqrstuvwxyz123456")),
             CancellationToken.None);
 
         await sut.ObserveToolResultAsync(
@@ -119,6 +119,8 @@ public sealed class WorkspaceLessonMemoryServiceTests
         lessons.Should().ContainSingle();
         lessons[0].FailureSignature.Should().Contain("<redacted>");
         lessons[0].FailureSignature.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+        lessons[0].FailureSignature.Should().NotContain("github_pat_abcdefghijklmnopqrstuvwxyz");
+        lessons[0].FailureSignature.Should().NotContain("AIzaabcdefghijklmnopqrstuvwxyz");
     }
 
     [Fact]

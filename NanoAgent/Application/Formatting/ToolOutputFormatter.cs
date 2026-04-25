@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Formatting;
 
@@ -23,7 +24,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
     {
         string name = toolCall.Name.Trim();
 
-        return name switch
+        string description = name switch
         {
             "shell_command" when TryGetArgumentString(toolCall.ArgumentsJson, "command", out string command) =>
                 $"command: {Truncate(command, 120)}",
@@ -43,6 +44,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             "web_run" => DescribeWebRunCall(toolCall.ArgumentsJson),
             _ => name
         };
+
+        return SecretRedactor.Redact(description);
     }
 
     public IReadOnlyList<string> FormatResults(ToolExecutionBatchResult toolExecutionResult)
@@ -66,11 +69,13 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             }
 
             FlushFileEditBatch(messages, fileEditBatch);
-            messages.Add(BuildToolResultMessage(result));
+            messages.Add(SecretRedactor.Redact(BuildToolResultMessage(result)));
         }
 
         FlushFileEditBatch(messages, fileEditBatch);
-        return messages;
+        return messages
+            .Select(static message => SecretRedactor.Redact(message))
+            .ToArray();
     }
 
     private static string DescribeWebRunCall(string argumentsJson)

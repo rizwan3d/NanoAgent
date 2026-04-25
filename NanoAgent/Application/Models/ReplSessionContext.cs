@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Profiles;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 using System.Globalization;
 using System.Text;
@@ -958,7 +959,7 @@ public sealed class ReplSessionContext
         string value,
         int maxCharacters)
     {
-        string normalized = value
+        string normalized = SecretRedactor.Redact(value)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Trim();

@@ -39,6 +39,29 @@ public sealed class DailyFileLoggerProviderTests : IDisposable
         contents.Should().Contain("info: NanoAgent.Tests.Logging Host startup sequence has begun.");
     }
 
+    [Fact]
+    public void CreateLogger_Should_RedactSecretsFromMessageAndException()
+    {
+        FixedTimeProvider timeProvider = new(new DateTimeOffset(2026, 4, 20, 9, 30, 0, TimeSpan.Zero));
+        DailyFileLoggerProvider sut = new(
+            new StubUserDataPathProvider(Path.Combine(_tempRoot, "logs")),
+            new StubHostEnvironment("NanoAgent"),
+            timeProvider);
+
+        ILogger logger = sut.CreateLogger("NanoAgent.Tests.Logging");
+        logger.LogError(
+            new InvalidOperationException("Bearer abcdefghijklmnopqrstuvwxyz"),
+            "Failed with api_key={ApiKey}",
+            "sk-abcdefghijklmnopqrstuvwxyz123456");
+
+        string logFilePath = Path.Combine(_tempRoot, "logs", "2026-04-20.log");
+        string contents = File.ReadAllText(logFilePath);
+        contents.Should().Contain("<redacted>");
+        contents.Should().Contain("Bearer <redacted>");
+        contents.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+        contents.Should().NotContain("Bearer abcdefghijklmnopqrstuvwxyz");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempRoot))
