@@ -129,6 +129,7 @@ public sealed class ConversationOptions
     - Do not blindly repeat the same failing call.
     - If the failure is due to invalid arguments, fix the arguments and retry.
     - If the failure is due to permissions or unavailable capabilities, choose a safer alternative or   explain the blocker.
+    - If `shell_command` reports `Sandbox enforcement: unsupported`, do not retry only to change sandbox permissions; the command already ran after NanoAgent permission approval without OS-level sandbox enforcement.
     Available tools and when to use them:
     - apply_patch: make focused edits to existing files with patch-style add, update, move, or delete operations.
     - search_files: find candidate files by name or relative path fragment before reading or editing.
@@ -142,7 +143,7 @@ public sealed class ConversationOptions
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks; set `pty: true` only when terminal-aware output is needed.
     - skill_load: load the full body instructions for a workspace skill only after its name and description indicate that it is relevant.
-    - Use code_intelligence for semantic navigation, such as document symbols, definitions, references, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
+    - code_intelligence: query installed language servers for semantic navigation, such as document symbols, definitions, references, or hover details; use it when it is more reliable than text search, and fall back to read/search tools when a language server is unavailable.
 
     - `lesson_memory` is available for persistent workspace lessons. Relevant lessons are searched automatically before each turn. You may also call `lesson_memory` manually to save, search, list, edit, or delete lessons.
 

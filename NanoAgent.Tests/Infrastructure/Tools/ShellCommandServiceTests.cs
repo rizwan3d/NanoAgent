@@ -270,7 +270,7 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_FailClosed_When_OsSandboxIsUnsupported()
+    public async Task ExecuteAsync_Should_RunWithoutOsSandbox_When_OsSandboxIsUnsupported()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -278,6 +278,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "10.0.103", string.Empty));
         ShellCommandService sut = new(
             processRunner,
             new StubWorkspaceRootProvider(_workspaceRoot));
@@ -286,9 +287,12 @@ public sealed class ShellCommandServiceTests : IDisposable
             new ShellCommandExecutionRequest("dotnet --version", null),
             CancellationToken.None);
 
-        processRunner.Requests.Should().BeEmpty();
-        result.ExitCode.Should().Be(126);
-        result.StandardError.Should().Contain("OS-level shell sandboxing is not available");
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.FileName.Should().Be("powershell");
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("unsupported");
+        result.ExitCode.Should().Be(0);
+        result.StandardOutput.Should().Be("10.0.103");
         result.SandboxMode.Should().Be("workspace-write");
         result.SandboxEnforcement.Should().Be("unsupported");
     }

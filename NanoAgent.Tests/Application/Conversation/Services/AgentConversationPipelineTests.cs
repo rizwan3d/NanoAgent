@@ -36,6 +36,7 @@ public sealed class AgentConversationPipelineTests
             .Setup(registry => registry.GetToolDefinitions())
             .Returns([
                 CreateToolDefinition(AgentToolNames.PlanningMode),
+                CreateToolDefinition(AgentToolNames.CodeIntelligence),
                 CreateToolDefinition(AgentToolNames.FileRead),
                 CreateToolDefinition(AgentToolNames.FileWrite),
                 CreateToolDefinition(AgentToolNames.ShellCommand)
@@ -107,6 +108,8 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("one task at a time");
         requests[0].SystemPrompt.Should().Contain("finish the requested implementation when practical");
         requests[0].SystemPrompt.Should().Contain("do not stop at analysis if you can safely continue");
+        requests[0].SystemPrompt.Should().Contain("code_intelligence");
+        requests[0].SystemPrompt.Should().Contain("semantic navigation");
         requests[0].SystemPrompt.Should().NotContain("Always use planning_mode for tasks.");
         requests[0].SystemPrompt.Should().NotContain("You are NanoAgent in Planning Mode.");
         requests[0].SystemPrompt.Should().NotContain("EXECUTION PHASE IS ACTIVE.");
@@ -114,6 +117,7 @@ public sealed class AgentConversationPipelineTests
             .Should()
             .Equal(
                 AgentToolNames.PlanningMode,
+                AgentToolNames.CodeIntelligence,
                 AgentToolNames.FileRead,
                 AgentToolNames.FileWrite,
                 AgentToolNames.ShellCommand);

@@ -7,6 +7,9 @@ namespace NanoAgent.Application.Tools;
 
 internal sealed class ShellCommandTool : ITool
 {
+    private const string UnsupportedSandboxEnforcement = "unsupported";
+    private const string UnsupportedSandboxNote = "OS-level shell sandboxing is not available on this platform; the command ran after NanoAgent permission approval without OS-level sandbox enforcement.";
+
     private readonly IShellCommandService _shellCommandService;
 
     public ShellCommandTool(IShellCommandService shellCommandService)
@@ -220,11 +223,17 @@ internal sealed class ShellCommandTool : ITool
             $"Sandbox mode: {result.SandboxMode}{Environment.NewLine}" +
             $"Sandbox permissions: {result.SandboxPermissions}{Environment.NewLine}" +
             $"Sandbox enforcement: {result.SandboxEnforcement}{Environment.NewLine}" +
+            CreateSandboxNoteLine(result) +
             $"Pseudo terminal: {result.PseudoTerminal}{Environment.NewLine}" +
             $"Exit code: {result.ExitCode}{Environment.NewLine}" +
             $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
             $"STDERR:{Environment.NewLine}{result.StandardError}";
         string message = $"Executed shell command '{result.Command}' with exit code {result.ExitCode}.";
+        if (IsUnsupportedSandboxResult(result))
+        {
+            message += " " + UnsupportedSandboxNote;
+        }
+
         if (!string.IsNullOrWhiteSpace(sessionDirectoryUpdate))
         {
             message += " " + sessionDirectoryUpdate;
@@ -295,6 +304,21 @@ internal sealed class ShellCommandTool : ITool
         }
 
         return false;
+    }
+
+    private static string CreateSandboxNoteLine(ShellCommandExecutionResult result)
+    {
+        return IsUnsupportedSandboxResult(result)
+            ? $"Sandbox note: {UnsupportedSandboxNote}{Environment.NewLine}"
+            : string.Empty;
+    }
+
+    private static bool IsUnsupportedSandboxResult(ShellCommandExecutionResult result)
+    {
+        return string.Equals(
+            result.SandboxEnforcement,
+            UnsupportedSandboxEnforcement,
+            StringComparison.Ordinal);
     }
 
 }
