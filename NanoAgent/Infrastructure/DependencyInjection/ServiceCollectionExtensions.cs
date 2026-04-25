@@ -30,9 +30,14 @@ public static class ServiceCollectionExtensions
             AgentProfileConfigurationReader.LoadMemorySettings(
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
+        services.AddSingleton(static serviceProvider =>
+            AgentProfileConfigurationReader.LoadToolAuditSettings(
+                serviceProvider.GetRequiredService<IUserDataPathProvider>(),
+                serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();
+        services.AddSingleton<IToolAuditLogService, WorkspaceToolAuditLogService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
         services.AddSingleton<NanoAgentMcpConfigLoader>();
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();

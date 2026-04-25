@@ -32,6 +32,32 @@ internal static class AgentProfileConfigurationReader
         return NormalizeMemorySettings(settings);
     }
 
+    public static ToolAuditSettings LoadToolAuditSettings(
+        IUserDataPathProvider userDataPathProvider,
+        IWorkspaceRootProvider workspaceRootProvider)
+    {
+        ArgumentNullException.ThrowIfNull(userDataPathProvider);
+        ArgumentNullException.ThrowIfNull(workspaceRootProvider);
+
+        ToolAuditSettings settings = new();
+        foreach (AgentProfileConfigurationDocument document in LoadDocuments(
+                     userDataPathProvider,
+                     workspaceRootProvider))
+        {
+            if (document.ToolAudit is not null)
+            {
+                MergeToolAuditSettings(settings, document.ToolAudit);
+            }
+
+            if (document.ToolAuditLog is not null)
+            {
+                MergeToolAuditSettings(settings, document.ToolAuditLog);
+            }
+        }
+
+        return NormalizeToolAuditSettings(settings);
+    }
+
     public static IReadOnlyList<McpServerConfiguration> LoadMcpServers(
         IUserDataPathProvider userDataPathProvider,
         IWorkspaceRootProvider workspaceRootProvider)
@@ -408,6 +434,31 @@ internal static class AgentProfileConfigurationReader
         }
     }
 
+    private static void MergeToolAuditSettings(
+        ToolAuditSettings target,
+        ToolAuditProfileDocument source)
+    {
+        if (source.Enabled is not null)
+        {
+            target.Enabled = source.Enabled.Value;
+        }
+
+        if (source.MaxArgumentsChars is not null)
+        {
+            target.MaxArgumentsChars = source.MaxArgumentsChars.Value;
+        }
+
+        if (source.MaxResultChars is not null)
+        {
+            target.MaxResultChars = source.MaxResultChars.Value;
+        }
+
+        if (source.RedactSecrets is not null)
+        {
+            target.RedactSecrets = source.RedactSecrets.Value;
+        }
+    }
+
     private static MemorySettings NormalizeMemorySettings(MemorySettings settings)
     {
         settings.MaxEntries = settings.MaxEntries <= 0
@@ -416,6 +467,17 @@ internal static class AgentProfileConfigurationReader
         settings.MaxPromptChars = settings.MaxPromptChars <= 0
             ? 12_000
             : Math.Min(settings.MaxPromptChars, 100_000);
+        return settings;
+    }
+
+    private static ToolAuditSettings NormalizeToolAuditSettings(ToolAuditSettings settings)
+    {
+        settings.MaxArgumentsChars = settings.MaxArgumentsChars <= 0
+            ? 12_000
+            : Math.Min(settings.MaxArgumentsChars, 250_000);
+        settings.MaxResultChars = settings.MaxResultChars <= 0
+            ? 12_000
+            : Math.Min(settings.MaxResultChars, 250_000);
         return settings;
     }
 

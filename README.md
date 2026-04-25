@@ -146,7 +146,7 @@ NanoAgent automatically loads `AGENTS.md` and `.agent/AGENTS.md` from the worksp
 
 NanoAgent stores reusable workspace lessons in `.nanoagent/memory/lessons.jsonl` and automatically retrieves relevant lessons for future turns. Search and list operations are automatic. Automatic failure observations are enabled and redacted by default. Manual lesson writes (`save`, `edit`, `delete`) require user approval unless memory policy is changed.
 
-Workspace memory policy lives in `.nanoagent/agent-profile.json`:
+Workspace memory and audit policy lives in `.nanoagent/agent-profile.json`:
 
 ```json
 {
@@ -158,9 +158,17 @@ Workspace memory policy lives in `.nanoagent/agent-profile.json`:
     "maxEntries": 500,
     "maxPromptChars": 12000,
     "disabled": false
+  },
+  "toolAudit": {
+    "enabled": false,
+    "redactSecrets": true,
+    "maxArgumentsChars": 12000,
+    "maxResultChars": 12000
   }
 }
 ```
+
+When `toolAudit.enabled` is true, every completed tool call appends one local JSONL record to `.nanoagent/logs/tool-audit.jsonl`. The audit log is disabled by default.
 
 ### MCP Servers
 

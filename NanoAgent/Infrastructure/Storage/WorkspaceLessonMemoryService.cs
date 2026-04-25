@@ -1188,7 +1188,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
 
     private static string NormalizeWhitespace(string value)
     {
-        return WhitespaceRegex()
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : WhitespaceRegex()
             .Replace(value.Trim(), " ");
     }
 

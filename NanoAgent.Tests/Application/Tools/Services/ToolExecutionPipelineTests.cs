@@ -131,6 +131,48 @@ public sealed class ToolExecutionPipelineTests
         lessonMemoryService.ObservedResults[0].InvocationResult.Should().Be(invocationResult);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_RecordToolAuditResults()
+    {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_read"],
+            StringComparer.Ordinal);
+        ToolInvocationResult invocationResult = new(
+            "call_1",
+            "file_read",
+            ToolResultFactory.Success(
+                "Read file 'README.md'.",
+                new ToolErrorPayload("ok", "ok"),
+                ToolJsonContext.Default.ToolErrorPayload));
+        Mock<IToolInvoker> toolInvoker = new(MockBehavior.Strict);
+        toolInvoker
+            .Setup(invoker => invoker.InvokeAsync(
+                It.IsAny<ConversationToolCall>(),
+                Session,
+                ConversationExecutionPhase.Execution,
+                allowedToolNames,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(invocationResult);
+        RecordingToolAuditLogService auditLogService = new();
+        ToolExecutionPipeline sut = new(
+            toolInvoker.Object,
+            toolAuditLogService: auditLogService);
+
+        await sut.ExecuteAsync(
+            [new ConversationToolCall("call_1", "file_read", """{ "path": "README.md" }""")],
+            Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        auditLogService.Records.Should().ContainSingle();
+        auditLogService.Records[0].ToolCall.Name.Should().Be("file_read");
+        auditLogService.Records[0].InvocationResult.Should().Be(invocationResult);
+        auditLogService.Records[0].Session.Should().Be(Session);
+        auditLogService.Records[0].ExecutionPhase.Should().Be(ConversationExecutionPhase.Execution);
+        auditLogService.Records[0].CompletedAtUtc.Should().BeOnOrAfter(auditLogService.Records[0].StartedAtUtc);
+    }
+
     private sealed class TrackingToolInvoker : IToolInvoker
     {
         public Task<ToolInvocationResult> InvokeAsync(
@@ -232,4 +274,41 @@ public sealed class ToolExecutionPipelineTests
             return ".nanoagent/memory/lessons.jsonl";
         }
     }
+
+    private sealed class RecordingToolAuditLogService : IToolAuditLogService
+    {
+        public List<AuditRecord> Records { get; } = [];
+
+        public Task RecordAsync(
+            ConversationToolCall toolCall,
+            ToolInvocationResult invocationResult,
+            ReplSessionContext session,
+            ConversationExecutionPhase executionPhase,
+            DateTimeOffset startedAtUtc,
+            DateTimeOffset completedAtUtc,
+            CancellationToken cancellationToken)
+        {
+            Records.Add(new AuditRecord(
+                toolCall,
+                invocationResult,
+                session,
+                executionPhase,
+                startedAtUtc,
+                completedAtUtc));
+            return Task.CompletedTask;
+        }
+
+        public string GetStoragePath()
+        {
+            return ".nanoagent/logs/tool-audit.jsonl";
+        }
+    }
+
+    private sealed record AuditRecord(
+        ConversationToolCall ToolCall,
+        ToolInvocationResult InvocationResult,
+        ReplSessionContext Session,
+        ConversationExecutionPhase ExecutionPhase,
+        DateTimeOffset StartedAtUtc,
+        DateTimeOffset CompletedAtUtc);
 }

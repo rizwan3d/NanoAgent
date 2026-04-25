@@ -5,15 +5,21 @@ namespace NanoAgent.Application.Tools.Services;
 
 internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
 {
+    private readonly IToolAuditLogService? _toolAuditLogService;
     private readonly ILessonMemoryService? _lessonMemoryService;
+    private readonly TimeProvider _timeProvider;
     private readonly IToolInvoker _toolInvoker;
 
     public ToolExecutionPipeline(
         IToolInvoker toolInvoker,
-        ILessonMemoryService? lessonMemoryService = null)
+        ILessonMemoryService? lessonMemoryService = null,
+        IToolAuditLogService? toolAuditLogService = null,
+        TimeProvider? timeProvider = null)
     {
         _toolInvoker = toolInvoker;
         _lessonMemoryService = lessonMemoryService;
+        _toolAuditLogService = toolAuditLogService;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public Task<ToolExecutionBatchResult> ExecuteAsync(
@@ -57,14 +63,24 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            DateTimeOffset startedAtUtc = _timeProvider.GetUtcNow();
             ToolInvocationResult result = await _toolInvoker.InvokeAsync(
                 toolCall,
                 session,
                 executionPhase,
                 allowedToolNames,
                 cancellationToken);
+            DateTimeOffset completedAtUtc = _timeProvider.GetUtcNow();
 
             await ObserveLessonMemoryAsync(toolCall, result, cancellationToken);
+            await RecordToolAuditAsync(
+                toolCall,
+                result,
+                session,
+                executionPhase,
+                startedAtUtc,
+                completedAtUtc,
+                cancellationToken);
             results.Add(result);
             if (onToolResult is not null)
             {
@@ -97,6 +113,42 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         {
             // Lesson memory is helpful context, but tool execution should not fail because
             // the local memory file is temporarily unavailable or malformed.
+        }
+    }
+
+    private async Task RecordToolAuditAsync(
+        ConversationToolCall toolCall,
+        ToolInvocationResult result,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        DateTimeOffset startedAtUtc,
+        DateTimeOffset completedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (_toolAuditLogService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _toolAuditLogService.RecordAsync(
+                toolCall,
+                result,
+                session,
+                executionPhase,
+                startedAtUtc,
+                completedAtUtc,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Audit logs are useful operational evidence, but a log write issue should
+            // not turn a completed tool call into a failed agent turn.
         }
     }
 }

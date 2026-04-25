@@ -35,6 +35,12 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
                 "maxEntries": 500,
                 "maxPromptChars": 12000,
                 "disabled": false
+              },
+              "toolAudit": {
+                "enabled": false,
+                "maxArgumentsChars": 4000,
+                "maxResultChars": 5000,
+                "redactSecrets": true
               }
             }
             """);
@@ -45,6 +51,10 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
               "memory": {
                 "maxEntries": 250,
                 "maxPromptChars": 6000
+              },
+              "toolAuditLog": {
+                "enabled": true,
+                "maxResultChars": 6000
               }
             }
             """);
@@ -60,6 +70,28 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
         settings.MaxEntries.Should().Be(250);
         settings.MaxPromptChars.Should().Be(6000);
         settings.Disabled.Should().BeFalse();
+
+        var auditSettings = AgentProfileConfigurationReader.LoadToolAuditSettings(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        auditSettings.Enabled.Should().BeTrue();
+        auditSettings.MaxArgumentsChars.Should().Be(4000);
+        auditSettings.MaxResultChars.Should().Be(6000);
+        auditSettings.RedactSecrets.Should().BeTrue();
+    }
+
+    [Fact]
+    public void LoadToolAuditSettings_Should_DefaultToDisabled()
+    {
+        var settings = AgentProfileConfigurationReader.LoadToolAuditSettings(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        settings.Enabled.Should().BeFalse();
+        settings.MaxArgumentsChars.Should().Be(12_000);
+        settings.MaxResultChars.Should().Be(12_000);
+        settings.RedactSecrets.Should().BeTrue();
     }
 
     public void Dispose()

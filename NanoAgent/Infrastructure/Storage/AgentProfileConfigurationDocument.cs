@@ -13,6 +13,10 @@ internal sealed class AgentProfileConfigurationDocument
 
     public MemoryProfileDocument? Memory { get; set; }
 
+    public ToolAuditProfileDocument? ToolAudit { get; set; }
+
+    public ToolAuditProfileDocument? ToolAuditLog { get; set; }
+
     public Dictionary<string, McpServerProfileDocument>? McpServers { get; set; }
 }
 
@@ -70,6 +74,17 @@ internal sealed class McpServerProfileDocument
     public int? ToolTimeoutSeconds { get; set; }
 
     public string? Url { get; set; }
+}
+
+internal sealed class ToolAuditProfileDocument
+{
+    public bool? Enabled { get; set; }
+
+    public int? MaxArgumentsChars { get; set; }
+
+    public int? MaxResultChars { get; set; }
+
+    public bool? RedactSecrets { get; set; }
 }
 
 internal sealed class McpToolProfileDocument
