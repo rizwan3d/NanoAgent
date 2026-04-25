@@ -181,8 +181,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 CreateBatchResult(result.ExecutedToolResults),
                 CreateMetrics(
                     startedAt,
-                    result.AssistantMessage,
-                    GetCompletionTokens(result)));
+                    result));
 
             await RunAfterTaskCompleteHookAsync(normalizedInput, session, turnResult, cancellationToken);
             return turnResult;
@@ -267,20 +266,34 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CreateBatchResult(executionResult.ExecutedToolResults),
             CreateMetrics(
                 startedAt,
-                executionResult.AssistantMessage,
-                GetCompletionTokens(executionResult)));
+                executionResult));
     }
 
     private ConversationTurnMetrics CreateMetrics(
         DateTimeOffset startedAt,
-        string responseText,
-        int? completionTokens)
+        PhaseExecutionResult phaseResult)
     {
         TimeSpan elapsed = _timeProvider.GetUtcNow() - startedAt;
-        int estimatedOutputTokens = completionTokens is > 0
-            ? completionTokens.Value
-            : _tokenEstimator.Estimate(responseText);
-        return new ConversationTurnMetrics(elapsed, estimatedOutputTokens);
+        int estimatedOutputTokens = GetCompletionTokens(phaseResult) is > 0
+            ? phaseResult.TotalCompletionTokens
+            : _tokenEstimator.Estimate(phaseResult.AssistantMessage);
+        ConversationTurnMetrics metrics = new(
+            elapsed,
+            estimatedOutputTokens,
+            estimatedInputTokens: phaseResult.EstimatedInputTokens,
+            providerRetryCount: phaseResult.ProviderRetryCount,
+            toolRoundCount: phaseResult.ToolRoundCount);
+
+        ApplicationLogMessages.ConversationTurnMetricsRecorded(
+            _logger,
+            Math.Max(0, (long)Math.Round(elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero)),
+            metrics.EstimatedInputTokens,
+            metrics.EstimatedOutputTokens,
+            metrics.EstimatedTotalTokens,
+            metrics.ProviderRetryCount,
+            metrics.ToolRoundCount);
+
+        return metrics;
     }
 
     private async Task RunBeforeTaskStartHookAsync(
@@ -363,14 +376,21 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             ErrorMessage = exception?.Message,
             ErrorType = exception?.GetType().Name,
             EventName = eventName,
+            InputTokens = result?.Metrics?.EstimatedInputTokens,
+            LatencyMilliseconds = result?.Metrics is null
+                ? null
+                : Math.Max(0, (long)Math.Round(result.Metrics.Elapsed.TotalMilliseconds, MidpointRounding.AwayFromZero)),
             ModelId = session.ActiveModelId,
             OutputTokens = result?.Metrics?.EstimatedOutputTokens,
             ProviderName = session.ProviderName,
+            ProviderRetryCount = result?.Metrics?.ProviderRetryCount,
             ResponseText = result?.ResponseText,
             ResultStatus = result?.Kind.ToString(),
             ResultSuccess = result is not null && exception is null,
             SessionId = session.SessionId,
-            TaskInput = input
+            TaskInput = input,
+            ToolRoundCount = result?.Metrics?.ToolRoundCount,
+            TotalTokens = result?.Metrics?.EstimatedTotalTokens
         };
     }
 
@@ -541,6 +561,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         int incompletePlanFinalResponseRetryCount = 0;
         int totalCompletionTokens = 0;
         bool hasReportedCompletionTokens = false;
+        ConversationTelemetryAccumulator telemetry = new();
         ExecutionPlanProgress? latestPlanProgress = null;
         string? phaseSystemPrompt = systemPrompt;
 
@@ -554,6 +575,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 availableTools,
                 settings,
                 timeoutSource,
+                telemetry,
                 cancellationToken);
 
             if (response.CompletionTokens is > 0)
@@ -564,6 +586,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             if (response.HasToolCalls)
             {
+                telemetry.IncrementToolRoundCount();
                 phaseSystemPrompt = systemPrompt;
                 incompletePlanFinalResponseRetryCount = 0;
 
@@ -681,7 +704,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 executedToolCalls,
                 executedToolResults,
                 totalCompletionTokens,
-                hasReportedCompletionTokens);
+                hasReportedCompletionTokens,
+                telemetry.EstimatedInputTokens,
+                telemetry.ProviderRetryCount,
+                telemetry.ToolRoundCount);
         }
 
         throw new ConversationResponseException(
@@ -782,6 +808,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IReadOnlyList<ToolDefinition> availableTools,
         ConversationSettings settings,
         CancellationTokenSource timeoutSource,
+        ConversationTelemetryAccumulator telemetry,
         CancellationToken cancellationToken)
     {
         string? requestSystemPrompt = systemPrompt;
@@ -796,6 +823,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 availableTools,
                 settings,
                 timeoutSource,
+                telemetry,
                 cancellationToken);
 
             try
@@ -803,6 +831,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 ConversationResponse response = _responseMapper.Map(providerPayload)
                     ?? throw new ConversationResponseException(
                         "The provider response mapper returned no normalized response.");
+                telemetry.ReplaceLastEstimatedInputTokens(GetReportedInputTokens(response));
                 return response;
             }
             catch (ConversationResponseException exception)
@@ -852,6 +881,62 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return new ExecutionPlanProgress(progress.Tasks, progress.Tasks.Count);
     }
 
+    private static int? GetReportedInputTokens(ConversationResponse response)
+    {
+        if (response.PromptTokens is > 0)
+        {
+            return response.PromptTokens.Value;
+        }
+
+        if (response.TotalTokens is > 0 && response.CompletionTokens is > 0)
+        {
+            int promptTokens = response.TotalTokens.Value - response.CompletionTokens.Value;
+            return promptTokens > 0
+                ? promptTokens
+                : null;
+        }
+
+        return null;
+    }
+
+    private int EstimateInputTokens(ConversationProviderRequest request)
+    {
+        int total = 0;
+
+        AddEstimate(request.SystemPrompt);
+        foreach (ConversationRequestMessage message in request.Messages)
+        {
+            AddEstimate(message.Role);
+            AddEstimate(message.Content);
+            AddEstimate(message.ToolCallId);
+
+            foreach (ConversationToolCall toolCall in message.ToolCalls)
+            {
+                AddEstimate(toolCall.Id);
+                AddEstimate(toolCall.Name);
+                AddEstimate(toolCall.ArgumentsJson);
+            }
+        }
+
+        foreach (ToolDefinition tool in request.AvailableTools)
+        {
+            AddEstimate(tool.Name);
+            AddEstimate(tool.Description);
+            AddEstimate(tool.Schema.GetRawText());
+        }
+
+        AddEstimate(request.ReasoningEffort);
+        return total;
+
+        void AddEstimate(string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                total += _tokenEstimator.Estimate(value);
+            }
+        }
+    }
+
     private async Task<ConversationProviderPayload> SendProviderRequestAsync(
         string apiKey,
         ReplSessionContext session,
@@ -860,20 +945,27 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IReadOnlyList<ToolDefinition> availableTools,
         ConversationSettings settings,
         CancellationTokenSource timeoutSource,
+        ConversationTelemetryAccumulator telemetry,
         CancellationToken cancellationToken)
     {
         try
         {
-            return await _providerClient.SendAsync(
-                new ConversationProviderRequest(
-                    session.ProviderProfile,
-                    apiKey,
-                    session.ActiveModelId,
-                    messages.ToArray(),
-                    systemPrompt,
-                    availableTools,
-                    session.ReasoningEffort),
+            ConversationProviderRequest request = new(
+                session.ProviderProfile,
+                apiKey,
+                session.ActiveModelId,
+                messages.ToArray(),
+                systemPrompt,
+                availableTools,
+                session.ReasoningEffort);
+
+            telemetry.AddEstimatedInputTokens(EstimateInputTokens(request));
+
+            ConversationProviderPayload payload = await _providerClient.SendAsync(
+                request,
                 timeoutSource.Token);
+            telemetry.AddProviderRetryCount(payload.RetryCount);
+            return payload;
         }
         catch (ConversationProviderException)
         {
@@ -959,6 +1051,56 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
     }
 
+    private sealed class ConversationTelemetryAccumulator
+    {
+        public int EstimatedInputTokens { get; private set; }
+
+        public int ProviderRetryCount { get; private set; }
+
+        public int ToolRoundCount { get; private set; }
+
+        public void AddEstimatedInputTokens(int estimatedInputTokens)
+        {
+            EstimatedInputTokens = AddClamped(EstimatedInputTokens, estimatedInputTokens);
+            _lastInputTokenEstimate = Math.Max(0, estimatedInputTokens);
+        }
+
+        public void AddProviderRetryCount(int retryCount)
+        {
+            ProviderRetryCount = AddClamped(ProviderRetryCount, retryCount);
+        }
+
+        public void ReplaceLastEstimatedInputTokens(int? inputTokens)
+        {
+            if (inputTokens is not > 0)
+            {
+                return;
+            }
+
+            EstimatedInputTokens = Math.Max(0, EstimatedInputTokens - _lastInputTokenEstimate);
+            AddEstimatedInputTokens(inputTokens.Value);
+        }
+
+        public void IncrementToolRoundCount()
+        {
+            ToolRoundCount = AddClamped(ToolRoundCount, 1);
+        }
+
+        private static int AddClamped(int current, int delta)
+        {
+            if (delta <= 0)
+            {
+                return current;
+            }
+
+            return current > int.MaxValue - delta
+                ? int.MaxValue
+                : current + delta;
+        }
+
+        private int _lastInputTokenEstimate;
+    }
+
     private sealed class ExecutionPlanTracker
     {
         private readonly IReadOnlyList<string> _tasks;
@@ -1009,7 +1151,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             IReadOnlyList<ConversationToolCall> toolCalls,
             IReadOnlyList<ToolInvocationResult> executedToolResults,
             int totalCompletionTokens,
-            bool hasReportedCompletionTokens)
+            bool hasReportedCompletionTokens,
+            int estimatedInputTokens,
+            int providerRetryCount,
+            int toolRoundCount)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(assistantMessage);
             ArgumentNullException.ThrowIfNull(toolCalls);
@@ -1020,15 +1165,24 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             ExecutedToolResults = executedToolResults.ToArray();
             TotalCompletionTokens = totalCompletionTokens;
             HasReportedCompletionTokens = hasReportedCompletionTokens;
+            EstimatedInputTokens = Math.Max(0, estimatedInputTokens);
+            ProviderRetryCount = Math.Max(0, providerRetryCount);
+            ToolRoundCount = Math.Max(0, toolRoundCount);
         }
 
         public string AssistantMessage { get; }
 
         public IReadOnlyList<ToolInvocationResult> ExecutedToolResults { get; }
 
+        public int EstimatedInputTokens { get; }
+
         public bool HasReportedCompletionTokens { get; }
 
+        public int ProviderRetryCount { get; }
+
         public IReadOnlyList<ConversationToolCall> ToolCalls { get; }
+
+        public int ToolRoundCount { get; }
 
         public int TotalCompletionTokens { get; }
     }

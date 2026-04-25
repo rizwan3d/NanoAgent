@@ -89,7 +89,9 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             assistantMessage,
             toolCalls,
             responseId,
-            response?.Usage?.CompletionTokens);
+            response?.Usage?.CompletionTokens,
+            response?.Usage?.PromptTokens,
+            response?.Usage?.TotalTokens);
     }
 
     private static string CreateEmptyResponseMessage(

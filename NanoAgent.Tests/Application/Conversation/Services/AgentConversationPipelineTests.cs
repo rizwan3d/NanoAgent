@@ -84,6 +84,12 @@ public sealed class AgentConversationPipelineTests
         result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
         result.ResponseText.Should().Be("Implemented the refactor.");
         result.Metrics.Should().NotBeNull();
+        result.Metrics!.EstimatedInputTokens.Should().BeGreaterThan(0);
+        result.Metrics.EstimatedOutputTokens.Should().BeGreaterThan(0);
+        result.Metrics.EstimatedTotalTokens.Should().Be(
+            result.Metrics.EstimatedInputTokens + result.Metrics.EstimatedOutputTokens);
+        result.Metrics.ProviderRetryCount.Should().Be(0);
+        result.Metrics.ToolRoundCount.Should().Be(0);
         requests.Should().HaveCount(1);
         requests[0].SystemPrompt.Should().Contain("Base prompt");
         requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
@@ -2018,7 +2024,8 @@ public sealed class AgentConversationPipelineTests
                 return Task.FromResult(new ConversationProviderPayload(
                     ProviderKind.OpenAiCompatible,
                     """{ "choices": [] }""",
-                    $"resp_{requests.Count}"));
+                    $"resp_{requests.Count}",
+                    requests.Count == 1 ? 2 : 0));
             });
 
         Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
@@ -2076,6 +2083,10 @@ public sealed class AgentConversationPipelineTests
             session);
 
         result.ResponseText.Should().Be("Finished after multiple tool rounds.");
+        result.Metrics.Should().NotBeNull();
+        result.Metrics!.ProviderRetryCount.Should().Be(2);
+        result.Metrics.ToolRoundCount.Should().Be(3);
+        result.Metrics.EstimatedInputTokens.Should().BeGreaterThan(0);
         requests.Should().HaveCount(4);
         toolExecutionPipeline.Verify(
             pipeline => pipeline.ExecuteAsync(

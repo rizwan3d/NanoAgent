@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -11,15 +12,25 @@ namespace NanoAgent.Infrastructure.Conversation;
 
 internal sealed class OpenAiCompatibleConversationProviderClient : IConversationProviderClient
 {
+    private const int MaxRetryAttempts = 3;
+    private static readonly TimeSpan BaseRetryDelay = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(5);
+
+    private readonly Func<TimeSpan, CancellationToken, Task> _delayAsync;
     private readonly HttpClient _httpClient;
+    private readonly Func<double> _nextJitter;
     private readonly ILogger<OpenAiCompatibleConversationProviderClient> _logger;
 
     public OpenAiCompatibleConversationProviderClient(
         HttpClient httpClient,
-        ILogger<OpenAiCompatibleConversationProviderClient> logger)
+        ILogger<OpenAiCompatibleConversationProviderClient> logger,
+        Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
+        Func<double>? nextJitter = null)
     {
         _httpClient = httpClient;
         _logger = logger;
+        _delayAsync = delayAsync ?? ((delay, token) => Task.Delay(delay, token));
+        _nextJitter = nextJitter ?? Random.Shared.NextDouble;
     }
 
     public async Task<ConversationProviderPayload> SendAsync(
@@ -29,46 +40,72 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        Uri baseUri = request.ProviderProfile.ResolveBaseUri();
-        using HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "chat/completions"));
-        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
-
         OpenAiChatCompletionRequest payload = BuildRequestPayload(request);
         string requestBody = JsonSerializer.Serialize(
             payload,
             OpenAiConversationJsonContext.Default.OpenAiChatCompletionRequest);
 
+        Uri baseUri = request.ProviderProfile.ResolveBaseUri();
+        int retryCount = 0;
+
+        for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        {
+            using HttpRequestMessage httpRequest = CreateHttpRequest(baseUri, request.ApiKey, requestBody);
+            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                httpRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
+
+            if (response.IsSuccessStatusCode)
+            {
+                if (string.IsNullOrWhiteSpace(responseBody))
+                {
+                    throw new ConversationProviderException(
+                        "The provider returned an empty response body for the conversation request.");
+                }
+
+                return new ConversationProviderPayload(
+                    request.ProviderProfile.ProviderKind,
+                    responseBody,
+                    TryGetResponseId(response),
+                    retryCount);
+            }
+
+            if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
+            {
+                retryCount++;
+                TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
+                _logger.LogWarning(
+                    "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                    (int)response.StatusCode,
+                    attempt + 1,
+                    MaxRetryAttempts + 1,
+                    Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await _delayAsync(retryDelay, cancellationToken);
+                continue;
+            }
+
+            ThrowConversationRequestFailed(response.StatusCode, responseBody);
+        }
+
+        throw new ConversationProviderException(
+            "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
+    }
+
+    private static HttpRequestMessage CreateHttpRequest(
+        Uri baseUri,
+        string apiKey,
+        string requestBody)
+    {
+        HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "chat/completions"));
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
-        LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
-
-        using HttpResponseMessage response = await _httpClient.SendAsync(
-            httpRequest,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-
-        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
-
-        if (!response.IsSuccessStatusCode)
-        {
-            string detail = string.IsNullOrWhiteSpace(responseBody)
-                ? $"Provider returned HTTP {(int)response.StatusCode}."
-                : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
-
-            throw new ConversationProviderException(
-                $"Unable to complete the conversation request. {detail}");
-        }
-
-        if (string.IsNullOrWhiteSpace(responseBody))
-        {
-            throw new ConversationProviderException(
-                "The provider returned an empty response body for the conversation request.");
-        }
-
-        return new ConversationProviderPayload(
-            request.ProviderProfile.ProviderKind,
-            responseBody,
-            TryGetResponseId(response));
+        return httpRequest;
     }
 
     private static OpenAiChatCompletionRequest BuildRequestPayload(ConversationProviderRequest request)
@@ -146,6 +183,60 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         }
 
         return null;
+    }
+
+    private static bool IsRetryableStatusCode(HttpStatusCode statusCode)
+    {
+        int numericStatusCode = (int)statusCode;
+        return statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests ||
+            numericStatusCode is >= 500 and <= 599;
+    }
+
+    private TimeSpan CalculateRetryDelay(
+        int retryCount,
+        RetryConditionHeaderValue? retryAfter)
+    {
+        double exponentialMilliseconds = BaseRetryDelay.TotalMilliseconds *
+            Math.Pow(2, Math.Max(0, retryCount - 1));
+        TimeSpan exponentialDelay = TimeSpan.FromMilliseconds(
+            Math.Min(exponentialMilliseconds, MaxRetryDelay.TotalMilliseconds));
+        TimeSpan jitteredDelay = TimeSpan.FromMilliseconds(
+            Math.Clamp(_nextJitter(), 0d, 1d) * exponentialDelay.TotalMilliseconds);
+        TimeSpan? retryAfterDelay = GetRetryAfterDelay(retryAfter);
+
+        return retryAfterDelay is { } serverDelay && serverDelay > jitteredDelay
+            ? serverDelay
+            : jitteredDelay;
+    }
+
+    private static TimeSpan? GetRetryAfterDelay(RetryConditionHeaderValue? retryAfter)
+    {
+        if (retryAfter?.Delta is { } delta && delta > TimeSpan.Zero)
+        {
+            return delta;
+        }
+
+        if (retryAfter?.Date is { } date)
+        {
+            TimeSpan delay = date - DateTimeOffset.UtcNow;
+            return delay > TimeSpan.Zero
+                ? delay
+                : null;
+        }
+
+        return null;
+    }
+
+    private static void ThrowConversationRequestFailed(
+        HttpStatusCode statusCode,
+        string responseBody)
+    {
+        string detail = string.IsNullOrWhiteSpace(responseBody)
+            ? $"Provider returned HTTP {(int)statusCode}."
+            : $"Provider returned HTTP {(int)statusCode}: {Truncate(responseBody.Trim(), 200)}";
+
+        throw new ConversationProviderException(
+            $"Unable to complete the conversation request. {detail}");
     }
 
     private static string Truncate(string value, int maxLength)

@@ -117,4 +117,17 @@ internal static partial class ApplicationLogMessages
         Level = LogLevel.Information,
         Message = "The current REPL conversation request was interrupted by the user.")]
     public static partial void ReplConversationInterrupted(ILogger logger);
+
+    [LoggerMessage(
+        EventId = 1019,
+        Level = LogLevel.Information,
+        Message = "Conversation turn metrics: latency={latencyMilliseconds} ms input_tokens={inputTokens} output_tokens={outputTokens} total_tokens={totalTokens} provider_retries={providerRetryCount} tool_rounds={toolRoundCount}.")]
+    public static partial void ConversationTurnMetricsRecorded(
+        ILogger logger,
+        long latencyMilliseconds,
+        int inputTokens,
+        int outputTokens,
+        int totalTokens,
+        int providerRetryCount,
+        int toolRoundCount);
 }

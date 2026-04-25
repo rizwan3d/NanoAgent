@@ -5,7 +5,10 @@ public sealed class ConversationTurnMetrics
     public ConversationTurnMetrics(
         TimeSpan elapsed,
         int estimatedOutputTokens,
-        int? sessionEstimatedOutputTokens = null)
+        int? sessionEstimatedOutputTokens = null,
+        int estimatedInputTokens = 0,
+        int providerRetryCount = 0,
+        int toolRoundCount = 0)
     {
         if (elapsed < TimeSpan.Zero)
         {
@@ -22,16 +25,42 @@ public sealed class ConversationTurnMetrics
             throw new ArgumentOutOfRangeException(nameof(sessionEstimatedOutputTokens));
         }
 
+        if (estimatedInputTokens < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(estimatedInputTokens));
+        }
+
+        if (providerRetryCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(providerRetryCount));
+        }
+
+        if (toolRoundCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(toolRoundCount));
+        }
+
         Elapsed = elapsed;
         EstimatedOutputTokens = estimatedOutputTokens;
         SessionEstimatedOutputTokens = sessionEstimatedOutputTokens;
+        EstimatedInputTokens = estimatedInputTokens;
+        ProviderRetryCount = providerRetryCount;
+        ToolRoundCount = toolRoundCount;
     }
 
     public TimeSpan Elapsed { get; }
 
+    public int EstimatedInputTokens { get; }
+
     public int EstimatedOutputTokens { get; }
 
+    public int EstimatedTotalTokens => EstimatedInputTokens + EstimatedOutputTokens;
+
+    public int ProviderRetryCount { get; }
+
     public int? SessionEstimatedOutputTokens { get; }
+
+    public int ToolRoundCount { get; }
 
     public int DisplayedEstimatedOutputTokens => SessionEstimatedOutputTokens ?? EstimatedOutputTokens;
 
@@ -47,6 +76,9 @@ public sealed class ConversationTurnMetrics
         return new ConversationTurnMetrics(
             Elapsed,
             EstimatedOutputTokens,
-            sessionEstimatedOutputTokens);
+            sessionEstimatedOutputTokens,
+            EstimatedInputTokens,
+            ProviderRetryCount,
+            ToolRoundCount);
     }
 }

@@ -24,7 +24,12 @@ public sealed class OpenAiConversationResponseMapperTests
                     "content": "Hello from the provider."
                   }
                 }
-              ]
+              ],
+              "usage": {
+                "prompt_tokens": 11,
+                "completion_tokens": 7,
+                "total_tokens": 18
+              }
             }
             """,
             null));
@@ -32,6 +37,9 @@ public sealed class OpenAiConversationResponseMapperTests
         response.AssistantMessage.Should().Be("Hello from the provider.");
         response.ToolCalls.Should().BeEmpty();
         response.ResponseId.Should().Be("resp_1");
+        response.PromptTokens.Should().Be(11);
+        response.CompletionTokens.Should().Be(7);
+        response.TotalTokens.Should().Be(18);
     }
 
     [Fact]

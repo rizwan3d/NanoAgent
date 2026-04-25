@@ -4,7 +4,9 @@ public sealed record ConversationResponse(
     string? AssistantMessage,
     IReadOnlyList<ConversationToolCall> ToolCalls,
     string? ResponseId,
-    int? CompletionTokens = null)
+    int? CompletionTokens = null,
+    int? PromptTokens = null,
+    int? TotalTokens = null)
 {
     public bool HasToolCalls => ToolCalls.Count > 0;
 }

@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Conversation;
@@ -260,6 +261,122 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         toolContent.GetProperty("IsSuccess").GetBoolean().Should().BeFalse();
     }
 
+    [Theory]
+    [InlineData(408)]
+    [InlineData(429)]
+    [InlineData(500)]
+    [InlineData(503)]
+    public async Task SendAsync_Should_RetryRetryableHttpStatusCodes(int statusCode)
+    {
+        SequenceHandler handler = new(
+            CreateResponse((HttpStatusCode)statusCode, """{ "error": "retry later" }"""),
+            CreateResponse(HttpStatusCode.OK, """
+                {
+                  "id": "resp_retry",
+                  "choices": [
+                    {
+                      "message": {
+                        "content": "Recovered."
+                      }
+                    }
+                  ]
+                }
+                """));
+        List<TimeSpan> delays = [];
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(
+            httpClient,
+            (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            () => 0.5d);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            CreateRequest(),
+            CancellationToken.None);
+
+        payload.RawContent.Should().Contain("Recovered.");
+        payload.RetryCount.Should().Be(1);
+        handler.RequestBodies.Should().HaveCount(2);
+        delays.Should().Equal([TimeSpan.FromMilliseconds(125)]);
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_UseExponentialBackoffWithJitter_When_MultipleRetriesAreNeeded()
+    {
+        SequenceHandler handler = new(
+            CreateResponse(HttpStatusCode.TooManyRequests, """{ "error": "rate limited" }"""),
+            CreateResponse(HttpStatusCode.InternalServerError, """{ "error": "temporary" }"""),
+            CreateResponse(HttpStatusCode.OK, """
+                {
+                  "id": "resp_retry",
+                  "choices": [
+                    {
+                      "message": {
+                        "content": "Recovered."
+                      }
+                    }
+                  ]
+                }
+                """));
+        List<TimeSpan> delays = [];
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(
+            httpClient,
+            (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            () => 0.5d);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            CreateRequest(),
+            CancellationToken.None);
+
+        payload.RetryCount.Should().Be(2);
+        handler.RequestBodies.Should().HaveCount(3);
+        delays.Should().Equal([
+            TimeSpan.FromMilliseconds(125),
+            TimeSpan.FromMilliseconds(250)
+        ]);
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_NotRetryNonRetryableHttpStatusCodes()
+    {
+        SequenceHandler handler = new(
+            CreateResponse(HttpStatusCode.BadRequest, """{ "error": "bad request" }"""),
+            CreateResponse(HttpStatusCode.OK, """
+                {
+                  "id": "resp_not_used",
+                  "choices": [
+                    {
+                      "message": {
+                        "content": "Should not be used."
+                      }
+                    }
+                  ]
+                }
+                """));
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(
+            httpClient,
+            (_, _) => Task.CompletedTask,
+            () => 0.5d);
+
+        Func<Task> action = async () => await sut.SendAsync(
+            CreateRequest(),
+            CancellationToken.None);
+
+        await action.Should()
+            .ThrowAsync<ConversationProviderException>()
+            .WithMessage("*HTTP 400*");
+        handler.RequestBodies.Should().ContainSingle();
+    }
+
     private static ToolDefinition CreateToolDefinition(string name)
     {
         using JsonDocument schemaDocument = JsonDocument.Parse(
@@ -273,9 +390,40 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
     private static OpenAiCompatibleConversationProviderClient CreateSut(HttpClient httpClient)
     {
+        return CreateSut(httpClient, delayAsync: null, nextJitter: null);
+    }
+
+    private static OpenAiCompatibleConversationProviderClient CreateSut(
+        HttpClient httpClient,
+        Func<TimeSpan, CancellationToken, Task>? delayAsync,
+        Func<double>? nextJitter)
+    {
         return new OpenAiCompatibleConversationProviderClient(
             httpClient,
-            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance);
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance,
+            delayAsync,
+            nextJitter);
+    }
+
+    private static ConversationProviderRequest CreateRequest()
+    {
+        return new ConversationProviderRequest(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234/v1"),
+            "test-key",
+            "gpt-4.1",
+            [
+                ConversationRequestMessage.User("Retry this request.")
+            ],
+            "You are helpful.",
+            [CreateToolDefinition("file_read")]);
+    }
+
+    private static HttpResponseMessage CreateResponse(HttpStatusCode statusCode, string body)
+    {
+        return new HttpResponseMessage(statusCode)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json")
+        };
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
@@ -315,6 +463,34 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             response.Headers.Add(_responseIdHeaderName, "req_789");
 
             return response;
+        }
+    }
+
+    private sealed class SequenceHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses;
+
+        public SequenceHandler(params HttpResponseMessage[] responses)
+        {
+            _responses = new Queue<HttpResponseMessage>(responses);
+        }
+
+        public List<string?> RequestBodies { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestBodies.Add(request.Content is null
+                ? null
+                : await request.Content.ReadAsStringAsync(cancellationToken));
+
+            if (_responses.Count == 0)
+            {
+                throw new InvalidOperationException("No HTTP response was queued for this request.");
+            }
+
+            return _responses.Dequeue();
         }
     }
 }

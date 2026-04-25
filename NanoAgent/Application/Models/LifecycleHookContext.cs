@@ -14,6 +14,8 @@ public sealed class LifecycleHookContext
 
     public string? ExecutionPhase { get; set; }
 
+    public long? LatencyMilliseconds { get; set; }
+
     public string? MemoryAction { get; set; }
 
     public string? MemoryProblem { get; set; }
@@ -21,6 +23,8 @@ public sealed class LifecycleHookContext
     public string? MemoryTrigger { get; set; }
 
     public string? ModelId { get; set; }
+
+    public int? InputTokens { get; set; }
 
     public int? OutputTokens { get; set; }
 
@@ -36,6 +40,8 @@ public sealed class LifecycleHookContext
 
     public string? ResponseText { get; set; }
 
+    public int? ProviderRetryCount { get; set; }
+
     public string? SessionId { get; set; }
 
     public string? ShellCommand { get; set; }
@@ -44,9 +50,13 @@ public sealed class LifecycleHookContext
 
     public string? TaskInput { get; set; }
 
+    public int? TotalTokens { get; set; }
+
     public string? ToolCallId { get; set; }
 
     public string? ToolName { get; set; }
+
+    public int? ToolRoundCount { get; set; }
 
     public Dictionary<string, string> Metadata { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
