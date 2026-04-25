@@ -150,6 +150,7 @@ If front matter is omitted, the agent name is derived from the file name, the mo
 |---------|-------------|
 | `/help` | List available commands |
 | `/config` | Show current provider, model, profile |
+| `/init` | Initialize workspace-local `.nanoagent` files |
 | `/mcp` | Show configured MCP servers and discovered MCP tools |
 | `/models` | Show available models |
 | `/use <model>` | Switch active model |
