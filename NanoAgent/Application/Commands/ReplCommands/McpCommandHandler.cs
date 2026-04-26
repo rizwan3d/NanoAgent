@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools;
 
 namespace NanoAgent.Application.Commands;
 
@@ -18,7 +19,7 @@ internal sealed class McpCommandHandler : IReplCommandHandler
 
     public string CommandName => "mcp";
 
-    public string Description => "Show configured MCP servers and discovered MCP tools.";
+    public string Description => "Show configured MCP servers, custom tool providers, and discovered dynamic tools.";
 
     public string Usage => "/mcp";
 
@@ -35,14 +36,16 @@ internal sealed class McpCommandHandler : IReplCommandHandler
             .ToArray();
         string[] toolNames = _toolRegistry.GetToolDefinitions()
             .Select(static definition => definition.Name)
-            .Where(static name => name.StartsWith("mcp__", StringComparison.Ordinal))
+            .Where(static name =>
+                name.StartsWith(AgentToolNames.McpToolPrefix, StringComparison.Ordinal) ||
+                name.StartsWith(AgentToolNames.CustomToolPrefix, StringComparison.Ordinal))
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToArray();
 
-        List<string> lines = ["MCP servers:"];
+        List<string> lines = ["Dynamic tool providers:"];
         if (statuses.Length == 0)
         {
-            lines.Add("No MCP servers are configured.");
+            lines.Add("No dynamic tool providers are configured.");
         }
         else
         {
@@ -61,9 +64,9 @@ internal sealed class McpCommandHandler : IReplCommandHandler
         }
 
         lines.Add(string.Empty);
-        lines.Add("MCP tools:");
+        lines.Add("Dynamic tools:");
         lines.AddRange(toolNames.Length == 0
-            ? ["No MCP tools are currently available."]
+            ? ["No dynamic tools are currently available."]
             : toolNames);
 
         return Task.FromResult(ReplCommandResult.Continue(string.Join(Environment.NewLine, lines)));

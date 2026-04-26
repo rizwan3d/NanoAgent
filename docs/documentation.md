@@ -182,7 +182,7 @@ nanoai --section <section-guid>
 | `/rules` | Show effective permission rules in evaluation order. |
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
-| `/mcp` | Show MCP servers and discovered MCP tools. |
+| `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
 | `/init` | Initialize workspace-local NanoAgent files. |
 | `/update [now]` | Check for updates. Use `/update now` to install without another prompt. |
 | `/undo` | Roll back the most recent tracked edit transaction. |
@@ -444,7 +444,72 @@ Supported transports:
 - Stdio: `command`, `args`, `env`, `envVars`, `cwd`.
 - Streamable HTTP: `url`, `bearerTokenEnvVar`, `httpHeaders`, `envHttpHeaders`.
 
-Use `enabledTools` and `disabledTools` to filter exposed tools. Use `/mcp` to inspect loaded servers and tools.
+Use `enabledTools` and `disabledTools` to filter exposed tools. Use `/mcp` to inspect loaded MCP servers, custom tool providers, and dynamic tools.
+
+## Custom Tools
+
+NanoAgent can expose user-defined process tools from `agent-profile.json`. A custom tool can be written in any language that can read JSON from stdin and write text or JSON to stdout. Configured tools are exposed to the model as `custom__<name>`.
+`mcpServers` and `customTools` can be configured in the same profile; NanoAgent loads both sets together and exposes MCP tools as `mcp__*` plus custom tools as `custom__*`.
+
+Example:
+
+```json
+{
+  "customTools": {
+    "word_count": {
+      "description": "Count words in provided text.",
+      "command": "python",
+      "args": [".nanoagent/tools/word_count.py"],
+      "cwd": ".",
+      "approvalMode": "prompt",
+      "timeoutSeconds": 15,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text to count."
+          }
+        },
+        "required": ["text"],
+        "additionalProperties": false
+      }
+    }
+  }
+}
+```
+
+NanoAgent sends this JSON to the process on stdin:
+
+```json
+{
+  "toolName": "custom__word_count",
+  "configuredName": "word_count",
+  "arguments": {
+    "text": "hello world"
+  },
+  "session": {
+    "id": "session-id",
+    "workspacePath": "/path/to/workspace",
+    "workingDirectory": "."
+  }
+}
+```
+
+The process can print plain stdout, which is treated as a successful text result, or a structured response:
+
+```json
+{
+  "status": "success",
+  "message": "Counted words.",
+  "data": {
+    "words": 2
+  },
+  "renderText": "2 words"
+}
+```
+
+Use `status: "error"` for execution errors or `status: "invalid_arguments"` for argument validation failures. Relative `cwd` and relative command paths are resolved against the workspace root. Custom tools default to approval prompts; use permission rules or `approvalMode: "auto"` only for tools you trust.
 
 ## Memory, Audit, and Hooks
 

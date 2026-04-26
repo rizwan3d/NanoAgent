@@ -94,6 +94,51 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
         settings.RedactSecrets.Should().BeTrue();
     }
 
+    [Fact]
+    public void LoadCustomTools_Should_LoadWorkspaceToolsAndResolveRelativePaths()
+    {
+        WriteFile(
+            Path.Combine(_workspaceRoot, ".nanoagent", "agent-profile.json"),
+            """
+            {
+              "customTools": {
+                "word_count": {
+                  "description": "Count words.",
+                  "command": ".nanoagent/tools/word_count.py",
+                  "args": ["--json"],
+                  "cwd": ".",
+                  "approvalMode": "auto",
+                  "timeoutSeconds": 15,
+                  "maxOutputChars": 3000,
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" }
+                    },
+                    "required": ["text"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+            """);
+
+        var tools = AgentProfileConfigurationReader.LoadCustomTools(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        tools.Should().ContainSingle();
+        tools[0].Name.Should().Be("word_count");
+        tools[0].Description.Should().Be("Count words.");
+        tools[0].Command.Should().Be(Path.GetFullPath(Path.Combine(_workspaceRoot, ".nanoagent/tools/word_count.py")));
+        tools[0].Args.Should().Equal("--json");
+        tools[0].Cwd.Should().Be(Path.GetFullPath(_workspaceRoot));
+        tools[0].ApprovalMode.Should().Be("auto");
+        tools[0].TimeoutSeconds.Should().Be(15);
+        tools[0].MaxOutputChars.Should().Be(3000);
+        tools[0].Schema.Should().NotBeNull();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempRoot))

@@ -27,7 +27,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/exit - Exit the interactive shell.\n" +
             "/help - List the available shell commands and their usage.\n" +
             "/init - Initialize workspace-local NanoAgent configuration files.\n" +
-            "/mcp - Show configured MCP servers and discovered MCP tools.\n" +
+            "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Show the available models in the current session.\n" +
             "/permissions - Show the current permission summary and override guidance.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +

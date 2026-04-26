@@ -624,7 +624,7 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_IncludeMcpTools_When_ProfileFiltersBuiltInTools()
+    public async Task ProcessAsync_Should_IncludeMcpAndCustomTools_When_ProfileFiltersBuiltInTools()
     {
         ReplSessionContext session = CreateSession(BuiltInAgentProfiles.Plan);
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
@@ -642,6 +642,7 @@ public sealed class AgentConversationPipelineTests
             .Setup(registry => registry.GetToolDefinitions())
             .Returns([
                 CreateToolDefinition(AgentToolNames.FileWrite),
+                CreateToolDefinition("custom__word_count"),
                 CreateToolDefinition("mcp__docs__search")
             ]);
 
@@ -686,7 +687,7 @@ public sealed class AgentConversationPipelineTests
         requests.Should().ContainSingle();
         requests[0].AvailableTools.Select(static tool => tool.Name)
             .Should()
-            .Equal("mcp__docs__search");
+            .Equal("custom__word_count", "mcp__docs__search");
     }
 
     [Fact]

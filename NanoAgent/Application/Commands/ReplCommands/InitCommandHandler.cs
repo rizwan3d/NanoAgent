@@ -176,7 +176,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
             builder.AppendLine();
             builder.AppendLine("Next steps:");
-            builder.AppendLine("- Edit .nanoagent/agent-profile.json for workspace memory, audit, and MCP settings.");
+            builder.AppendLine("- Edit .nanoagent/agent-profile.json for workspace memory, audit, MCP, and custom tool settings.");
             builder.AppendLine("- Rename .nanoagent/agents/code-reviewer.md.template to .md when you want to enable that custom agent.");
             builder.AppendLine("- Rename .nanoagent/skills/dotnet/SKILL.md.template to SKILL.md when you want to enable that workspace skill.");
             builder.AppendLine("- Add a root AGENTS.md file for persistent workspace instructions.");
@@ -221,6 +221,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
             "maxArgumentsChars": 12000,
             "maxResultChars": 12000
           },
+          "customTools": {},
           "mcpServers": {}
         }
         """;
@@ -231,7 +232,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
         This directory stores workspace-local NanoAgent configuration.
 
-        - `agent-profile.json`: workspace memory, audit, and MCP server settings.
+        - `agent-profile.json`: workspace memory, audit, custom tools, and MCP server settings.
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
