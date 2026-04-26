@@ -15,6 +15,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateOpenRouter()
+    {
+        return new AgentProviderProfile(ProviderKind.OpenRouter, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);

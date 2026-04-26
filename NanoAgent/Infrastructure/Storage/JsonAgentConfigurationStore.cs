@@ -147,6 +147,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 ProviderKind.OpenAiChatGptAccount => new AgentProviderProfile(
                     ProviderKind.OpenAiChatGptAccount,
                     BaseUrl: null),
+                ProviderKind.OpenRouter => new AgentProviderProfile(ProviderKind.OpenRouter, BaseUrl: null),
                 ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
                 ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),
                 ProviderKind.OpenAiCompatible when !string.IsNullOrWhiteSpace(profile.BaseUrl)

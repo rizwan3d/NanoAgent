@@ -6,5 +6,6 @@ public enum OnboardingProviderChoice
     GoogleAiStudio = 1,
     OpenAiCompatible = 2,
     Anthropic = 3,
-    OpenAiChatGptAccount = 4
+    OpenAiChatGptAccount = 4,
+    OpenRouter = 5
 }

@@ -15,6 +15,8 @@ namespace NanoAgent.Infrastructure.Conversation;
 internal sealed class OpenAiCompatibleConversationProviderClient : IConversationProviderClient
 {
     private const int MaxRetryAttempts = 3;
+    private const string OpenRouterApplicationTitle = "NanoAgent";
+    private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
     private static readonly TimeSpan BaseRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(5);
 
@@ -61,7 +63,11 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
 
         for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
         {
-            using HttpRequestMessage httpRequest = CreateHttpRequest(baseUri, request.ApiKey, requestBody);
+            using HttpRequestMessage httpRequest = CreateHttpRequest(
+                baseUri,
+                request.ProviderProfile.ProviderKind,
+                request.ApiKey,
+                requestBody);
             LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
 
             using HttpResponseMessage response = await _httpClient.SendAsync(
@@ -196,11 +202,18 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
 
     private static HttpRequestMessage CreateHttpRequest(
         Uri baseUri,
+        ProviderKind providerKind,
         string apiKey,
         string requestBody)
     {
         HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "chat/completions"));
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        if (providerKind == ProviderKind.OpenRouter)
+        {
+            httpRequest.Headers.TryAddWithoutValidation("HTTP-Referer", OpenRouterApplicationUrl);
+            httpRequest.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+        }
+
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
         return httpRequest;
     }
