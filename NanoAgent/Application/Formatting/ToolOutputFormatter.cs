@@ -41,6 +41,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"text search: \"{query}\"",
             "file_write" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file write: {path}",
+            "headless_browser" when TryGetArgumentString(toolCall.ArgumentsJson, "url", out string browserUrl) =>
+                $"headless browser: {browserUrl}",
             "agent_delegate" when TryGetArgumentString(toolCall.ArgumentsJson, "agent", out string agent) =>
                 $"subagent: {agent}",
             "agent_orchestrate" when TryGetArgumentArrayCount(toolCall.ArgumentsJson, "tasks", out int taskCount) =>

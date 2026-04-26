@@ -9,6 +9,7 @@ internal static class AgentToolNames
     public const string DirectoryList = "directory_list";
     public const string FileDelete = "file_delete";
     public const string FileRead = "file_read";
+    public const string HeadlessBrowser = "headless_browser";
     public const string PlanningMode = "planning_mode";
     public const string LessonMemory = "lesson_memory";
     public const string SearchFiles = "search_files";

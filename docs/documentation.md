@@ -315,6 +315,8 @@ Overrides are session-scoped. For durable policy, edit configuration.
 }
 ```
 
+The `network` shortcut applies to built-in `webfetch` tools, including `web_run` and `headless_browser`. `headless_browser` renders pages through an installed Chromium-family browser such as Microsoft Edge, Google Chrome, or Chromium.
+
 ## Workspace Files
 
 Run:

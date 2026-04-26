@@ -121,6 +121,7 @@ public sealed class ConversationOptions
     - Use `skill_load` when a workspace skill name and description match the task; do not assume the body instructions until the tool returns them.
     - When you intentionally want a plan-first pass, call `planning_mode` instead of writing a vague freeform plan in assistant text.
     - Use `web_run` when current external facts or documentation are required.
+    - Use `headless_browser` when you need a JavaScript-rendered page, visible text, or a browser screenshot from an installed local Chromium-family browser.
     - Before using unfamiliar build tools, frameworks, libraries, SDKs, or APIs, use `web_run` to check the official documentation or domain references when the correct usage is not already clear from the workspace.
     - When multiple reads or searches can be done independently and the harness supports it, parallelize them.
 
@@ -141,6 +142,7 @@ public sealed class ConversationOptions
     - file_write: create a new file or replace a whole file when a targeted patch would be less clear than writing the final content directly.
     - file_delete: delete a specific file when removal is the requested or correct edit, preserving undo/redo tracking.
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
+    - headless_browser: render a URL in an installed headless Chromium-family browser and return the rendered title, visible text, optional HTML, and optional screenshot metadata.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks; set `pty: true` only when terminal-aware output is needed.
     - skill_load: load the full body instructions for a workspace skill only after its name and description indicate that it is relevant.
     - code_intelligence: query installed language servers for semantic navigation, such as document symbols, definitions, references, or hover details; use it when it is more reliable than text search, and fall back to read/search tools when a language server is unavailable.
