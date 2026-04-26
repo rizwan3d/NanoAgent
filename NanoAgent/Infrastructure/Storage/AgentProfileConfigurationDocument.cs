@@ -1,5 +1,6 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
+using System.Text.Json;
 
 namespace NanoAgent.Infrastructure.Storage;
 
@@ -16,6 +17,8 @@ internal sealed class AgentProfileConfigurationDocument
     public ToolAuditProfileDocument? ToolAudit { get; set; }
 
     public ToolAuditProfileDocument? ToolAuditLog { get; set; }
+
+    public Dictionary<string, CustomToolProfileDocument>? CustomTools { get; set; }
 
     public Dictionary<string, McpServerProfileDocument>? McpServers { get; set; }
 }
@@ -85,6 +88,29 @@ internal sealed class ToolAuditProfileDocument
     public int? MaxResultChars { get; set; }
 
     public bool? RedactSecrets { get; set; }
+}
+
+internal sealed class CustomToolProfileDocument
+{
+    public string? ApprovalMode { get; set; }
+
+    public List<string>? Args { get; set; }
+
+    public string? Command { get; set; }
+
+    public string? Cwd { get; set; }
+
+    public string? Description { get; set; }
+
+    public bool? Enabled { get; set; }
+
+    public Dictionary<string, string>? Env { get; set; }
+
+    public int? MaxOutputChars { get; set; }
+
+    public JsonElement? Schema { get; set; }
+
+    public int? TimeoutSeconds { get; set; }
 }
 
 internal sealed class McpToolProfileDocument

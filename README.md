@@ -34,7 +34,7 @@ It is designed for developers who want useful automation without giving up contr
 - Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
 - Switch between hands-on build mode, read-only planning, and read-only review.
 - Delegate focused work to built-in or project-defined subagents.
-- Add project instructions, skills, custom agents, MCP tools, and reusable lessons.
+- Add project instructions, skills, custom agents, process-based custom tools, MCP tools, and reusable lessons.
 - Keep risky actions visible with permission prompts, policy rules, and undo/redo for tracked file edits.
 
 ## Product Experience
@@ -126,7 +126,7 @@ NanoAgent will guide you through provider setup, model discovery, and the first 
 | `/rules` | Show effective rules. |
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
-| `/mcp` | Show MCP servers and tools. |
+| `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
 | `/init` | Create `.nanoagent` starter files for a project. |
 | `/update [now]` | Check for updates, or install immediately with `/update now`. |
 | `/undo` | Roll back the most recent tracked file edit transaction. |

@@ -48,6 +48,8 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("fully specified, non-interactive commands for project scaffolding tools");
         result.SystemPrompt.Should().Contain("Use `web_run` when current external facts or documentation are required");
         result.SystemPrompt.Should().Contain("Before using unfamiliar build tools, frameworks, libraries, SDKs, or APIs");
+        result.SystemPrompt.Should().Contain("Use configured `mcp__*` tools");
+        result.SystemPrompt.Should().Contain("Use configured `custom__*` tools");
         result.SystemPrompt.Should().Contain("official documentation or domain references");
         result.SystemPrompt.Should().Contain("Sandbox enforcement: unsupported");
         result.SystemPrompt.Should().Contain("without OS-level sandbox enforcement");
@@ -55,6 +57,8 @@ public sealed class ConversationConfigurationAccessorTests
         result.SystemPrompt.Should().Contain("- update_plan:");
         result.SystemPrompt.Should().Contain("- file_delete:");
         result.SystemPrompt.Should().Contain("- web_run:");
+        result.SystemPrompt.Should().Contain("- mcp__*:");
+        result.SystemPrompt.Should().Contain("- custom__*:");
         result.SystemPrompt.Should().Contain("- shell_command:");
         result.SystemPrompt.Should().Contain("- code_intelligence:");
         result.SystemPrompt.Should().Contain("document symbols, definitions, references, or hover details");

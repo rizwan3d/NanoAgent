@@ -423,13 +423,14 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return _toolRegistry.GetToolDefinitions()
             .Where(definition =>
                 enabledTools.Contains(definition.Name) ||
-                IsMcpTool(definition.Name))
+                IsDynamicTool(definition.Name))
             .ToArray();
     }
 
-    private static bool IsMcpTool(string toolName)
+    private static bool IsDynamicTool(string toolName)
     {
-        return toolName.StartsWith("mcp__", StringComparison.Ordinal);
+        return toolName.StartsWith(AgentToolNames.McpToolPrefix, StringComparison.Ordinal) ||
+            toolName.StartsWith(AgentToolNames.CustomToolPrefix, StringComparison.Ordinal);
     }
 
     private async Task<string?> CreateProfileSystemPromptAsync(

@@ -217,7 +217,8 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
 
     private TimeSpan GetToolTimeout(string toolName)
     {
-        if (toolName.StartsWith("mcp__", StringComparison.Ordinal))
+        if (toolName.StartsWith(AgentToolNames.McpToolPrefix, StringComparison.Ordinal) ||
+            toolName.StartsWith(AgentToolNames.CustomToolPrefix, StringComparison.Ordinal))
         {
             return TimeSpan.FromMinutes(10);
         }

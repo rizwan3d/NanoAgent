@@ -1,6 +1,7 @@
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.CodeIntelligence;
+using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
@@ -49,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IToolAuditLogService, WorkspaceToolAuditLogService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
         services.AddSingleton<NanoAgentMcpConfigLoader>();
+        services.AddSingleton<IDynamicToolProvider, CustomToolDynamicProvider>();
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();
         services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreatePermissionSettings(

@@ -2,6 +2,7 @@ using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
+using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Mcp;
 
 namespace NanoAgent.Infrastructure.Storage;
@@ -93,6 +94,38 @@ internal static class AgentProfileConfigurationReader
 
         return servers.Values
             .OrderBy(static server => server.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<CustomToolConfiguration> LoadCustomTools(
+        IUserDataPathProvider userDataPathProvider,
+        IWorkspaceRootProvider workspaceRootProvider)
+    {
+        ArgumentNullException.ThrowIfNull(userDataPathProvider);
+        ArgumentNullException.ThrowIfNull(workspaceRootProvider);
+
+        string workspaceRoot = Path.GetFullPath(workspaceRootProvider.GetWorkspaceRoot());
+        Dictionary<string, CustomToolConfiguration> tools = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string path, AgentProfileConfigurationDocument document) in LoadDocumentPairs(
+                     userDataPathProvider,
+                     workspaceRootProvider))
+        {
+            foreach (KeyValuePair<string, CustomToolProfileDocument> item in document.CustomTools ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(item.Key) || item.Value is null)
+                {
+                    continue;
+                }
+
+                CustomToolConfiguration configuration = ConvertCustomTool(item.Key, item.Value, path);
+                configuration.ResolveRelativePaths(workspaceRoot);
+                tools[configuration.Name] = configuration;
+            }
+        }
+
+        return tools.Values
+            .OrderBy(static tool => tool.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
@@ -361,6 +394,58 @@ internal static class AgentProfileConfigurationReader
         return server;
     }
 
+    private static CustomToolConfiguration ConvertCustomTool(
+        string name,
+        CustomToolProfileDocument document,
+        string sourcePath)
+    {
+        CustomToolConfiguration tool = new(name)
+        {
+            ApprovalMode = NormalizeOptional(document.ApprovalMode),
+            Command = NormalizeOptional(document.Command),
+            Cwd = NormalizeOptional(document.Cwd),
+            Description = NormalizeOptional(document.Description),
+            SourcePath = sourcePath
+        };
+
+        if (document.Args is not null)
+        {
+            tool.Args.Clear();
+            tool.Args.AddRange(NormalizeStringList(document.Args));
+        }
+
+        if (document.Env is not null)
+        {
+            tool.Env.Clear();
+            foreach (KeyValuePair<string, string> item in NormalizeDictionary(document.Env))
+            {
+                tool.Env[item.Key] = item.Value;
+            }
+        }
+
+        if (document.Enabled is not null)
+        {
+            tool.Enabled = document.Enabled.Value;
+        }
+
+        if (document.MaxOutputChars is > 0)
+        {
+            tool.MaxOutputChars = Math.Min(document.MaxOutputChars.Value, 250_000);
+        }
+
+        if (document.TimeoutSeconds is > 0)
+        {
+            tool.TimeoutSeconds = Math.Min(document.TimeoutSeconds.Value, 600);
+        }
+
+        if (document.Schema is { } schema)
+        {
+            tool.Schema = schema.Clone();
+        }
+
+        return tool;
+    }
+
     private static void MergeToolApprovalModes(
         McpServerConfiguration server,
         McpServerProfileDocument document)
@@ -501,7 +586,7 @@ internal static class AgentProfileConfigurationReader
                 StringComparer.Ordinal);
     }
 
-    private static string? NormalizeOptional(string value)
+    private static string? NormalizeOptional(string? value)
     {
         return string.IsNullOrWhiteSpace(value)
             ? null

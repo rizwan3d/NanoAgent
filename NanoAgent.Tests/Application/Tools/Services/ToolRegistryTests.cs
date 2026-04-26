@@ -56,6 +56,30 @@ public sealed class ToolRegistryTests
         registration!.PermissionPolicy.FilePaths.Should().ContainSingle();
     }
 
+    [Fact]
+    public void Constructor_Should_RegisterMcpAndCustomDynamicToolsTogether()
+    {
+        ToolRegistry sut = new(
+            [new StubTool("file_read")],
+            new ToolPermissionParser(),
+            [
+                new StubDynamicToolProvider([new StubTool("mcp__docs__search")]),
+                new StubDynamicToolProvider([new StubTool("custom__word_count")])
+            ]);
+
+        sut.GetRegisteredToolNames()
+            .Should()
+            .Equal("custom__word_count", "file_read", "mcp__docs__search");
+        sut.TryResolve("mcp__docs__search", out ToolRegistration? mcpRegistration)
+            .Should()
+            .BeTrue();
+        sut.TryResolve("custom__word_count", out ToolRegistration? customRegistration)
+            .Should()
+            .BeTrue();
+        mcpRegistration!.PermissionPolicy.FilePaths.Should().ContainSingle();
+        customRegistration!.PermissionPolicy.FilePaths.Should().ContainSingle();
+    }
+
     private sealed class StubTool : ITool
     {
         public StubTool(string name)

@@ -119,6 +119,8 @@ public sealed class ConversationOptions
     - Use full-file writes only when creating a new file or when replacing the full file is clearer than patching.
     - Use shell commands for environment checks, builds, tests, linting, formatting, scaffolding, generators, and runtime validation.
     - Use `skill_load` when a workspace skill name and description match the task; do not assume the body instructions until the tool returns them.
+    - Use configured `mcp__*` tools when their name, description, and schema are a direct fit for the task. They are tools discovered from configured MCP servers.
+    - Use configured `custom__*` tools when their name, description, and schema are a direct fit for the task. They are local process tools that may be implemented in any language.
     - When you intentionally want a plan-first pass, call `planning_mode` instead of writing a vague freeform plan in assistant text.
     - Use `web_run` when current external facts or documentation are required.
     - Use `headless_browser` when you need a JavaScript-rendered page, visible text, or a browser screenshot from an installed local Chromium-family browser.
@@ -143,6 +145,8 @@ public sealed class ConversationOptions
     - file_delete: delete a specific file when removal is the requested or correct edit, preserving undo/redo tracking.
     - web_run: search/browse the web, open pages, find text, image search, screenshots, plus finance, weather, sports, and time.
     - headless_browser: render a URL in an installed headless Chromium-family browser and return the rendered title, visible text, optional HTML, and optional screenshot metadata.
+    - mcp__*: tools discovered from configured MCP servers. Use them according to their server-provided description and schema.
+    - custom__*: workspace or user configured process tools. These tools receive JSON on stdin and may be implemented in any programming language.
     - shell_command: run OS-native commands in the workspace for inspection, environment probes, project scaffolding, dependency restore/install, code generation, build, test, lint, format, and runtime checks; set `pty: true` only when terminal-aware output is needed.
     - skill_load: load the full body instructions for a workspace skill only after its name and description indicate that it is relevant.
     - code_intelligence: query installed language servers for semantic navigation, such as document symbols, definitions, references, or hover details; use it when it is more reliable than text search, and fall back to read/search tools when a language server is unavailable.
