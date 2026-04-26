@@ -11,6 +11,8 @@ namespace NanoAgent.Infrastructure.Models;
 internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 {
     private const string AnthropicVersion = "2023-06-01";
+    private const string OpenRouterApplicationTitle = "NanoAgent";
+    private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
     private static readonly AvailableModel[] OpenAiChatGptAccountModels =
     [
         new("gpt-5.3-codex"),
@@ -117,6 +119,12 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        if (providerKind == ProviderKind.OpenRouter)
+        {
+            request.Headers.TryAddWithoutValidation("HTTP-Referer", OpenRouterApplicationUrl);
+            request.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+        }
     }
 
     private static string Truncate(string value, int maxLength)

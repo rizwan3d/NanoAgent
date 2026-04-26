@@ -79,6 +79,31 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestOpenRouterModelsEndpointWithAppHeaders_When_OpenRouterProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "openai/gpt-4o" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenRouter, null),
+            "test-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://openrouter.ai/api/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer test-key");
+        handler.OpenRouterRefererHeader.Should().Be("https://github.com/rizwan3d/NanoAgent");
+        handler.OpenRouterTitleHeader.Should().Be("NanoAgent");
+        models.Select(model => model.Id).Should().Equal("openai/gpt-4o");
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestAnthropicModelsEndpointWithAnthropicHeaders_When_AnthropicProviderIsConfigured()
     {
         RecordingHandler handler = new("""
@@ -156,6 +181,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         public string? AnthropicVersionHeader { get; private set; }
 
+        public string? OpenRouterRefererHeader { get; private set; }
+
+        public string? OpenRouterTitleHeader { get; private set; }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
@@ -167,6 +196,12 @@ public sealed class OpenAiCompatibleModelProviderClientTests
                 : null;
             AnthropicVersionHeader = request.Headers.TryGetValues("anthropic-version", out IEnumerable<string>? versionValues)
                 ? versionValues.FirstOrDefault()
+                : null;
+            OpenRouterRefererHeader = request.Headers.TryGetValues("HTTP-Referer", out IEnumerable<string>? refererValues)
+                ? refererValues.FirstOrDefault()
+                : null;
+            OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
+                ? titleValues.FirstOrDefault()
                 : null;
 
             HttpResponseMessage response = new(HttpStatusCode.OK)

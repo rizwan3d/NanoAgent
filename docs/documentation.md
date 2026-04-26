@@ -83,6 +83,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | --- | --- | --- |
 | OpenAI | API key | Uses the OpenAI API. |
 | OpenAI ChatGPT Plus/Pro | Browser sign-in | Uses OAuth with local callback port `1455`. |
+| OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
 | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
 | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
 | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |

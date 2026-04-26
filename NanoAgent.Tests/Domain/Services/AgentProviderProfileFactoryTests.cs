@@ -25,6 +25,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateOpenRouter_Should_ReturnOpenRouterProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateOpenRouter();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.OpenRouter, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

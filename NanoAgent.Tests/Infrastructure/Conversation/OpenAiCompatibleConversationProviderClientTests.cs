@@ -138,6 +138,45 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToOpenRouterEndpointWithAppHeaders_When_OpenRouterProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_openrouter",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from OpenRouter."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenRouter, null),
+                "test-key",
+                "openai/gpt-4o",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://openrouter.ai/api/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer test-key");
+        handler.OpenRouterRefererHeader.Should().Be("https://github.com/rizwan3d/NanoAgent");
+        handler.OpenRouterTitleHeader.Should().Be("NanoAgent");
+        handler.RequestBody.Should().Contain("\"model\":\"openai/gpt-4o\"");
+        payload.ProviderKind.Should().Be(ProviderKind.OpenRouter);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToAnthropicEndpoint_When_AnthropicProviderIsSelected()
     {
         RecordingHandler handler = new("""
@@ -616,6 +655,10 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         public string? OriginatorHeader { get; private set; }
 
+        public string? OpenRouterRefererHeader { get; private set; }
+
+        public string? OpenRouterTitleHeader { get; private set; }
+
         public string? RequestBody { get; private set; }
 
         public HttpMethod? RequestMethod { get; private set; }
@@ -636,6 +679,12 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 : null;
             OriginatorHeader = request.Headers.TryGetValues("originator", out IEnumerable<string>? originatorValues)
                 ? originatorValues.FirstOrDefault()
+                : null;
+            OpenRouterRefererHeader = request.Headers.TryGetValues("HTTP-Referer", out IEnumerable<string>? refererValues)
+                ? refererValues.FirstOrDefault()
+                : null;
+            OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
+                ? titleValues.FirstOrDefault()
                 : null;
             SessionIdHeader = request.Headers.TryGetValues("session_id", out IEnumerable<string>? sessionIdValues)
                 ? sessionIdValues.FirstOrDefault()

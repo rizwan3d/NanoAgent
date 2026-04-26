@@ -52,6 +52,22 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_ThenLoadAsync_Should_RoundTripOpenRouterConfiguration()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+        AgentConfiguration configuration = new(
+            new AgentProviderProfile(ProviderKind.OpenRouter, null),
+            "openai/gpt-4o",
+            "on");
+
+        await sut.SaveAsync(configuration, CancellationToken.None);
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(configuration);
+    }
+
+    [Fact]
     public async Task SaveAsync_Should_PreserveMemoryAndMcpProfileSections()
     {
         StubUserDataPathProvider pathProvider = new(_tempRoot);

@@ -31,7 +31,7 @@ It is designed for developers who want useful automation without giving up contr
 
 - Work from a desktop app or the `nanoai` terminal command.
 - Ask for feature work, bug fixes, planning, code review, and build/test loops.
-- Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
+- Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
 - Switch between hands-on build mode, read-only planning, and read-only review.
 - Delegate focused work to built-in or project-defined subagents.
 - Add project instructions, skills, custom agents, MCP tools, and reusable lessons.
@@ -69,6 +69,7 @@ echo "Review the latest changes for regressions" | nanoai --profile review
 | --- | --- |
 | OpenAI | API key |
 | OpenAI ChatGPT Plus/Pro | Browser sign-in |
+| OpenRouter | API key |
 | Google AI Studio | API key |
 | Anthropic | API key |
 | OpenAI-compatible provider | Base URL and API key |

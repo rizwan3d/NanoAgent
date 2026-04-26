@@ -21,6 +21,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenAiChatGptAccount,
             "Use browser sign-in for a ChatGPT Plus or Pro account."),
         new(
+            "OpenRouter",
+            OnboardingProviderChoice.OpenRouter,
+            "Use OpenRouter with only an OpenRouter API key."),
+        new(
             "Google AI Studio",
             OnboardingProviderChoice.GoogleAiStudio,
             "Use Gemini through Google AI Studio with only a Gemini API key."),
@@ -145,6 +149,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         {
             OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
             OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
+            OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
             OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
