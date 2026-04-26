@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, FileDeleteTool>();
         services.AddSingleton<ITool, FileReadTool>();
         services.AddSingleton<ITool, DirectoryListTool>();
+        services.AddSingleton<ITool, HeadlessBrowserTool>();
         services.AddSingleton<ITool, LessonMemoryTool>();
         services.AddSingleton<ITool, PlanningModeTool>();
         services.AddSingleton<ITool, SearchFilesTool>();

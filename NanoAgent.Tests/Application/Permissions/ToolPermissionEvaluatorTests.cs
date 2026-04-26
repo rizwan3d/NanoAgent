@@ -618,6 +618,31 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void Evaluate_Should_CollectHeadlessBrowserUrlSubject_ForPermissionMatching()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings());
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ApprovalMode = ToolApprovalMode.RequireApproval,
+                WebRequest = new WebRequestPermissionPolicy
+                {
+                    RequestArgumentName = "url"
+                }
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "url": "https://example.com/app" }""",
+                toolName: AgentToolNames.HeadlessBrowser)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
+        result.Request.Should().NotBeNull();
+        result.Request!.Subjects.Should().Contain("https://example.com/app");
+    }
+
+    [Fact]
     public void Evaluate_Should_AllowLessonMemorySearchWithoutApproval()
     {
         ToolPermissionEvaluator sut = new(

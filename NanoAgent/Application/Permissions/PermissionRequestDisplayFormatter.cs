@@ -17,6 +17,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.FileDelete => "Approve file delete?",
             AgentToolNames.FileRead => "Approve file read?",
             AgentToolNames.FileWrite => "Approve file write?",
+            AgentToolNames.HeadlessBrowser => "Approve browser request?",
             AgentToolNames.SearchFiles => "Approve file search?",
             AgentToolNames.ShellCommand => "Approve shell command?",
             AgentToolNames.TextSearch => "Approve text search?",
@@ -44,6 +45,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.FileDelete => "delete file",
             AgentToolNames.FileRead => "read file",
             AgentToolNames.FileWrite => "write file",
+            AgentToolNames.HeadlessBrowser => "open browser target",
             AgentToolNames.SearchFiles => "search path",
             AgentToolNames.ShellCommand => "run command",
             AgentToolNames.TextSearch => "search text in path",
@@ -106,6 +108,7 @@ internal static class PermissionRequestDisplayFormatter
                 break;
 
             case AgentToolNames.WebRun:
+            case AgentToolNames.HeadlessBrowser:
                 singularLabel = "Web target";
                 pluralLabel = "Web targets";
                 break;

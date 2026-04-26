@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<ICodeIntelligenceService, LspCodeIntelligenceService>();
+        services.AddSingleton<IHeadlessBrowserService, HeadlessBrowserService>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<ISkillService, WorkspaceSkillService>();
         services.AddSingleton<ILifecycleHookService, ShellLifecycleHookService>();
