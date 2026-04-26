@@ -962,6 +962,60 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
         result.ReasonCode.Should().Be("sandbox_justification_required");
     }
 
+    [Fact]
+    public void Evaluate_Should_AllowPromptedTools_When_AutoApproveAllToolsIsEnabled()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            ApplicationSettingsFactory.CreatePermissionSettings(new ApplicationOptions
+            {
+                Permissions = new PermissionSettings
+                {
+                    AutoApproveAllTools = true
+                }
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ApprovalMode = ToolApprovalMode.RequireApproval,
+                ToolTags = ["custom"]
+            },
+            new PermissionEvaluationContext(CreateContext("{}", toolName: "custom__status")));
+
+        result.IsAllowed.Should().BeTrue();
+        result.EffectiveMode.Should().Be(PermissionMode.Allow);
+    }
+
+    [Fact]
+    public void Evaluate_Should_PreserveBuiltInDenyRules_When_AutoApproveAllToolsIsEnabled()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            ApplicationSettingsFactory.CreatePermissionSettings(new ApplicationOptions
+            {
+                Permissions = new PermissionSettings
+                {
+                    AutoApproveAllTools = true
+                }
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["bash"],
+                Shell = new ShellCommandPermissionPolicy
+                {
+                    CommandArgumentName = "command",
+                    AllowedCommands = ["rm"]
+                }
+            },
+            new PermissionEvaluationContext(CreateContext("""{ "command": "rm -rf ." }""", toolName: AgentToolNames.ShellCommand)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("permission_policy_denied");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

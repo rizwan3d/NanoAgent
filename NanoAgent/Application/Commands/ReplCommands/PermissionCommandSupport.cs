@@ -18,6 +18,7 @@ internal static class PermissionCommandSupport
         return
             "Permissions:\n" +
             $"Default mode: {ToDisplayText(settings.DefaultMode)}\n" +
+            $"Auto approve all tools: {(settings.AutoApproveAllTools ? "On" : "Off")}\n" +
             $"Sandbox mode: {ToDisplayText(settings.SandboxMode)}\n" +
             $"Built-in/configured rules: {configuredRuleCount}\n" +
             $"Session overrides: {sessionRuleCount}\n" +
@@ -43,6 +44,8 @@ internal static class PermissionCommandSupport
         builder.AppendLine("Effective permission rules:");
         builder.Append("Default mode: ");
         builder.AppendLine(ToDisplayText(settings.DefaultMode));
+        builder.Append("Auto approve all tools: ");
+        builder.AppendLine(settings.AutoApproveAllTools ? "On" : "Off");
         builder.Append("Sandbox mode: ");
         builder.AppendLine(ToDisplayText(settings.SandboxMode));
         builder.AppendLine();

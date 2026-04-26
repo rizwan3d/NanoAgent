@@ -283,6 +283,7 @@ Overrides are session-scoped. For durable policy, edit configuration.
 {
   "Application": {
     "Permissions": {
+      "auto_approve_all_tools": false,
       "file_read": "Allow",
       "file_write": "Ask",
       "file_delete": "Ask",
@@ -316,6 +317,22 @@ Overrides are session-scoped. For durable policy, edit configuration.
 ```
 
 The `network` shortcut applies to built-in `webfetch` tools, including `web_run` and `headless_browser`. `headless_browser` renders pages through an installed Chromium-family browser such as Microsoft Edge, Google Chrome, or Chromium.
+
+### Auto-Approve All Tools
+
+For trusted workspaces, you can disable approval prompts for all tools:
+
+```json
+{
+  "Application": {
+    "Permissions": {
+      "auto_approve_all_tools": true
+    }
+  }
+}
+```
+
+This keeps workspace path checks, profile restrictions, sandbox-mode restrictions, and built-in deny rules active. Use explicit `rules` or shortcut settings when you need to override a specific deny policy.
 
 ## Workspace Files
 
