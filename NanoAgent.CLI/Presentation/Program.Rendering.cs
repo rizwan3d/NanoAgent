@@ -18,14 +18,7 @@ public static partial class Program
 
         if (state.ActiveModal is not null)
         {
-            Layout bodySplit = new Layout("body-split")
-                .SplitRows(
-                    new Layout("messages").Ratio(1),
-                    new Layout("prompt").Size(state.ActiveModal.PanelSize));
-
-            bodySplit["messages"].Update(BuildMessagesPanel(state));
-            bodySplit["prompt"].Update(BuildPromptPanel(state.ActiveModal));
-            root["body"].Update(bodySplit);
+            root["body"].Update(BuildPromptPanel(state.ActiveModal));
         }
         else
         {
