@@ -10,7 +10,7 @@ public sealed class SelectionModalState<T> : UiModalState
     private const int MinimumPanelSize = 7;
     private const int PanelChromeLineCount = 2;
     private const int PanelHorizontalPadding = 6;
-    private const int ReservedLayoutLineCount = 18;
+    private const int ReservedLayoutLineCount = 15;
 
     private readonly Action<Exception>? _onCancelled;
     private readonly Action<T> _onSelected;
@@ -95,40 +95,24 @@ public sealed class SelectionModalState<T> : UiModalState
 
     public override string BuildBodyMarkup()
     {
-        StringBuilder builder = new();
-        builder.AppendLine($"[bold yellow]{Markup.Escape(Title)}[/]");
+        int contentWidth = GetContentWidth();
+        int maxBodyLines = Math.Max(1, PanelSize - PanelChromeLineCount);
+        List<string> headingLines = BuildHeadingLines(contentWidth);
+        List<string> optionLines = BuildOptionLines(contentWidth);
 
-        if (!string.IsNullOrWhiteSpace(Description))
+        if (headingLines.Count >= maxBodyLines)
         {
-            builder.AppendLine();
-            builder.AppendLine(Markup.Escape(Description));
+            headingLines = headingLines
+                .Take(Math.Max(0, maxBodyLines - 1))
+                .ToList();
         }
 
-        if (DeadlineUtc is not null)
-        {
-            builder.AppendLine();
-            builder.AppendLine($"[grey]Auto-select in {GetRemainingSeconds()}s[/]");
-        }
+        int availableOptionLines = maxBodyLines - headingLines.Count;
+        IReadOnlyList<string> visibleOptionLines = GetVisibleOptionLines(
+            optionLines,
+            availableOptionLines);
 
-        builder.AppendLine();
-
-        for (int index = 0; index < _options.Count; index++)
-        {
-            SelectionPromptOption<T> option = _options[index];
-            string label = $"{index + 1}. {option.Label}";
-            string escapedLabel = Markup.Escape(label);
-
-            builder.AppendLine(index == SelectedIndex
-                ? $"[black on green]> {escapedLabel}[/]"
-                : $"[green]  {escapedLabel}[/]");
-
-            if (!string.IsNullOrWhiteSpace(option.Description))
-            {
-                builder.AppendLine($"[grey]    {Markup.Escape(option.Description)}[/]");
-            }
-        }
-
-        return builder.ToString().TrimEnd();
+        return string.Join('\n', headingLines.Concat(visibleOptionLines)).TrimEnd();
     }
 
     public override string BuildFooterMarkup()
@@ -233,6 +217,189 @@ public sealed class SelectionModalState<T> : UiModalState
     {
         state.ActiveModal = null;
         _onSelected(value);
+    }
+
+    private List<string> BuildHeadingLines(int contentWidth)
+    {
+        List<string> lines = [];
+        lines.AddRange(WrapMarkupLines(Title, contentWidth, "[bold yellow]", "[/]"));
+
+        if (!string.IsNullOrWhiteSpace(Description))
+        {
+            lines.Add(string.Empty);
+            lines.AddRange(WrapMarkupLines(Description, contentWidth));
+        }
+
+        if (DeadlineUtc is not null)
+        {
+            lines.Add(string.Empty);
+            lines.Add($"[grey]Auto-select in {GetRemainingSeconds()}s[/]");
+        }
+
+        lines.Add(string.Empty);
+        return lines;
+    }
+
+    private List<string> BuildOptionLines(int contentWidth)
+    {
+        List<string> lines = [];
+
+        for (int index = 0; index < _options.Count; index++)
+        {
+            SelectionPromptOption<T> option = _options[index];
+            bool selected = index == SelectedIndex;
+            string firstPrefix = selected ? "> " : "  ";
+            string continuationPrefix = selected ? "  " : "  ";
+            string label = $"{index + 1}. {option.Label}";
+            int labelWidth = Math.Max(1, contentWidth - firstPrefix.Length);
+            int labelContinuationWidth = Math.Max(1, contentWidth - continuationPrefix.Length);
+            IReadOnlyList<string> labelLines = WrapPlainText(label, labelWidth, labelContinuationWidth);
+
+            for (int lineIndex = 0; lineIndex < labelLines.Count; lineIndex++)
+            {
+                string prefix = lineIndex == 0
+                    ? firstPrefix
+                    : continuationPrefix;
+                string line = prefix + Markup.Escape(labelLines[lineIndex]);
+                lines.Add(selected
+                    ? $"[black on green]{line}[/]"
+                    : $"[green]{line}[/]");
+            }
+
+            if (!string.IsNullOrWhiteSpace(option.Description))
+            {
+                foreach (string descriptionLine in WrapPlainText(option.Description, Math.Max(1, contentWidth - 4)))
+                {
+                    lines.Add($"[grey]    {Markup.Escape(descriptionLine)}[/]");
+                }
+            }
+        }
+
+        return lines;
+    }
+
+    private IReadOnlyList<string> GetVisibleOptionLines(
+        IReadOnlyList<string> optionLines,
+        int availableLineCount)
+    {
+        if (availableLineCount <= 0 ||
+            optionLines.Count == 0)
+        {
+            return [];
+        }
+
+        if (optionLines.Count <= availableLineCount)
+        {
+            return optionLines;
+        }
+
+        int selectedLineIndex = GetSelectedOptionFirstLineIndex();
+        int startIndex = Math.Clamp(
+            selectedLineIndex - (availableLineCount / 2),
+            0,
+            Math.Max(0, optionLines.Count - availableLineCount));
+
+        List<string> visibleLines = optionLines
+            .Skip(startIndex)
+            .Take(availableLineCount)
+            .ToList();
+
+        if (availableLineCount >= 3 &&
+            startIndex > 0 &&
+            visibleLines.Count > 0)
+        {
+            visibleLines[0] = "[grey]...[/]";
+        }
+
+        if (availableLineCount >= 3 &&
+            startIndex + availableLineCount < optionLines.Count &&
+            visibleLines.Count > 0)
+        {
+            visibleLines[^1] = "[grey]...[/]";
+        }
+
+        return visibleLines;
+    }
+
+    private int GetSelectedOptionFirstLineIndex()
+    {
+        int contentWidth = GetContentWidth();
+        int lineIndex = 0;
+
+        for (int index = 0; index < SelectedIndex && index < _options.Count; index++)
+        {
+            SelectionPromptOption<T> option = _options[index];
+            lineIndex += CountWrappedLines($"> {index + 1}. {option.Label}", contentWidth);
+
+            if (!string.IsNullOrWhiteSpace(option.Description))
+            {
+                lineIndex += CountWrappedLines($"    {option.Description}", contentWidth);
+            }
+        }
+
+        return lineIndex;
+    }
+
+    private static int GetContentWidth()
+    {
+        return Math.Max(20, Console.WindowWidth - PanelHorizontalPadding);
+    }
+
+    private static IReadOnlyList<string> WrapMarkupLines(
+        string? text,
+        int width,
+        string prefixMarkup = "",
+        string suffixMarkup = "")
+    {
+        return WrapPlainText(text, width)
+            .Select(line => prefixMarkup + Markup.Escape(line) + suffixMarkup)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> WrapPlainText(
+        string? text,
+        int width)
+    {
+        return WrapPlainText(text, width, width);
+    }
+
+    private static IReadOnlyList<string> WrapPlainText(
+        string? text,
+        int firstLineWidth,
+        int continuationLineWidth)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return [];
+        }
+
+        List<string> lines = [];
+        int currentWidth = Math.Max(1, firstLineWidth);
+        int safeContinuationWidth = Math.Max(1, continuationLineWidth);
+
+        foreach (string logicalLine in text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None))
+        {
+            if (logicalLine.Length == 0)
+            {
+                lines.Add(string.Empty);
+                currentWidth = safeContinuationWidth;
+                continue;
+            }
+
+            int offset = 0;
+            while (offset < logicalLine.Length)
+            {
+                int length = Math.Min(currentWidth, logicalLine.Length - offset);
+                lines.Add(logicalLine.Substring(offset, length));
+                offset += length;
+                currentWidth = safeContinuationWidth;
+            }
+        }
+
+        return lines;
     }
 
     private static int CountWrappedLines(string? text, int width)
