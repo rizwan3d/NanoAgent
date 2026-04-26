@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.DependencyInjection;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
 using NanoAgent.Infrastructure.DependencyInjection;
@@ -22,6 +23,10 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IReplCommandParser? _commandParser;
     private ReplSessionContext? _session;
     private ISessionAppService? _sessionAppService;
+    private IApplicationUpdateService? _updateService;
+    private IConfirmationPrompt? _confirmationPrompt;
+    private IStatusMessageWriter? _statusMessageWriter;
+    private bool _updatePromptShown;
 
     public NanoAgentBackend(string[] args)
     {
@@ -48,6 +53,9 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
         _commandDispatcher = _host.Services.GetRequiredService<IReplCommandDispatcher>();
+        _updateService = _host.Services.GetRequiredService<IApplicationUpdateService>();
+        _confirmationPrompt = _host.Services.GetRequiredService<IConfirmationPrompt>();
+        _statusMessageWriter = _host.Services.GetRequiredService<IStatusMessageWriter>();
 
         if (!string.IsNullOrWhiteSpace(options.SectionId))
         {
@@ -58,12 +66,13 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     options.ThinkingMode),
                 cancellationToken);
 
-            await _onboardingService.EnsureOnboardedAsync(cancellationToken);
+            await EnsureOnboardedWithRecoveryAsync(cancellationToken);
         }
         else
         {
-            OnboardingResult onboardingResult = await _onboardingService.EnsureOnboardedAsync(cancellationToken);
-            ModelDiscoveryResult modelResult = await _modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken);
+            OnboardingAndModelResult startupResult = await EnsureOnboardedAndDiscoverModelsAsync(cancellationToken);
+            OnboardingResult onboardingResult = startupResult.OnboardingResult;
+            ModelDiscoveryResult modelResult = startupResult.ModelDiscoveryResult;
             string? reasoningEffort = options.ThinkingMode ?? onboardingResult.ReasoningEffort;
 
             _session = await _sessionAppService.CreateAsync(
@@ -75,6 +84,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     reasoningEffort),
                 cancellationToken);
         }
+
+        await PromptForUpdateIfAvailableAsync(options.SkipUpdateCheck, cancellationToken);
 
         return CreateSessionInfo(_session);
     }
@@ -225,15 +236,161 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             .ToArray();
     }
 
+    private async Task<OnboardingAndModelResult> EnsureOnboardedAndDiscoverModelsAsync(
+        CancellationToken cancellationToken)
+    {
+        IModelDiscoveryService modelDiscoveryService = _modelDiscoveryService!;
+        OnboardingResult onboardingResult = await EnsureOnboardedWithRecoveryAsync(cancellationToken);
+
+        try
+        {
+            return new OnboardingAndModelResult(
+                onboardingResult,
+                await modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken));
+        }
+        catch (ModelDiscoveryException exception)
+        {
+            await _statusMessageWriter!.ShowErrorAsync(
+                $"Provider setup could not be validated: {exception.Message}",
+                cancellationToken);
+
+            bool shouldReconfigure = await _confirmationPrompt!.PromptAsync(
+                new ConfirmationPromptRequest(
+                    "Provider setup failed. Re-run onboarding?",
+                    "Choose Yes to reconfigure provider credentials now, or No to stop startup.",
+                    DefaultValue: true),
+                cancellationToken);
+
+            if (!shouldReconfigure)
+            {
+                throw;
+            }
+
+            onboardingResult = await _onboardingService!.ReconfigureAsync(cancellationToken);
+            return new OnboardingAndModelResult(
+                onboardingResult,
+                await modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken));
+        }
+    }
+
+    private async Task<OnboardingResult> EnsureOnboardedWithRecoveryAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _onboardingService!.EnsureOnboardedAsync(cancellationToken);
+        }
+        catch (Exception exception) when (ShouldOfferOnboardingRetry(exception))
+        {
+            await _statusMessageWriter!.ShowErrorAsync(
+                $"Provider setup could not be completed: {exception.Message}",
+                cancellationToken);
+
+            bool shouldReconfigure = await _confirmationPrompt!.PromptAsync(
+                new ConfirmationPromptRequest(
+                    "Provider setup failed. Re-run onboarding?",
+                    "Choose Yes to try provider setup again, or No to stop startup.",
+                    DefaultValue: true),
+                cancellationToken);
+
+            if (!shouldReconfigure)
+            {
+                throw;
+            }
+
+            return await _onboardingService!.ReconfigureAsync(cancellationToken);
+        }
+    }
+
+    private async Task PromptForUpdateIfAvailableAsync(
+        bool skipUpdateCheck,
+        CancellationToken cancellationToken)
+    {
+        if (skipUpdateCheck ||
+            _updatePromptShown ||
+            _updateService is null ||
+            _confirmationPrompt is null ||
+            _statusMessageWriter is null)
+        {
+            return;
+        }
+
+        _updatePromptShown = true;
+
+        ApplicationUpdateInfo updateInfo;
+        try
+        {
+            updateInfo = await _updateService.CheckAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is InvalidOperationException or HttpRequestException)
+        {
+            return;
+        }
+
+        if (!updateInfo.IsUpdateAvailable)
+        {
+            return;
+        }
+
+        bool shouldUpdate = await _confirmationPrompt.PromptAsync(
+            new ConfirmationPromptRequest(
+                "NanoAgent update available. Update now?",
+                $"Current: {updateInfo.CurrentVersion}. Latest: {updateInfo.LatestVersion}. Choose Yes to update now, or No to skip.",
+                DefaultValue: false),
+            cancellationToken);
+
+        if (!shouldUpdate)
+        {
+            await _statusMessageWriter.ShowInfoAsync(
+                $"Skipped NanoAgent {updateInfo.LatestVersion}.",
+                cancellationToken);
+            return;
+        }
+
+        ApplicationUpdateInstallResult installResult;
+        try
+        {
+            installResult = await _updateService.InstallAsync(updateInfo, cancellationToken);
+        }
+        catch (Exception exception) when (
+            exception is InvalidOperationException or
+            HttpRequestException or
+            PlatformNotSupportedException)
+        {
+            await _statusMessageWriter.ShowErrorAsync(exception.Message, cancellationToken);
+            return;
+        }
+
+        if (installResult.IsSuccess)
+        {
+            await _statusMessageWriter.ShowSuccessAsync(installResult.Message, cancellationToken);
+            return;
+        }
+
+        await _statusMessageWriter.ShowErrorAsync(installResult.Message, cancellationToken);
+    }
+
+    private static bool ShouldOfferOnboardingRetry(Exception exception)
+    {
+        return exception is not OperationCanceledException and not PromptCancelledException;
+    }
+
     private static CliSessionOptions ParseSessionOptions(IReadOnlyList<string> args)
     {
         string? sectionId = null;
         string? profileName = null;
         string? thinkingMode = null;
+        bool skipUpdateCheck = false;
 
         for (int index = 0; index < args.Count; index++)
         {
             string arg = args[index];
+
+            if (string.Equals(arg, "--no-update-check", StringComparison.OrdinalIgnoreCase))
+            {
+                skipUpdateCheck = true;
+                continue;
+            }
 
             if (TryReadOptionValue(args, ref index, "--section", out string? sectionValue) ||
                 TryReadOptionValue(args, ref index, "--session", out sectionValue))
@@ -254,7 +411,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             }
         }
 
-        return new CliSessionOptions(sectionId, profileName, thinkingMode);
+        return new CliSessionOptions(sectionId, profileName, thinkingMode, skipUpdateCheck);
     }
 
     private static bool TryReadOptionValue(
@@ -297,5 +454,10 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private sealed record CliSessionOptions(
         string? SectionId,
         string? ProfileName,
-        string? ThinkingMode);
+        string? ThinkingMode,
+        bool SkipUpdateCheck);
+
+    private sealed record OnboardingAndModelResult(
+        OnboardingResult OnboardingResult,
+        ModelDiscoveryResult ModelDiscoveryResult);
 }

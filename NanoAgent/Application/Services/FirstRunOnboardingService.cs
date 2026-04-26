@@ -114,8 +114,24 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             }
         }
 
-        await _statusMessageWriter.ShowInfoAsync(
+        return await RunOnboardingAsync(
             "Welcome to NanoAgent. Let's configure your provider for first run.",
+            cancellationToken);
+    }
+
+    public Task<OnboardingResult> ReconfigureAsync(CancellationToken cancellationToken)
+    {
+        return RunOnboardingAsync(
+            "Let's reconfigure NanoAgent provider setup.",
+            cancellationToken);
+    }
+
+    private async Task<OnboardingResult> RunOnboardingAsync(
+        string introMessage,
+        CancellationToken cancellationToken)
+    {
+        await _statusMessageWriter.ShowInfoAsync(
+            introMessage,
             cancellationToken);
 
         OnboardingProviderChoice providerChoice = await _selectionPrompt.PromptAsync(

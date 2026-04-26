@@ -127,6 +127,7 @@ NanoAgent will guide you through provider setup, model discovery, and the first 
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers and tools. |
 | `/init` | Create `.nanoagent` starter files for a project. |
+| `/update [now]` | Check for updates, or install immediately with `/update now`. |
 | `/undo` | Roll back the most recent tracked file edit transaction. |
 | `/redo` | Re-apply the most recently undone edit transaction. |
 | `/exit` | Exit the terminal UI. |
