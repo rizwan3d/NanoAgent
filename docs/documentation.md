@@ -1,6 +1,6 @@
 # NanoAgent Documentation
 
-NanoAgent is a local-first AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app and as the `nanoai` terminal command.
+NanoAgent is a AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app and as the `nanoai` terminal command.
 
 This guide is the product handbook for setup, daily use, safety controls, and advanced workspace customization.
 
@@ -519,8 +519,6 @@ Example:
 Supported hook events include task, tool, file, shell, web, memory, permission, and delegation lifecycle events.
 
 ## Privacy and Local Data
-
-NanoAgent is local-first, not offline-only.
 
 Local:
 
