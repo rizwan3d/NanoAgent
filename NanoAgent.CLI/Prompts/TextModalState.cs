@@ -27,7 +27,7 @@ public sealed class TextModalState : UiModalState
 
         if (!string.IsNullOrEmpty(defaultValue))
         {
-            Value.Append(defaultValue);
+            AppendText(defaultValue);
         }
     }
 
@@ -36,6 +36,20 @@ public sealed class TextModalState : UiModalState
     public override int PanelSize => 10;
 
     public StringBuilder Value { get; } = new();
+
+    public void AppendText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        string normalized = text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        Value.Append(normalized);
+    }
 
     public static TextModalState Create(
         TextPromptRequest request,
