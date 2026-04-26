@@ -372,7 +372,19 @@ public static partial class Program
 
     private static void AppendInputText(AppState state, string text)
     {
-        if (state.ActiveModal is not null || string.IsNullOrEmpty(text))
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        if (state.ActiveModal is TextModalState textModal)
+        {
+            textModal.AppendText(text);
+            state.SkipNextInputLineFeed = false;
+            return;
+        }
+
+        if (state.ActiveModal is not null)
         {
             return;
         }
