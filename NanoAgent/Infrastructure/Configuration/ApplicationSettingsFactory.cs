@@ -45,8 +45,6 @@ internal static class ApplicationSettingsFactory
         "wget*|*sh*"
     ];
 
-    private static readonly PermissionRule[] BuiltInPermissionRules = CreateBuiltInPermissionRules();
-
     public static ConversationSettings CreateConversationSettings(ApplicationOptions options)
     {
         ArgumentNullException.ThrowIfNull(options);
@@ -86,7 +84,8 @@ internal static class ApplicationSettingsFactory
 
         return new PermissionSettings
         {
-            DefaultMode = configured.DefaultMode,
+            AutoApproveAllTools = configured.AutoApproveAllTools,
+            DefaultMode = configured.AutoApproveAllTools ? PermissionMode.Allow : configured.DefaultMode,
             FileDelete = configured.FileDelete,
             FileRead = configured.FileRead,
             FileWrite = configured.FileWrite,
@@ -97,7 +96,7 @@ internal static class ApplicationSettingsFactory
             Shell = configured.Shell ?? new ShellPermissionSettings(),
             ShellDefault = configured.ShellDefault,
             ShellSafe = configured.ShellSafe,
-            Rules = BuiltInPermissionRules
+            Rules = CreateBuiltInPermissionRules(configured.AutoApproveAllTools)
                 .Concat(CreateShortcutPermissionRules(configured))
                 .Concat(configuredRules)
                 .Select(NormalizeRule)
@@ -105,8 +104,12 @@ internal static class ApplicationSettingsFactory
         };
     }
 
-    private static PermissionRule[] CreateBuiltInPermissionRules()
+    private static PermissionRule[] CreateBuiltInPermissionRules(bool autoApproveAllTools)
     {
+        PermissionMode promptableMode = autoApproveAllTools
+            ? PermissionMode.Allow
+            : PermissionMode.Ask;
+
         return
         [
             new PermissionRule
@@ -117,7 +120,7 @@ internal static class ApplicationSettingsFactory
             new PermissionRule
             {
                 Tools = ["webfetch"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
@@ -127,55 +130,56 @@ internal static class ApplicationSettingsFactory
             new PermissionRule
             {
                 Tools = ["bash"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = [AgentToolNames.FileWrite],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = [AgentToolNames.FileDelete],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = [AgentToolNames.ApplyPatch],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = ["edit"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = ["agent"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = ["task"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = ["mcp"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = ["external_directory"],
-                Mode = PermissionMode.Ask
+                Mode = promptableMode
             },
             new PermissionRule
             {
                 Tools = ["sandbox"],
-                Mode = PermissionMode.Ask,
+                Mode = promptableMode,
                 Patterns = [ShellCommandSandboxArguments.SandboxEscalationSubject]
             },
             .. CreateShellCommandRules(PermissionMode.Allow, BuiltInSafeShellCommandPatterns),
+            .. CreateAutoApproveAllToolsRules(autoApproveAllTools),
             new PermissionRule
             {
                 Tools = ["doom_loop"],
@@ -189,6 +193,19 @@ internal static class ApplicationSettingsFactory
             },
             .. CreateShellCommandRules(PermissionMode.Deny, BuiltInDeniedShellCommandPatterns)
         ];
+    }
+
+    private static IEnumerable<PermissionRule> CreateAutoApproveAllToolsRules(bool autoApproveAllTools)
+    {
+        if (!autoApproveAllTools)
+        {
+            yield break;
+        }
+
+        yield return new PermissionRule
+        {
+            Mode = PermissionMode.Allow
+        };
     }
 
     private static IEnumerable<PermissionRule> CreateShortcutPermissionRules(PermissionSettings configured)

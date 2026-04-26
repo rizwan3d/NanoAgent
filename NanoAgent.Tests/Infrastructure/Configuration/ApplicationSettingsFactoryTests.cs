@@ -14,6 +14,7 @@ public sealed class ApplicationSettingsFactoryTests
         IConfigurationRoot configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Application:Permissions:auto_approve_all_tools"] = "true",
                 ["Application:Permissions:file_read"] = "Allow",
                 ["Application:Permissions:file_write"] = "Ask",
                 ["Application:Permissions:file_delete"] = "Ask",
@@ -30,6 +31,7 @@ public sealed class ApplicationSettingsFactoryTests
         ApplicationOptions options = new();
         configuration.GetSection(ApplicationOptions.SectionName).Bind(options);
 
+        options.Permissions.AutoApproveAllTools.Should().BeTrue();
         options.Permissions.FileRead.Should().Be(PermissionMode.Allow);
         options.Permissions.FileWrite.Should().Be(PermissionMode.Ask);
         options.Permissions.FileDelete.Should().Be(PermissionMode.Ask);
@@ -108,5 +110,38 @@ public sealed class ApplicationSettingsFactoryTests
             rule.Mode == PermissionMode.Deny &&
             rule.Tools.SequenceEqual(new[] { "bash" }) &&
             rule.Patterns.SequenceEqual(new[] { "curl*|*sh*" })).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CreatePermissionSettings_Should_AddBroadAllowRule_When_AutoApproveAllToolsIsEnabled()
+    {
+        PermissionSettings settings = ApplicationSettingsFactory.CreatePermissionSettings(new ApplicationOptions
+        {
+            Permissions = new PermissionSettings
+            {
+                AutoApproveAllTools = true
+            }
+        });
+
+        settings.AutoApproveAllTools.Should().BeTrue();
+        settings.DefaultMode.Should().Be(PermissionMode.Allow);
+        settings.Rules.Should().Contain(rule =>
+            rule.Mode == PermissionMode.Allow &&
+            rule.Tools.Length == 0 &&
+            rule.Patterns.Length == 0);
+
+        int broadAllowIndex = Array.FindIndex(
+            settings.Rules,
+            rule => rule.Mode == PermissionMode.Allow &&
+                    rule.Tools.Length == 0 &&
+                    rule.Patterns.Length == 0);
+        int deniedShellIndex = Array.FindIndex(
+            settings.Rules,
+            rule => rule.Mode == PermissionMode.Deny &&
+                    rule.Tools.Contains("bash", StringComparer.OrdinalIgnoreCase) &&
+                    rule.Patterns.Contains("rm -rf*", StringComparer.OrdinalIgnoreCase));
+
+        broadAllowIndex.Should().BeGreaterThanOrEqualTo(0);
+        deniedShellIndex.Should().BeGreaterThan(broadAllowIndex);
     }
 }

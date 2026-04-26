@@ -4,6 +4,9 @@ namespace NanoAgent.Application.Models;
 
 public sealed class PermissionSettings
 {
+    [ConfigurationKeyName("auto_approve_all_tools")]
+    public bool AutoApproveAllTools { get; set; }
+
     public PermissionMode DefaultMode { get; set; } = PermissionMode.Ask;
 
     public PermissionRule[] Rules { get; set; } = [];
