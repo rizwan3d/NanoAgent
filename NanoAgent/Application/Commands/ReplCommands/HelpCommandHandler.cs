@@ -34,6 +34,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/rules - List the effective permission rules in evaluation order.\n" +
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
+            "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model for subsequent prompts.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +

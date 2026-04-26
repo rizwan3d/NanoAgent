@@ -147,7 +147,8 @@ public static partial class Program
         }
 
         ConsoleBridge uiBridge = new();
-        await using INanoAgentBackend backend = new NanoAgentBackend(args);
+        string[] backendArgs = [..args, "--no-update-check"];
+        await using INanoAgentBackend backend = new NanoAgentBackend(backendArgs);
         using CancellationTokenSource cancellation = new();
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
         {

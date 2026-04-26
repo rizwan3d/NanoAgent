@@ -36,6 +36,8 @@ jobs:
   validate:
     name: Validate release build
     runs-on: ubuntu-24.04
+    outputs:
+      release_version: ${{ steps.release_version.outputs.release_version }}
 
     steps:
       - name: Checkout
@@ -57,14 +59,43 @@ jobs:
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
 
+      - name: Resolve release version
+        id: release_version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="${RELEASE_TAG#v}"
+          version="${version#V}"
+
+          if [[ -z "$version" ]]; then
+            echo "Release tag '$RELEASE_TAG' did not contain a version." >&2
+            exit 1
+          fi
+
+          if [[ ! "$version" =~ ^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]; then
+            echo "Release tag '$RELEASE_TAG' is not a valid .NET version after removing the v/V prefix." >&2
+            exit 1
+          fi
+
+          echo "RELEASE_VERSION=$version" >> "$GITHUB_ENV"
+          echo "release_version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Build
-        run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ env.CONFIGURATION }} --no-restore
+        run: >
+          dotnet build ${{ env.SOLUTION_FILE }}
+          --configuration ${{ env.CONFIGURATION }}
+          --no-restore
+          /p:Version=${{ steps.release_version.outputs.release_version }}
+          /p:InformationalVersion=${{ env.RELEASE_TAG }}
 
       - name: Test
         run: >
           dotnet test ${{ env.SOLUTION_FILE }}
           --configuration ${{ env.CONFIGURATION }}
           --no-restore
+          /p:Version=${{ steps.release_version.outputs.release_version }}
+          /p:InformationalVersion=${{ env.RELEASE_TAG }}
           --logger "trx;LogFileName=release-test-results.trx"
           --results-directory ./artifacts/test-results
 
@@ -81,6 +112,8 @@ jobs:
     name: Publish ${{ matrix.display_name }} ${{ matrix.rid }}
     needs: validate
     runs-on: ${{ matrix.runner }}
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
     strategy:
       fail-fast: false
       matrix:
@@ -195,6 +228,8 @@ jobs:
           --configuration ${{ env.CONFIGURATION }}
           --runtime ${{ matrix.rid }}
           --self-contained true
+          /p:Version=${{ env.RELEASE_VERSION }}
+          /p:InformationalVersion=${{ env.RELEASE_TAG }}
           --output ./artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}
 
       - name: Package published output on Windows
@@ -217,7 +252,7 @@ jobs:
         run: |
           choco install innosetup --no-progress --yes
 
-          $version = $env:RELEASE_TAG.TrimStart('v')
+          $version = $env:RELEASE_VERSION
           if ([string]::IsNullOrWhiteSpace($version)) {
             $version = "0.0.0"
           }

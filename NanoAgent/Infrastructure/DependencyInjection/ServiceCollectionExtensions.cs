@@ -6,6 +6,7 @@ using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.OpenAi;
 using NanoAgent.Infrastructure.Secrets;
+using NanoAgent.Infrastructure.Updates;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.Storage;
@@ -52,6 +53,11 @@ public static class ServiceCollectionExtensions
             ApplicationSettingsFactory.CreatePermissionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
         services.AddHttpClient<IWebRunService, WebRunService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
+        services.AddHttpClient<IApplicationUpdateService, GitHubApplicationUpdateService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");

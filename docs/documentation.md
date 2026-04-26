@@ -73,7 +73,9 @@ NanoAgent will guide you through provider setup:
 4. Open a desktop workspace or use the current terminal directory.
 5. Start a new section or resume an existing one.
 
-If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved.
+If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved. If provider validation fails after setup, NanoAgent offers to run onboarding again.
+
+When a newer NanoAgent release is available, startup can ask whether to update now or skip. One-shot prompt runs do not show the startup update prompt.
 
 ### Provider Options
 
@@ -181,6 +183,7 @@ nanoai --section <section-guid>
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers and discovered MCP tools. |
 | `/init` | Initialize workspace-local NanoAgent files. |
+| `/update [now]` | Check for updates. Use `/update now` to install without another prompt. |
 | `/undo` | Roll back the most recent tracked edit transaction. |
 | `/redo` | Re-apply the most recently undone edit transaction. |
 | `/exit` | Exit the interactive shell. |
@@ -549,6 +552,14 @@ Restart the terminal after installation. If it still fails, verify that the inst
 ### Provider setup is incomplete
 
 Run `nanoai` and choose to reconfigure. This can happen when setup was cancelled after provider config was saved but before the secret was stored.
+
+### Provider validation fails after onboarding
+
+Choose to re-run onboarding when NanoAgent offers it. If the same provider still fails, check the credential, account access, selected provider base URL, and network connectivity.
+
+### Updating NanoAgent
+
+Run `/update` to check for a newer release. Run `/update now` to install the latest release immediately, then restart NanoAgent.
 
 ### ChatGPT Plus/Pro sign-in does not complete
 
