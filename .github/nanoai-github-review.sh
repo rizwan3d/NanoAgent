@@ -78,6 +78,13 @@ post_pr_review() {
     printf '<!-- nanoai-review:%s:%s -->\n' "${GITHUB_RUN_ID:-local}" "${GITHUB_RUN_ATTEMPT:-0}"
   } > "$body_file"
 
+  if [[ "${NANOAI_DRY_RUN:-}" == "1" ]]; then
+    echo "NanoAI dry run enabled. Review body:"
+    echo
+    cat "$body_file"
+    return 0
+  fi
+
   if ! gh pr review "$pr_number" --comment --body-file "$body_file"; then
     gh pr comment "$pr_number" --body-file "$body_file"
   fi

@@ -30,6 +30,7 @@ jobs:
   review:
     name: NanoAI review
     runs-on: ubuntu-24.04
+    environment: production-release
     if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.draft == false }}
 
     steps:
