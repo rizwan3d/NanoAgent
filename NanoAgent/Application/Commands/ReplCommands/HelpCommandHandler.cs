@@ -28,7 +28,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/help - List the available shell commands and their usage.\n" +
             "/init - Initialize workspace-local NanoAgent configuration files.\n" +
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
-            "/models - Show the available models in the current session.\n" +
+            "/models - Choose the active model with the picker.\n" +
             "/onboard - Re-run provider onboarding and switch the active session to the new provider.\n" +
             "/permissions - Show the current permission summary and override guidance.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
@@ -37,7 +37,8 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
-            "/use <model> - Switch the active model for subsequent prompts.\n\n" +
+            "\nKeyboard shortcuts:\n" +
+            "F2 - Choose the active model with the arrow-key picker.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --section <section-guid> to resume a saved section.\n" +
             "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +

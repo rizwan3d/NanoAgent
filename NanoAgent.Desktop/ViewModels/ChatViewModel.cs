@@ -539,7 +539,7 @@ public partial class ChatViewModel : ViewModelBase
 
     private Task ShowModelsAsync(ProjectInfo? project)
     {
-        return RunSessionCommandAsync(project, "/models", "Listing models");
+        return RunSessionCommandAsync(project, "/models", "Choosing model");
     }
 
     private Task ShowPermissionsAsync(ProjectInfo? project)

@@ -86,6 +86,6 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
             $"Provider: {context.Session.ProviderName}\n" +
             $"Active model: {context.Session.ActiveModelId}\n" +
             $"Available models: {context.Session.AvailableModelIds.Count}\n" +
-            "Use /models to inspect models or /use <model> to switch.");
+            "Use the model picker to switch models.");
     }
 }

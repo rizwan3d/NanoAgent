@@ -163,6 +163,31 @@ public static partial class Program
         StartCommand(state, command);
     }
 
+    private static void RequestModelSelection(AppState state)
+    {
+        if (state.ActiveModal is not null)
+        {
+            return;
+        }
+
+        if (!state.IsReady)
+        {
+            state.AddSystemMessage(
+                state.HasFatalError
+                    ? "NanoAgent backend failed to start. Use /exit and try again."
+                    : "NanoAgent is still starting up. Please wait.");
+            return;
+        }
+
+        if (state.IsBusy || state.IsStreaming)
+        {
+            state.AddSystemMessage("Model selection is unavailable while NanoAgent is working.");
+            return;
+        }
+
+        StartModelSelection(state);
+    }
+
     private static void RequestReadPermission(AppState state, string path)
     {
         state.ActiveModal = SelectionModalState<ReadPermissionChoice>.Create(
@@ -314,6 +339,45 @@ public static partial class Program
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.AddSystemMessage($"Command failed: {exception.Message}");
+                });
+            }
+        });
+    }
+
+    private static void StartModelSelection(AppState state)
+    {
+        state.IsBusy = true;
+        state.ActivityText = "Choosing model";
+
+        state.ActiveOperation = Task.Run(async () =>
+        {
+            try
+            {
+                BackendCommandResult result = await state.Backend.SelectModelAsync(
+                    state.LifetimeCancellation.Token);
+
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.SessionId = result.SessionInfo.SessionId;
+                    appState.SectionResumeCommand = result.SessionInfo.SectionResumeCommand;
+                    appState.ProviderName = result.SessionInfo.ProviderName;
+                    appState.ActiveModelId = result.SessionInfo.ModelId;
+
+                    AddCommandFeedbackMessage(appState, result.CommandResult);
+                });
+            }
+            catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
+            {
+            }
+            catch (Exception exception)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.AddSystemMessage($"Model selection failed: {exception.Message}");
                 });
             }
         });

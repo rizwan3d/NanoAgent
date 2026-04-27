@@ -15,6 +15,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IProviderSetupService? _providerSetupService;
     private IReplCommandDispatcher? _commandDispatcher;
     private IReplCommandParser? _commandParser;
+    private IInteractiveModelSelectionService? _modelSelectionService;
     private ReplSessionContext? _session;
     private ISessionAppService? _sessionAppService;
     private IApplicationUpdateService? _updateService;
@@ -46,6 +47,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
         _commandDispatcher = _host.Services.GetRequiredService<IReplCommandDispatcher>();
+        _modelSelectionService = _host.Services.GetRequiredService<IInteractiveModelSelectionService>();
         _updateService = _host.Services.GetRequiredService<IApplicationUpdateService>();
         _confirmationPrompt = _host.Services.GetRequiredService<IConfirmationPrompt>();
         _statusMessageWriter = _host.Services.GetRequiredService<IStatusMessageWriter>();
@@ -100,6 +102,27 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         ParsedReplCommand command = _commandParser.Parse(commandText);
         ReplCommandResult result = await _commandDispatcher.DispatchAsync(
             command,
+            _session,
+            cancellationToken);
+
+        await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
+
+        return new BackendCommandResult(
+            result,
+            CreateSessionInfo(_session));
+    }
+
+    public async Task<BackendCommandResult> SelectModelAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_session is null ||
+            _sessionAppService is null ||
+            _modelSelectionService is null)
+        {
+            throw new InvalidOperationException("NanoAgent backend has not been initialized.");
+        }
+
+        ReplCommandResult result = await _modelSelectionService.SelectAsync(
             _session,
             cancellationToken);
 

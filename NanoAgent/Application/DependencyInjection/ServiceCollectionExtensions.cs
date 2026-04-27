@@ -50,6 +50,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProviderSetupService, ProviderSetupService>();
         services.AddSingleton<IOnboardingInputValidator, OnboardingInputValidator>();
         services.AddSingleton<IModelActivationService, ModelActivationService>();
+        services.AddSingleton<IInteractiveModelSelectionService, InteractiveModelSelectionService>();
         services.AddSingleton<IReplSectionService, ReplSectionService>();
         services.AddSingleton<ITokenEstimator, HeuristicTokenEstimator>();
         services.AddSingleton<IAgentProviderProfileFactory, AgentProviderProfileFactory>();
