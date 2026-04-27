@@ -8,6 +8,16 @@ readonly EXECUTABLE_NAME="NanoAgent.CLI"
 readonly COMMAND_NAME="nanoai"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 
+TEMP_ROOT=""
+
+cleanup() {
+  if [[ -n "${TEMP_ROOT:-}" && -d "$TEMP_ROOT" ]]; then
+    rm -rf "$TEMP_ROOT"
+  fi
+}
+
+trap cleanup EXIT
+
 log() {
   # Important: logs must go to stderr so command substitution captures only data.
   printf '[%s] %s\n' "$APP_NAME" "$1" >&2
@@ -29,7 +39,7 @@ download_to_file() {
   local destination="$2"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fL \
+    curl -fsSL \
       -H "User-Agent: ${APP_NAME}-installer" \
       --retry 3 \
       --retry-delay 2 \
@@ -40,7 +50,7 @@ download_to_file() {
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget \
+    wget -q \
       --header="User-Agent: ${APP_NAME}-installer" \
       -O "$destination" \
       "$url"
@@ -116,6 +126,7 @@ detect_platform() {
 main() {
   require_command unzip
   require_command mktemp
+  require_command find
 
   local install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
   local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
@@ -123,7 +134,6 @@ main() {
   local platform
   local asset_name
   local download_url
-  local temp_root
   local archive_path
   local extract_dir
   local source_binary
@@ -140,14 +150,9 @@ main() {
   log "Installing ${APP_NAME} ${tag} for ${platform} as '${COMMAND_NAME}'..."
   log "Install directory: ${install_dir}"
 
-  temp_root="$(mktemp -d)"
-  archive_path="${temp_root}/${asset_name}"
-  extract_dir="${temp_root}/extract"
-
-  cleanup() {
-    rm -rf "$temp_root"
-  }
-  trap cleanup EXIT
+  TEMP_ROOT="$(mktemp -d)"
+  archive_path="${TEMP_ROOT}/${asset_name}"
+  extract_dir="${TEMP_ROOT}/extract"
 
   mkdir -p "$extract_dir" "$install_dir"
 
