@@ -37,6 +37,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
+            "/use <model> - Switch the active model directly.\n" +
             "\nKeyboard shortcuts:\n" +
             "F2 - Choose the active model with the arrow-key picker.\n" +
             "/ - Open command suggestions in the terminal input.\n\n" +

@@ -13,7 +13,7 @@
         Icon="/Assets/avalonia-logo.ico"
         Width="1360"
         Height="860"
-        MinWidth="1040"
+        MinWidth="720"
         MinHeight="680"
         Title="NanoAgent"
         Background="#08090A">
@@ -22,7 +22,7 @@
         <vm:MainWindowViewModel/>
     </Design.DataContext>
 
-    <Grid RowDefinitions="52,*,190">
+    <Grid RowDefinitions="52,*,Auto">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="280"
                               MinWidth="220"
@@ -36,8 +36,9 @@
                 Background="#0E0F11"
                 BorderBrush="#20242A"
                 BorderThickness="0,0,0,1">
-            <Grid ColumnDefinitions="280,*,Auto"
-                  Margin="16,0">
+            <Grid ColumnDefinitions="Auto,*,Auto"
+                  Margin="16,0"
+                  ColumnSpacing="16">
                 <StackPanel Orientation="Horizontal"
                             Spacing="10"
                             VerticalAlignment="Center">
@@ -65,20 +66,25 @@
                         BorderThickness="1"
                         CornerRadius="8"
                         Padding="10,6"
-                        HorizontalAlignment="Left"
+                        HorizontalAlignment="Stretch"
                         VerticalAlignment="Center"
-                        MaxWidth="620">
+                        MinWidth="0">
                     <Grid ColumnDefinitions="Auto,*"
-                          ColumnSpacing="8">
+                          ColumnSpacing="8"
+                          MinWidth="0">
                         <TextBlock Text="{Binding Project.SelectedProjectName}"
                                    Foreground="#F4F4F5"
                                    FontSize="12"
                                    FontWeight="SemiBold"
+                                   MaxWidth="150"
+                                   TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Center"/>
                         <TextBlock Grid.Column="1"
                                    Text="{Binding Project.SelectedProjectPath}"
+                                   ToolTip.Tip="{Binding Project.SelectedProjectPath}"
                                    Foreground="#8B949E"
                                    FontSize="12"
+                                   MinWidth="0"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis"/>
                     </Grid>
@@ -159,67 +165,87 @@
                                 VerticalAlignment="Center"/>
                     </Grid>
 
-                    <TreeView Grid.Row="1"
-                              ItemsSource="{Binding Project.WorkspaceTreeItems}"
-                              SelectedItem="{Binding Project.SelectedTreeItem, Mode=TwoWay}"
-                              Background="Transparent"
-                              Foreground="#E5E7EB"
-                              Padding="0">
-                        <TreeView.Styles>
-                            <Style Selector="TreeViewItem"
-                                   x:CompileBindings="False">
-                                <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
-                            </Style>
-                        </TreeView.Styles>
-                        <TreeView.DataTemplates>
-                            <TreeDataTemplate x:DataType="vm:WorkspaceTreeItemViewModel"
-                                              ItemsSource="{Binding Children}">
-                                <Border Background="#101318"
-                                        BorderBrush="#20242A"
-                                        BorderThickness="1"
-                                        CornerRadius="8"
-                                        Padding="10"
-                                        Margin="0,0,0,8"
-                                        HorizontalAlignment="Stretch">
-                                    <Grid ColumnDefinitions="4,*,Auto"
-                                          ColumnSpacing="10">
-                                        <Border Background="#4B5563"
-                                                CornerRadius="2"/>
-                                        <Grid Grid.Column="1"
-                                              RowDefinitions="Auto,Auto"
-                                              RowSpacing="4">
-                                            <Grid ColumnDefinitions="*,Auto">
-                                                <TextBlock Text="{Binding Name}"
-                                                           Foreground="#F4F4F5"
-                                                           FontSize="12"
-                                                           FontWeight="SemiBold"
+                    <ScrollViewer Grid.Row="1"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto"
+                                  ClipToBounds="True">
+                        <TreeView ItemsSource="{Binding Project.WorkspaceTreeItems}"
+                                  SelectedItem="{Binding Project.SelectedTreeItem, Mode=TwoWay}"
+                                  Background="Transparent"
+                                  Foreground="#E5E7EB"
+                                  Padding="0"
+                                  HorizontalAlignment="Stretch"
+                                  ClipToBounds="True">
+                            <TreeView.Styles>
+                                <Style Selector="TreeViewItem"
+                                       x:CompileBindings="False">
+                                    <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}"/>
+                                    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+                                    <Setter Property="ClipToBounds" Value="True"/>
+                                </Style>
+                            </TreeView.Styles>
+                            <TreeView.DataTemplates>
+                                <TreeDataTemplate x:DataType="vm:WorkspaceTreeItemViewModel"
+                                                  ItemsSource="{Binding Children}">
+                                    <Border Background="#101318"
+                                            BorderBrush="#20242A"
+                                            BorderThickness="1"
+                                            CornerRadius="8"
+                                            Padding="10"
+                                            Margin="0,0,8,8"
+                                            HorizontalAlignment="Stretch"
+                                            ClipToBounds="True">
+                                        <Grid ColumnDefinitions="4,*,Auto"
+                                              ColumnSpacing="8"
+                                              MinWidth="0"
+                                              ClipToBounds="True">
+                                            <Border Background="#4B5563"
+                                                    CornerRadius="2"/>
+                                            <Grid Grid.Column="1"
+                                                  RowDefinitions="Auto,Auto"
+                                                  RowSpacing="4"
+                                                  MinWidth="0"
+                                                  ClipToBounds="True">
+                                                <Grid ColumnDefinitions="*,Auto"
+                                                      MinWidth="0">
+                                                    <TextBlock Text="{Binding Name}"
+                                                              Foreground="#F4F4F5"
+                                                              FontSize="12"
+                                                              FontWeight="SemiBold"
+                                                              MinWidth="0"
+                                                              TextTrimming="CharacterEllipsis"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding MetaText}"
+                                                               Foreground="#6B7280"
+                                                               FontSize="10"
+                                                               Margin="8,0,0,0"
+                                                               MaxWidth="86"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center"/>
+                                                </Grid>
+                                                <TextBlock Grid.Row="1"
+                                                           Text="{Binding DetailText}"
+                                                           Foreground="#8B949E"
+                                                           FontSize="11"
+                                                           MinWidth="0"
+                                                           ToolTip.Tip="{Binding DetailText}"
                                                            TextTrimming="CharacterEllipsis"/>
-                                                <TextBlock Grid.Column="1"
-                                                           Text="{Binding MetaText}"
-                                                           Foreground="#6B7280"
-                                                           FontSize="10"
-                                                           Margin="8,0,0,0"
-                                                           VerticalAlignment="Center"/>
                                             </Grid>
-                                            <TextBlock Grid.Row="1"
-                                                       Text="{Binding DetailText}"
-                                                       Foreground="#8B949E"
-                                                       FontSize="11"
-                                                       TextTrimming="CharacterEllipsis"/>
+                                            <Button Grid.Column="2"
+                                                    Classes="ghost"
+                                                    Content="Remove"
+                                                    Command="{Binding RemoveCommand}"
+                                                    IsVisible="{Binding CanRemove}"
+                                                    Padding="7,3"
+                                                    MinHeight="24"
+                                                    MinWidth="0"
+                                                    VerticalAlignment="Center"/>
                                         </Grid>
-                                        <Button Grid.Column="2"
-                                                Classes="ghost"
-                                                Content="Remove"
-                                                Command="{Binding RemoveCommand}"
-                                                IsVisible="{Binding CanRemove}"
-                                                Padding="7,3"
-                                                MinHeight="24"
-                                                VerticalAlignment="Center"/>
-                                    </Grid>
-                                </Border>
-                            </TreeDataTemplate>
-                        </TreeView.DataTemplates>
-                    </TreeView>
+                                    </Border>
+                                </TreeDataTemplate>
+                            </TreeView.DataTemplates>
+                        </TreeView>
+                    </ScrollViewer>
                 </Grid>
             </Grid>
         </Border>
@@ -265,36 +291,40 @@
                           VerticalScrollBarVisibility="Auto"
                           Background="#08090A">
                 <ItemsControl ItemsSource="{Binding Chat.Messages}"
-                              Margin="24,20,24,28">
+                              Margin="24,20,24,28"
+                              HorizontalAlignment="Stretch">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="models:ChatMessage">
-                            <Grid ColumnDefinitions="32,*"
-                                  ColumnSpacing="12"
-                                  Margin="0,0,0,18">
-                                <Border Width="28"
-                                        Height="28"
-                                        CornerRadius="7"
-                                        Background="{Binding AvatarBackground}"
-                                        BorderBrush="{Binding AvatarBorderBrush}"
-                                        BorderThickness="1"
-                                        VerticalAlignment="Top">
-                                    <TextBlock Text="{Binding Role}"
-                                               Foreground="#CBD5E1"
-                                               FontSize="10"
-                                               FontWeight="SemiBold"
-                                               HorizontalAlignment="Center"
-                                               VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis"/>
-                                </Border>
-                                <Border Grid.Column="1"
-                                        Background="{Binding BubbleBackground}"
-                                        BorderBrush="{Binding BubbleBorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="8"
-                                        Padding="14"
-                                        MaxWidth="1040"
-                                        HorizontalAlignment="Left">
-                                    <StackPanel Spacing="8">
+                            <Border Background="{Binding BubbleBackground}"
+                                    BorderBrush="{Binding BubbleBorderBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14"
+                                    Margin="0,0,0,14"
+                                    HorizontalAlignment="Stretch"
+                                    MinWidth="0"
+                                    ClipToBounds="True">
+                                <Grid ColumnDefinitions="28,*"
+                                      ColumnSpacing="12"
+                                      MinWidth="0"
+                                      ClipToBounds="True">
+                                    <Border Width="28"
+                                            Height="28"
+                                            CornerRadius="14"
+                                            Background="{Binding AvatarBackground}"
+                                            BorderBrush="{Binding AvatarBorderBrush}"
+                                            BorderThickness="1"
+                                            VerticalAlignment="Top">
+                                        <TextBlock Text="{Binding AvatarText}"
+                                                   Foreground="#CBD5E1"
+                                                   FontSize="11"
+                                                   FontWeight="SemiBold"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Grid.Column="1"
+                                                Spacing="8"
+                                                MinWidth="0">
                                         <TextBlock Text="{Binding Role}"
                                                    Foreground="{Binding RoleForeground}"
                                                    FontSize="12"
@@ -305,10 +335,11 @@
                                         <TextBlock Text="{Binding StatusNote}"
                                                    IsVisible="{Binding HasStatusNote}"
                                                    Foreground="#6B7280"
-                                                   FontSize="11"/>
+                                                   FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"/>
                                     </StackPanel>
-                                </Border>
-                            </Grid>
+                                </Grid>
+                            </Border>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -505,7 +536,7 @@
                     BorderThickness="1"
                     CornerRadius="8"
                     Padding="12">
-                <Grid RowDefinitions="*,Auto,Auto"
+                <Grid RowDefinitions="*,Auto,Auto,Auto"
                       RowSpacing="10">
                     <TextBox Text="{Binding Chat.Prompt, Mode=TwoWay}"
                              PlaceholderText="Ask NanoAgent..."
@@ -515,9 +546,58 @@
                              Foreground="#F4F4F5"
                              BorderThickness="0"
                              MinHeight="64"
-                             FontSize="13"/>
+                             FontSize="13"
+                             KeyDown="PromptTextBox_KeyDown"/>
 
                     <Grid Grid.Row="1"
+                          IsVisible="{Binding Chat.HasPromptCommandSuggestions}">
+                        <Border Background="#0D1014"
+                                BorderBrush="#30363D"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Padding="6"
+                                MaxHeight="260">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Chat.PromptCommandSuggestions}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:DesktopCommandSuggestion">
+                                            <Button Classes="commandSuggestion"
+                                                    Command="{Binding SelectCommand}"
+                                                    Background="{Binding Background}"
+                                                    BorderBrush="{Binding BorderBrush}"
+                                                    HorizontalAlignment="Stretch"
+                                                    Margin="0,0,0,4">
+                                                <Grid ColumnDefinitions="16,210,*"
+                                                      ColumnSpacing="8">
+                                                    <TextBlock Text="{Binding SelectionMarker}"
+                                                               Foreground="{Binding MarkerForeground}"
+                                                               FontSize="12"
+                                                               FontFamily="Consolas"
+                                                               FontWeight="Bold"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="1"
+                                                               Text="{Binding Usage}"
+                                                               Foreground="{Binding UsageForeground}"
+                                                               FontSize="12"
+                                                               FontFamily="Consolas"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding Description}"
+                                                               Foreground="{Binding DescriptionForeground}"
+                                                               FontSize="12"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </Grid>
+
+                    <Grid Grid.Row="2"
                           ColumnDefinitions="Auto,*,Auto,132,Auto"
                           ColumnSpacing="8">
                         <TextBlock Text="Model"
@@ -550,7 +630,7 @@
                                       MinWidth="112"/>
                     </Grid>
 
-                    <Grid Grid.Row="2"
+                    <Grid Grid.Row="3"
                           ColumnDefinitions="*,96"
                           ColumnSpacing="12">
                         <TextBlock Text="{Binding Project.SelectedProjectName}"

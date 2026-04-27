@@ -208,21 +208,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             session.AgentProfileName,
             session.SectionTitle,
             session.IsResumedSection,
-            CreateConversationHistory(session));
-    }
-
-    private static IReadOnlyList<BackendConversationMessage> CreateConversationHistory(
-        ReplSessionContext session)
-    {
-        return session.ConversationHistory
-            .Where(static message =>
-                !string.IsNullOrWhiteSpace(message.Content) &&
-                (string.Equals(message.Role, "user", StringComparison.Ordinal) ||
-                    string.Equals(message.Role, "assistant", StringComparison.Ordinal)))
-            .Select(static message => new BackendConversationMessage(
-                message.Role,
-                message.Content!))
-            .ToArray();
+            BackendConversationHistoryFormatter.Create(session));
     }
 
     private async Task PromptForUpdateIfAvailableAsync(

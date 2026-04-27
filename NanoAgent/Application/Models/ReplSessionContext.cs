@@ -161,6 +161,8 @@ public sealed class ReplSessionContext
 
     public IReadOnlyList<ConversationRequestMessage> ConversationHistory => _conversationHistory;
 
+    public IReadOnlyList<ConversationSectionTurn> ConversationTurns => _conversationTurns.ToArray();
+
     public PendingExecutionPlan? PendingExecutionPlan { get; private set; }
 
     public IReadOnlyList<PermissionRule> PermissionOverrides
@@ -466,7 +468,8 @@ public sealed class ReplSessionContext
     public void AddConversationTurn(
         string userInput,
         string assistantResponse,
-        IReadOnlyList<ConversationToolCall>? toolCalls = null)
+        IReadOnlyList<ConversationToolCall>? toolCalls = null,
+        IReadOnlyList<string>? toolOutputMessages = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
         ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
@@ -474,7 +477,8 @@ public sealed class ReplSessionContext
         ConversationSectionTurn turn = new(
             userInput,
             assistantResponse,
-            toolCalls);
+            toolCalls,
+            toolOutputMessages);
 
         _conversationTurns.Add(turn);
         _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));

@@ -10,6 +10,8 @@ public interface IToolOutputFormatter
 {
     string DescribeCall(ConversationToolCall toolCall);
 
+    string FormatCallPreview(ConversationToolCall toolCall);
+
     IReadOnlyList<string> FormatResults(ToolExecutionBatchResult toolExecutionResult);
 }
 
@@ -18,6 +20,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
     private const int MaxShellPreviewLines = 5;
     private const int MaxToolPreviewLines = 8;
     private const int MaxWebPreviewLines = 12;
+    private const int MaxSavedCallPreviewLines = 10;
     private const string Bullet = "\u2022";
 
     public string DescribeCall(ConversationToolCall toolCall)
@@ -52,6 +55,51 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         };
 
         return SecretRedactor.Redact(description);
+    }
+
+    public string FormatCallPreview(ConversationToolCall toolCall)
+    {
+        ArgumentNullException.ThrowIfNull(toolCall);
+
+        string description = DescribeCall(toolCall);
+        string title = string.IsNullOrWhiteSpace(description)
+            ? toolCall.Name.Trim()
+            : description.Trim();
+        IReadOnlyList<string> previewLines = BuildSavedCallPreviewLines(toolCall);
+
+        StringBuilder builder = new();
+        builder
+            .Append(Bullet)
+            .Append(" Previewed saved tool call: ")
+            .Append(title);
+
+        builder.AppendLine();
+        builder.Append("  - preview:");
+
+        List<string> lines = [
+            "result output was not stored in this older section; showing saved tool arguments."
+        ];
+        lines.AddRange(previewLines);
+
+        int displayedLineCount = Math.Min(MaxSavedCallPreviewLines, lines.Count);
+        for (int index = 0; index < displayedLineCount; index++)
+        {
+            builder
+                .AppendLine()
+                .Append("      ")
+                .Append(lines[index]);
+        }
+
+        if (lines.Count > displayedLineCount)
+        {
+            builder
+                .AppendLine()
+                .Append("    ... +")
+                .Append(lines.Count - displayedLineCount)
+                .Append(" lines");
+        }
+
+        return SecretRedactor.Redact(builder.ToString());
     }
 
     public IReadOnlyList<string> FormatResults(ToolExecutionBatchResult toolExecutionResult)
@@ -107,6 +155,233 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
 
         return "web_run";
+    }
+
+    private static IReadOnlyList<string> BuildSavedCallPreviewLines(ConversationToolCall toolCall)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(toolCall.ArgumentsJson);
+            JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return [$"arguments: {Truncate(root.ToString(), 180)}"];
+            }
+
+            List<string> lines = [];
+            switch (toolCall.Name)
+            {
+                case "shell_command":
+                    AddNamedArgumentLine(root, lines, "command");
+                    AddNamedArgumentLine(root, lines, "workingDirectory");
+                    AddNamedArgumentLine(root, lines, "sandbox_permissions");
+                    AddNamedArgumentLine(root, lines, "justification");
+                    break;
+
+                case "file_read":
+                case "file_delete":
+                    AddNamedArgumentLine(root, lines, "path");
+                    break;
+
+                case "directory_list":
+                    AddNamedArgumentLine(root, lines, "path");
+                    AddNamedArgumentLine(root, lines, "recursive");
+                    break;
+
+                case "search_files":
+                case "text_search":
+                    AddNamedArgumentLine(root, lines, "query");
+                    AddNamedArgumentLine(root, lines, "path");
+                    break;
+
+                case "file_write":
+                    AddNamedArgumentLine(root, lines, "path");
+                    AddNamedArgumentLine(root, lines, "overwrite");
+                    AddContentArgumentPreview(root, lines, "content", "content");
+                    break;
+
+                case "apply_patch":
+                    AddContentArgumentPreview(root, lines, "patch", "patch");
+                    break;
+
+                case "agent_delegate":
+                    AddNamedArgumentLine(root, lines, "agent");
+                    AddNamedArgumentLine(root, lines, "task");
+                    AddNamedArgumentLine(root, lines, "context");
+                    break;
+
+                case "agent_orchestrate":
+                    AddArrayArgumentSummary(root, lines, "tasks");
+                    break;
+
+                default:
+                    AddGenericArgumentPreviewLines(root, lines);
+                    break;
+            }
+
+            if (lines.Count == 0)
+            {
+                AddGenericArgumentPreviewLines(root, lines);
+            }
+
+            return lines.Count == 0
+                ? ["arguments: {}"]
+                : lines;
+        }
+        catch (JsonException)
+        {
+            return [$"arguments: {Truncate(toolCall.ArgumentsJson, 180)}"];
+        }
+    }
+
+    private static void AddNamedArgumentLine(
+        JsonElement root,
+        List<string> lines,
+        string propertyName)
+    {
+        if (!TryGetJsonProperty(root, propertyName, out JsonElement property))
+        {
+            return;
+        }
+
+        lines.Add($"{propertyName}: {FormatJsonValuePreview(property)}");
+    }
+
+    private static void AddContentArgumentPreview(
+        JsonElement root,
+        List<string> lines,
+        string propertyName,
+        string label)
+    {
+        if (!TryGetJsonProperty(root, propertyName, out JsonElement property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        string content = property.GetString() ?? string.Empty;
+        string[] previewLines = SplitPreviewLines(content);
+        lines.Add($"{label}: {content.Length} chars");
+
+        if (previewLines.Length == 0)
+        {
+            lines.Add("   (empty)");
+            return;
+        }
+
+        int displayedLineCount = Math.Min(MaxToolPreviewLines, previewLines.Length);
+        for (int index = 0; index < displayedLineCount; index++)
+        {
+            lines.Add(
+                $"{(index + 1).ToString(CultureInfo.InvariantCulture).PadLeft(4)} {Truncate(previewLines[index], 180)}");
+        }
+
+        if (previewLines.Length > displayedLineCount)
+        {
+            lines.Add($"... +{previewLines.Length - displayedLineCount} lines");
+        }
+    }
+
+    private static void AddArrayArgumentSummary(
+        JsonElement root,
+        List<string> lines,
+        string propertyName)
+    {
+        if (!TryGetJsonProperty(root, propertyName, out JsonElement property) ||
+            property.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        lines.Add($"{propertyName}: {property.GetArrayLength()} item(s)");
+
+        int index = 0;
+        foreach (JsonElement item in property.EnumerateArray())
+        {
+            if (index >= Math.Min(MaxToolPreviewLines, property.GetArrayLength()))
+            {
+                break;
+            }
+
+            lines.Add($"   {index + 1}: {FormatJsonValuePreview(item)}");
+            index++;
+        }
+
+        if (property.GetArrayLength() > index)
+        {
+            lines.Add($"... +{property.GetArrayLength() - index} items");
+        }
+    }
+
+    private static void AddGenericArgumentPreviewLines(JsonElement root, List<string> lines)
+    {
+        int addedCount = 0;
+        foreach (JsonProperty property in root.EnumerateObject())
+        {
+            if (addedCount >= MaxSavedCallPreviewLines)
+            {
+                break;
+            }
+
+            lines.Add($"{property.Name}: {FormatJsonValuePreview(property.Value)}");
+            addedCount++;
+        }
+
+        int remainingCount = root.EnumerateObject().Count() - addedCount;
+        if (remainingCount > 0)
+        {
+            lines.Add($"... +{remainingCount} arguments");
+        }
+    }
+
+    private static string FormatJsonValuePreview(JsonElement value)
+    {
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => Truncate(value.GetString() ?? string.Empty, 180),
+            JsonValueKind.Number => value.ToString(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => "null",
+            JsonValueKind.Array => FormatJsonArrayPreview(value),
+            JsonValueKind.Object => FormatJsonObjectPreview(value),
+            _ => Truncate(value.ToString(), 180)
+        };
+    }
+
+    private static string FormatJsonArrayPreview(JsonElement array)
+    {
+        int count = array.GetArrayLength();
+        JsonElement? firstItem = null;
+        foreach (JsonElement item in array.EnumerateArray())
+        {
+            firstItem = item;
+            break;
+        }
+
+        string suffix = firstItem is null
+            ? string.Empty
+            : $"; first: {FormatJsonValuePreview(firstItem.Value)}";
+        return $"[{count} item(s){suffix}]";
+    }
+
+    private static string FormatJsonObjectPreview(JsonElement value)
+    {
+        string[] properties = value
+            .EnumerateObject()
+            .Where(static property => property.Value.ValueKind is
+                JsonValueKind.String or
+                JsonValueKind.Number or
+                JsonValueKind.True or
+                JsonValueKind.False or
+                JsonValueKind.Null)
+            .Take(3)
+            .Select(static property => $"{property.Name}: {FormatJsonValuePreview(property.Value)}")
+            .ToArray();
+
+        return properties.Length == 0
+            ? "{...}"
+            : "{ " + string.Join(", ", properties) + " }";
     }
 
     private static string BuildToolResultMessage(ToolInvocationResult invocationResult)

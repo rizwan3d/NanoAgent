@@ -1,4 +1,5 @@
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
 using NanoAgent.Desktop.ViewModels;
@@ -35,5 +36,25 @@ public partial class MainWindow : Window
         {
             await viewModel.Project.AddProjectAsync(path);
         }
+    }
+
+    private async void PromptTextBox_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        if (!viewModel.Chat.ShouldHandlePromptKey(e.Key, e.KeyModifiers))
+        {
+            return;
+        }
+
+        e.Handled = true;
+
+        await viewModel.Chat.HandlePromptKeyAsync(
+            e.Key,
+            e.KeyModifiers,
+            viewModel.Project.SelectedProject);
     }
 }

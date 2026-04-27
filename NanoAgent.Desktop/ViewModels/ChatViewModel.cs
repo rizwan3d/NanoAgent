@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.Threading.Tasks;
+using Avalonia.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -14,6 +15,26 @@ namespace NanoAgent.Desktop.ViewModels;
 public partial class ChatViewModel : ViewModelBase
 {
     private const double EstimatedLiveTokensPerSecond = 4d;
+    private const int MaxPromptCommandSuggestionCount = 8;
+
+    private static readonly DesktopCommandSuggestionDescriptor[] PromptCommandSuggestionDescriptors =
+    [
+        new("/allow", "/allow <tool-or-tag> [pattern]", "Add a session-scoped allow override.", true),
+        new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
+        new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
+        new("/help", "/help", "List available commands and usage.", false),
+        new("/init", "/init", "Initialize workspace-local NanoAgent configuration files.", false),
+        new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
+        new("/onboard", "/onboard", "Re-run provider onboarding.", false),
+        new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
+        new("/profile", "/profile <name>", "Switch the active agent profile.", true),
+        new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
+        new("/rules", "/rules", "List effective permission rules.", false),
+        new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
+        new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
+        new("/update", "/update [now]", "Check for updates.", false),
+        new("/use", "/use <model>", "Switch the active model directly.", true)
+    ];
 
     private readonly AgentRunner _agentRunner;
     private readonly ProviderSetupRunner _providerSetupRunner;
@@ -21,6 +42,9 @@ public partial class ChatViewModel : ViewModelBase
     private readonly DispatcherTimer _selectionPromptTimer;
     private DateTimeOffset? _currentRunStartedAt;
     private bool _isApplyingSessionInfo;
+    private bool _isApplyingPromptCommandSuggestion;
+    private bool _promptCommandSuggestionsDismissed;
+    private int _selectedPromptCommandSuggestionIndex;
 
     [ObservableProperty]
     private string _prompt = string.Empty;
@@ -87,7 +111,6 @@ public partial class ChatViewModel : ViewModelBase
         ApplyProfileCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyProfileAsync, CanApplyProfile);
         ConfigureProviderCommand = new AsyncRelayCommand<ProjectInfo?>(ConfigureProviderAsync, CanConfigureProvider);
         ShowHelpCommand = new AsyncRelayCommand<ProjectInfo?>(ShowHelpAsync, CanRunWorkspaceCommand);
-        ShowModelsCommand = new AsyncRelayCommand<ProjectInfo?>(ShowModelsAsync, CanRunWorkspaceCommand);
         ShowPermissionsCommand = new AsyncRelayCommand<ProjectInfo?>(ShowPermissionsAsync, CanRunWorkspaceCommand);
         ShowRulesCommand = new AsyncRelayCommand<ProjectInfo?>(ShowRulesAsync, CanRunWorkspaceCommand);
         UndoCommand = new AsyncRelayCommand<ProjectInfo?>(UndoAsync, CanRunWorkspaceCommand);
@@ -115,6 +138,8 @@ public partial class ChatViewModel : ViewModelBase
 
     public ObservableCollection<string> AvailableModels { get; } = new();
 
+    public ObservableCollection<DesktopCommandSuggestion> PromptCommandSuggestions { get; } = new();
+
     public ObservableCollection<string> ThinkingModes { get; } = new(["off", "on"]);
 
     public ObservableCollection<string> ProfileOptions { get; } = new(["build", "plan", "review"]);
@@ -132,8 +157,6 @@ public partial class ChatViewModel : ViewModelBase
     public IAsyncRelayCommand<ProjectInfo?> ConfigureProviderCommand { get; }
 
     public IAsyncRelayCommand<ProjectInfo?> ShowHelpCommand { get; }
-
-    public IAsyncRelayCommand<ProjectInfo?> ShowModelsCommand { get; }
 
     public IAsyncRelayCommand<ProjectInfo?> ShowPermissionsCommand { get; }
 
@@ -203,6 +226,8 @@ public partial class ChatViewModel : ViewModelBase
 
     public bool HasPromptProgress => IsPromptRunning;
 
+    public bool HasPromptCommandSuggestions => PromptCommandSuggestions.Count > 0;
+
     public string StatusText => IsRunning
         ? IsPromptRunning ? $"Working {ProgressText}" : "Working"
         : "Ready";
@@ -214,6 +239,14 @@ public partial class ChatViewModel : ViewModelBase
     partial void OnPromptChanged(string value)
     {
         RunPromptCommand.NotifyCanExecuteChanged();
+
+        if (!_isApplyingPromptCommandSuggestion)
+        {
+            _promptCommandSuggestionsDismissed = false;
+            _selectedPromptCommandSuggestionIndex = 0;
+        }
+
+        RefreshPromptCommandSuggestions();
     }
 
     partial void OnIsRunningChanged(bool value)
@@ -223,6 +256,7 @@ public partial class ChatViewModel : ViewModelBase
         OnPropertyChanged(nameof(OnboardingStatusText));
         OnPropertyChanged(nameof(SessionOptionsEnabled));
         NotifyOnboardingStateChanged();
+        RefreshPromptCommandSuggestions();
     }
 
     partial void OnIsPromptRunningChanged(bool value)
@@ -347,6 +381,92 @@ public partial class ChatViewModel : ViewModelBase
     private bool CanApplyPermissionOverride(ProjectInfo? project)
     {
         return CanRunWorkspaceCommand(project) && !string.IsNullOrWhiteSpace(PermissionToolPattern);
+    }
+
+    public async Task<bool> HandlePromptKeyAsync(
+        Key key,
+        KeyModifiers modifiers,
+        ProjectInfo? project)
+    {
+        if (HasPromptCommandSuggestions)
+        {
+            switch (key)
+            {
+                case Key.Up:
+                case Key.Left:
+                    MovePromptCommandSuggestion(-1);
+                    return true;
+
+                case Key.Down:
+                    MovePromptCommandSuggestion(1);
+                    return true;
+
+                case Key.Right:
+                case Key.Tab:
+                    CompleteSelectedPromptCommandSuggestion(submitCommand: false);
+                    return true;
+
+                case Key.PageUp:
+                    MovePromptCommandSuggestion(-MaxPromptCommandSuggestionCount);
+                    return true;
+
+                case Key.PageDown:
+                    MovePromptCommandSuggestion(MaxPromptCommandSuggestionCount);
+                    return true;
+
+                case Key.Home:
+                    SelectPromptCommandSuggestion(0);
+                    return true;
+
+                case Key.End:
+                    SelectPromptCommandSuggestion(GetMatchingPromptCommandSuggestions().Count - 1);
+                    return true;
+
+                case Key.Escape:
+                    DismissPromptCommandSuggestions();
+                    return true;
+
+                case Key.Enter:
+                    if (modifiers.HasFlag(KeyModifiers.Shift) ||
+                        modifiers.HasFlag(KeyModifiers.Control))
+                    {
+                        return false;
+                    }
+
+                    await CompleteSelectedPromptCommandSuggestionAsync(
+                        submitCommand: true,
+                        project);
+                    return true;
+            }
+        }
+
+        if (key == Key.Enter &&
+            !modifiers.HasFlag(KeyModifiers.Shift) &&
+            !modifiers.HasFlag(KeyModifiers.Control))
+        {
+            await RunPromptAsync(project);
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool ShouldHandlePromptKey(
+        Key key,
+        KeyModifiers modifiers)
+    {
+        bool isPlainEnter = key == Key.Enter &&
+            !modifiers.HasFlag(KeyModifiers.Shift) &&
+            !modifiers.HasFlag(KeyModifiers.Control);
+
+        if (HasPromptCommandSuggestions)
+        {
+            return key is Key.Up or Key.Left or Key.Down or Key.Right or Key.Tab or
+                Key.PageUp or Key.PageDown or Key.Home or Key.End or Key.Escape ||
+                isPlainEnter;
+        }
+
+        return isPlainEnter;
     }
 
     private Task AutoApplyModelAsync()
@@ -537,11 +657,6 @@ public partial class ChatViewModel : ViewModelBase
         return RunSessionCommandAsync(project, "/help", "Opening help");
     }
 
-    private Task ShowModelsAsync(ProjectInfo? project)
-    {
-        return RunSessionCommandAsync(project, "/models", "Choosing model");
-    }
-
     private Task ShowPermissionsAsync(ProjectInfo? project)
     {
         return RunSessionCommandAsync(project, "/permissions", "Loading permissions");
@@ -727,6 +842,213 @@ public partial class ChatViewModel : ViewModelBase
             });
     }
 
+    private void CompleteSelectedPromptCommandSuggestion(bool submitCommand)
+    {
+        _ = CompleteSelectedPromptCommandSuggestionAsync(submitCommand, ActiveProject);
+    }
+
+    private async Task CompleteSelectedPromptCommandSuggestionAsync(
+        bool submitCommand,
+        ProjectInfo? project)
+    {
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions = GetMatchingPromptCommandSuggestions();
+        if (suggestions.Count == 0)
+        {
+            RefreshPromptCommandSuggestions();
+            return;
+        }
+
+        _selectedPromptCommandSuggestionIndex = Math.Clamp(
+            _selectedPromptCommandSuggestionIndex,
+            0,
+            suggestions.Count - 1);
+        DesktopCommandSuggestionDescriptor suggestion = suggestions[_selectedPromptCommandSuggestionIndex];
+
+        _isApplyingPromptCommandSuggestion = true;
+        _promptCommandSuggestionsDismissed = true;
+        try
+        {
+            Prompt = suggestion.RequiresArgument
+                ? suggestion.Command + " "
+                : suggestion.Command;
+        }
+        finally
+        {
+            _isApplyingPromptCommandSuggestion = false;
+        }
+
+        RefreshPromptCommandSuggestions();
+
+        if (submitCommand && !suggestion.RequiresArgument)
+        {
+            await RunPromptAsync(project);
+        }
+    }
+
+    private void DismissPromptCommandSuggestions()
+    {
+        _promptCommandSuggestionsDismissed = true;
+        RefreshPromptCommandSuggestions();
+    }
+
+    private IReadOnlyList<DesktopCommandSuggestionDescriptor> GetMatchingPromptCommandSuggestions()
+    {
+        string input = Prompt ?? string.Empty;
+        if (!IsPromptCommandSuggestionInput(input))
+        {
+            return [];
+        }
+
+        return PromptCommandSuggestionDescriptors
+            .Where(suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+    }
+
+    private static IReadOnlyList<DesktopCommandSuggestionDescriptor> GetVisiblePromptCommandSuggestions(
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions,
+        int selectedIndex)
+    {
+        if (suggestions.Count <= MaxPromptCommandSuggestionCount)
+        {
+            return suggestions;
+        }
+
+        int startIndex = Math.Clamp(
+            selectedIndex - (MaxPromptCommandSuggestionCount / 2),
+            0,
+            suggestions.Count - MaxPromptCommandSuggestionCount);
+
+        return suggestions
+            .Skip(startIndex)
+            .Take(MaxPromptCommandSuggestionCount)
+            .ToArray();
+    }
+
+    private int GetVisiblePromptCommandStartIndex(
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions,
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> visibleSuggestions)
+    {
+        if (visibleSuggestions.Count == 0)
+        {
+            return 0;
+        }
+
+        for (int index = 0; index < suggestions.Count; index++)
+        {
+            if (string.Equals(
+                    suggestions[index].Command,
+                    visibleSuggestions[0].Command,
+                    StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return 0;
+    }
+
+    private static bool IsPromptCommandSuggestionInput(string input)
+    {
+        if (string.IsNullOrEmpty(input) ||
+            !input.StartsWith("/", StringComparison.Ordinal) ||
+            input.Any(char.IsWhiteSpace))
+        {
+            return false;
+        }
+
+        return input.Length == 1 ||
+            PromptCommandSuggestionDescriptors.Any(
+                suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void MovePromptCommandSuggestion(int delta)
+    {
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions = GetMatchingPromptCommandSuggestions();
+        if (suggestions.Count == 0)
+        {
+            _selectedPromptCommandSuggestionIndex = 0;
+            RefreshPromptCommandSuggestions();
+            return;
+        }
+
+        int nextIndex = _selectedPromptCommandSuggestionIndex + delta;
+        while (nextIndex < 0)
+        {
+            nextIndex += suggestions.Count;
+        }
+
+        _selectedPromptCommandSuggestionIndex = nextIndex % suggestions.Count;
+        RefreshPromptCommandSuggestions();
+    }
+
+    private void SelectPromptCommandSuggestion(int index)
+    {
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions = GetMatchingPromptCommandSuggestions();
+        _selectedPromptCommandSuggestionIndex = Math.Clamp(
+            index,
+            0,
+            Math.Max(0, suggestions.Count - 1));
+        RefreshPromptCommandSuggestions();
+    }
+
+    private void SelectPromptCommandSuggestionByCommand(string command)
+    {
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions = GetMatchingPromptCommandSuggestions();
+        int index = suggestions
+            .ToList()
+            .FindIndex(suggestion => string.Equals(suggestion.Command, command, StringComparison.Ordinal));
+
+        if (index >= 0)
+        {
+            _selectedPromptCommandSuggestionIndex = index;
+        }
+
+        CompleteSelectedPromptCommandSuggestion(submitCommand: false);
+    }
+
+    private void RefreshPromptCommandSuggestions()
+    {
+        PromptCommandSuggestions.Clear();
+
+        if (_promptCommandSuggestionsDismissed || IsRunning)
+        {
+            OnPropertyChanged(nameof(HasPromptCommandSuggestions));
+            return;
+        }
+
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> suggestions = GetMatchingPromptCommandSuggestions();
+        if (suggestions.Count == 0)
+        {
+            _selectedPromptCommandSuggestionIndex = 0;
+            OnPropertyChanged(nameof(HasPromptCommandSuggestions));
+            return;
+        }
+
+        _selectedPromptCommandSuggestionIndex = Math.Clamp(
+            _selectedPromptCommandSuggestionIndex,
+            0,
+            suggestions.Count - 1);
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> visibleSuggestions = GetVisiblePromptCommandSuggestions(
+            suggestions,
+            _selectedPromptCommandSuggestionIndex);
+        int startIndex = GetVisiblePromptCommandStartIndex(suggestions, visibleSuggestions);
+
+        for (int visibleIndex = 0; visibleIndex < visibleSuggestions.Count; visibleIndex++)
+        {
+            DesktopCommandSuggestionDescriptor suggestion = visibleSuggestions[visibleIndex];
+            int suggestionIndex = startIndex + visibleIndex;
+            PromptCommandSuggestions.Add(new DesktopCommandSuggestion(
+                suggestion.Command,
+                suggestion.Usage,
+                suggestion.Description,
+                suggestion.RequiresArgument,
+                suggestionIndex == _selectedPromptCommandSuggestionIndex,
+                new RelayCommand(() => SelectPromptCommandSuggestionByCommand(suggestion.Command))));
+        }
+
+        OnPropertyChanged(nameof(HasPromptCommandSuggestions));
+    }
+
     private static bool IsSlashCommand(string prompt)
     {
         return prompt.TrimStart().StartsWith("/", StringComparison.Ordinal);
@@ -795,7 +1117,6 @@ public partial class ChatViewModel : ViewModelBase
         ApplyProfileCommand.NotifyCanExecuteChanged();
         ConfigureProviderCommand.NotifyCanExecuteChanged();
         ShowHelpCommand.NotifyCanExecuteChanged();
-        ShowModelsCommand.NotifyCanExecuteChanged();
         ShowPermissionsCommand.NotifyCanExecuteChanged();
         ShowRulesCommand.NotifyCanExecuteChanged();
         UndoCommand.NotifyCanExecuteChanged();
@@ -848,9 +1169,12 @@ public partial class ChatViewModel : ViewModelBase
 
         foreach (BackendConversationMessage message in sessionInfo.ConversationHistory)
         {
-            string role = string.Equals(message.Role, "user", StringComparison.Ordinal)
-                ? "You"
-                : "NanoAgent";
+            string role = message.Role switch
+            {
+                "user" => "You",
+                "tool" => "Tool",
+                _ => "NanoAgent"
+            };
             Messages.Add(new ChatMessage(role, message.Content, statusNote: null, workspacePath: workspacePath));
         }
     }

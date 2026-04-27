@@ -1541,6 +1541,9 @@ public sealed class AgentConversationPipelineTests
             .Equal(AgentToolNames.PlanningMode, AgentToolNames.FileWrite);
         snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("Update the README.");
         snapshot.Turns[0].ToolCalls[1].ArgumentsJson.Should().Contain("README.md");
+        snapshot.Turns[0].ToolOutputMessages.Should().HaveCount(2);
+        snapshot.Turns[0].ToolOutputMessages[0].Should().Contain("Planning mode active");
+        snapshot.Turns[0].ToolOutputMessages[1].Should().Contain("File write complete");
     }
 
     [Fact]

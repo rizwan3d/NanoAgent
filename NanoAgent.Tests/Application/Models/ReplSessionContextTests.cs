@@ -217,7 +217,8 @@ public sealed class ReplSessionContextTests
                     "call_1",
                     "file_read",
                     """{ "path": "README.md" }""")
-            ]);
+            ],
+            ["\u2022 Read README.md (120 chars)"]);
 
         ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
             session.SectionCreatedAtUtc.AddMinutes(1));
@@ -227,6 +228,8 @@ public sealed class ReplSessionContextTests
         snapshot.Turns[0].ToolCalls[0].Id.Should().Be("call_1");
         snapshot.Turns[0].ToolCalls[0].Name.Should().Be("file_read");
         snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Be("""{ "path": "README.md" }""");
+        snapshot.Turns[0].ToolOutputMessages.Should().ContainSingle();
+        snapshot.Turns[0].ToolOutputMessages[0].Should().Be("\u2022 Read README.md (120 chars)");
     }
 
     [Fact]
@@ -242,7 +245,8 @@ public sealed class ReplSessionContextTests
                     "call_1",
                     "shell_command",
                     """{ "command": "echo sk-abcdefghijklmnopqrstuvwxyz123456" }""")
-            ]);
+            ],
+            ["\u2022 Ran echo sk-abcdefghijklmnopqrstuvwxyz123456"]);
 
         ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
             session.SectionCreatedAtUtc.AddMinutes(1));
@@ -251,6 +255,8 @@ public sealed class ReplSessionContextTests
         snapshot.Turns[0].AssistantResponse.Should().Contain("Bearer <redacted>");
         snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("<redacted>");
         snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+        snapshot.Turns[0].ToolOutputMessages[0].Should().Contain("<redacted>");
+        snapshot.Turns[0].ToolOutputMessages[0].Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
         session.ConversationHistory[0].Content.Should().Contain("api_key=<redacted>");
     }
 

@@ -60,7 +60,8 @@ public static partial class Program
         new("/rules", "/rules", "List effective permission rules.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
-        new("/update", "/update [now]", "Check for updates.", false)
+        new("/update", "/update [now]", "Check for updates.", false),
+        new("/use", "/use <model>", "Switch the active model directly.", true)
     ];
 
     public static async Task<int> Main(string[]? args)
@@ -392,6 +393,7 @@ public static partial class Program
             {
                 "user" => Role.User,
                 "assistant" => Role.Assistant,
+                "tool" => Role.System,
                 _ => null
             };
 

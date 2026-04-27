@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Services;
+using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
@@ -21,6 +22,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAgentTurnService, AgentTurnService>();
         services.AddSingleton<ISessionAppService, SessionAppService>();
         services.AddSingleton<IConversationPipeline, AgentConversationPipeline>();
+        services.AddSingleton<IToolOutputFormatter, ToolOutputFormatter>();
         services.AddSingleton<ILifecycleHookService, NoOpLifecycleHookService>();
         services.AddSingleton<IPermissionParser, ToolPermissionParser>();
         services.AddSingleton<IPermissionEvaluator, ToolPermissionEvaluator>();

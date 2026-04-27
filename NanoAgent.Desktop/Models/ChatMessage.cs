@@ -27,10 +27,18 @@ public sealed record ChatMessage(
 
     public bool HasStatusNote => !string.IsNullOrWhiteSpace(StatusNote);
 
+    public string AvatarText => Role switch
+    {
+        "You" => "Y",
+        "Tool" => "T",
+        "Plan" => "P",
+        _ => "N"
+    };
+
     public IBrush AvatarBackground => Role switch
     {
         "You" => Brush.Parse("#1D283A"),
-        "Tool" => Brush.Parse("#1D2D24"),
+        "Tool" => Brush.Parse("#172033"),
         "Plan" => Brush.Parse("#332716"),
         _ => Brush.Parse("#151922")
     };
@@ -38,7 +46,7 @@ public sealed record ChatMessage(
     public IBrush AvatarBorderBrush => Role switch
     {
         "You" => Brush.Parse("#365A8C"),
-        "Tool" => Brush.Parse("#2F6B3A"),
+        "Tool" => Brush.Parse("#2F4F7A"),
         "Plan" => Brush.Parse("#8A5A13"),
         _ => Brush.Parse("#2B313A")
     };
@@ -46,7 +54,7 @@ public sealed record ChatMessage(
     public IBrush BubbleBackground => Role switch
     {
         "You" => Brush.Parse("#0F172A"),
-        "Tool" => Brush.Parse("#0D1A12"),
+        "Tool" => Brush.Parse("#0D121C"),
         "Plan" => Brush.Parse("#1E1A12"),
         _ => Brush.Parse("#111317")
     };
@@ -54,21 +62,21 @@ public sealed record ChatMessage(
     public IBrush BubbleBorderBrush => Role switch
     {
         "You" => Brush.Parse("#25324A"),
-        "Tool" => Brush.Parse("#22552D"),
+        "Tool" => Brush.Parse("#22324D"),
         "Plan" => Brush.Parse("#785A18"),
         _ => Brush.Parse("#262B33")
     };
 
     public IBrush ContentForeground => Role switch
     {
-        "Tool" => Brush.Parse("#C7F9D4"),
+        "Tool" => Brush.Parse("#D7E8FF"),
         "Plan" => Brush.Parse("#FDE68A"),
         _ => Brush.Parse("#E5E7EB")
     };
 
     public IBrush RoleForeground => Role switch
     {
-        "Tool" => Brush.Parse("#86EFAC"),
+        "Tool" => Brush.Parse("#93C5FD"),
         "Plan" => Brush.Parse("#FBBF24"),
         _ => Brush.Parse("#9CA3AF")
     };
