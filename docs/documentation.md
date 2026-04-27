@@ -10,7 +10,7 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 - [First Run](#first-run)
 - [Desktop Workflow](#desktop-workflow)
 - [Terminal Workflow](#terminal-workflow)
-- [GitHub Automation](#github-automation)
+- [Review Automation](#review-automation)
 - [Providers and Models](#providers-and-models)
 - [Profiles and Subagents](#profiles-and-subagents)
 - [Permissions and Sandboxing](#permissions-and-sandboxing)
@@ -202,12 +202,15 @@ Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 
-## GitHub Automation
+## Review Automation
 
-NanoAgent includes `.github/workflows/nanoai-review.yml` for repository automation. The workflow installs NanoAI from the latest release using the same curl installer command shown in the CLI install section, then runs the review on pull requests.
+NanoAgent includes copy-paste CI examples for GitHub, GitLab, and Bitbucket. Each example installs NanoAI from the latest release using the same curl installer command shown in the CLI install section, computes the pull request or merge request diff, runs the workspace `pr-reviewer` profile in read-only mode, stores review artifacts, and posts a top-level review comment when platform credentials are configured.
 
-- `pull_request_target` events run NanoAI in the `review` profile and post a PR review comment.
-- Draft pull requests are skipped.
+- Always copy `.nanoagent/agents/pr-reviewer.md` with the CI files so the review profile is available.
+- GitHub: copy `.github/workflows/nanoai-review.yml` and `.github/nanoai-github-review.sh`.
+- GitLab: copy `.gitlab-ci.yml` and `.gitlab/nanoai-gitlab-review.sh`.
+- Bitbucket: copy `bitbucket-pipelines.yml` and `.bitbucket/nanoai-bitbucket-review.sh`.
+- GitHub and GitLab draft pull requests are skipped.
 - Review artifacts are uploaded from `artifacts/nanoai-review` and retained for 14 days.
 
 Required repository secret:
@@ -215,6 +218,14 @@ Required repository secret:
 ```text
 NANOAGENT_API_KEY
 ```
+
+Platform posting credentials:
+
+| Platform | Variable |
+| --- | --- |
+| GitHub Actions | Uses the built-in `GITHUB_TOKEN` through `GH_TOKEN`. |
+| GitLab CI | `GITLAB_TOKEN` or `NANOAI_GITLAB_TOKEN` with permission to create merge request notes. |
+| Bitbucket Pipelines | `BITBUCKET_ACCESS_TOKEN`, or `BITBUCKET_USERNAME` plus `BITBUCKET_APP_PASSWORD`. |
 
 Optional repository variables:
 
@@ -225,7 +236,7 @@ Optional repository variables:
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
 
-The PR workflow uses `pull_request_target` so it can comment with the repository token. It checks out the trusted base branch version of NanoAgent, fetches the PR head only to compute a diff, and runs the CLI from trusted code.
+The GitHub workflow uses `pull_request_target` so it can comment with the repository token. It checks out the trusted base branch version of NanoAgent, fetches the PR head only to compute a diff, and runs the CLI from trusted code. GitLab and Bitbucket examples run in their native merge request or pull request pipeline contexts and post comments through their REST APIs.
 
 ## Providers and Models
 

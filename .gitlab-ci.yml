@@ -1,0 +1,23 @@
+stages:
+  - review
+
+nanoai_merge_request_review:
+  stage: review
+  image: ubuntu:24.04
+  variables:
+    GIT_DEPTH: "0"
+    GIT_STRATEGY: fetch
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_DRAFT != "true" && $CI_MERGE_REQUEST_TITLE !~ /^(\[Draft\]|\(Draft\)|Draft:)/'
+  before_script:
+    - apt-get update
+    - apt-get install -y --no-install-recommends bash ca-certificates curl git
+    - curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
+    - export PATH="$HOME/.local/bin:$PATH"
+  script:
+    - bash .gitlab/nanoai-gitlab-review.sh
+  artifacts:
+    when: always
+    expire_in: 14 days
+    paths:
+      - artifacts/nanoai-review/

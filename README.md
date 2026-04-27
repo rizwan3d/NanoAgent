@@ -31,7 +31,7 @@ It is designed for developers who want useful automation without giving up contr
 
 - Work from a desktop app or the `nanoai` terminal command.
 - Ask for feature work, bug fixes, planning, code review, and build/test loops.
-- Run NanoAI review automation from GitHub PR and commit workflows.
+- Run NanoAI review automation from GitHub, GitLab, or Bitbucket PR/MR workflows.
 - Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
 - Switch between hands-on build mode, read-only planning, and read-only review.
 - Delegate focused work to built-in or project-defined subagents.
@@ -54,11 +54,13 @@ nanoai "Summarize this repository"
 echo "Review the latest changes for regressions" | nanoai --profile review
 ```
 
-### GitHub Automation
+### CI Review Automation
 
-The included `nanoai-review` workflow installs NanoAI from the latest release using the CLI install command below, then runs read-only review mode on PR updates and pushes. PR runs post a NanoAI review comment; push runs open an issue labeled `nanoai` when the commit review requests changes.
+The included GitHub Actions, GitLab CI, and Bitbucket Pipelines examples install NanoAI from the latest release, run the workspace `pr-reviewer` profile against the PR/MR diff, and post a review comment.
 
-Configure the repository secret `NANOAGENT_API_KEY`. Optional repository variables are `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_BASE_URL`, and `NANOAGENT_THINKING`.
+Copy `.nanoagent/agents/pr-reviewer.md` plus the matching CI files for your platform: `.github/workflows/nanoai-review.yml` and `.github/nanoai-github-review.sh`, `.gitlab-ci.yml` and `.gitlab/nanoai-gitlab-review.sh`, or `bitbucket-pipelines.yml` and `.bitbucket/nanoai-bitbucket-review.sh`.
+
+Configure `NANOAGENT_API_KEY`. GitLab posting needs `GITLAB_TOKEN` or `NANOAI_GITLAB_TOKEN`; Bitbucket posting needs `BITBUCKET_ACCESS_TOKEN` or `BITBUCKET_USERNAME` plus `BITBUCKET_APP_PASSWORD`. Optional variables are `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_BASE_URL`, and `NANOAGENT_THINKING`.
 
 ### Profiles
 

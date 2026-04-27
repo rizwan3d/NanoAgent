@@ -55,3 +55,12 @@ jobs:
           NANOAI_HEAD_REPO_FULL_NAME: ${{ github.event.pull_request.head.repo.full_name }}
           NANOAI_HEAD_REPO_URL: ${{ github.event.pull_request.head.repo.clone_url }}
         run: bash .github/nanoai-github-review.sh
+
+      - name: Upload review artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanoai-review
+          path: artifacts/nanoai-review
+          if-no-files-found: ignore
+          retention-days: 14
