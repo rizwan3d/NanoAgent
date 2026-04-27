@@ -252,6 +252,33 @@ public sealed class OpenAiConversationResponseMapperTests
     }
 
     [Fact]
+    public void Map_Should_MarkResponsesMaxOutputTokensAsOutputLimitRetryable_When_ResponseHasNoUsableOutput()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        Action action = () => sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiChatGptAccount,
+            """
+            {
+              "id": "resp_limited",
+              "status": "incomplete",
+              "incomplete_details": {
+                "reason": "max_output_tokens"
+              },
+              "output": []
+            }
+            """,
+            null));
+
+        ConversationResponseException exception = action.Should()
+            .Throw<ConversationResponseException>()
+            .WithMessage("*output length limit*Status: incomplete*Incomplete reason: max_output_tokens*Response id: resp_limited*")
+            .Which;
+        exception.IsRetryableOutputLimitResponse.Should().BeTrue();
+        exception.IsRetryableProviderOutput.Should().BeTrue();
+    }
+
+    [Fact]
     public void Map_Should_ThrowConversationResponseException_When_ResponseHasNoMessageAndNoToolCalls()
     {
         OpenAiConversationResponseMapper sut = new();
@@ -303,6 +330,36 @@ public sealed class OpenAiConversationResponseMapperTests
             .WithMessage("*Finish reason: stop*Response id: resp_empty*")
             .Which;
         exception.IsRetryableEmptyResponse.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Map_Should_MarkLengthFinishReasonAsOutputLimitRetryable_When_ResponseHasNoUsableOutput()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        Action action = () => sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenRouter,
+            """
+            {
+              "id": "gen_length",
+              "choices": [
+                {
+                  "finish_reason": "length",
+                  "message": {
+                    "content": null
+                  }
+                }
+              ]
+            }
+            """,
+            null));
+
+        ConversationResponseException exception = action.Should()
+            .Throw<ConversationResponseException>()
+            .WithMessage("*output length limit*Finish reason: length*Response id: gen_length*")
+            .Which;
+        exception.IsRetryableOutputLimitResponse.Should().BeTrue();
+        exception.IsRetryableProviderOutput.Should().BeTrue();
     }
 
     [Fact]
