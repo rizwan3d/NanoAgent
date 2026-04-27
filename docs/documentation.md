@@ -73,6 +73,8 @@ NanoAgent will guide you through provider setup:
 4. Open a desktop workspace or use the current terminal directory.
 5. Start a new section or resume an existing one.
 
+In terminal runs, `--provider-auth-key <key>` can supply the provider API key when onboarding asks for it.
+
 If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved. If provider validation fails after setup, NanoAgent offers to run onboarding again.
 
 Use `/onboard` in an active desktop or terminal session to re-run provider setup later. The command supports every provider listed below and switches the active session to the validated provider and selected default model.
@@ -164,6 +166,7 @@ nanoai --section <section-guid>
 | `--interactive` | Start the terminal UI explicitly. |
 | `--stdin` | Read one-shot prompt text from standard input. |
 | `-p, --prompt <text>` | Run one prompt and print the response. |
+| `--provider-auth-key <key>` | Use this key when provider API-key onboarding asks for a credential. |
 | `--section <id>` | Resume an existing section. |
 | `--session <id>` | Alias for `--section`. |
 | `--profile <name>` | Start with a profile. |

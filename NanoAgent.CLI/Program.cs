@@ -70,19 +70,24 @@ public static partial class Program
         {
             return await RunSingleTurnAsync(
                 invocation.BackendArgs,
+                invocation.ProviderAuthKey,
                 invocation.Prompt ?? string.Empty);
         }
 
-        await RunInteractiveAsync(invocation.BackendArgs);
+        await RunInteractiveAsync(
+            invocation.BackendArgs,
+            invocation.ProviderAuthKey);
         return 0;
     }
 
-    private static async Task RunInteractiveAsync(string[] args)
+    private static async Task RunInteractiveAsync(
+        string[] args,
+        string? providerAuthKey)
     {
         Console.CursorVisible = false;
         EnableTerminalWheelScrolling();
 
-        UiBridge uiBridge = new();
+        UiBridge uiBridge = new(providerAuthKey);
         INanoAgentBackend backend = new NanoAgentBackend(args ?? []);
         AppState state = new(uiBridge, backend);
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
@@ -138,6 +143,7 @@ public static partial class Program
 
     private static async Task<int> RunSingleTurnAsync(
         string[] args,
+        string? providerAuthKey,
         string prompt)
     {
         if (string.IsNullOrWhiteSpace(prompt))
@@ -146,7 +152,7 @@ public static partial class Program
             return 2;
         }
 
-        ConsoleBridge uiBridge = new();
+        ConsoleBridge uiBridge = new(providerAuthKey);
         string[] backendArgs = [..args, "--no-update-check"];
         await using INanoAgentBackend backend = new NanoAgentBackend(backendArgs);
         using CancellationTokenSource cancellation = new();
@@ -239,6 +245,8 @@ public static partial class Program
               --interactive        Start the terminal UI explicitly
               --stdin              Read the one-shot prompt from standard input
               -p, --prompt <text>  One-shot prompt text
+              --provider-auth-key <key>
+                                   Use this key for provider API-key onboarding
               --section <id>       Resume an existing section
               --session <id>       Alias for --section
               --profile <name>     Use an agent profile

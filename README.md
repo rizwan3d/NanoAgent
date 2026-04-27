@@ -112,6 +112,12 @@ nanoai
 
 NanoAgent will guide you through provider setup, model discovery, and the first section. After setup, you can switch models, profiles, and thinking mode from the desktop controls or terminal commands.
 
+For terminal onboarding, you can pass an API key up front:
+
+```bash
+nanoai --provider-auth-key <key>
+```
+
 ## Common Commands
 
 | Command | Purpose |

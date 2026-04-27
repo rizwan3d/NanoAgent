@@ -12,13 +12,17 @@ public sealed class ConsoleBridge : IUiBridge
     private readonly TextWriter _error;
     private readonly IPlanOutputFormatter _planOutputFormatter;
     private readonly IToolOutputFormatter _toolOutputFormatter;
+    private readonly object _providerAuthKeySync = new();
+    private string? _providerAuthKey;
+    private bool _providerAuthKeyConsumed;
 
-    public ConsoleBridge()
+    public ConsoleBridge(string? providerAuthKey = null)
         : this(
             Console.In,
             Console.Error,
             new ToolOutputFormatter(),
-            new PlanOutputFormatter())
+            new PlanOutputFormatter(),
+            providerAuthKey)
     {
     }
 
@@ -26,12 +30,14 @@ public sealed class ConsoleBridge : IUiBridge
         TextReader input,
         TextWriter error,
         IToolOutputFormatter toolOutputFormatter,
-        IPlanOutputFormatter planOutputFormatter)
+        IPlanOutputFormatter planOutputFormatter,
+        string? providerAuthKey = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _error = error ?? throw new ArgumentNullException(nameof(error));
         _toolOutputFormatter = toolOutputFormatter ?? throw new ArgumentNullException(nameof(toolOutputFormatter));
         _planOutputFormatter = planOutputFormatter ?? throw new ArgumentNullException(nameof(planOutputFormatter));
+        _providerAuthKey = NormalizeOrNull(providerAuthKey);
     }
 
     public async Task<T> RequestSelectionAsync<T>(
@@ -95,6 +101,11 @@ public sealed class ConsoleBridge : IUiBridge
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (TryConsumeProviderAuthKey(request, isSecret, out string providerAuthKey))
+        {
+            return Task.FromResult(providerAuthKey);
+        }
 
         WriteTextPromptHeader(request);
 
@@ -290,5 +301,44 @@ public sealed class ConsoleBridge : IUiBridge
 
         _error.WriteLine(message.Trim());
         _error.WriteLine();
+    }
+
+    private bool TryConsumeProviderAuthKey(
+        TextPromptRequest request,
+        bool isSecret,
+        out string providerAuthKey)
+    {
+        providerAuthKey = string.Empty;
+        if (!isSecret || !IsProviderAuthKeyPrompt(request))
+        {
+            return false;
+        }
+
+        lock (_providerAuthKeySync)
+        {
+            if (_providerAuthKeyConsumed || string.IsNullOrWhiteSpace(_providerAuthKey))
+            {
+                return false;
+            }
+
+            providerAuthKey = _providerAuthKey;
+            _providerAuthKeyConsumed = true;
+            _providerAuthKey = null;
+            return true;
+        }
+    }
+
+    private static bool IsProviderAuthKeyPrompt(TextPromptRequest request)
+    {
+        string label = request.Label.Trim();
+        return string.Equals(label, "API key", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(label, "Provider auth key", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeOrNull(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 }
