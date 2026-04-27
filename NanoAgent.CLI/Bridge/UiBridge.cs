@@ -12,18 +12,23 @@ public sealed class UiBridge : IUiBridge
     private readonly ConcurrentQueue<Action<AppState>> _pending = new();
     private readonly IPlanOutputFormatter _planOutputFormatter;
     private readonly IToolOutputFormatter _toolOutputFormatter;
+    private readonly object _providerAuthKeySync = new();
+    private string? _providerAuthKey;
+    private bool _providerAuthKeyConsumed;
 
-    public UiBridge()
-        : this(new ToolOutputFormatter(), new PlanOutputFormatter())
+    public UiBridge(string? providerAuthKey = null)
+        : this(new ToolOutputFormatter(), new PlanOutputFormatter(), providerAuthKey)
     {
     }
 
     internal UiBridge(
         IToolOutputFormatter toolOutputFormatter,
-        IPlanOutputFormatter planOutputFormatter)
+        IPlanOutputFormatter planOutputFormatter,
+        string? providerAuthKey = null)
     {
         _toolOutputFormatter = toolOutputFormatter ?? throw new ArgumentNullException(nameof(toolOutputFormatter));
         _planOutputFormatter = planOutputFormatter ?? throw new ArgumentNullException(nameof(planOutputFormatter));
+        _providerAuthKey = NormalizeOrNull(providerAuthKey);
     }
 
     public void ApplyPending(AppState state)
@@ -82,6 +87,12 @@ public sealed class UiBridge : IUiBridge
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (TryConsumeProviderAuthKey(request, isSecret, out string providerAuthKey))
+        {
+            return Task.FromResult(providerAuthKey);
+        }
 
         TaskCompletionSource<string> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         object completionToken = new();
@@ -194,5 +205,44 @@ public sealed class UiBridge : IUiBridge
         }
 
         return normalized[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
+    private bool TryConsumeProviderAuthKey(
+        TextPromptRequest request,
+        bool isSecret,
+        out string providerAuthKey)
+    {
+        providerAuthKey = string.Empty;
+        if (!isSecret || !IsProviderAuthKeyPrompt(request))
+        {
+            return false;
+        }
+
+        lock (_providerAuthKeySync)
+        {
+            if (_providerAuthKeyConsumed || string.IsNullOrWhiteSpace(_providerAuthKey))
+            {
+                return false;
+            }
+
+            providerAuthKey = _providerAuthKey;
+            _providerAuthKeyConsumed = true;
+            _providerAuthKey = null;
+            return true;
+        }
+    }
+
+    private static bool IsProviderAuthKeyPrompt(TextPromptRequest request)
+    {
+        string label = request.Label.Trim();
+        return string.Equals(label, "API key", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(label, "Provider auth key", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? NormalizeOrNull(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 }

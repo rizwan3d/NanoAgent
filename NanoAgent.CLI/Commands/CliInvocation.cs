@@ -9,6 +9,7 @@ internal enum CliMode
 internal sealed record CliInvocation(
     CliMode Mode,
     string[] BackendArgs,
+    string? ProviderAuthKey,
     string? Prompt,
     bool ShowHelp)
 {
@@ -23,6 +24,7 @@ internal sealed record CliInvocation(
     public static CliInvocation Help { get; } = new(
         CliMode.Interactive,
         [],
+        ProviderAuthKey: null,
         Prompt: null,
         ShowHelp: true);
 
@@ -36,6 +38,7 @@ internal sealed record CliInvocation(
 
         List<string> backendArgs = [];
         List<string> promptParts = [];
+        string? providerAuthKey = null;
         bool forceInteractive = false;
         bool readPromptFromStandardInput = false;
 
@@ -62,6 +65,12 @@ internal sealed record CliInvocation(
 
             if (TryConsumeBackendOption(args, ref index, backendArgs))
             {
+                continue;
+            }
+
+            if (TryConsumeProviderAuthKeyOption(args, ref index, out string? authKey))
+            {
+                providerAuthKey = authKey;
                 continue;
             }
 
@@ -94,6 +103,7 @@ internal sealed record CliInvocation(
             return new CliInvocation(
                 CliMode.Interactive,
                 backendArgs.ToArray(),
+                providerAuthKey,
                 Prompt: null,
                 ShowHelp: false);
         }
@@ -123,6 +133,7 @@ internal sealed record CliInvocation(
             return new CliInvocation(
                 CliMode.Interactive,
                 backendArgs.ToArray(),
+                providerAuthKey,
                 Prompt: null,
                 ShowHelp: false);
         }
@@ -130,6 +141,7 @@ internal sealed record CliInvocation(
         return new CliInvocation(
             CliMode.SingleTurn,
             backendArgs.ToArray(),
+            providerAuthKey,
             prompt,
             ShowHelp: false);
     }
@@ -160,6 +172,14 @@ internal sealed record CliInvocation(
         }
 
         return false;
+    }
+
+    private static bool TryConsumeProviderAuthKeyOption(
+        IReadOnlyList<string> args,
+        ref int index,
+        out string? providerAuthKey)
+    {
+        return TryReadOptionValue(args, ref index, "--provider-auth-key", out providerAuthKey);
     }
 
     private static bool TryConsumeBackendOption(
