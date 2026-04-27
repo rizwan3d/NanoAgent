@@ -10,6 +10,7 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 - [First Run](#first-run)
 - [Desktop Workflow](#desktop-workflow)
 - [Terminal Workflow](#terminal-workflow)
+- [GitHub Automation](#github-automation)
 - [Providers and Models](#providers-and-models)
 - [Profiles and Subagents](#profiles-and-subagents)
 - [Permissions and Sandboxing](#permissions-and-sandboxing)
@@ -200,6 +201,31 @@ Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
+
+## GitHub Automation
+
+NanoAgent includes `.github/workflows/nanoai-review.yml` for repository automation. The workflow installs NanoAI from the latest release using the same curl installer command shown in the CLI install section, then runs the review on pull requests.
+
+- `pull_request_target` events run NanoAI in the `review` profile and post a PR review comment.
+- Draft pull requests are skipped.
+- Review artifacts are uploaded from `artifacts/nanoai-review` and retained for 14 days.
+
+Required repository secret:
+
+```text
+NANOAGENT_API_KEY
+```
+
+Optional repository variables:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, or `openrouter`. |
+| `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
+| `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
+| `NANOAGENT_THINKING` | `off` | `on` or `off`. |
+
+The PR workflow uses `pull_request_target` so it can comment with the repository token. It checks out the trusted base branch version of NanoAgent, fetches the PR head only to compute a diff, and runs the CLI from trusted code.
 
 ## Providers and Models
 

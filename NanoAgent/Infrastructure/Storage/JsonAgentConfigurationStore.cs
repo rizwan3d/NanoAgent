@@ -8,6 +8,11 @@ namespace NanoAgent.Infrastructure.Storage;
 
 internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
 {
+    private const string BaseUrlEnvironmentVariableName = "NANOAGENT_BASE_URL";
+    private const string ModelEnvironmentVariableName = "NANOAGENT_MODEL";
+    private const string ProviderEnvironmentVariableName = "NANOAGENT_PROVIDER";
+    private const string ThinkingEnvironmentVariableName = "NANOAGENT_THINKING";
+
     private readonly IUserDataPathProvider _pathProvider;
 
     public JsonAgentConfigurationStore(IUserDataPathProvider pathProvider)
@@ -17,6 +22,12 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
 
     public async Task<AgentConfiguration?> LoadAsync(CancellationToken cancellationToken)
     {
+        AgentConfiguration? environmentConfiguration = LoadEnvironmentConfiguration();
+        if (environmentConfiguration is not null)
+        {
+            return environmentConfiguration;
+        }
+
         string filePath = _pathProvider.GetConfigurationFilePath();
         if (!File.Exists(filePath))
         {
@@ -130,6 +141,61 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
         {
             return null;
         }
+    }
+
+    private static AgentConfiguration? LoadEnvironmentConfiguration()
+    {
+        string? providerName = NormalizeOptional(Environment.GetEnvironmentVariable(ProviderEnvironmentVariableName));
+        if (providerName is null)
+        {
+            return null;
+        }
+
+        ProviderKind providerKind = ParseProviderKind(providerName);
+        string? baseUrl = NormalizeOptional(Environment.GetEnvironmentVariable(BaseUrlEnvironmentVariableName));
+        AgentProviderProfile profile = providerKind switch
+        {
+            ProviderKind.OpenAiCompatible => string.IsNullOrWhiteSpace(baseUrl)
+                ? throw new InvalidOperationException(
+                    $"{BaseUrlEnvironmentVariableName} must be set when {ProviderEnvironmentVariableName} is 'openai-compatible'.")
+                : new AgentProviderProfile(
+                    ProviderKind.OpenAiCompatible,
+                    CompatibleProviderBaseUrlNormalizer.Normalize(baseUrl)),
+            _ => new AgentProviderProfile(providerKind, BaseUrl: null)
+        };
+
+        return new AgentConfiguration(
+            profile,
+            ModelIdMatcher.NormalizeOrNull(Environment.GetEnvironmentVariable(ModelEnvironmentVariableName)),
+            ReasoningEffortOptions.NormalizeOrNull(Environment.GetEnvironmentVariable(ThinkingEnvironmentVariableName)));
+    }
+
+    private static ProviderKind ParseProviderKind(string providerName)
+    {
+        string normalized = new(
+            providerName
+                .Where(char.IsLetterOrDigit)
+                .Select(char.ToLowerInvariant)
+                .ToArray());
+
+        return normalized switch
+        {
+            "openai" => ProviderKind.OpenAi,
+            "openaicompatible" or "compatible" or "custom" => ProviderKind.OpenAiCompatible,
+            "googleaistudio" or "googleai" or "gemini" => ProviderKind.GoogleAiStudio,
+            "anthropic" or "claude" => ProviderKind.Anthropic,
+            "openrouter" => ProviderKind.OpenRouter,
+            "openaichatgptaccount" or "chatgpt" => ProviderKind.OpenAiChatGptAccount,
+            _ => throw new InvalidOperationException(
+                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, openrouter.")
+        };
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 
     private static AgentProviderProfile? NormalizeProfile(AgentProviderProfile? profile)

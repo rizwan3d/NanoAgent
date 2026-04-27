@@ -6,6 +6,7 @@ namespace NanoAgent.Infrastructure.Secrets;
 internal sealed class ApiKeySecretStore : IApiKeySecretStore
 {
     private const string ApiKeyAccountName = "default-api-key";
+    private const string ApiKeyEnvironmentVariableName = "NANOAGENT_API_KEY";
 
     private readonly IPlatformCredentialStore _platformCredentialStore;
 
@@ -16,6 +17,12 @@ internal sealed class ApiKeySecretStore : IApiKeySecretStore
 
     public Task<string?> LoadAsync(CancellationToken cancellationToken)
     {
+        string? environmentApiKey = Environment.GetEnvironmentVariable(ApiKeyEnvironmentVariableName);
+        if (!string.IsNullOrWhiteSpace(environmentApiKey))
+        {
+            return Task.FromResult<string?>(environmentApiKey.Trim());
+        }
+
         return _platformCredentialStore.LoadAsync(BuildReference(), cancellationToken);
     }
 
