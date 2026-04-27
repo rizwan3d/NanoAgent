@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, ShellCommandTool>();
         services.AddSingleton<IModelDiscoveryService, ModelDiscoveryService>();
         services.AddSingleton<IFirstRunOnboardingService, FirstRunOnboardingService>();
+        services.AddSingleton<IProviderSetupService, ProviderSetupService>();
         services.AddSingleton<IOnboardingInputValidator, OnboardingInputValidator>();
         services.AddSingleton<IModelActivationService, ModelActivationService>();
         services.AddSingleton<IReplSectionService, ReplSectionService>();

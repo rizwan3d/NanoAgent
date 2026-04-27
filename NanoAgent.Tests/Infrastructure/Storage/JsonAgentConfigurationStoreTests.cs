@@ -112,6 +112,44 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_Should_PreserveUnknownDesktopProfileSection()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            """
+            {
+              "desktop": {
+                "workspaces": [
+                  {
+                    "name": "FinalAgent",
+                    "path": "C:\\src\\FinalAgent",
+                    "lastOpened": "2026-04-27T10:00:00+05:00"
+                  }
+                ]
+              }
+            }
+            """,
+            CancellationToken.None);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+        AgentConfiguration configuration = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "gpt-5.4",
+            "on");
+
+        await sut.SaveAsync(configuration, CancellationToken.None);
+
+        string savedJson = await File.ReadAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            CancellationToken.None);
+        savedJson.Should().Contain("\"desktop\"");
+        savedJson.Should().Contain("\"workspaces\"");
+        savedJson.Should().Contain("\"FinalAgent\"");
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+        loadedConfiguration.Should().Be(configuration);
+    }
+
+    [Fact]
     public async Task LoadAsync_Should_NormalizeCompatibleProviderBaseUrl()
     {
         StubUserDataPathProvider pathProvider = new(_tempRoot);

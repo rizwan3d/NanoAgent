@@ -17,6 +17,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, InitCommandHandler>();
         services.AddSingleton<IReplCommandHandler, McpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ModelsCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, OnboardCommandHandler>();
         services.AddSingleton<IReplCommandHandler, PermissionsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ProfileCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ThinkingCommandHandler>();

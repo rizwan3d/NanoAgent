@@ -1,14 +1,9 @@
-﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
-using NanoAgent.Application.DependencyInjection;
-using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
-using NanoAgent.Infrastructure.DependencyInjection;
 
 namespace NanoAgent.Application.Backend;
 
@@ -17,8 +12,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private readonly string[] _args;
     private IAgentTurnService? _agentTurnService;
     private IHost? _host;
-    private IFirstRunOnboardingService? _onboardingService;
-    private IModelDiscoveryService? _modelDiscoveryService;
+    private IProviderSetupService? _providerSetupService;
     private IReplCommandDispatcher? _commandDispatcher;
     private IReplCommandParser? _commandParser;
     private ReplSessionContext? _session;
@@ -46,9 +40,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         CliSessionOptions options = ParseSessionOptions(_args);
 
-        _host = CreateHost(uiBridge, _args);
-        _onboardingService = _host.Services.GetRequiredService<IFirstRunOnboardingService>();
-        _modelDiscoveryService = _host.Services.GetRequiredService<IModelDiscoveryService>();
+        _host = NanoAgentHostFactory.Create(uiBridge, _args);
+        _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
@@ -66,11 +59,11 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     options.ThinkingMode),
                 cancellationToken);
 
-            await EnsureOnboardedWithRecoveryAsync(cancellationToken);
+            await _providerSetupService.EnsureOnboardedAsync(cancellationToken);
         }
         else
         {
-            OnboardingAndModelResult startupResult = await EnsureOnboardedAndDiscoverModelsAsync(cancellationToken);
+            ProviderSetupResult startupResult = await _providerSetupService.EnsureConfiguredAsync(cancellationToken);
             OnboardingResult onboardingResult = startupResult.OnboardingResult;
             ModelDiscoveryResult modelResult = startupResult.ModelDiscoveryResult;
             string? reasoningEffort = options.ThinkingMode ?? onboardingResult.ReasoningEffort;
@@ -180,33 +173,6 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
     }
 
-    private static IHost CreateHost(IUiBridge uiBridge, string[] args)
-    {
-        HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
-
-        builder.Configuration.AddJsonFile(
-            Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
-            optional: true,
-            reloadOnChange: false);
-
-        builder.Logging.ClearProviders();
-        builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
-
-        builder.Services.AddSingleton(uiBridge);
-        builder.Services
-            .AddApplication()
-            .AddReplCommands()
-            .AddInfrastructure(builder.Configuration);
-
-        builder.Services.AddSingleton<ISelectionPrompt, UiSelectionPrompt>();
-        builder.Services.AddSingleton<ITextPrompt, UiTextPrompt>();
-        builder.Services.AddSingleton<ISecretPrompt, UiSecretPrompt>();
-        builder.Services.AddSingleton<IConfirmationPrompt, UiConfirmationPrompt>();
-        builder.Services.AddSingleton<IStatusMessageWriter, UiStatusMessageWriter>();
-
-        return builder.Build();
-    }
-
     private static BackendSessionInfo CreateSessionInfo(ReplSessionContext session)
     {
         return new BackendSessionInfo(
@@ -234,72 +200,6 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                 message.Role,
                 message.Content!))
             .ToArray();
-    }
-
-    private async Task<OnboardingAndModelResult> EnsureOnboardedAndDiscoverModelsAsync(
-        CancellationToken cancellationToken)
-    {
-        IModelDiscoveryService modelDiscoveryService = _modelDiscoveryService!;
-        OnboardingResult onboardingResult = await EnsureOnboardedWithRecoveryAsync(cancellationToken);
-
-        try
-        {
-            return new OnboardingAndModelResult(
-                onboardingResult,
-                await modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken));
-        }
-        catch (ModelDiscoveryException exception)
-        {
-            await _statusMessageWriter!.ShowErrorAsync(
-                $"Provider setup could not be validated: {exception.Message}",
-                cancellationToken);
-
-            bool shouldReconfigure = await _confirmationPrompt!.PromptAsync(
-                new ConfirmationPromptRequest(
-                    "Provider setup failed. Re-run onboarding?",
-                    "Choose Yes to reconfigure provider credentials now, or No to stop startup.",
-                    DefaultValue: true),
-                cancellationToken);
-
-            if (!shouldReconfigure)
-            {
-                throw;
-            }
-
-            onboardingResult = await _onboardingService!.ReconfigureAsync(cancellationToken);
-            return new OnboardingAndModelResult(
-                onboardingResult,
-                await modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken));
-        }
-    }
-
-    private async Task<OnboardingResult> EnsureOnboardedWithRecoveryAsync(
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _onboardingService!.EnsureOnboardedAsync(cancellationToken);
-        }
-        catch (Exception exception) when (ShouldOfferOnboardingRetry(exception))
-        {
-            await _statusMessageWriter!.ShowErrorAsync(
-                $"Provider setup could not be completed: {exception.Message}",
-                cancellationToken);
-
-            bool shouldReconfigure = await _confirmationPrompt!.PromptAsync(
-                new ConfirmationPromptRequest(
-                    "Provider setup failed. Re-run onboarding?",
-                    "Choose Yes to try provider setup again, or No to stop startup.",
-                    DefaultValue: true),
-                cancellationToken);
-
-            if (!shouldReconfigure)
-            {
-                throw;
-            }
-
-            return await _onboardingService!.ReconfigureAsync(cancellationToken);
-        }
     }
 
     private async Task PromptForUpdateIfAvailableAsync(
@@ -368,11 +268,6 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
 
         await _statusMessageWriter.ShowErrorAsync(installResult.Message, cancellationToken);
-    }
-
-    private static bool ShouldOfferOnboardingRetry(Exception exception)
-    {
-        return exception is not OperationCanceledException and not PromptCancelledException;
     }
 
     private static CliSessionOptions ParseSessionOptions(IReadOnlyList<string> args)
@@ -456,8 +351,4 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         string? ProfileName,
         string? ThinkingMode,
         bool SkipUpdateCheck);
-
-    private sealed record OnboardingAndModelResult(
-        OnboardingResult OnboardingResult,
-        ModelDiscoveryResult ModelDiscoveryResult);
 }

@@ -1,6 +1,7 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace NanoAgent.Infrastructure.Storage;
 
@@ -21,6 +22,9 @@ internal sealed class AgentProfileConfigurationDocument
     public Dictionary<string, CustomToolProfileDocument>? CustomTools { get; set; }
 
     public Dictionary<string, McpServerProfileDocument>? McpServers { get; set; }
+
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
 
 internal sealed class MemoryProfileDocument

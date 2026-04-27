@@ -16,15 +16,23 @@ public partial class ChatViewModel : ViewModelBase
     private const double EstimatedLiveTokensPerSecond = 4d;
 
     private readonly AgentRunner _agentRunner;
+    private readonly ProviderSetupRunner _providerSetupRunner;
     private readonly DispatcherTimer _progressTimer;
     private readonly DispatcherTimer _selectionPromptTimer;
     private DateTimeOffset? _currentRunStartedAt;
+    private bool _isApplyingSessionInfo;
 
     [ObservableProperty]
     private string _prompt = string.Empty;
 
     [ObservableProperty]
     private bool _isRunning;
+
+    [ObservableProperty]
+    private bool _isPromptRunning;
+
+    [ObservableProperty]
+    private bool _isProviderSetupActive;
 
     [ObservableProperty]
     private string _progressText = "(0s \u00B7 0 tokens)";
@@ -34,6 +42,9 @@ public partial class ChatViewModel : ViewModelBase
 
     [ObservableProperty]
     private string? _selectedThinkingMode = "off";
+
+    [ObservableProperty]
+    private bool _isThinkingEnabled;
 
     [ObservableProperty]
     private string? _selectedProfileName = "build";
@@ -51,6 +62,9 @@ public partial class ChatViewModel : ViewModelBase
     private WorkspaceSectionInfo? _selectedSection;
 
     [ObservableProperty]
+    private ProjectInfo? _activeProject;
+
+    [ObservableProperty]
     private string _permissionToolPattern = string.Empty;
 
     [ObservableProperty]
@@ -59,14 +73,19 @@ public partial class ChatViewModel : ViewModelBase
     public ChatViewModel(AgentRunner agentRunner)
     {
         _agentRunner = agentRunner;
+        _providerSetupRunner = new ProviderSetupRunner();
         _agentRunner.ConversationMessageReceived += OnConversationMessageReceived;
         _agentRunner.SelectionPromptChanged += OnSelectionPromptChanged;
         _agentRunner.TextPromptChanged += OnTextPromptChanged;
+        _providerSetupRunner.ConversationMessageReceived += OnConversationMessageReceived;
+        _providerSetupRunner.SelectionPromptChanged += OnSelectionPromptChanged;
+        _providerSetupRunner.TextPromptChanged += OnTextPromptChanged;
         RunPromptCommand = new AsyncRelayCommand<ProjectInfo?>(RunPromptAsync, CanRunPrompt);
         LoadSessionCommand = new AsyncRelayCommand<ProjectInfo?>(LoadSessionAsync, CanRunWorkspaceCommand);
         ApplyModelCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyModelAsync, CanApplyModel);
         ApplyThinkingCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyThinkingAsync, CanApplyThinking);
         ApplyProfileCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyProfileAsync, CanApplyProfile);
+        ConfigureProviderCommand = new AsyncRelayCommand<ProjectInfo?>(ConfigureProviderAsync, CanConfigureProvider);
         ShowHelpCommand = new AsyncRelayCommand<ProjectInfo?>(ShowHelpAsync, CanRunWorkspaceCommand);
         ShowModelsCommand = new AsyncRelayCommand<ProjectInfo?>(ShowModelsAsync, CanRunWorkspaceCommand);
         ShowPermissionsCommand = new AsyncRelayCommand<ProjectInfo?>(ShowPermissionsAsync, CanRunWorkspaceCommand);
@@ -110,6 +129,8 @@ public partial class ChatViewModel : ViewModelBase
 
     public IAsyncRelayCommand<ProjectInfo?> ApplyProfileCommand { get; }
 
+    public IAsyncRelayCommand<ProjectInfo?> ConfigureProviderCommand { get; }
+
     public IAsyncRelayCommand<ProjectInfo?> ShowHelpCommand { get; }
 
     public IAsyncRelayCommand<ProjectInfo?> ShowModelsCommand { get; }
@@ -132,7 +153,63 @@ public partial class ChatViewModel : ViewModelBase
 
     public bool HasActiveTextPrompt => ActiveTextPrompt is not null;
 
-    public string StatusText => IsRunning ? $"Working {ProgressText}" : "Ready";
+    public bool HasFloatingSelectionPrompt => ActiveSelectionPrompt is not null && !IsProviderSetupActive;
+
+    public bool HasFloatingTextPrompt => ActiveTextPrompt is not null && !IsProviderSetupActive;
+
+    public bool HasOnboardingOverlay => IsProviderSetupActive;
+
+    public bool HasOnboardingSelectionPrompt => IsProviderSetupActive && ActiveSelectionPrompt is not null;
+
+    public bool HasOnboardingTextPrompt => IsProviderSetupActive && ActiveTextPrompt is not null;
+
+    public bool HasOnboardingCountdown => ActiveSelectionPrompt?.HasCountdown == true;
+
+    public bool CanCancelOnboardingSelectionPrompt => ActiveSelectionPrompt?.AllowCancellation == true;
+
+    public bool CanCancelOnboardingTextPrompt => ActiveTextPrompt?.AllowCancellation == true;
+
+    public string OnboardingStageText
+    {
+        get
+        {
+            if (ActiveSelectionPrompt is not null)
+            {
+                return "Step 1 of 3";
+            }
+
+            if (ActiveTextPrompt is not null)
+            {
+                return ActiveTextPrompt.IsSecret ? "Step 2 of 3" : "Step 1 of 3";
+            }
+
+            return IsRunning ? "Step 3 of 3" : "Provider setup";
+        }
+    }
+
+    public string OnboardingTitle => ActiveSelectionPrompt?.Title ??
+        ActiveTextPrompt?.Title ??
+        "Checking provider setup";
+
+    public string OnboardingDescription => ActiveSelectionPrompt?.Description ??
+        ActiveTextPrompt?.Description ??
+        "NanoAgent is validating the saved provider configuration and model list.";
+
+    public string OnboardingInputKind => ActiveTextPrompt?.IsSecret == true
+        ? "Secret"
+        : "Input";
+
+    public string OnboardingStatusText => IsRunning ? "Working" : "Provider setup";
+
+    public bool HasPromptProgress => IsPromptRunning;
+
+    public string StatusText => IsRunning
+        ? IsPromptRunning ? $"Working {ProgressText}" : "Working"
+        : "Ready";
+
+    public bool SessionOptionsEnabled => HasSessionOptions && !IsRunning;
+
+    public string ThinkingToggleText => IsThinkingEnabled ? "Thinking On" : "Thinking Off";
 
     partial void OnPromptChanged(string value)
     {
@@ -143,6 +220,20 @@ public partial class ChatViewModel : ViewModelBase
     {
         NotifyCommandStatesChanged();
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(OnboardingStatusText));
+        OnPropertyChanged(nameof(SessionOptionsEnabled));
+        NotifyOnboardingStateChanged();
+    }
+
+    partial void OnIsPromptRunningChanged(bool value)
+    {
+        OnPropertyChanged(nameof(HasPromptProgress));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    partial void OnIsProviderSetupActiveChanged(bool value)
+    {
+        NotifyOnboardingStateChanged();
     }
 
     partial void OnProgressTextChanged(string value)
@@ -153,21 +244,53 @@ public partial class ChatViewModel : ViewModelBase
     partial void OnSelectedModelIdChanged(string? value)
     {
         ApplyModelCommand.NotifyCanExecuteChanged();
+        _ = AutoApplyModelAsync();
     }
 
     partial void OnSelectedThinkingModeChanged(string? value)
     {
+        bool shouldBeEnabled = string.Equals(value, "on", StringComparison.OrdinalIgnoreCase);
+        if (IsThinkingEnabled != shouldBeEnabled)
+        {
+            IsThinkingEnabled = shouldBeEnabled;
+        }
+
         ApplyThinkingCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnIsThinkingEnabledChanged(bool value)
+    {
+        string mode = value ? "on" : "off";
+        if (!string.Equals(SelectedThinkingMode, mode, StringComparison.OrdinalIgnoreCase))
+        {
+            SelectedThinkingMode = mode;
+        }
+
+        OnPropertyChanged(nameof(ThinkingToggleText));
+        ApplyThinkingCommand.NotifyCanExecuteChanged();
+        _ = AutoApplyThinkingAsync();
     }
 
     partial void OnSelectedProfileNameChanged(string? value)
     {
         ApplyProfileCommand.NotifyCanExecuteChanged();
+        _ = AutoApplyProfileAsync();
+    }
+
+    partial void OnHasSessionOptionsChanged(bool value)
+    {
+        OnPropertyChanged(nameof(SessionOptionsEnabled));
+    }
+
+    partial void OnActiveProjectChanged(ProjectInfo? value)
+    {
+        NotifyCommandStatesChanged();
     }
 
     partial void OnActiveSelectionPromptChanged(DesktopSelectionPrompt? value)
     {
         OnPropertyChanged(nameof(HasActiveSelectionPrompt));
+        NotifyOnboardingStateChanged();
 
         if (value is not null && value.HasCountdown)
         {
@@ -182,6 +305,7 @@ public partial class ChatViewModel : ViewModelBase
     partial void OnActiveTextPromptChanged(DesktopTextPrompt? value)
     {
         OnPropertyChanged(nameof(HasActiveTextPrompt));
+        NotifyOnboardingStateChanged();
     }
 
     partial void OnPermissionToolPatternChanged(string value)
@@ -198,6 +322,11 @@ public partial class ChatViewModel : ViewModelBase
     private bool CanRunWorkspaceCommand(ProjectInfo? project)
     {
         return !IsRunning && project is not null;
+    }
+
+    private bool CanConfigureProvider(ProjectInfo? project)
+    {
+        return !IsRunning;
     }
 
     private bool CanApplyModel(ProjectInfo? project)
@@ -220,6 +349,39 @@ public partial class ChatViewModel : ViewModelBase
         return CanRunWorkspaceCommand(project) && !string.IsNullOrWhiteSpace(PermissionToolPattern);
     }
 
+    private Task AutoApplyModelAsync()
+    {
+        if (_isApplyingSessionInfo ||
+            !CanApplyModel(ActiveProject))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ApplyModelAsync(ActiveProject);
+    }
+
+    private Task AutoApplyThinkingAsync()
+    {
+        if (_isApplyingSessionInfo ||
+            !CanApplyThinking(ActiveProject))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ApplyThinkingAsync(ActiveProject);
+    }
+
+    private Task AutoApplyProfileAsync()
+    {
+        if (_isApplyingSessionInfo ||
+            !CanApplyProfile(ActiveProject))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ApplyProfileAsync(ActiveProject);
+    }
+
     public async Task LoadSessionAsync(ProjectInfo? project)
     {
         if (project is null || IsRunning)
@@ -227,15 +389,68 @@ public partial class ChatViewModel : ViewModelBase
             return;
         }
 
-        await RunControlOperationAsync(
-            "Loading controls",
-            project.Path,
-            async () =>
+        bool shouldShowSetupOverlay = !HasSessionOptions;
+        if (shouldShowSetupOverlay)
+        {
+            IsProviderSetupActive = true;
+        }
+
+        try
+        {
+            await RunControlOperationAsync(
+                "Checking provider setup",
+                project.Path,
+                async () =>
+                {
+                    BackendSessionInfo sessionInfo = await _agentRunner.GetSessionAsync(project.Path, SelectedSection?.SectionId);
+                    ApplySessionInfo(sessionInfo, replaceConversation: true, workspacePath: project.Path);
+                    Activity.Add(new AgentEvent("settings", "Controls loaded.", project.Path));
+                });
+        }
+        finally
+        {
+            if (shouldShowSetupOverlay)
             {
-                BackendSessionInfo sessionInfo = await _agentRunner.GetSessionAsync(project.Path, SelectedSection?.SectionId);
-                ApplySessionInfo(sessionInfo, replaceConversation: true, workspacePath: project.Path);
-                Activity.Add(new AgentEvent("settings", "Controls loaded.", project.Path));
-            });
+                IsProviderSetupActive = false;
+            }
+        }
+    }
+
+    public async Task EnsureProviderSetupAsync()
+    {
+        if (IsRunning)
+        {
+            return;
+        }
+
+        IsProviderSetupActive = true;
+        try
+        {
+            await RunControlOperationAsync(
+                "Checking provider setup",
+                workspacePath: null,
+                async () =>
+                {
+                    ProviderSetupRunResult result = await _providerSetupRunner.RunAsync();
+                    Messages.Add(new ChatMessage(
+                        "NanoAgent",
+                        "Provider setup complete.\n" +
+                        $"Provider: {result.ProviderName}\n" +
+                        $"Active model: {result.ModelId}\n" +
+                        "Open a workspace to start a section.",
+                        statusNote: null,
+                        workspacePath: null));
+
+                    foreach (string activity in result.Activity)
+                    {
+                        Activity.Add(new AgentEvent("settings", activity));
+                    }
+                });
+        }
+        finally
+        {
+            IsProviderSetupActive = false;
+        }
     }
 
     private async Task ApplyModelAsync(ProjectInfo? project)
@@ -298,6 +513,25 @@ public partial class ChatViewModel : ViewModelBase
             });
     }
 
+    private async Task ConfigureProviderAsync(ProjectInfo? project)
+    {
+        if (project is null)
+        {
+            await EnsureProviderSetupAsync();
+            return;
+        }
+
+        IsProviderSetupActive = true;
+        try
+        {
+            await RunSessionCommandAsync(project, "/onboard", "Configuring provider");
+        }
+        finally
+        {
+            IsProviderSetupActive = false;
+        }
+    }
+
     private Task ShowHelpAsync(ProjectInfo? project)
     {
         return RunSessionCommandAsync(project, "/help", "Opening help");
@@ -347,13 +581,25 @@ public partial class ChatViewModel : ViewModelBase
 
         var prompt = Prompt.Trim();
         Prompt = string.Empty;
+        bool isCommand = IsSlashCommand(prompt);
+        bool isOnboardingCommand = IsOnboardingCommand(prompt);
 
         Messages.Add(new ChatMessage("You", prompt, statusNote: null, workspacePath: project.Path));
         Activity.Add(new AgentEvent("task", $"Running in {project.Name}", project.Path));
 
-        _currentRunStartedAt = DateTimeOffset.UtcNow;
-        UpdateProgressText();
-        _progressTimer.Start();
+        if (isOnboardingCommand)
+        {
+            IsProviderSetupActive = true;
+        }
+
+        if (!isCommand)
+        {
+            _currentRunStartedAt = DateTimeOffset.UtcNow;
+            UpdateProgressText();
+            _progressTimer.Start();
+            IsPromptRunning = true;
+        }
+
         IsRunning = true;
 
         try
@@ -362,7 +608,7 @@ public partial class ChatViewModel : ViewModelBase
                 project.Path,
                 prompt,
                 SelectedSection?.SectionId);
-            string finalProgressText = FormatFinalProgressText(result);
+            string? finalProgressText = FormatFinalProgressText(result, allowLiveFallback: !isCommand);
             ApplySessionInfo(result.SessionInfo, workspacePath: project.Path);
 
             AddToolOutputMessages(result, project.Path);
@@ -390,7 +636,12 @@ public partial class ChatViewModel : ViewModelBase
         {
             _progressTimer.Stop();
             _currentRunStartedAt = null;
+            IsPromptRunning = false;
             IsRunning = false;
+            if (isOnboardingCommand)
+            {
+                IsProviderSetupActive = false;
+            }
         }
     }
 
@@ -399,9 +650,7 @@ public partial class ChatViewModel : ViewModelBase
         string? workspacePath,
         Func<Task> operation)
     {
-        _currentRunStartedAt = DateTimeOffset.UtcNow;
-        UpdateProgressText();
-        _progressTimer.Start();
+        IsPromptRunning = false;
         IsRunning = true;
         Activity.Add(new AgentEvent("settings", description, workspacePath));
 
@@ -416,8 +665,6 @@ public partial class ChatViewModel : ViewModelBase
         }
         finally
         {
-            _progressTimer.Stop();
-            _currentRunStartedAt = null;
             IsRunning = false;
         }
     }
@@ -462,12 +709,13 @@ public partial class ChatViewModel : ViewModelBase
                     SelectedSection?.SectionId);
                 ApplySessionInfo(result.SessionInfo, workspacePath: project.Path);
                 AddToolOutputMessages(result, project.Path);
+                string? finalProgressText = FormatFinalProgressText(result, allowLiveFallback: false);
                 Messages.Add(new ChatMessage(
                     "NanoAgent",
                     string.IsNullOrWhiteSpace(result.ResponseText)
                         ? "Command completed."
                         : result.ResponseText.Trim(),
-                    statusNote: null,
+                    statusNote: finalProgressText,
                     workspacePath: project.Path));
 
                 foreach (string activity in result.Activity)
@@ -477,6 +725,18 @@ public partial class ChatViewModel : ViewModelBase
 
                 RunCompleted?.Invoke(this, EventArgs.Empty);
             });
+    }
+
+    private static bool IsSlashCommand(string prompt)
+    {
+        return prompt.TrimStart().StartsWith("/", StringComparison.Ordinal);
+    }
+
+    private static bool IsOnboardingCommand(string prompt)
+    {
+        string trimmed = prompt.Trim();
+        return string.Equals(trimmed, "/onboard", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("/onboard ", StringComparison.OrdinalIgnoreCase);
     }
 
     private void ApplyRunResult(AgentRunResult result, string? workspacePath)
@@ -499,16 +759,25 @@ public partial class ChatViewModel : ViewModelBase
             return;
         }
 
-        AvailableModels.Clear();
-        foreach (string modelId in sessionInfo.AvailableModelIds)
+        _isApplyingSessionInfo = true;
+        try
         {
-            AvailableModels.Add(modelId);
+            AvailableModels.Clear();
+            foreach (string modelId in sessionInfo.AvailableModelIds)
+            {
+                AvailableModels.Add(modelId);
+            }
+
+            SelectedModelId = sessionInfo.ModelId;
+            SelectedThinkingMode = sessionInfo.ThinkingMode;
+            SelectedProfileName = sessionInfo.AgentProfileName;
+            HasSessionOptions = true;
+        }
+        finally
+        {
+            _isApplyingSessionInfo = false;
         }
 
-        SelectedModelId = sessionInfo.ModelId;
-        SelectedThinkingMode = sessionInfo.ThinkingMode;
-        SelectedProfileName = sessionInfo.AgentProfileName;
-        HasSessionOptions = true;
         if (replaceConversation)
         {
             ReplaceConversationMessages(sessionInfo, workspacePath);
@@ -524,6 +793,7 @@ public partial class ChatViewModel : ViewModelBase
         ApplyModelCommand.NotifyCanExecuteChanged();
         ApplyThinkingCommand.NotifyCanExecuteChanged();
         ApplyProfileCommand.NotifyCanExecuteChanged();
+        ConfigureProviderCommand.NotifyCanExecuteChanged();
         ShowHelpCommand.NotifyCanExecuteChanged();
         ShowModelsCommand.NotifyCanExecuteChanged();
         ShowPermissionsCommand.NotifyCanExecuteChanged();
@@ -532,6 +802,22 @@ public partial class ChatViewModel : ViewModelBase
         RedoCommand.NotifyCanExecuteChanged();
         AllowPermissionCommand.NotifyCanExecuteChanged();
         DenyPermissionCommand.NotifyCanExecuteChanged();
+    }
+
+    private void NotifyOnboardingStateChanged()
+    {
+        OnPropertyChanged(nameof(HasFloatingSelectionPrompt));
+        OnPropertyChanged(nameof(HasFloatingTextPrompt));
+        OnPropertyChanged(nameof(HasOnboardingOverlay));
+        OnPropertyChanged(nameof(HasOnboardingSelectionPrompt));
+        OnPropertyChanged(nameof(HasOnboardingTextPrompt));
+        OnPropertyChanged(nameof(HasOnboardingCountdown));
+        OnPropertyChanged(nameof(CanCancelOnboardingSelectionPrompt));
+        OnPropertyChanged(nameof(CanCancelOnboardingTextPrompt));
+        OnPropertyChanged(nameof(OnboardingStageText));
+        OnPropertyChanged(nameof(OnboardingTitle));
+        OnPropertyChanged(nameof(OnboardingDescription));
+        OnPropertyChanged(nameof(OnboardingInputKind));
     }
 
     private void AddToolOutputMessages(AgentRunResult result, string? workspacePath)
@@ -610,24 +896,35 @@ public partial class ChatViewModel : ViewModelBase
             return;
         }
 
-        TimeSpan elapsed = DateTimeOffset.UtcNow - _currentRunStartedAt.Value;
-        int estimatedTokens = (int)Math.Floor(Math.Max(0d, elapsed.TotalSeconds) * EstimatedLiveTokensPerSecond);
-        ProgressText = FormatProgressText(elapsed, estimatedTokens);
+        ProgressText = FormatProgressText(GetLiveElapsed(), GetLiveEstimatedTokens());
     }
 
-    private string FormatFinalProgressText(AgentRunResult result)
+    private string? FormatFinalProgressText(AgentRunResult result, bool allowLiveFallback)
     {
         if (result.Elapsed is { } elapsed && result.EstimatedTokens is { } estimatedTokens)
         {
             return FormatProgressText(elapsed, estimatedTokens);
         }
 
-        return ProgressText;
+        return allowLiveFallback ? ProgressText : null;
     }
 
     private static string FormatProgressText(TimeSpan elapsed, int estimatedTokens)
     {
         return $"({FormatElapsed(elapsed)} \u00B7 {FormatTokens(estimatedTokens)} tokens)";
+    }
+
+    private TimeSpan GetLiveElapsed()
+    {
+        return _currentRunStartedAt is null
+            ? TimeSpan.Zero
+            : DateTimeOffset.UtcNow - _currentRunStartedAt.Value;
+    }
+
+    private int GetLiveEstimatedTokens()
+    {
+        TimeSpan elapsed = GetLiveElapsed();
+        return (int)Math.Floor(Math.Max(0d, elapsed.TotalSeconds) * EstimatedLiveTokensPerSecond);
     }
 
     private static string FormatElapsed(TimeSpan elapsed)

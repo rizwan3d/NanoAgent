@@ -14,6 +14,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         Project = new ProjectViewModel(settingsService, sectionHistoryService);
         Chat = new ChatViewModel(new AgentRunner());
+        Chat.ActiveProject = Project.SelectedProject;
         StartNewSectionCommand = new AsyncRelayCommand(StartNewSectionAsync, CanStartNewSection);
         Chat.RunCompleted += async (_, _) => await RefreshProjectSectionsAsync(loadSelectedSection: false);
         Chat.PropertyChanged += (_, args) =>
@@ -27,6 +28,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (args.PropertyName == nameof(Project.SelectedProject))
             {
+                Chat.ActiveProject = Project.SelectedProject;
                 StartNewSectionCommand.NotifyCanExecuteChanged();
                 await RefreshProjectSectionsAsync(loadSelectedSection: true);
             }
@@ -37,10 +39,7 @@ public partial class MainWindowViewModel : ViewModelBase
             }
         };
 
-        if (Project.SelectedProject is not null)
-        {
-            _ = RefreshProjectSectionsAsync(loadSelectedSection: true);
-        }
+        _ = InitializeAsync();
     }
 
     public ProjectViewModel Project { get; }
@@ -64,6 +63,21 @@ public partial class MainWindowViewModel : ViewModelBase
         Project.SelectedSection = null;
         Chat.SelectedSection = null;
         await Chat.LoadSessionAsync(Project.SelectedProject);
+    }
+
+    private async Task InitializeAsync()
+    {
+        if (Project.SelectedProject is not null)
+        {
+            await RefreshProjectSectionsAsync(loadSelectedSection: true);
+            return;
+        }
+
+        await Chat.EnsureProviderSetupAsync();
+        if (Project.SelectedProject is not null)
+        {
+            await RefreshProjectSectionsAsync(loadSelectedSection: true);
+        }
     }
 
     private async Task RefreshProjectSectionsAsync(bool loadSelectedSection)
