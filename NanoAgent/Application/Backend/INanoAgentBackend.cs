@@ -13,6 +13,9 @@ public interface INanoAgentBackend : IAsyncDisposable
         string commandText,
         CancellationToken cancellationToken);
 
+    Task<BackendCommandResult> SelectModelAsync(
+        CancellationToken cancellationToken);
+
     Task<ConversationTurnResult> RunTurnAsync(
         string input,
         IUiBridge uiBridge,

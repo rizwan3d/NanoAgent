@@ -110,7 +110,7 @@ Start NanoAgent:
 nanoai
 ```
 
-NanoAgent will guide you through provider setup, model discovery, and the first section. After setup, you can switch models, profiles, and thinking mode from the desktop controls or terminal commands.
+NanoAgent will guide you through provider setup, model discovery, and the first section. After setup, you can switch models with the terminal F2 or `/models` picker, or switch profiles and thinking mode from the desktop controls or terminal commands.
 
 For terminal onboarding, you can pass an API key up front:
 
@@ -124,9 +124,8 @@ nanoai --provider-auth-key <key>
 | --- | --- |
 | `/help` | Show available commands. |
 | `/config` | Show provider, model, section, profile, thinking mode, and config path. |
-| `/models` | List available models. |
+| `/models` | Choose the active model with the arrow-key picker. |
 | `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
-| `/use <model>` | Switch model. |
 | `/profile <name>` | Switch profile. |
 | `/thinking [on\|off]` | Show or set thinking mode. |
 | `/permissions` | Show permission policy summary. |
@@ -139,6 +138,8 @@ nanoai --provider-auth-key <key>
 | `/undo` | Roll back the most recent tracked file edit transaction. |
 | `/redo` | Re-apply the most recently undone edit transaction. |
 | `/exit` | Exit the terminal UI. |
+
+Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 
 ## Safety and Control
 

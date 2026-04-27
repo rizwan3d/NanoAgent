@@ -6,9 +6,16 @@ namespace NanoAgent.Application.Commands;
 
 internal sealed class ModelsCommandHandler : IReplCommandHandler
 {
+    private readonly IInteractiveModelSelectionService _modelSelectionService;
+
+    public ModelsCommandHandler(IInteractiveModelSelectionService modelSelectionService)
+    {
+        _modelSelectionService = modelSelectionService;
+    }
+
     public string CommandName => "models";
 
-    public string Description => "List the available models and highlight the active one.";
+    public string Description => "Open the active model picker.";
 
     public string Usage => "/models";
 
@@ -19,15 +26,8 @@ internal sealed class ModelsCommandHandler : IReplCommandHandler
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        string[] lines =
-        [
-            $"Available models ({context.Session.AvailableModelIds.Count}):",
-            .. context.Session.AvailableModelIds.Select(modelId =>
-                modelId == context.Session.ActiveModelId
-                    ? $"* {modelId} (active)"
-                    : $"* {modelId}")
-        ];
-
-        return Task.FromResult(ReplCommandResult.Continue(string.Join(Environment.NewLine, lines)));
+        return _modelSelectionService.SelectAsync(
+            context.Session,
+            cancellationToken);
     }
 }

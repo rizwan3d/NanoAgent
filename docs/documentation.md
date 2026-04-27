@@ -125,7 +125,7 @@ The desktop controls expose common actions:
 - Switch model.
 - Toggle thinking mode.
 - Switch profile.
-- View help, models, permissions, and rules.
+- View help, model picker, permissions, and rules.
 - Add permission overrides.
 - Undo or redo tracked file edits.
 
@@ -179,9 +179,8 @@ nanoai --section <section-guid>
 | --- | --- |
 | `/help` | List commands and usage. |
 | `/config` | Show provider, session, config path, profile, thinking mode, and model. |
-| `/models` | Show available models. |
+| `/models` | Choose the active model with the arrow-key picker. |
 | `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
-| `/use <model>` | Switch the active model. |
 | `/profile <name>` | Switch the active profile. |
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
 | `/permissions` | Show permission summary and override guidance. |
@@ -197,18 +196,13 @@ nanoai --section <section-guid>
 
 Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
+Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
+
 ## Providers and Models
 
 NanoAgent stores a provider profile locally and discovers models from that provider when possible.
 
-Use:
-
-```text
-/models
-/use <model>
-```
-
-The active model is stored with the local configuration and section state. If a preferred model is unavailable, NanoAgent falls back to a discovered model when possible.
+Use the terminal F2 or `/models` picker, or the desktop model control, to switch models. The active model is stored with the local configuration and section state. If a preferred model is unavailable, NanoAgent falls back to a discovered model when possible.
 
 ### Thinking Mode
 

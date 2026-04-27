@@ -293,8 +293,8 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "Enter: send  |  Shift+Enter: newline  |  Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
-            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
+            "Enter: send  |  Shift+Enter: newline  |  F2: model  |  Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
+            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]F2: model[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
             BuildCompletionNote(state));
     }
 
@@ -341,7 +341,7 @@ public static partial class Program
         lines.Add(
             $"[grey]  Sponsor:[/] [yellow]{Markup.Escape(SponsorName)}[/] [grey]([/][italic]{Markup.Escape(SponsorUrl)}[/][grey])[/]");
         lines.Add($"[grey]  {new string('-', HeaderDividerWidth)}[/]");
-        lines.Add("[grey]  Chat in the terminal. Press Ctrl+C or use /exit to quit.[/]");
+        lines.Add("[grey]  Chat in the terminal. Press F2 to choose a model, Ctrl+C or /exit to quit.[/]");
         lines.Add("[grey]  Press Esc while a response is running to interrupt the current request.[/]");
 
         return string.Join('\n', lines);

@@ -43,6 +43,12 @@ public static partial class Program
                 return;
             }
 
+            if (key.Key == ConsoleKey.F2)
+            {
+                RequestModelSelection(state);
+                return;
+            }
+
             if (HandleConversationScrollInput(state, key))
             {
                 continue;
@@ -328,6 +334,11 @@ public static partial class Program
 
             case "B":
                 ScrollConversation(state, -MouseWheelScrollLineCount);
+                return;
+
+            case "Q":
+            case "12~":
+                RequestModelSelection(state);
                 return;
 
             case "5~":
