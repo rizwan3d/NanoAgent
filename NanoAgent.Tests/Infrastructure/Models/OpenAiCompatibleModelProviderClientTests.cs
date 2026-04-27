@@ -129,7 +129,7 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
-    public async Task GetAvailableModelsAsync_Should_ReturnAccountBackedModels_When_OpenAiChatGptAccountProviderIsConfigured()
+    public async Task GetAvailableModelsAsync_Should_RequestAccountBackedModels_When_OpenAiChatGptAccountProviderIsConfigured()
     {
         Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
         credentialService
@@ -139,7 +139,15 @@ public sealed class OpenAiCompatibleModelProviderClientTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", "acct_123"));
 
-        HttpClient httpClient = new(new ThrowingHandler());
+        RecordingHandler handler = new("""
+            {
+              "models": [
+                { "slug": "account-model-a" },
+                "account-model-b"
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
         OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient, credentialService.Object);
 
         IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
@@ -147,10 +155,81 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             "stored-credentials",
             CancellationToken.None);
 
-        models.Take(2).Select(model => model.Id).Should().Equal([
-            "gpt-5.3-codex",
-            "gpt-5.3-codex-spark"
-        ]);
+        handler.RequestUri!.AbsolutePath.Should().EndWith("/models");
+        handler.AuthorizationHeader.Should().Be("Bearer access-token");
+        handler.AccountHeader.Should().Be("acct_123");
+        models.Select(model => model.Id).Should().Equal("account-model-a", "account-model-b");
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_RefreshCredentialsOnce_When_AccountModelRequestIsUnauthorized()
+    {
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("expired-token", "acct_123"));
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("fresh-token", "acct_123"));
+
+        SequencedHandler handler = new(
+            new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "data": [
+                        { "id": "fresh-model" }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+            "stored-credentials",
+            CancellationToken.None);
+
+        handler.AuthorizationHeaders.Should().Equal("Bearer expired-token", "Bearer fresh-token");
+        models.Select(model => model.Id).Should().Equal("fresh-model");
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_ReturnFallbackModels_When_AccountModelRequestFails()
+    {
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", "acct_123"));
+
+        RecordingHandler handler = new(
+            responseBody: string.Empty,
+            statusCode: HttpStatusCode.ServiceUnavailable);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+            "stored-credentials",
+            CancellationToken.None);
+
+        models.Should().NotBeEmpty();
         credentialService.VerifyAll();
     }
 
@@ -168,11 +247,6 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     {
         private readonly string _responseBody;
 
-        public RecordingHandler(string responseBody)
-        {
-            _responseBody = responseBody;
-        }
-
         public Uri? RequestUri { get; private set; }
 
         public string? AuthorizationHeader { get; private set; }
@@ -185,9 +259,33 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         public string? OpenRouterTitleHeader { get; private set; }
 
+        public string? AccountHeader { get; private set; }
+
+        public HttpStatusCode StatusCode { get; }
+
+        public RecordingHandler(
+            string responseBody,
+            HttpStatusCode statusCode = HttpStatusCode.OK)
+        {
+            _responseBody = responseBody;
+            StatusCode = statusCode;
+        }
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
+        {
+            CaptureRequest(request);
+
+            HttpResponseMessage response = new(StatusCode)
+            {
+                Content = new StringContent(_responseBody, Encoding.UTF8, "application/json")
+            };
+
+            return Task.FromResult(response);
+        }
+
+        private void CaptureRequest(HttpRequestMessage request)
         {
             RequestUri = request.RequestUri;
             AuthorizationHeader = request.Headers.Authorization?.ToString();
@@ -203,23 +301,31 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
                 ? titleValues.FirstOrDefault()
                 : null;
-
-            HttpResponseMessage response = new(HttpStatusCode.OK)
-            {
-                Content = new StringContent(_responseBody, Encoding.UTF8, "application/json")
-            };
-
-            return Task.FromResult(response);
+            AccountHeader = request.Headers.TryGetValues(
+                "Chat" + "G" + "P" + "T-Account-Id",
+                out IEnumerable<string>? accountValues)
+                ? accountValues.FirstOrDefault()
+                : null;
         }
     }
 
-    private sealed class ThrowingHandler : HttpMessageHandler
+    private sealed class SequencedHandler : HttpMessageHandler
     {
+        private readonly Queue<HttpResponseMessage> _responses;
+
+        public SequencedHandler(params HttpResponseMessage[] responses)
+        {
+            _responses = new Queue<HttpResponseMessage>(responses);
+        }
+
+        public List<string?> AuthorizationHeaders { get; } = [];
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
-            throw new InvalidOperationException("No HTTP request should be sent for this provider.");
+            AuthorizationHeaders.Add(request.Headers.Authorization?.ToString());
+            return Task.FromResult(_responses.Dequeue());
         }
     }
 }

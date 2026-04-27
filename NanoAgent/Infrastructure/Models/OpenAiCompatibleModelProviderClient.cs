@@ -11,6 +11,8 @@ namespace NanoAgent.Infrastructure.Models;
 internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 {
     private const string AnthropicVersion = "2023-06-01";
+    private const string AccountHeaderName = "Chat" + "G" + "P" + "T-Account-Id";
+    private const string Originator = "nanoagent";
     private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
     private static readonly AvailableModel[] OpenAiChatGptAccountModels =
@@ -61,11 +63,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     "OpenAI ChatGPT Plus/Pro credentials cannot be resolved in this runtime.");
             }
 
-            await _openAiChatGptAccountCredentialService.ResolveAsync(
+            return await GetOpenAiChatGptAccountModelsAsync(
                 apiKey,
-                forceRefresh: false,
                 cancellationToken);
-            return OpenAiChatGptAccountModels;
         }
 
         Uri baseUri = providerProfile.ResolveBaseUri();
@@ -91,19 +91,108 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 $"Unable to fetch models from the configured provider. {detail}");
         }
 
-        ModelListResponse? payload = JsonSerializer.Deserialize(
-            responseBody,
-            ModelApiJsonContext.Default.ModelListResponse);
-
-        if (payload?.Data is null)
+        IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+        if (models.Count == 0)
         {
             throw new ModelProviderException(
                 "The configured provider returned an invalid models response.");
         }
 
-        return payload.Data
-            .Select(item => new AvailableModel(item.Id))
-            .ToArray();
+        return models;
+    }
+
+    private async Task<IReadOnlyList<AvailableModel>> GetOpenAiChatGptAccountModelsAsync(
+        string storedCredentials,
+        CancellationToken cancellationToken)
+    {
+        if (_openAiChatGptAccountCredentialService is null)
+        {
+            throw new ModelProviderException(
+                "OpenAI ChatGPT Plus/Pro credentials cannot be resolved in this runtime.");
+        }
+
+        Uri baseUri = new AgentProviderProfile(
+            ProviderKind.OpenAiChatGptAccount,
+            BaseUrl: null).ResolveBaseUri();
+        OpenAiChatGptAccountResolvedCredential credential =
+            await _openAiChatGptAccountCredentialService.ResolveAsync(
+                storedCredentials,
+                forceRefresh: false,
+                cancellationToken);
+
+        bool forcedRefreshAfterAuthFailure = false;
+
+        while (true)
+        {
+            try
+            {
+                using HttpRequestMessage request = CreateOpenAiChatGptAccountModelsRequest(
+                    baseUri,
+                    credential);
+                LogDebugApiRequest(request.Method, request.RequestUri);
+
+                using HttpResponseMessage response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+
+                string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                LogDebugApiResponse(response.StatusCode, responseBody);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                    !forcedRefreshAfterAuthFailure)
+                {
+                    forcedRefreshAfterAuthFailure = true;
+                    credential = await _openAiChatGptAccountCredentialService.ResolveAsync(
+                        storedCredentials,
+                        forceRefresh: true,
+                        cancellationToken);
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    LogOpenAiChatGptAccountModelFallback(
+                        $"HTTP {(int)response.StatusCode}");
+                    return OpenAiChatGptAccountModels;
+                }
+
+                IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+                if (models.Count > 0)
+                {
+                    return models;
+                }
+
+                LogOpenAiChatGptAccountModelFallback("empty or invalid model response");
+                return OpenAiChatGptAccountModels;
+            }
+            catch (HttpRequestException exception)
+            {
+                LogOpenAiChatGptAccountModelFallback(exception.Message);
+                return OpenAiChatGptAccountModels;
+            }
+            catch (JsonException exception)
+            {
+                LogOpenAiChatGptAccountModelFallback(exception.Message);
+                return OpenAiChatGptAccountModels;
+            }
+        }
+    }
+
+    private HttpRequestMessage CreateOpenAiChatGptAccountModelsRequest(
+        Uri baseUri,
+        OpenAiChatGptAccountResolvedCredential credential)
+    {
+        HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+        request.Headers.TryAddWithoutValidation("originator", Originator);
+        request.Headers.TryAddWithoutValidation("User-Agent", "NanoAgent/1.0");
+        if (!string.IsNullOrWhiteSpace(credential.AccountId))
+        {
+            request.Headers.TryAddWithoutValidation(AccountHeaderName, credential.AccountId);
+        }
+
+        return request;
     }
 
     private static void ApplyAuthenticationHeaders(
@@ -132,6 +221,86 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         return value.Length <= maxLength
             ? value
             : value[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
+    private static IReadOnlyList<AvailableModel> ParseAvailableModels(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        if (!TryGetModelArray(document.RootElement, out JsonElement modelsElement))
+        {
+            return [];
+        }
+
+        List<AvailableModel> models = [];
+        foreach (JsonElement item in modelsElement.EnumerateArray())
+        {
+            string? id = TryGetModelId(item);
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                models.Add(new AvailableModel(id.Trim()));
+            }
+        }
+
+        return models;
+    }
+
+    private static bool TryGetModelArray(
+        JsonElement root,
+        out JsonElement modelsElement)
+    {
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            modelsElement = root;
+            return true;
+        }
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("data", out modelsElement) &&
+            modelsElement.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        if (root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("models", out modelsElement) &&
+            modelsElement.ValueKind == JsonValueKind.Array)
+        {
+            return true;
+        }
+
+        modelsElement = default;
+        return false;
+    }
+
+    private static string? TryGetModelId(JsonElement item)
+    {
+        if (item.ValueKind == JsonValueKind.String)
+        {
+            return item.GetString();
+        }
+
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (string propertyName in new[] { "id", "slug", "model_slug" })
+        {
+            if (item.TryGetProperty(propertyName, out JsonElement property) &&
+                property.ValueKind == JsonValueKind.String)
+            {
+                return property.GetString();
+            }
+        }
+
+        return null;
+    }
+
+    private void LogOpenAiChatGptAccountModelFallback(string reason)
+    {
+        _logger.LogWarning(
+            "Unable to fetch account-backed model list dynamically. Using fallback models. Reason: {Reason}",
+            reason);
     }
 
     private void LogDebugApiRequest(
