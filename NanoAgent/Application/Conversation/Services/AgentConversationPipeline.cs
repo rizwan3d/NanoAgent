@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Serialization;
 using NanoAgent.Application.Exceptions;
+using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Logging;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Planning;
@@ -59,6 +60,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
     private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ISkillService _skillService;
+    private readonly IToolOutputFormatter _toolOutputFormatter;
     private readonly ILogger<AgentConversationPipeline> _logger;
 
     public AgentConversationPipeline(
@@ -74,7 +76,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ILessonMemoryService lessonMemoryService,
         ILogger<AgentConversationPipeline> logger,
         ILifecycleHookService? lifecycleHookService = null,
-        ISkillService? skillService = null)
+        ISkillService? skillService = null,
+        IToolOutputFormatter? toolOutputFormatter = null)
     {
         _timeProvider = timeProvider;
         _tokenEstimator = tokenEstimator;
@@ -88,6 +91,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _workspaceInstructionsProvider = workspaceInstructionsProvider;
         _lessonMemoryService = lessonMemoryService;
         _skillService = skillService ?? DisabledSkillService.Instance;
+        _toolOutputFormatter = toolOutputFormatter ?? new ToolOutputFormatter();
         _logger = logger;
     }
 
@@ -171,14 +175,16 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
             session.ClearPendingExecutionPlan();
+            ToolExecutionBatchResult? batchResult = CreateBatchResult(result.ExecutedToolResults);
             session.AddConversationTurn(
                 normalizedInput,
                 result.AssistantMessage,
-                result.ToolCalls);
+                result.ToolCalls,
+                CreateToolOutputMessages(batchResult));
 
             ConversationTurnResult turnResult = ConversationTurnResult.AssistantMessage(
                 result.AssistantMessage,
-                CreateBatchResult(result.ExecutedToolResults),
+                batchResult,
                 CreateMetrics(
                     startedAt,
                     result));
@@ -260,14 +266,16 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
         session.ClearPendingExecutionPlan();
+        ToolExecutionBatchResult? batchResult = CreateBatchResult(executionResult.ExecutedToolResults);
         session.AddConversationTurn(
             normalizedInput,
             executionResult.AssistantMessage,
-            executionResult.ToolCalls);
+            executionResult.ToolCalls,
+            CreateToolOutputMessages(batchResult));
 
         return ConversationTurnResult.AssistantMessage(
             executionResult.AssistantMessage,
-            CreateBatchResult(executionResult.ExecutedToolResults),
+            batchResult,
             CreateMetrics(
                 startedAt,
                 executionResult));
@@ -1010,6 +1018,14 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return results.Count == 0
             ? null
             : new ToolExecutionBatchResult(results.ToArray());
+    }
+
+    private IReadOnlyList<string> CreateToolOutputMessages(
+        ToolExecutionBatchResult? batchResult)
+    {
+        return batchResult is null
+            ? []
+            : _toolOutputFormatter.FormatResults(batchResult);
     }
 
     private sealed class DisabledLifecycleHookService : ILifecycleHookService

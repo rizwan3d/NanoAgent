@@ -41,7 +41,8 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
                             "call_1",
                             "file_write",
                             """{ "path": "README.md", "content": "hello" }""")
-                    ])
+                    ],
+                    ["\u2022 Edited 1 file (+1 -0)"])
             ],
             27,
             new PendingExecutionPlan(
@@ -84,6 +85,8 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.Turns[0].ToolCalls.Should().ContainSingle();
         loadedSnapshot.Turns[0].ToolCalls[0].Name.Should().Be("file_write");
         loadedSnapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("README.md");
+        loadedSnapshot.Turns[0].ToolOutputMessages.Should().ContainSingle();
+        loadedSnapshot.Turns[0].ToolOutputMessages[0].Should().Be("\u2022 Edited 1 file (+1 -0)");
         loadedSnapshot.TotalEstimatedOutputTokens.Should().Be(27);
         loadedSnapshot.WorkspacePath.Should().Be(Path.GetFullPath(_tempRoot));
         loadedSnapshot.PendingExecutionPlan.Should().NotBeNull();
@@ -136,6 +139,7 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.Should().NotBeNull();
         loadedSnapshot!.Turns.Should().ContainSingle();
         loadedSnapshot.Turns[0].ToolCalls.Should().BeEmpty();
+        loadedSnapshot.Turns[0].ToolOutputMessages.Should().BeEmpty();
     }
 
     public void Dispose()

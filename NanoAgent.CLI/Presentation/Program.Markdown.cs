@@ -455,6 +455,11 @@ public static partial class Program
             return "bold aqua";
         }
 
+        if (trimmedStart.StartsWith("• Previewed ", StringComparison.Ordinal))
+        {
+            return "bold cyan";
+        }
+
         if (trimmedStart.StartsWith("• Listed ", StringComparison.Ordinal))
         {
             return "bold blue";

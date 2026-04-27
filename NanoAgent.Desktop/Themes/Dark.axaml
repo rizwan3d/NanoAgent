@@ -47,6 +47,13 @@
         <Setter Property="BorderBrush" Value="#3D444D"/>
     </Style>
 
+    <Style Selector="Button.commandSuggestion">
+        <Setter Property="CornerRadius" Value="6"/>
+        <Setter Property="Padding" Value="8,6"/>
+        <Setter Property="MinHeight" Value="28"/>
+        <Setter Property="FontWeight" Value="Normal"/>
+    </Style>
+
     <Style Selector="ToggleButton">
         <Setter Property="Background" Value="#121417"/>
         <Setter Property="Foreground" Value="#CBD5E1"/>

@@ -39,6 +39,17 @@ public sealed class MarkdownMessageView : UserControl
     private static readonly IBrush CodeCommentBrush = Brush.Parse("#6B7280");
     private static readonly IBrush CodeNumberBrush = Brush.Parse("#FBBF24");
     private static readonly IBrush CodeTypeBrush = Brush.Parse("#93C5FD");
+    private static readonly IBrush CodeBlockBackgroundBrush = Brush.Parse("#090D13");
+    private static readonly IBrush CodeBlockBorderBrush = Brush.Parse("#263040");
+    private static readonly IBrush DiffAddedBackgroundBrush = Brush.Parse("#0C2118");
+    private static readonly IBrush DiffAddedTextBrush = Brush.Parse("#B7F7CF");
+    private static readonly IBrush DiffRemovedBackgroundBrush = Brush.Parse("#2A1013");
+    private static readonly IBrush DiffRemovedTextBrush = Brush.Parse("#FECACA");
+    private static readonly IBrush DiffContextBackgroundBrush = Brush.Parse("#0D121A");
+    private static readonly IBrush DiffHunkBackgroundBrush = Brush.Parse("#121A2A");
+    private static readonly IBrush DiffHunkTextBrush = Brush.Parse("#93C5FD");
+    private static readonly IBrush LineNumberBrush = Brush.Parse("#6B7280");
+    private const string ToolBullet = "\u2022";
     private static readonly Regex FileReferenceRegex = new(
         @"(?ix)
         (?<![\w:/\\.-])
@@ -58,6 +69,14 @@ public sealed class MarkdownMessageView : UserControl
 
     private static readonly Regex ListItemRegex = new(
         @"^\s*(?:[-*+]|\d+\.)\s+(?<text>.+)$",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ToolPreviewLineRegex = new(
+        @"^\s*(?<line>\d+)\s+(?<kind>[+\- ])(?<text>.*)$",
+        RegexOptions.Compiled);
+
+    private static readonly Regex ToolFileEditHeaderRegex = new(
+        @"^\s*-\s+(?<path>.+?)\s+\(\+(?<added>\d+)\s+-(?<removed>\d+)\)\s*$",
         RegexOptions.Compiled);
 
     private static readonly Regex CodeTokenRegex = new(
@@ -118,6 +137,13 @@ public sealed class MarkdownMessageView : UserControl
         }
 
         string[] lines = text.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n').Split('\n');
+        if (TryCreateToolOutputView(lines, out Control? toolOutputView) && toolOutputView is not null)
+        {
+            blocks.Children.Add(toolOutputView);
+            Content = blocks;
+            return;
+        }
+
         for (int index = 0; index < lines.Length; index++)
         {
             string line = lines[index];
@@ -182,6 +208,316 @@ public sealed class MarkdownMessageView : UserControl
         }
 
         return true;
+    }
+
+    private bool TryCreateToolOutputView(
+        IReadOnlyList<string> lines,
+        out Control? view)
+    {
+        view = null;
+        string firstLine = lines.FirstOrDefault(static line => !string.IsNullOrWhiteSpace(line))?.Trim() ?? string.Empty;
+        if (!firstLine.StartsWith(ToolBullet, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (firstLine.StartsWith($"{ToolBullet} Edited ", StringComparison.Ordinal))
+        {
+            view = CreateFileEditToolView(lines);
+            return true;
+        }
+
+        if (firstLine.StartsWith($"{ToolBullet} Ran ", StringComparison.Ordinal))
+        {
+            view = CreateShellToolView(lines);
+            return true;
+        }
+
+        if (firstLine.StartsWith($"{ToolBullet} Read ", StringComparison.Ordinal))
+        {
+            view = CreatePreviewToolView(lines, "preview");
+            return true;
+        }
+
+        if (firstLine.StartsWith($"{ToolBullet} Previewed ", StringComparison.Ordinal))
+        {
+            view = CreatePreviewToolView(lines, "preview");
+            return true;
+        }
+
+        view = CreateGenericToolView(lines);
+        return true;
+    }
+
+    private Control CreateFileEditToolView(IReadOnlyList<string> lines)
+    {
+        StackPanel content = new()
+        {
+            Spacing = 8
+        };
+
+        content.Children.Add(CreateToolHeader(lines[0], "file edit"));
+
+        for (int index = 1; index < lines.Count; index++)
+        {
+            string line = lines[index];
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            Match fileHeaderMatch = ToolFileEditHeaderRegex.Match(line);
+            if (!fileHeaderMatch.Success)
+            {
+                continue;
+            }
+
+            StackPanel filePanel = new()
+            {
+                Spacing = 6
+            };
+
+            string path = fileHeaderMatch.Groups["path"].Value;
+            string added = fileHeaderMatch.Groups["added"].Value;
+            string removed = fileHeaderMatch.Groups["removed"].Value;
+
+            Grid fileHeader = new()
+            {
+                ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+                ColumnSpacing = 10
+            };
+
+            fileHeader.Children.Add(CreateInlineLine(path, TextBrush));
+            TextBlock stats = CreateTextBlock(
+                $"+{added} -{removed}",
+                MutedBrush,
+                fontSize: 12,
+                fontFamily: CodeFont);
+            Grid.SetColumn(stats, 1);
+            fileHeader.Children.Add(stats);
+            filePanel.Children.Add(fileHeader);
+
+            StackPanel diffRows = new()
+            {
+                Spacing = 1
+            };
+
+            while (index + 1 < lines.Count)
+            {
+                string candidate = lines[index + 1];
+                if (ToolFileEditHeaderRegex.IsMatch(candidate))
+                {
+                    break;
+                }
+
+                index++;
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                Match previewMatch = ToolPreviewLineRegex.Match(candidate);
+                if (previewMatch.Success)
+                {
+                    diffRows.Children.Add(CreateToolPreviewDiffRow(previewMatch));
+                    continue;
+                }
+
+                if (candidate.TrimStart().StartsWith("...", StringComparison.Ordinal))
+                {
+                    diffRows.Children.Add(CreateMutedCodeRow(candidate.Trim()));
+                }
+            }
+
+            filePanel.Children.Add(new Border
+            {
+                Background = DiffContextBackgroundBrush,
+                BorderBrush = CodeBlockBorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(6),
+                Child = new ScrollViewer
+                {
+                    HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                    VerticalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                    Content = diffRows
+                }
+            });
+
+            content.Children.Add(new Border
+            {
+                Background = Brush.Parse("#0B111A"),
+                BorderBrush = Brush.Parse("#202A3A"),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(8),
+                Padding = new Thickness(10),
+                Child = filePanel
+            });
+        }
+
+        return CreateToolCard(content);
+    }
+
+    private Control CreateShellToolView(IReadOnlyList<string> lines)
+    {
+        StackPanel content = new()
+        {
+            Spacing = 8
+        };
+
+        content.Children.Add(CreateToolHeader(lines[0], "command"));
+
+        string? streamLabel = null;
+        List<string> outputLines = [];
+        for (int index = 1; index < lines.Count; index++)
+        {
+            string trimmed = lines[index].Trim();
+            if (trimmed.StartsWith("- stdout:", StringComparison.Ordinal) ||
+                trimmed.StartsWith("- stderr:", StringComparison.Ordinal))
+            {
+                streamLabel = trimmed[2..^1];
+                continue;
+            }
+
+            if (trimmed.StartsWith("- exit code:", StringComparison.Ordinal))
+            {
+                content.Children.Add(CreateStatusPill(trimmed[2..]));
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(lines[index]))
+            {
+                outputLines.Add(lines[index].Trim());
+            }
+        }
+
+        if (outputLines.Count > 0)
+        {
+            content.Children.Add(CreateCodeBlock(outputLines, streamLabel ?? "output"));
+        }
+
+        return CreateToolCard(content);
+    }
+
+    private Control CreatePreviewToolView(
+        IReadOnlyList<string> lines,
+        string label)
+    {
+        StackPanel content = new()
+        {
+            Spacing = 8
+        };
+
+        content.Children.Add(CreateToolHeader(lines[0], label));
+
+        List<string> previewLines = [];
+        for (int index = 1; index < lines.Count; index++)
+        {
+            string line = lines[index];
+            string trimmed = line.Trim();
+            if (trimmed.StartsWith("- preview:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (trimmed.StartsWith("- empty file", StringComparison.Ordinal))
+            {
+                content.Children.Add(CreateStatusPill("empty file"));
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                previewLines.Add(line.TrimStart());
+            }
+        }
+
+        if (previewLines.Count > 0)
+        {
+            content.Children.Add(CreateCodeBlock(previewLines, label));
+        }
+
+        return CreateToolCard(content);
+    }
+
+    private Control CreateGenericToolView(IReadOnlyList<string> lines)
+    {
+        StackPanel content = new()
+        {
+            Spacing = 6
+        };
+
+        content.Children.Add(CreateToolHeader(lines[0], "tool"));
+        for (int index = 1; index < lines.Count; index++)
+        {
+            if (!string.IsNullOrWhiteSpace(lines[index]))
+            {
+                content.Children.Add(CreateInlineLine(lines[index].Trim(), TextBrush));
+            }
+        }
+
+        return CreateToolCard(content);
+    }
+
+    private Control CreateToolCard(Control content)
+    {
+        return new Border
+        {
+            Background = Brush.Parse("#0A0F16"),
+            BorderBrush = Brush.Parse("#263247"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(8),
+            Padding = new Thickness(10),
+            Child = content
+        };
+    }
+
+    private Control CreateToolHeader(
+        string title,
+        string label)
+    {
+        Grid grid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("*,Auto"),
+            ColumnSpacing = 10
+        };
+
+        string normalizedTitle = title.Trim();
+        if (normalizedTitle.StartsWith(ToolBullet, StringComparison.Ordinal))
+        {
+            normalizedTitle = normalizedTitle[ToolBullet.Length..].Trim();
+        }
+
+        grid.Children.Add(CreateTextBlock(
+            normalizedTitle,
+            TextBrush,
+            fontSize: 13,
+            fontWeight: FontWeight.SemiBold));
+
+        Control pill = CreateStatusPill(label);
+        Grid.SetColumn(pill, 1);
+        grid.Children.Add(pill);
+        return grid;
+    }
+
+    private static Control CreateStatusPill(string text)
+    {
+        return new Border
+        {
+            Background = Brush.Parse("#111827"),
+            BorderBrush = Brush.Parse("#2A3344"),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(7, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+            Child = new TextBlock
+            {
+                Text = text,
+                Foreground = MutedBrush,
+                FontSize = 11,
+                FontFamily = CodeFont,
+                LineHeight = 15
+            }
+        };
     }
 
     private bool TryCreateHeading(string line, out Control? heading)
@@ -282,38 +618,33 @@ public sealed class MarkdownMessageView : UserControl
     {
         StackPanel codePanel = new()
         {
-            Spacing = 2
+            Spacing = IsDiffBlock(lines, language) ? 1 : 2
         };
 
         if (!string.IsNullOrWhiteSpace(language))
         {
-            codePanel.Children.Add(new TextBlock
-            {
-                Text = language,
-                Foreground = MutedBrush,
-                FontSize = 11,
-                FontFamily = CodeFont,
-                Margin = new Thickness(0, 0, 0, 4)
-            });
+            codePanel.Children.Add(CreateCodeBlockHeader(language));
         }
 
+        bool isDiffBlock = IsDiffBlock(lines, language);
         foreach (string line in lines)
         {
-            StackPanel row = new()
+            if (isDiffBlock && TryCreateDiffCodeRow(line, out Control? diffRow) && diffRow is not null)
             {
-                Orientation = Orientation.Horizontal
-            };
-            AddHighlightedCode(row, line.Length == 0 ? " " : line);
-            codePanel.Children.Add(row);
+                codePanel.Children.Add(diffRow);
+                continue;
+            }
+
+            codePanel.Children.Add(CreateCodeLineRow(line.Length == 0 ? " " : line));
         }
 
         Border border = new()
         {
-            Background = Brush.Parse("#0A0F14"),
-            BorderBrush = Brush.Parse("#263040"),
+            Background = CodeBlockBackgroundBrush,
+            BorderBrush = CodeBlockBorderBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(10, 8),
+            Padding = new Thickness(0),
             Child = new ScrollViewer
             {
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -323,6 +654,215 @@ public sealed class MarkdownMessageView : UserControl
         };
 
         return border;
+    }
+
+    private static Control CreateCodeBlockHeader(string language)
+    {
+        return new Border
+        {
+            Background = Brush.Parse("#0D141F"),
+            BorderBrush = CodeBlockBorderBrush,
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Padding = new Thickness(10, 6),
+            Child = new TextBlock
+            {
+                Text = language,
+                Foreground = MutedBrush,
+                FontSize = 11,
+                FontFamily = CodeFont,
+                LineHeight = 15
+            }
+        };
+    }
+
+    private Control CreateCodeLineRow(string line)
+    {
+        StackPanel row = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(10, 0)
+        };
+        AddHighlightedCode(row, line);
+        return row;
+    }
+
+    private static bool IsDiffBlock(
+        IReadOnlyList<string> lines,
+        string? language)
+    {
+        if (string.Equals(language, "diff", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(language, "patch", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        bool hasHunkOrFileHeader = lines.Any(static line =>
+            line.StartsWith("@@", StringComparison.Ordinal) ||
+            line.StartsWith("+++", StringComparison.Ordinal) ||
+            line.StartsWith("---", StringComparison.Ordinal));
+        if (hasHunkOrFileHeader)
+        {
+            return true;
+        }
+
+        int addedLineCount = lines.Count(static line => line.StartsWith("+", StringComparison.Ordinal));
+        int removedLineCount = lines.Count(static line => line.StartsWith("-", StringComparison.Ordinal));
+        return addedLineCount > 0 && removedLineCount > 0;
+    }
+
+    private static bool IsDiffLikeLine(string line)
+    {
+        return line.StartsWith("@@", StringComparison.Ordinal) ||
+            line.StartsWith("+++", StringComparison.Ordinal) ||
+            line.StartsWith("---", StringComparison.Ordinal) ||
+            line.StartsWith("+", StringComparison.Ordinal) ||
+            line.StartsWith("-", StringComparison.Ordinal);
+    }
+
+    private bool TryCreateDiffCodeRow(
+        string line,
+        out Control? row)
+    {
+        row = null;
+        if (!IsDiffLikeLine(line))
+        {
+            return false;
+        }
+
+        char marker = line.Length == 0 ? ' ' : line[0];
+        string text = marker is '+' or '-'
+            ? line[1..]
+            : line;
+
+        IBrush background;
+        IBrush markerBrush;
+        if (line.StartsWith("@@", StringComparison.Ordinal))
+        {
+            background = DiffHunkBackgroundBrush;
+            markerBrush = DiffHunkTextBrush;
+            text = line;
+            marker = ' ';
+        }
+        else if (line.StartsWith("+++", StringComparison.Ordinal) ||
+                 line.StartsWith("---", StringComparison.Ordinal))
+        {
+            background = DiffContextBackgroundBrush;
+            markerBrush = MutedBrush;
+            text = line;
+            marker = ' ';
+        }
+        else if (marker == '+')
+        {
+            background = DiffAddedBackgroundBrush;
+            markerBrush = DiffAddedTextBrush;
+        }
+        else if (marker == '-')
+        {
+            background = DiffRemovedBackgroundBrush;
+            markerBrush = DiffRemovedTextBrush;
+        }
+        else
+        {
+            background = DiffContextBackgroundBrush;
+            markerBrush = MutedBrush;
+        }
+
+        row = CreateDiffRow(
+            null,
+            marker == ' ' ? string.Empty : marker.ToString(),
+            text.Length == 0 ? " " : text,
+            background,
+            markerBrush);
+        return true;
+    }
+
+    private Control CreateToolPreviewDiffRow(Match previewMatch)
+    {
+        string lineNumber = previewMatch.Groups["line"].Value;
+        string kind = previewMatch.Groups["kind"].Value;
+        string text = previewMatch.Groups["text"].Value;
+
+        IBrush background = kind switch
+        {
+            "+" => DiffAddedBackgroundBrush,
+            "-" => DiffRemovedBackgroundBrush,
+            _ => DiffContextBackgroundBrush
+        };
+
+        IBrush markerBrush = kind switch
+        {
+            "+" => DiffAddedTextBrush,
+            "-" => DiffRemovedTextBrush,
+            _ => MutedBrush
+        };
+
+        return CreateDiffRow(
+            lineNumber,
+            kind.Trim(),
+            text.Length == 0 ? " " : text,
+            background,
+            markerBrush);
+    }
+
+    private Control CreateMutedCodeRow(string text)
+    {
+        return CreateDiffRow(
+            null,
+            string.Empty,
+            text,
+            DiffContextBackgroundBrush,
+            MutedBrush);
+    }
+
+    private Control CreateDiffRow(
+        string? lineNumber,
+        string marker,
+        string text,
+        IBrush background,
+        IBrush markerBrush)
+    {
+        Grid grid = new()
+        {
+            ColumnDefinitions = new ColumnDefinitions("48,24,*"),
+            ColumnSpacing = 0,
+            Background = background,
+            MinHeight = 22
+        };
+
+        grid.Children.Add(new TextBlock
+        {
+            Text = lineNumber ?? string.Empty,
+            Foreground = LineNumberBrush,
+            FontFamily = CodeFont,
+            FontSize = 12,
+            LineHeight = 18,
+            TextAlignment = TextAlignment.Right,
+            Margin = new Thickness(8, 2, 8, 2)
+        });
+
+        TextBlock markerText = new()
+        {
+            Text = marker,
+            Foreground = markerBrush,
+            FontFamily = CodeFont,
+            FontSize = 12,
+            FontWeight = FontWeight.SemiBold,
+            LineHeight = 18,
+            TextAlignment = TextAlignment.Center,
+            Margin = new Thickness(0, 2)
+        };
+        Grid.SetColumn(markerText, 1);
+        grid.Children.Add(markerText);
+
+        StackPanel code = new()
+        {
+            Orientation = Orientation.Horizontal,
+            Margin = new Thickness(0, 2, 10, 2)
+        };
+        AddHighlightedCode(code, text);
+        Grid.SetColumn(code, 2);
+        grid.Children.Add(code);
+        return grid;
     }
 
     private void AddHighlightedCode(Panel panel, string text)

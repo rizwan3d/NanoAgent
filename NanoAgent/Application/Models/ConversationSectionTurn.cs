@@ -7,7 +7,8 @@ public sealed class ConversationSectionTurn
     public ConversationSectionTurn(
         string userInput,
         string assistantResponse,
-        IReadOnlyList<ConversationToolCall>? toolCalls = null)
+        IReadOnlyList<ConversationToolCall>? toolCalls = null,
+        IReadOnlyList<string>? toolOutputMessages = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
         ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
@@ -25,11 +26,17 @@ public sealed class ConversationSectionTurn
                 toolCall.Name.Trim(),
                 SecretRedactor.Redact(toolCall.ArgumentsJson.Trim())))
             .ToArray();
+        ToolOutputMessages = (toolOutputMessages ?? [])
+            .Where(static message => !string.IsNullOrWhiteSpace(message))
+            .Select(static message => SecretRedactor.Redact(message.Trim()))
+            .ToArray();
     }
 
     public string AssistantResponse { get; }
 
     public IReadOnlyList<ConversationToolCall> ToolCalls { get; }
+
+    public IReadOnlyList<string> ToolOutputMessages { get; }
 
     public string UserInput { get; }
 }

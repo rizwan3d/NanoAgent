@@ -41,7 +41,7 @@ It is designed for developers who want useful automation without giving up contr
 
 ### Desktop
 
-Use the desktop app when you want a visual workspace with sections, model controls, permission prompts, activity output, and undo/redo close at hand.
+Use the desktop app when you want a visual workspace with sections, model controls, slash-command suggestions, permission prompts, activity output, and undo/redo close at hand.
 
 ### Terminal
 
@@ -125,6 +125,7 @@ nanoai --provider-auth-key <key>
 | `/help` | Show available commands. |
 | `/config` | Show provider, model, section, profile, thinking mode, and config path. |
 | `/models` | Choose the active model with the arrow-key picker. |
+| `/use <model>` | Switch directly to a model id. |
 | `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
 | `/profile <name>` | Switch profile. |
 | `/thinking [on\|off]` | Show or set thinking mode. |

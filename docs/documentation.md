@@ -116,6 +116,7 @@ Use sections for separate tasks:
 ### Conversation
 
 Type a prompt and let NanoAgent inspect, plan, edit, run commands, or ask for approval depending on the active profile and permissions.
+Type `/` in the desktop prompt to open command suggestions. Use Up/Down and Enter to choose a command, or Shift+Enter for multiline input.
 
 ### Controls
 
@@ -180,6 +181,7 @@ nanoai --section <section-guid>
 | `/help` | List commands and usage. |
 | `/config` | Show provider, session, config path, profile, thinking mode, and model. |
 | `/models` | Choose the active model with the arrow-key picker. |
+| `/use <model>` | Switch directly to a model id. |
 | `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
 | `/profile <name>` | Switch the active profile. |
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
@@ -203,7 +205,7 @@ Type `/` in the terminal input to open command suggestions, then use Up/Down and
 
 NanoAgent stores a provider profile locally and discovers models from that provider when possible.
 
-Use the terminal F2 or `/models` picker, or the desktop model control, to switch models. The active model is stored with the local configuration and section state. If a preferred model is unavailable, NanoAgent falls back to a discovered model when possible.
+Use the terminal F2 or `/models` picker, `/use <model>`, or the desktop model control to switch models. The active model is stored with the local configuration and section state. If a preferred model is unavailable, NanoAgent falls back to a discovered model when possible.
 
 ### Thinking Mode
 
