@@ -1,0 +1,56 @@
+name: nanoai-review
+
+on:
+  pull_request_target:
+    types:
+      - opened
+      - reopened
+      - review_requested
+      - synchronize
+      - ready_for_review
+
+concurrency:
+  group: nanoai-review-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  NANOAGENT_API_KEY: ${{ secrets.NANOAGENT_API_KEY }}
+  NANOAGENT_BASE_URL: ${{ vars.NANOAGENT_BASE_URL }}
+  NANOAGENT_MODEL: ${{ vars.NANOAGENT_MODEL || 'gpt-5.4' }}
+  NANOAGENT_PROVIDER: ${{ vars.NANOAGENT_PROVIDER || 'openai' }}
+  NANOAGENT_THINKING: ${{ vars.NANOAGENT_THINKING || 'off' }}
+
+jobs:
+  review:
+    name: NanoAI review
+    runs-on: ubuntu-24.04
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.draft == false }}
+
+    steps:
+      - name: Checkout trusted code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Install NanoAI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Review pull request
+        if: ${{ github.event_name == 'pull_request_target' }}
+        env:
+          NANOAI_REVIEW_MODE: pr
+          NANOAI_PR_NUMBER: ${{ github.event.pull_request.number }}
+          NANOAI_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          NANOAI_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          NANOAI_HEAD_REPO_FULL_NAME: ${{ github.event.pull_request.head.repo.full_name }}
+          NANOAI_HEAD_REPO_URL: ${{ github.event.pull_request.head.repo.clone_url }}
+        run: bash .github/nanoai-github-review.sh

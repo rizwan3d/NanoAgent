@@ -6,8 +6,22 @@ namespace NanoAgent.Tests.Infrastructure.Secrets;
 public sealed class ApiKeySecretStoreTests
 {
     [Fact]
+    public async Task LoadAsync_Should_PreferEnvironmentApiKey_When_Set()
+    {
+        using EnvironmentVariableScope apiKey = new("NANOAGENT_API_KEY", "  env-secret  ");
+        FakePlatformCredentialStore platformCredentialStore = new("stored-secret");
+        ApiKeySecretStore sut = new(platformCredentialStore);
+
+        string? result = await sut.LoadAsync(CancellationToken.None);
+
+        result.Should().Be("env-secret");
+        platformCredentialStore.LastLoadedReference.Should().BeNull();
+    }
+
+    [Fact]
     public async Task LoadAsync_Should_RequestSecretUsingProductNameReference()
     {
+        using EnvironmentVariableScope apiKey = new("NANOAGENT_API_KEY", null);
         FakePlatformCredentialStore platformCredentialStore = new
         (
             "stored-secret"
@@ -67,6 +81,24 @@ public sealed class ApiKeySecretStoreTests
             LastSavedReference = secretReference;
             LastSavedSecret = secretValue;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class EnvironmentVariableScope : IDisposable
+    {
+        private readonly string _name;
+        private readonly string? _previousValue;
+
+        public EnvironmentVariableScope(string name, string? value)
+        {
+            _name = name;
+            _previousValue = Environment.GetEnvironmentVariable(name);
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        public void Dispose()
+        {
+            Environment.SetEnvironmentVariable(_name, _previousValue);
         }
     }
 }

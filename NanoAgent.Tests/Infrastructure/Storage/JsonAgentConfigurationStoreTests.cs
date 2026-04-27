@@ -8,10 +8,19 @@ namespace NanoAgent.Tests.Infrastructure.Storage;
 
 public sealed class JsonAgentConfigurationStoreTests : IDisposable
 {
+    private readonly IReadOnlyList<EnvironmentVariableScope> _environmentVariables;
     private readonly string _tempRoot;
 
     public JsonAgentConfigurationStoreTests()
     {
+        _environmentVariables =
+        [
+            new("NANOAGENT_BASE_URL", null),
+            new("NANOAGENT_MODEL", null),
+            new("NANOAGENT_PROVIDER", null),
+            new("NANOAGENT_THINKING", null)
+        ];
+
         _tempRoot = Path.Combine(
             Path.GetTempPath(),
             $"NanoAgent-Config-{Guid.NewGuid():N}");
@@ -65,6 +74,52 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
 
         loadedConfiguration.Should().Be(configuration);
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_PreferEnvironmentConfiguration_When_ProviderIsSet()
+    {
+        using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "openrouter");
+        using EnvironmentVariableScope model = new("NANOAGENT_MODEL", " openai/gpt-4o ");
+        using EnvironmentVariableScope thinking = new("NANOAGENT_THINKING", "on");
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        await File.WriteAllTextAsync(
+            pathProvider.GetConfigurationFilePath(),
+            """
+            {
+              "providerProfile": {
+                "providerKind": "OpenAi"
+              },
+              "preferredModelId": "gpt-5.4"
+            }
+            """,
+            CancellationToken.None);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.OpenRouter, null),
+            "openai/gpt-4o",
+            "on"));
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_CreateCompatibleEnvironmentConfiguration_When_BaseUrlIsSet()
+    {
+        using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "openai-compatible");
+        using EnvironmentVariableScope baseUrl = new("NANOAGENT_BASE_URL", "https://provider.example.com/");
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(
+                ProviderKind.OpenAiCompatible,
+                "https://provider.example.com/v1"),
+            PreferredModelId: null,
+            ReasoningEffort: null));
     }
 
     [Fact]
@@ -247,6 +302,11 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         {
             Directory.Delete(_tempRoot, recursive: true);
         }
+
+        foreach (EnvironmentVariableScope environmentVariable in _environmentVariables)
+        {
+            environmentVariable.Dispose();
+        }
     }
 
     private sealed class StubUserDataPathProvider : IUserDataPathProvider
@@ -276,6 +336,24 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         public string GetSectionsDirectoryPath()
         {
             return Path.Combine(_root, "sections");
+        }
+    }
+
+    private sealed class EnvironmentVariableScope : IDisposable
+    {
+        private readonly string _name;
+        private readonly string? _previousValue;
+
+        public EnvironmentVariableScope(string name, string? value)
+        {
+            _name = name;
+            _previousValue = Environment.GetEnvironmentVariable(name);
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        public void Dispose()
+        {
+            Environment.SetEnvironmentVariable(_name, _previousValue);
         }
     }
 }

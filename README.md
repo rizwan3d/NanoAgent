@@ -31,6 +31,7 @@ It is designed for developers who want useful automation without giving up contr
 
 - Work from a desktop app or the `nanoai` terminal command.
 - Ask for feature work, bug fixes, planning, code review, and build/test loops.
+- Run NanoAI review automation from GitHub PR and commit workflows.
 - Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
 - Switch between hands-on build mode, read-only planning, and read-only review.
 - Delegate focused work to built-in or project-defined subagents.
@@ -52,6 +53,12 @@ nanoai
 nanoai "Summarize this repository"
 echo "Review the latest changes for regressions" | nanoai --profile review
 ```
+
+### GitHub Automation
+
+The included `nanoai-review` workflow installs NanoAI from the latest release using the CLI install command below, then runs read-only review mode on PR updates and pushes. PR runs post a NanoAI review comment; push runs open an issue labeled `nanoai` when the commit review requests changes.
+
+Configure the repository secret `NANOAGENT_API_KEY`. Optional repository variables are `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_BASE_URL`, and `NANOAGENT_THINKING`.
 
 ### Profiles
 
