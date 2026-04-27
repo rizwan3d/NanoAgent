@@ -39,6 +39,11 @@ public static partial class Program
 
             if (IsEscapeKey(key))
             {
+                if (TryDismissSlashCommandSuggestions(state))
+                {
+                    continue;
+                }
+
                 state.Running = false;
                 return;
             }
@@ -46,6 +51,11 @@ public static partial class Program
             if (key.Key == ConsoleKey.F2)
             {
                 RequestModelSelection(state);
+                return;
+            }
+
+            if (TryHandleSlashCommandSuggestionInput(state, key))
+            {
                 return;
             }
 
@@ -59,6 +69,7 @@ public static partial class Program
                 if (state.Input.Length > 0)
                 {
                     state.Input.Remove(state.Input.Length - 1, 1);
+                    ResetSlashCommandSuggestions(state);
                 }
 
                 continue;
@@ -89,6 +100,7 @@ public static partial class Program
             {
                 state.Input.Append(key.KeyChar);
                 state.SkipNextInputLineFeed = false;
+                ResetSlashCommandSuggestions(state);
                 appendedInputInBatch = true;
             }
         }
@@ -326,6 +338,11 @@ public static partial class Program
             return;
         }
 
+        if (TryHandleSlashCommandSuggestionSequence(state, sequence))
+        {
+            return;
+        }
+
         switch (sequence)
         {
             case "A":
@@ -376,6 +393,7 @@ public static partial class Program
         if (state.ActiveModal is null)
         {
             state.Input.Append('\n');
+            ResetSlashCommandSuggestions(state);
         }
 
         state.SkipNextInputLineFeed = key.KeyChar == '\r';
@@ -406,6 +424,7 @@ public static partial class Program
 
         state.Input.Append(normalized);
         state.SkipNextInputLineFeed = false;
+        ResetSlashCommandSuggestions(state);
     }
 
     private static void ConsumeBracketedPasteInput(AppState state)

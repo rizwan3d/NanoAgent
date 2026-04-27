@@ -14,6 +14,7 @@ public static partial class Program
     {
         string text = state.Input.ToString().Trim();
         state.Input.Clear();
+        ResetSlashCommandSuggestions(state);
 
         if (string.IsNullOrWhiteSpace(text))
         {

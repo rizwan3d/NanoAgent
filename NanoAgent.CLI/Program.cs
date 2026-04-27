@@ -18,6 +18,7 @@ public static partial class Program
     private const int MouseWheelScrollLineCount = 3;
     private const int MultilinePastePreviewLineThreshold = 3;
     private const int PasteContinuationReadTimeoutMilliseconds = 40;
+    private const int MaxSlashCommandSuggestionCount = 8;
     private const int TerminalSequenceReadTimeoutMilliseconds = 25;
     private const string RepositoryUrl = "github.com/rizwan3d/NanoAgent";
     private const string EnableAlternateScreenSequence = "\u001b[?1049h";
@@ -38,6 +39,28 @@ public static partial class Program
         "\\",
         "|",
         "/"
+    ];
+    private static readonly SlashCommandSuggestion[] SlashCommandSuggestions =
+    [
+        new("/allow", "/allow <tool-or-tag> [pattern]", "Add a session-scoped allow override.", true),
+        new("/clear", "/clear", "Clear the terminal conversation view.", false),
+        new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
+        new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
+        new("/exit", "/exit", "Exit the interactive shell.", false),
+        new("/help", "/help", "List available commands and usage.", false),
+        new("/init", "/init", "Initialize workspace-local NanoAgent configuration files.", false),
+        new("/ls", "/ls", "List files in the current workspace.", false),
+        new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
+        new("/models", "/models", "Choose the active model with the picker.", false),
+        new("/onboard", "/onboard", "Re-run provider onboarding.", false),
+        new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
+        new("/profile", "/profile <name>", "Switch the active agent profile.", true),
+        new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
+        new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
+        new("/rules", "/rules", "List effective permission rules.", false),
+        new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
+        new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
+        new("/update", "/update [now]", "Check for updates.", false)
     ];
 
     public static async Task<int> Main(string[]? args)

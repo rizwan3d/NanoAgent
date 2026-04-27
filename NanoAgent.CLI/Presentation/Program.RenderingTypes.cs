@@ -13,4 +13,10 @@ public static partial class Program
     private readonly record struct MarkdownFragment(
         string Text,
         string Style);
+
+    private readonly record struct SlashCommandSuggestion(
+        string Command,
+        string Usage,
+        string Description,
+        bool RequiresArgument);
 }
