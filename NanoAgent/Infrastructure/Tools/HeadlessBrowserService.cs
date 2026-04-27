@@ -12,6 +12,7 @@ internal sealed partial class HeadlessBrowserService : IHeadlessBrowserService
 {
     private const int MaxLineLength = 240;
     private const int BrowserErrorPreviewLength = 1200;
+    private static readonly TimeSpan ArtifactDirectoryMaxAge = TimeSpan.FromHours(24);
 
     private readonly string? _browserExecutablePath;
     private readonly IProcessRunner _processRunner;
@@ -155,8 +156,12 @@ internal sealed partial class HeadlessBrowserService : IHeadlessBrowserService
             warnings.Add("Screenshot file was created but it is empty.");
         }
 
+        Directory.SetLastWriteTimeUtc(artifactDirectory, DateTime.UtcNow);
+
         return new HeadlessBrowserScreenshotResult(
             screenshotPath,
+            artifactDirectory,
+            request.ScreenshotRetention,
             fileInfo.Length,
             request.ViewportWidth,
             request.ViewportHeight);
@@ -419,14 +424,23 @@ internal sealed partial class HeadlessBrowserService : IHeadlessBrowserService
 
     private static string GetArtifactDirectory(string sessionId)
     {
+        string rootDirectory = GetArtifactRootDirectory();
+        CleanupExpiredArtifactDirectories(rootDirectory);
+
         string directory = Path.Combine(
-            Path.GetTempPath(),
-            "NanoAgent",
-            "browser",
+            rootDirectory,
             SanitizePathSegment(sessionId));
 
         Directory.CreateDirectory(directory);
         return directory;
+    }
+
+    private static string GetArtifactRootDirectory()
+    {
+        return Path.Combine(
+            Path.GetTempPath(),
+            "NanoAgent",
+            "browser");
     }
 
     private static string CreateUserDataDirectory(string artifactDirectory)
@@ -436,7 +450,34 @@ internal sealed partial class HeadlessBrowserService : IHeadlessBrowserService
             "profile-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
 
         Directory.CreateDirectory(directory);
+        Directory.SetLastWriteTimeUtc(artifactDirectory, DateTime.UtcNow);
         return directory;
+    }
+
+    private static void CleanupExpiredArtifactDirectories(string rootDirectory)
+    {
+        try
+        {
+            if (!Directory.Exists(rootDirectory))
+            {
+                return;
+            }
+
+            DateTime expiredBeforeUtc = DateTime.UtcNow - ArtifactDirectoryMaxAge;
+            foreach (string directory in Directory.EnumerateDirectories(rootDirectory))
+            {
+                if (Directory.GetLastWriteTimeUtc(directory) < expiredBeforeUtc)
+                {
+                    TryDeleteDirectory(directory);
+                }
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static string SanitizePathSegment(string value)
