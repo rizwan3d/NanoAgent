@@ -9,7 +9,8 @@ readonly COMMAND_NAME="nanoai"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 
 log() {
-  printf '[%s] %s\n' "$APP_NAME" "$1"
+  # Important: logs must go to stderr so command substitution captures only data.
+  printf '[%s] %s\n' "$APP_NAME" "$1" >&2
 }
 
 fail() {
@@ -28,12 +29,21 @@ download_to_file() {
   local destination="$2"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --retry-delay 2 --connect-timeout 15 -o "$destination" "$url"
+    curl -fL \
+      -H "User-Agent: ${APP_NAME}-installer" \
+      --retry 3 \
+      --retry-delay 2 \
+      --connect-timeout 15 \
+      -o "$destination" \
+      "$url"
     return
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget -O "$destination" "$url"
+    wget \
+      --header="User-Agent: ${APP_NAME}-installer" \
+      -O "$destination" \
+      "$url"
     return
   fi
 
@@ -43,18 +53,21 @@ download_to_file() {
 resolve_latest_tag() {
   local api_url="https://api.github.com/repos/${OWNER}/${REPO}/releases/latest"
   local metadata
+  local tag
 
   log "Resolving the latest release tag..."
   metadata="$(mktemp)"
 
-  download_to_file "$api_url" "$metadata"
+  if ! download_to_file "$api_url" "$metadata"; then
+    rm -f "$metadata"
+    fail "Unable to determine the latest release tag from GitHub. Set NANOAGENT_TAG and try again."
+  fi
 
-  local tag
   tag="$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$metadata" | head -n 1)"
   rm -f "$metadata"
 
   if [[ -z "$tag" ]]; then
-    fail "Unable to determine the latest release tag from GitHub. Set NanoAgent_TAG and try again."
+    fail "Unable to determine the latest release tag from GitHub. Set NANOAGENT_TAG and try again."
   fi
 
   printf '%s\n' "$tag"
@@ -104,9 +117,9 @@ main() {
   require_command unzip
   require_command mktemp
 
-  local install_dir="${NanoAgent_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
-  local requested_tag="${NanoAgent_TAG:-${1:-}}"
-  local tag="${requested_tag}"
+  local install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
+  local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
+  local tag="$requested_tag"
   local platform
   local asset_name
   local download_url
@@ -130,12 +143,13 @@ main() {
   temp_root="$(mktemp -d)"
   archive_path="${temp_root}/${asset_name}"
   extract_dir="${temp_root}/extract"
-  mkdir -p "$extract_dir" "$install_dir"
 
   cleanup() {
     rm -rf "$temp_root"
   }
   trap cleanup EXIT
+
+  mkdir -p "$extract_dir" "$install_dir"
 
   log "Downloading ${asset_name}..."
   if ! download_to_file "$download_url" "$archive_path"; then
@@ -145,8 +159,9 @@ main() {
   log "Extracting archive..."
   unzip -qo "$archive_path" -d "$extract_dir"
 
-  source_binary="${extract_dir}/${EXECUTABLE_NAME}"
-  if [[ ! -f "$source_binary" ]]; then
+  source_binary="$(find "$extract_dir" -type f -name "$EXECUTABLE_NAME" | head -n 1)"
+
+  if [[ -z "$source_binary" || ! -f "$source_binary" ]]; then
     fail "Expected executable '${EXECUTABLE_NAME}' was not found in ${asset_name}."
   fi
 
