@@ -47,6 +47,28 @@
         <Setter Property="BorderBrush" Value="#3D444D"/>
     </Style>
 
+    <Style Selector="ToggleButton">
+        <Setter Property="Background" Value="#121417"/>
+        <Setter Property="Foreground" Value="#CBD5E1"/>
+        <Setter Property="BorderBrush" Value="#30363D"/>
+        <Setter Property="BorderThickness" Value="1"/>
+        <Setter Property="CornerRadius" Value="8"/>
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="MinHeight" Value="28"/>
+        <Setter Property="FontSize" Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style Selector="ToggleButton:checked">
+        <Setter Property="Background" Value="#F4F4F5"/>
+        <Setter Property="Foreground" Value="#09090B"/>
+        <Setter Property="BorderBrush" Value="#F4F4F5"/>
+    </Style>
+
+    <Style Selector="ToggleButton:pointerover">
+        <Setter Property="BorderBrush" Value="#3D444D"/>
+    </Style>
+
     <Style Selector="ComboBox">
         <Setter Property="Background" Value="#121417"/>
         <Setter Property="Foreground" Value="#F4F4F5"/>
@@ -96,6 +118,21 @@
     </Style>
 
     <Style Selector="ListBoxItem:selected">
+        <Setter Property="Background" Value="Transparent"/>
+    </Style>
+
+    <Style Selector="TreeView">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="BorderThickness" Value="0"/>
+    </Style>
+
+    <Style Selector="TreeViewItem">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Padding" Value="0"/>
+        <Setter Property="Margin" Value="0"/>
+    </Style>
+
+    <Style Selector="TreeViewItem:selected">
         <Setter Property="Background" Value="Transparent"/>
     </Style>
 

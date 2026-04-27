@@ -84,11 +84,7 @@ public sealed class ReplSessionContext
         ApplicationName = applicationName.Trim();
         AgentProfile = agentProfile ?? BuiltInAgentProfiles.Build;
         ProviderProfile = providerProfile;
-        AvailableModelIds = availableModelIds
-            .Where(static modelId => !string.IsNullOrWhiteSpace(modelId))
-            .Select(static modelId => modelId.Trim())
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
+        AvailableModelIds = NormalizeAvailableModelIds(availableModelIds);
 
         if (AvailableModelIds.Count == 0)
         {
@@ -145,9 +141,9 @@ public sealed class ReplSessionContext
 
     public string AgentProfileName => AgentProfile.Name;
 
-    public IReadOnlyList<string> AvailableModelIds { get; }
+    public IReadOnlyList<string> AvailableModelIds { get; private set; }
 
-    public AgentProviderProfile ProviderProfile { get; }
+    public AgentProviderProfile ProviderProfile { get; private set; }
 
     public string ProviderName => ProviderProfile.ProviderKind.ToDisplayName();
 
@@ -259,6 +255,52 @@ public sealed class ReplSessionContext
 
         ActiveModelId = normalizedModelId;
         IsPersistedStateDirty = true;
+    }
+
+    public void ReplaceProviderConfiguration(
+        AgentProviderProfile providerProfile,
+        string activeModelId,
+        IReadOnlyList<string> availableModelIds)
+    {
+        ArgumentNullException.ThrowIfNull(providerProfile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(activeModelId);
+        ArgumentNullException.ThrowIfNull(availableModelIds);
+
+        string[] normalizedAvailableModelIds = NormalizeAvailableModelIds(availableModelIds);
+        if (normalizedAvailableModelIds.Length == 0)
+        {
+            throw new ArgumentException(
+                "At least one available model must be provided.",
+                nameof(availableModelIds));
+        }
+
+        string normalizedActiveModelId = activeModelId.Trim();
+        if (!normalizedAvailableModelIds.Contains(normalizedActiveModelId, StringComparer.Ordinal))
+        {
+            throw new ArgumentException(
+                "The active model must exist in the available model set.",
+                nameof(activeModelId));
+        }
+
+        bool changed =
+            !Equals(ProviderProfile, providerProfile) ||
+            !string.Equals(ActiveModelId, normalizedActiveModelId, StringComparison.Ordinal) ||
+            !AvailableModelIds.SequenceEqual(normalizedAvailableModelIds, StringComparer.Ordinal);
+
+        ProviderProfile = providerProfile;
+        AvailableModelIds = normalizedAvailableModelIds;
+        _availableModelIds.Clear();
+        foreach (string modelId in normalizedAvailableModelIds)
+        {
+            _availableModelIds.Add(modelId);
+        }
+
+        ActiveModelId = normalizedActiveModelId;
+
+        if (changed)
+        {
+            IsPersistedStateDirty = true;
+        }
     }
 
     public bool SetReasoningEffort(string? reasoningEffort)
@@ -694,6 +736,15 @@ public sealed class ReplSessionContext
         }
 
         return builder.ToString().Trim();
+    }
+
+    private static string[] NormalizeAvailableModelIds(IReadOnlyList<string> availableModelIds)
+    {
+        return availableModelIds
+            .Where(static modelId => !string.IsNullOrWhiteSpace(modelId))
+            .Select(static modelId => modelId.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
     }
 
     public void RecordFileEditTransaction(WorkspaceFileEditTransaction transaction)

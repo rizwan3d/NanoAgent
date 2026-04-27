@@ -14,6 +14,8 @@ internal sealed class DesktopUiBridge : IUiBridge
     private readonly Action<DesktopTextPrompt?> _setTextPrompt;
     private readonly IToolOutputFormatter _toolOutputFormatter;
     private readonly Action<string> _addActivity;
+    private DesktopSelectionPrompt? _currentSelectionPrompt;
+    private DesktopTextPrompt? _currentTextPrompt;
 
     public DesktopUiBridge(
         Action<string> addActivity,
@@ -67,8 +69,8 @@ internal sealed class DesktopUiBridge : IUiBridge
                 completion.TrySetException(new PromptCancelledException());
             });
 
-        prompt.Dismissed += (_, _) => _setSelectionPrompt(null);
-        _setSelectionPrompt(prompt);
+        prompt.Dismissed += (_, _) => ClearSelectionPrompt(prompt);
+        SetSelectionPrompt(prompt);
 
         using CancellationTokenRegistration registration = cancellationToken.Register(() =>
         {
@@ -82,7 +84,7 @@ internal sealed class DesktopUiBridge : IUiBridge
         }
         finally
         {
-            _setSelectionPrompt(null);
+            ClearSelectionPrompt(prompt);
         }
     }
 
@@ -113,8 +115,8 @@ internal sealed class DesktopUiBridge : IUiBridge
                 completion.TrySetException(new PromptCancelledException());
             });
 
-        prompt.Dismissed += (_, _) => _setTextPrompt(null);
-        _setTextPrompt(prompt);
+        prompt.Dismissed += (_, _) => ClearTextPrompt(prompt);
+        SetTextPrompt(prompt);
 
         using CancellationTokenRegistration registration = cancellationToken.Register(() =>
         {
@@ -128,7 +130,7 @@ internal sealed class DesktopUiBridge : IUiBridge
         }
         finally
         {
-            _setTextPrompt(null);
+            ClearTextPrompt(prompt);
         }
     }
 
@@ -202,5 +204,39 @@ internal sealed class DesktopUiBridge : IUiBridge
         {
             _addConversationMessage(role.Trim(), message.Trim());
         }
+    }
+
+    private void SetSelectionPrompt(DesktopSelectionPrompt prompt)
+    {
+        _currentSelectionPrompt = prompt;
+        _setSelectionPrompt(prompt);
+    }
+
+    private void ClearSelectionPrompt(DesktopSelectionPrompt prompt)
+    {
+        if (!ReferenceEquals(_currentSelectionPrompt, prompt))
+        {
+            return;
+        }
+
+        _currentSelectionPrompt = null;
+        _setSelectionPrompt(null);
+    }
+
+    private void SetTextPrompt(DesktopTextPrompt prompt)
+    {
+        _currentTextPrompt = prompt;
+        _setTextPrompt(prompt);
+    }
+
+    private void ClearTextPrompt(DesktopTextPrompt prompt)
+    {
+        if (!ReferenceEquals(_currentTextPrompt, prompt))
+        {
+            return;
+        }
+
+        _currentTextPrompt = null;
+        _setTextPrompt(null);
     }
 }

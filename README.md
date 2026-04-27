@@ -119,6 +119,7 @@ NanoAgent will guide you through provider setup, model discovery, and the first 
 | `/help` | Show available commands. |
 | `/config` | Show provider, model, section, profile, thinking mode, and config path. |
 | `/models` | List available models. |
+| `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
 | `/use <model>` | Switch model. |
 | `/profile <name>` | Switch profile. |
 | `/thinking [on\|off]` | Show or set thinking mode. |

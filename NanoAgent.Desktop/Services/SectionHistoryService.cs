@@ -46,6 +46,63 @@ public sealed class SectionHistoryService
             .ToArray();
     }
 
+    public async Task<bool> DeleteSectionAsync(
+        string workspacePath,
+        string sectionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workspacePath) ||
+            string.IsNullOrWhiteSpace(sectionId) ||
+            !Guid.TryParse(sectionId.Trim(), out Guid parsedSectionId))
+        {
+            return false;
+        }
+
+        string normalizedWorkspacePath;
+        try
+        {
+            normalizedWorkspacePath = NormalizePath(workspacePath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        string filePath = Path.Combine(
+            GetSectionsDirectoryPath(),
+            $"{parsedSectionId:D}.json");
+
+        if (!File.Exists(filePath))
+        {
+            return false;
+        }
+
+        WorkspaceSectionInfo? section = await TryReadSectionAsync(
+            filePath,
+            normalizedWorkspacePath,
+            cancellationToken);
+
+        if (section is null ||
+            !string.Equals(section.SectionId, parsedSectionId.ToString("D"), StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            File.Delete(filePath);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
     private static async Task<WorkspaceSectionInfo?> TryReadSectionAsync(
         string filePath,
         string normalizedWorkspacePath,

@@ -29,6 +29,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/init - Initialize workspace-local NanoAgent configuration files.\n" +
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Show the available models in the current session.\n" +
+            "/onboard - Re-run provider onboarding and switch the active session to the new provider.\n" +
             "/permissions - Show the current permission summary and override guidance.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +

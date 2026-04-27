@@ -147,6 +147,30 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void ReplaceProviderConfiguration_Should_UpdateProviderModelsAndPersistInSnapshot()
+    {
+        ReplSessionContext session = CreateSession();
+        AgentProviderProfile providerProfile = new(ProviderKind.OpenRouter, null);
+
+        session.ReplaceProviderConfiguration(
+            providerProfile,
+            "openai/gpt-5.4",
+            ["openai/gpt-5.4", "anthropic/claude-sonnet-4.6"]);
+
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+            session.SectionCreatedAtUtc.AddMinutes(1));
+
+        session.ProviderProfile.Should().Be(providerProfile);
+        session.ProviderName.Should().Be("OpenRouter");
+        session.ActiveModelId.Should().Be("openai/gpt-5.4");
+        session.AvailableModelIds.Should().Equal("openai/gpt-5.4", "anthropic/claude-sonnet-4.6");
+        session.IsPersistedStateDirty.Should().BeTrue();
+        snapshot.ProviderProfile.Should().Be(providerProfile);
+        snapshot.ActiveModelId.Should().Be("openai/gpt-5.4");
+        snapshot.AvailableModelIds.Should().Equal("openai/gpt-5.4", "anthropic/claude-sonnet-4.6");
+    }
+
+    [Fact]
     public void CreateSectionSnapshot_Should_PersistToolCallsOnTurn()
     {
         ReplSessionContext session = CreateSession();

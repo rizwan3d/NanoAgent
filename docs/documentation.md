@@ -75,6 +75,8 @@ NanoAgent will guide you through provider setup:
 
 If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved. If provider validation fails after setup, NanoAgent offers to run onboarding again.
 
+Use `/onboard` in an active desktop or terminal session to re-run provider setup later. The command supports every provider listed below and switches the active session to the validated provider and selected default model.
+
 When a newer NanoAgent release is available, startup can ask whether to update now or skip. One-shot prompt runs do not show the startup update prompt.
 
 ### Provider Options
@@ -175,6 +177,7 @@ nanoai --section <section-guid>
 | `/help` | List commands and usage. |
 | `/config` | Show provider, session, config path, profile, thinking mode, and model. |
 | `/models` | Show available models. |
+| `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
 | `/use <model>` | Switch the active model. |
 | `/profile <name>` | Switch the active profile. |
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
