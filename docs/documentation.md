@@ -197,6 +197,7 @@ nanoai --section <section-guid>
 Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
+Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 
 ## Providers and Models
 

@@ -268,9 +268,16 @@ public static partial class Program
             return largePasteMarkup;
         }
 
-        return BuildInputLineMarkup(
+        string inputMarkup = BuildInputLineMarkup(
             state.Input.ToString(),
             state.IsBusy || state.IsStreaming);
+
+        if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
+        {
+            return inputMarkup + "\n" + BuildSlashCommandSuggestionsMarkup(state, suggestions);
+        }
+
+        return inputMarkup;
     }
 
     private static string BuildFooterMarkup(AppState state)
@@ -289,6 +296,14 @@ public static partial class Program
             return BuildFooterLineMarkup(
                 "Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
                 "[grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
+                BuildCompletionNote(state));
+        }
+
+        if (TryGetSlashCommandSuggestions(state, out _))
+        {
+            return BuildFooterLineMarkup(
+                "Up/Down: select command  |  Enter: choose  |  Tab: complete  |  Esc: close",
+                "[grey]Up/Down: select command[/]  [grey]|[/]  [grey]Enter: choose[/]  [grey]|[/]  [grey]Tab: complete[/]  [grey]|[/]  [grey]Esc: close[/]",
                 BuildCompletionNote(state));
         }
 
@@ -394,6 +409,11 @@ public static partial class Program
                     input,
                     GetInputFirstLineTextWidth(state.IsBusy || state.IsStreaming),
                     GetInputContinuationLineTextWidth()).Count;
+
+        if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
+        {
+            bodyLineCount += GetSlashCommandSuggestionLineCount(suggestions);
+        }
 
         return Math.Max(3, bodyLineCount + 2);
     }

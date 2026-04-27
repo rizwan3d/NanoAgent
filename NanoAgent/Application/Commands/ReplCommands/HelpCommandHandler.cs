@@ -38,7 +38,8 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "\nKeyboard shortcuts:\n" +
-            "F2 - Choose the active model with the arrow-key picker.\n\n" +
+            "F2 - Choose the active model with the arrow-key picker.\n" +
+            "/ - Open command suggestions in the terminal input.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --section <section-guid> to resume a saved section.\n" +
             "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +

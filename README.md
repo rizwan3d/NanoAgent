@@ -140,6 +140,7 @@ nanoai --provider-auth-key <key>
 | `/exit` | Exit the terminal UI. |
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
+Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 
 ## Safety and Control
 

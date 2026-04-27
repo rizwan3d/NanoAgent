@@ -33,6 +33,10 @@ public sealed class AppState
 
     public bool SkipNextInputLineFeed { get; set; }
 
+    public bool SlashCommandSuggestionsDismissed { get; set; }
+
+    public int SlashCommandSuggestionIndex { get; set; }
+
     public bool IsBusy { get; set; }
 
     public bool IsReady { get; set; }
