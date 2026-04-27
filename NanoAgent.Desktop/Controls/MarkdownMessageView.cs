@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -335,9 +336,9 @@ public sealed class MarkdownMessageView : UserControl
             }
 
             string display = TrimTrailingPunctuation(pathMatch.Value, out string trailing);
-            if (TryResolveFileReference(display, out string? fullPath, out _))
+            if (TryResolveFileReference(display, out string? fullPath, out int? lineNumber))
             {
-                panel.Children.Add(CreateFileButton(display, fullPath));
+                panel.Children.Add(CreateFileButton(display, fullPath, lineNumber));
             }
             else
             {
@@ -427,9 +428,9 @@ public sealed class MarkdownMessageView : UserControl
             }
 
             string display = TrimTrailingPunctuation(match.Value, out string trailing);
-            if (TryResolveFileReference(display, out string? fullPath, out _))
+            if (TryResolveFileReference(display, out string? fullPath, out int? lineNumber))
             {
-                panel.Children.Add(CreateFileButton(display, fullPath));
+                panel.Children.Add(CreateFileButton(display, fullPath, lineNumber));
             }
             else
             {
@@ -516,7 +517,10 @@ public sealed class MarkdownMessageView : UserControl
         };
     }
 
-    private Button CreateFileButton(string displayText, string fullPath)
+    private Button CreateFileButton(
+        string displayText,
+        string fullPath,
+        int? lineNumber)
     {
         Button button = new()
         {
@@ -535,8 +539,8 @@ public sealed class MarkdownMessageView : UserControl
             VerticalAlignment = VerticalAlignment.Center
         };
 
-        ToolTip.SetTip(button, fullPath);
-        button.Click += (_, _) => OpenFile(fullPath);
+        ToolTip.SetTip(button, CreateFileTooltip(fullPath, lineNumber));
+        button.Click += (_, _) => OpenFile(fullPath, lineNumber);
         return button;
     }
 
@@ -611,18 +615,219 @@ public sealed class MarkdownMessageView : UserControl
         return value is '.' or ',' or ';' or ')' or ']' or '}' or '!' or '?';
     }
 
-    private static void OpenFile(string path)
+    private static string CreateFileTooltip(
+        string fullPath,
+        int? lineNumber)
+    {
+        if (lineNumber is not > 0)
+        {
+            return fullPath;
+        }
+
+        string target = $"{fullPath}:{lineNumber.Value}";
+        string? preview = TryReadLinePreview(fullPath, lineNumber.Value);
+        return string.IsNullOrWhiteSpace(preview)
+            ? target
+            : $"{target}{Environment.NewLine}{preview}";
+    }
+
+    private static string? TryReadLinePreview(
+        string path,
+        int lineNumber)
+    {
+        if (lineNumber <= 0 || !File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            string? line = File
+                .ReadLines(path)
+                .Skip(lineNumber - 1)
+                .FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                return null;
+            }
+
+            string preview = line.Trim();
+            return preview.Length <= 180
+                ? preview
+                : preview[..177] + "...";
+        }
+        catch (IOException)
+        {
+            return null;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return null;
+        }
+    }
+
+    private static void OpenFile(
+        string path,
+        int? lineNumber)
     {
         try
         {
-            Process.Start(new ProcessStartInfo
+            if (lineNumber is > 0 &&
+                File.Exists(path) &&
+                TryOpenFileAtLine(path, lineNumber.Value))
             {
-                FileName = path,
-                UseShellExecute = true
-            });
+                return;
+            }
+
+            OpenWithShell(path);
         }
         catch
         {
         }
     }
+
+    private static bool TryOpenFileAtLine(
+        string path,
+        int lineNumber)
+    {
+        foreach (EditorCommand command in CreateEditorCommands(path, lineNumber))
+        {
+            try
+            {
+                ProcessStartInfo startInfo = new()
+                {
+                    FileName = command.FileName,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                foreach (string argument in command.Arguments)
+                {
+                    startInfo.ArgumentList.Add(argument);
+                }
+
+                Process.Start(startInfo);
+                return true;
+            }
+            catch (Exception exception) when (
+                exception is Win32Exception ||
+                exception is FileNotFoundException ||
+                exception is InvalidOperationException)
+            {
+            }
+        }
+
+        return false;
+    }
+
+    private static IEnumerable<EditorCommand> CreateEditorCommands(
+        string path,
+        int lineNumber)
+    {
+        foreach (string executable in GetEditorExecutables().Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            string editorName = Path.GetFileNameWithoutExtension(executable).ToLowerInvariant();
+            switch (editorName)
+            {
+                case "code":
+                case "code-insiders":
+                case "codium":
+                case "vscodium":
+                    yield return new EditorCommand(
+                        executable,
+                        ["--goto", $"{path}:{lineNumber}"]);
+                    break;
+
+                case "notepad++":
+                    yield return new EditorCommand(
+                        executable,
+                        [$"-n{lineNumber}", path]);
+                    break;
+
+                case "subl":
+                case "sublime_text":
+                    yield return new EditorCommand(
+                        executable,
+                        [$"{path}:{lineNumber}"]);
+                    break;
+
+                case "rider":
+                case "rider64":
+                case "idea":
+                case "idea64":
+                    yield return new EditorCommand(
+                        executable,
+                        ["--line", lineNumber.ToString(), path]);
+                    break;
+            }
+        }
+    }
+
+    private static IEnumerable<string> GetEditorExecutables()
+    {
+        foreach (string variableName in new[] { "NANOAGENT_EDITOR", "VISUAL", "EDITOR" })
+        {
+            string? executable = TryGetConfiguredEditorExecutable(
+                Environment.GetEnvironmentVariable(variableName));
+            if (!string.IsNullOrWhiteSpace(executable))
+            {
+                yield return executable;
+            }
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            yield return "code.cmd";
+            yield return "code-insiders.cmd";
+            yield return "codium.cmd";
+            yield return "notepad++.exe";
+            yield return "rider64.exe";
+            yield return "rider.exe";
+            yield break;
+        }
+
+        yield return "code";
+        yield return "code-insiders";
+        yield return "codium";
+        yield return "subl";
+        yield return "sublime_text";
+        yield return "rider";
+        yield return "rider64";
+    }
+
+    private static string? TryGetConfiguredEditorExecutable(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string trimmed = value.Trim();
+        if (trimmed.StartsWith('"'))
+        {
+            int quoteIndex = trimmed.IndexOf('"', 1);
+            return quoteIndex > 1
+                ? trimmed[1..quoteIndex]
+                : null;
+        }
+
+        int separatorIndex = trimmed.IndexOfAny([' ', '\t']);
+        return separatorIndex < 0
+            ? trimmed
+            : trimmed[..separatorIndex];
+    }
+
+    private static void OpenWithShell(string path)
+    {
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = path,
+            UseShellExecute = true
+        });
+    }
+
+    private sealed record EditorCommand(
+        string FileName,
+        IReadOnlyList<string> Arguments);
 }
