@@ -768,6 +768,82 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_RecoverOutputLimitResponse_When_MapperMarksResponseRetryable()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.PlanningMode)]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Throws(new ConversationResponseException(
+                "The provider hit its output length limit before returning assistant content, a refusal, or usable tool calls. Finish reason: length.",
+                isRetryableOutputLimitResponse: true))
+            .Returns(new ConversationResponse(
+                "No blocking findings.",
+                [],
+                "resp_2"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
+            "Review this diff.",
+            session);
+
+        result.ResponseText.Should().Be("No blocking findings.");
+        requests.Should().HaveCount(2);
+        requests[0].SystemPrompt.Should().NotContain("output length limit");
+        requests[1].SystemPrompt.Should().Contain("Recovery attempt 1 of 3");
+        requests[1].SystemPrompt.Should().Contain("output length limit");
+        requests[1].SystemPrompt.Should().Contain("return a concise result");
+        requests[1].SystemPrompt.Should().Contain("highest-confidence actionable findings");
+        requests[1].Messages.Should().HaveCount(1);
+        requests[1].Messages[0].Content.Should().Be("Review this diff.");
+        session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory[1].Content.Should().Be("No blocking findings.");
+        toolExecutionPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_RecoverRawToolCallMarkupResponse_When_MapperMarksResponseRetryable()
     {
         ReplSessionContext session = CreateSession();

@@ -88,7 +88,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         {
             throw new ConversationResponseException(
                 CreateEmptyResponseMessage(firstChoice, responseId),
-                isRetryableEmptyResponse: IsRetryableEmptyStopResponse(firstChoice));
+                isRetryableEmptyResponse: IsRetryableEmptyStopResponse(firstChoice),
+                isRetryableOutputLimitResponse: IsOutputLimitFinishReason(firstChoice?.FinishReason));
         }
 
         return new ConversationResponse(
@@ -147,7 +148,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         if (toolCalls.Count == 0 && assistantMessage is null)
         {
             throw new ConversationResponseException(
-                "The provider response did not contain assistant content or usable tool calls.");
+                CreateResponsesEmptyResponseMessage(root, responseId),
+                isRetryableOutputLimitResponse: IsResponsesOutputLimitResponse(root));
         }
 
         TryGetResponsesUsage(
@@ -299,8 +301,38 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             ? null
             : $" Finish reason: {finishReason}.";
 
-        return "The provider returned neither assistant content, a refusal, nor usable tool calls." +
+        string message = IsOutputLimitFinishReason(finishReason)
+            ? "The provider hit its output length limit before returning assistant content, a refusal, or usable tool calls."
+            : "The provider returned neither assistant content, a refusal, nor usable tool calls.";
+
+        return message +
                finishReasonSuffix +
+               idSuffix;
+    }
+
+    private static string CreateResponsesEmptyResponseMessage(
+        JsonElement root,
+        string? responseId)
+    {
+        string? responseStatus = TryGetPropertyString(root, "status");
+        string? incompleteReason = TryGetNestedPropertyString(root, "incomplete_details", "reason");
+        string? idSuffix = NormalizeText(responseId) is string normalizedResponseId
+            ? $" Response id: {normalizedResponseId}."
+            : null;
+        string? statusSuffix = responseStatus is null
+            ? null
+            : $" Status: {responseStatus}.";
+        string? incompleteReasonSuffix = incompleteReason is null
+            ? null
+            : $" Incomplete reason: {incompleteReason}.";
+
+        string message = IsResponsesOutputLimitResponse(root)
+            ? "The provider hit its output length limit before returning assistant content or usable tool calls."
+            : "The provider response did not contain assistant content or usable tool calls.";
+
+        return message +
+               statusSuffix +
+               incompleteReasonSuffix +
                idSuffix;
     }
 
@@ -327,6 +359,25 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             NormalizeText(choice?.FinishReason),
             "stop",
             StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsOutputLimitFinishReason(string? finishReason)
+    {
+        return string.Equals(
+            NormalizeText(finishReason),
+            "length",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsResponsesOutputLimitResponse(JsonElement root)
+    {
+        string? incompleteReason = TryGetNestedPropertyString(root, "incomplete_details", "reason");
+        if (string.Equals(incompleteReason, "max_output_tokens", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return string.Equals(incompleteReason, "length", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string CreateToolCallId(string? rawId, string? responseId, int ordinal)
