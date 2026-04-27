@@ -31,6 +31,7 @@ public sealed class ReplSessionContext
     private readonly List<SessionFileContext> _fileContexts = [];
     private readonly Stack<WorkspaceFileEditTransaction> _redoFileEditTransactions = new();
     private readonly List<SessionTerminalCommand> _terminalHistory = [];
+    private readonly List<TemporaryArtifactReference> _temporaryArtifacts = [];
     private bool _sectionTitleGenerationStarted;
     private readonly Stack<WorkspaceFileEditTransaction> _undoFileEditTransactions = new();
     private readonly List<PermissionRule> _permissionOverrides = [];
@@ -223,6 +224,42 @@ public sealed class ReplSessionContext
         lock (_syncRoot)
         {
             _permissionOverrides.Add(rule);
+        }
+    }
+
+    public void RegisterTemporaryArtifact(
+        string path,
+        TemporaryArtifactRetention retention)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+
+        string fullPath = Path.GetFullPath(path.Trim());
+        lock (_syncRoot)
+        {
+            _temporaryArtifacts.Add(new TemporaryArtifactReference(fullPath, retention));
+        }
+    }
+
+    public void DeleteTemporaryArtifacts(TemporaryArtifactRetention retention)
+    {
+        TemporaryArtifactReference[] artifacts;
+        lock (_syncRoot)
+        {
+            artifacts = _temporaryArtifacts
+                .Where(artifact => artifact.Retention == retention)
+                .ToArray();
+
+            if (artifacts.Length == 0)
+            {
+                return;
+            }
+
+            _temporaryArtifacts.RemoveAll(artifact => artifact.Retention == retention);
+        }
+
+        foreach (TemporaryArtifactReference artifact in artifacts)
+        {
+            TryDeleteTemporaryArtifact(artifact.Path);
         }
     }
 
@@ -1290,4 +1327,52 @@ public sealed class ReplSessionContext
             session.CompleteFileEditTransactionBatch();
         }
     }
+
+    private static void TryDeleteTemporaryArtifact(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+            {
+                File.Delete(path);
+                TryDeleteEmptyParentDirectory(path);
+                return;
+            }
+
+            if (Directory.Exists(path))
+            {
+                Directory.Delete(path, recursive: true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private static void TryDeleteEmptyParentDirectory(string path)
+    {
+        try
+        {
+            string? parent = Path.GetDirectoryName(path);
+            if (!string.IsNullOrWhiteSpace(parent) &&
+                Directory.Exists(parent) &&
+                !Directory.EnumerateFileSystemEntries(parent).Any())
+            {
+                Directory.Delete(parent);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private sealed record TemporaryArtifactReference(
+        string Path,
+        TemporaryArtifactRetention Retention);
 }

@@ -102,10 +102,48 @@ public sealed class HeadlessBrowserServiceTests : IDisposable
         result.Screenshot!.ByteCount.Should().Be(4);
         result.Screenshot.ViewportWidth.Should().Be(1024);
         result.Screenshot.ViewportHeight.Should().Be(768);
+        result.Screenshot.ArtifactDirectory.Should().Be(Path.GetDirectoryName(result.Screenshot.Path));
+        result.Screenshot.Retention.Should().Be(HeadlessBrowserScreenshotRetention.Session);
         File.Exists(result.Screenshot.Path).Should().BeTrue();
         processRunner.Requests.Should().HaveCount(2);
         processRunner.Requests[1].Arguments.Should().Contain(argument =>
             argument.StartsWith("--screenshot=", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_DeleteExpiredArtifactDirectories()
+    {
+        string staleDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "NanoAgent",
+            "browser",
+            "stale-session");
+        Directory.CreateDirectory(staleDirectory);
+        File.WriteAllText(Path.Combine(staleDirectory, "old.png"), "old");
+        Directory.SetLastWriteTimeUtc(staleDirectory, DateTime.UtcNow.AddDays(-2));
+        _pathsToDelete.Add(staleDirectory);
+
+        FakeProcessRunner processRunner = new(_ => new ProcessExecutionResult(
+            0,
+            "<html><body>Done</body></html>",
+            string.Empty));
+
+        HeadlessBrowserService sut = new(processRunner, browserExecutablePath: "browser");
+
+        await sut.RunAsync(
+            new HeadlessBrowserRequest(
+                "https://example.com",
+                "short",
+                800,
+                600,
+                0,
+                5000,
+                CaptureScreenshot: false,
+                IncludeHtml: false),
+            "fresh-session",
+            CancellationToken.None);
+
+        Directory.Exists(staleDirectory).Should().BeFalse();
     }
 
     public void Dispose()

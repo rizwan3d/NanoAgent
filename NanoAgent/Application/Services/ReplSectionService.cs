@@ -233,6 +233,8 @@ internal sealed class ReplSectionService : IReplSectionService
         }
 
         await SaveIfDirtyAsync(session, cancellationToken);
+        session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Turn);
+        session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Session);
     }
 
     private async Task GenerateAndPersistTitleAsync(

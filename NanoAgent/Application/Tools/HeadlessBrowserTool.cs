@@ -70,6 +70,11 @@ internal sealed class HeadlessBrowserTool : ITool
               "type": "boolean",
               "description": "When true, save a viewport screenshot to a temporary NanoAgent browser artifact path."
             },
+            "screenshot_retention": {
+              "type": "string",
+              "enum": ["turn", "session", "keep"],
+              "description": "Screenshot cleanup policy. Use turn to delete after the current turn, session to delete when the session closes, or keep to leave it until temp retention cleanup. Defaults to session."
+            },
             "include_html": {
               "type": "boolean",
               "description": "When true, include a bounded rendered HTML excerpt in the structured result."
@@ -103,6 +108,7 @@ internal sealed class HeadlessBrowserTool : ITool
                 request,
                 context.Session.SessionId,
                 cancellationToken);
+            RegisterScreenshotCleanup(context, result);
 
             return ToolResultFactory.Success(
                 BuildSuccessMessage(result),
@@ -146,6 +152,13 @@ internal sealed class HeadlessBrowserTool : ITool
             throw new ArgumentException("Set 'response_length' to short, medium, or long.");
         }
 
+        string screenshotRetention = ToolArguments.GetOptionalString(arguments, "screenshot_retention") ??
+            HeadlessBrowserScreenshotRetention.Session;
+        if (!HeadlessBrowserScreenshotRetention.IsSupported(screenshotRetention))
+        {
+            throw new ArgumentException("Set 'screenshot_retention' to turn, session, or keep.");
+        }
+
         return new HeadlessBrowserRequest(
             url!,
             responseLength.ToLowerInvariant(),
@@ -155,7 +168,8 @@ internal sealed class HeadlessBrowserTool : ITool
             GetOptionalBoundedInt(arguments, "timeout_ms", DefaultTimeoutMilliseconds, 1000, 25000),
             GetOptionalBoolean(arguments, "capture_screenshot", defaultValue: false),
             GetOptionalBoolean(arguments, "include_html", defaultValue: false),
-            ToolArguments.GetOptionalString(arguments, "user_agent"));
+            ToolArguments.GetOptionalString(arguments, "user_agent"),
+            screenshotRetention.ToLowerInvariant());
     }
 
     private static int GetOptionalBoundedInt(
@@ -213,11 +227,33 @@ internal sealed class HeadlessBrowserTool : ITool
                 message));
     }
 
+    private static void RegisterScreenshotCleanup(
+        ToolExecutionContext context,
+        HeadlessBrowserResult result)
+    {
+        if (result.Screenshot is null)
+        {
+            return;
+        }
+
+        TemporaryArtifactRetention? retention = result.Screenshot.Retention switch
+        {
+            HeadlessBrowserScreenshotRetention.Turn => TemporaryArtifactRetention.Turn,
+            HeadlessBrowserScreenshotRetention.Session => TemporaryArtifactRetention.Session,
+            _ => null
+        };
+
+        if (retention is not null)
+        {
+            context.Session.RegisterTemporaryArtifact(result.Screenshot.Path, retention.Value);
+        }
+    }
+
     private static string BuildSuccessMessage(HeadlessBrowserResult result)
     {
         string screenshotPart = result.Screenshot is null
             ? string.Empty
-            : $" and saved a {result.Screenshot.ByteCount} byte screenshot";
+            : $" and saved a {result.Screenshot.ByteCount} byte screenshot in {result.Screenshot.ArtifactDirectory}";
 
         return $"headless_browser rendered '{result.Url}' with {result.TextCharacterCount} text character(s){screenshotPart}.";
     }
@@ -235,6 +271,8 @@ internal sealed class HeadlessBrowserTool : ITool
         if (result.Screenshot is not null)
         {
             lines.Add($"Screenshot: {result.Screenshot.Path} ({result.Screenshot.ByteCount} bytes)");
+            lines.Add($"Screenshot directory: {result.Screenshot.ArtifactDirectory}");
+            lines.Add($"Screenshot retention: {result.Screenshot.Retention}");
         }
 
         if (!string.IsNullOrWhiteSpace(result.Text))

@@ -16,6 +16,40 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void DeleteTemporaryArtifacts_Should_DeleteOnlyMatchingRetention()
+    {
+        ReplSessionContext session = CreateSession();
+        string directory = Path.Combine(Path.GetTempPath(), "nanoagent-test-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string turnFile = Path.Combine(directory, "turn.png");
+        string sessionFile = Path.Combine(directory, "session.png");
+        File.WriteAllText(turnFile, "turn");
+        File.WriteAllText(sessionFile, "session");
+
+        try
+        {
+            session.RegisterTemporaryArtifact(turnFile, TemporaryArtifactRetention.Turn);
+            session.RegisterTemporaryArtifact(sessionFile, TemporaryArtifactRetention.Session);
+
+            session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Turn);
+
+            File.Exists(turnFile).Should().BeFalse();
+            File.Exists(sessionFile).Should().BeTrue();
+
+            session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Session);
+
+            File.Exists(sessionFile).Should().BeFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void RecordFileEditTransaction_Should_ExposePendingUndo_And_CompleteUndoShouldMoveItToRedo()
     {
         ReplSessionContext session = CreateSession();

@@ -50,7 +50,8 @@ public sealed class HeadlessBrowserToolTests
                     request.ViewportWidth == 800 &&
                     request.ViewportHeight == 600 &&
                     request.WaitMilliseconds == 250 &&
-                    request.CaptureScreenshot),
+                    request.CaptureScreenshot &&
+                    request.ScreenshotRetention == HeadlessBrowserScreenshotRetention.Turn),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new HeadlessBrowserResult(
@@ -63,6 +64,8 @@ public sealed class HeadlessBrowserToolTests
                 128,
                 new HeadlessBrowserScreenshotResult(
                     Path.Combine(Path.GetTempPath(), "shot.png"),
+                    Path.GetTempPath(),
+                    HeadlessBrowserScreenshotRetention.Turn,
                     1024,
                     800,
                     600),
@@ -79,6 +82,7 @@ public sealed class HeadlessBrowserToolTests
                   "viewport_width": 800,
                   "viewport_height": 600,
                   "wait_ms": 250,
+                  "screenshot_retention": "turn",
                   "capture_screenshot": true
                 }
                 """),
@@ -87,6 +91,8 @@ public sealed class HeadlessBrowserToolTests
         result.Status.Should().Be(ToolResultStatus.Success);
         result.JsonResult.Should().Contain("Example Domain");
         result.RenderPayload!.Text.Should().Contain("Screenshot:");
+        result.RenderPayload.Text.Should().Contain("Screenshot directory:");
+        result.RenderPayload.Text.Should().Contain("Screenshot retention: turn");
         headlessBrowserService.VerifyAll();
     }
 

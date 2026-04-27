@@ -195,6 +195,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             await RunAfterTaskFailedHookAsync(normalizedInput, session, exception, cancellationToken);
             throw;
         }
+        finally
+        {
+            session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Turn);
+        }
     }
 
     private async Task<ConversationTurnResult> ExecuteApprovedPlanAsync(
