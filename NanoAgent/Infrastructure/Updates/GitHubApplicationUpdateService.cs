@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
 using NanoAgent.Application.Abstractions;
@@ -69,9 +70,13 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
 
         if (result.ExitCode == 0)
         {
+            string successMessage = OperatingSystem.IsWindows()
+                ? $"NanoAgent update prepared: {updateInfo.LatestVersion}. Exit NanoAgent to finish installation, then restart it to use the new version."
+                : $"NanoAgent update installed: {updateInfo.LatestVersion}. Restart NanoAgent to use the new version.";
+
             return new ApplicationUpdateInstallResult(
                 true,
-                $"NanoAgent update installed: {updateInfo.LatestVersion}. Restart NanoAgent to use the new version.");
+                successMessage);
         }
 
         string detail = string.Join(
@@ -96,6 +101,8 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
 
         if (OperatingSystem.IsWindows())
         {
+            environment["NanoAgent_WAIT_FOR_PROCESS_ID"] = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
+
             return new ProcessExecutionRequest(
                 "powershell.exe",
                 [
