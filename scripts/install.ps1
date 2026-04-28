@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Tag = $env:NanoAgent_TAG,
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\NanoAgent\bin')
+    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\NanoAgent\bin'),
+    [string]$WaitForProcessId = $env:NanoAgent_WAIT_FOR_PROCESS_ID
 )
 
 Set-StrictMode -Version Latest
@@ -76,6 +77,222 @@ function Test-PathContainsDirectory {
     return $false
 }
 
+function ConvertTo-PowerShellLiteral {
+    param([string]$Value)
+
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function Get-ValidProcessId {
+    param([string]$Value)
+
+    $parsedProcessId = 0
+    if (
+        -not [string]::IsNullOrWhiteSpace($Value) -and
+        [int]::TryParse($Value, [ref]$parsedProcessId) -and
+        $parsedProcessId -gt 0
+    ) {
+        return $parsedProcessId
+    }
+
+    return 0
+}
+
+function Test-SamePath {
+    param(
+        [string]$Left,
+        [string]$Right
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Left) -or [string]::IsNullOrWhiteSpace($Right)) {
+        return $false
+    }
+
+    try {
+        $normalizedLeft = [System.IO.Path]::GetFullPath($Left).TrimEnd('\')
+        $normalizedRight = [System.IO.Path]::GetFullPath($Right).TrimEnd('\')
+    }
+    catch {
+        return $false
+    }
+
+    return $normalizedLeft -ieq $normalizedRight
+}
+
+function Get-ParentProcessId {
+    param([int]$ProcessId)
+
+    try {
+        $processInfo = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
+        if ($null -ne $processInfo -and $processInfo.ParentProcessId -gt 0) {
+            return [int]$processInfo.ParentProcessId
+        }
+    }
+    catch {
+    }
+
+    return 0
+}
+
+function Resolve-WaitForProcessId {
+    param(
+        [string]$RequestedProcessId,
+        [string]$DestinationPath
+    )
+
+    $requested = Get-ValidProcessId -Value $RequestedProcessId
+    if ($requested -gt 0) {
+        return $requested
+    }
+
+    $ancestorProcessId = $PID
+    for ($index = 0; $index -lt 5; $index++) {
+        $parentProcessId = Get-ParentProcessId -ProcessId $ancestorProcessId
+        if ($parentProcessId -le 0) {
+            break
+        }
+
+        try {
+            $parentProcess = Get-Process -Id $parentProcessId -ErrorAction Stop
+            $parentPath = $null
+            try {
+                $parentPath = $parentProcess.Path
+            }
+            catch {
+            }
+
+            if (
+                $parentProcess.ProcessName -ieq $CommandName -or
+                $parentProcess.ProcessName -ieq $ExecutableName -or
+                (Test-SamePath -Left $parentPath -Right $DestinationPath)
+            ) {
+                return $parentProcessId
+            }
+        }
+        catch {
+        }
+
+        $ancestorProcessId = $parentProcessId
+    }
+
+    return 0
+}
+
+function Start-DeferredInstall {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath,
+        [int]$ProcessId,
+        [string]$CleanupRoot
+    )
+
+    $scriptPath = Join-Path $CleanupRoot 'complete-update.ps1'
+    $logPath = Join-Path $CleanupRoot 'complete-update.log'
+    $deferredScript = @'
+param(
+    [Parameter(Mandatory = $true)]
+    [string]$SourcePath,
+
+    [Parameter(Mandatory = $true)]
+    [string]$DestinationPath,
+
+    [int]$WaitForProcessId,
+
+    [Parameter(Mandatory = $true)]
+    [string]$CleanupRoot,
+
+    [Parameter(Mandatory = $true)]
+    [string]$LogPath
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+function Write-Log {
+    param([string]$Message)
+
+    $timestamp = [DateTimeOffset]::Now.ToString('o')
+    Add-Content -LiteralPath $LogPath -Value "[$timestamp] $Message"
+}
+
+function Copy-WithRetry {
+    param(
+        [string]$SourcePath,
+        [string]$DestinationPath
+    )
+
+    $deadline = [DateTimeOffset]::UtcNow.AddMinutes(10)
+    while ($true) {
+        try {
+            New-Item -ItemType Directory -Path (Split-Path -Parent $DestinationPath) -Force | Out-Null
+            Copy-Item -LiteralPath $SourcePath -Destination $DestinationPath -Force
+            return
+        }
+        catch {
+            if ([DateTimeOffset]::UtcNow -ge $deadline) {
+                throw
+            }
+
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+
+$completed = $false
+
+try {
+    Write-Log "Waiting for process $WaitForProcessId to exit before replacing $DestinationPath."
+
+    if ($WaitForProcessId -gt 0) {
+        try {
+            Wait-Process -Id $WaitForProcessId -Timeout 86400 -ErrorAction SilentlyContinue
+        }
+        catch {
+            Write-Log "Wait-Process warning: $($_.Exception.Message)"
+        }
+    }
+
+    Copy-WithRetry -SourcePath $SourcePath -DestinationPath $DestinationPath
+    Write-Log "Installed update to $DestinationPath."
+    $completed = $true
+}
+catch {
+    Write-Log "Update failed: $($_.Exception.Message)"
+    exit 1
+}
+finally {
+    if ($completed -and (Test-Path -LiteralPath $CleanupRoot)) {
+        Remove-Item -LiteralPath $CleanupRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+'@
+
+    Set-Content -LiteralPath $scriptPath -Value $deferredScript -Encoding UTF8
+
+    $command = "& " +
+        (ConvertTo-PowerShellLiteral -Value $scriptPath) +
+        " -SourcePath " +
+        (ConvertTo-PowerShellLiteral -Value $SourcePath) +
+        " -DestinationPath " +
+        (ConvertTo-PowerShellLiteral -Value $DestinationPath) +
+        " -WaitForProcessId $ProcessId -CleanupRoot " +
+        (ConvertTo-PowerShellLiteral -Value $CleanupRoot) +
+        " -LogPath " +
+        (ConvertTo-PowerShellLiteral -Value $logPath)
+    $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
+
+    Start-Process -FilePath 'powershell.exe' -WindowStyle Hidden -ArgumentList @(
+        '-NoProfile',
+        '-ExecutionPolicy',
+        'Bypass',
+        '-EncodedCommand',
+        $encodedCommand
+    ) | Out-Null
+
+    Write-Status "Update staged. Exit NanoAgent to finish replacing '$CommandName.exe'."
+    Write-Status "Deferred update log: $logPath"
+}
+
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -notin @('AMD64', 'x86_64')) {
     Fail-Install "Unsupported Windows architecture '$architecture'. This installer supports Windows x64 only."
@@ -90,6 +307,7 @@ $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$AppName-install-$([Sys
 $archivePath = Join-Path $tempRoot $AssetName
 $extractDir = Join-Path $tempRoot 'extract'
 $destinationPath = Join-Path $InstallDir "$CommandName.exe"
+$cleanupTempRoot = $true
 
 try {
     Write-Status "Installing $AppName $Tag for win-x64 as '$CommandName'..."
@@ -113,8 +331,21 @@ try {
         Fail-Install "Expected executable '$ExecutableName.exe' was not found in $AssetName."
     }
 
-    Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
-    Write-Status "Installed '$CommandName.exe' to $destinationPath"
+    $waitProcessId = Resolve-WaitForProcessId -RequestedProcessId $WaitForProcessId -DestinationPath $destinationPath
+    if ($waitProcessId -gt 0) {
+        Start-DeferredInstall -SourcePath $sourcePath -DestinationPath $destinationPath -ProcessId $waitProcessId -CleanupRoot $tempRoot
+        $cleanupTempRoot = $false
+    }
+    else {
+        try {
+            Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+        }
+        catch {
+            Fail-Install "Unable to replace '$destinationPath'. Close any running NanoAgent sessions and try again. $($_.Exception.Message)"
+        }
+
+        Write-Status "Installed '$CommandName.exe' to $destinationPath"
+    }
 
     $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     $pathUpdated = $false
@@ -141,7 +372,7 @@ try {
     Write-Status 'Done.'
 }
 finally {
-    if (Test-Path -LiteralPath $tempRoot) {
+    if ($cleanupTempRoot -and (Test-Path -LiteralPath $tempRoot)) {
         Remove-Item -LiteralPath $tempRoot -Recurse -Force
     }
 }
