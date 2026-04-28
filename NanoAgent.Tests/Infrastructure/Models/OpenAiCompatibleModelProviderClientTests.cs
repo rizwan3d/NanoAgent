@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.OpenAi;
@@ -208,7 +209,7 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
-    public async Task GetAvailableModelsAsync_Should_ReturnFallbackModels_When_AccountModelRequestFails()
+    public async Task GetAvailableModelsAsync_Should_ThrowModelProviderException_When_AccountModelRequestFails()
     {
         Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
         credentialService
@@ -224,12 +225,13 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         HttpClient httpClient = new(handler);
         OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient, credentialService.Object);
 
-        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+        Func<Task> action = () => sut.GetAvailableModelsAsync(
             new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
             "stored-credentials",
             CancellationToken.None);
 
-        models.Should().NotBeEmpty();
+        await action.Should().ThrowAsync<ModelProviderException>()
+            .WithMessage("*account API*HTTP 503*");
         credentialService.VerifyAll();
     }
 
