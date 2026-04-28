@@ -15,23 +15,6 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private const string Originator = "nanoagent";
     private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
-    private static readonly AvailableModel[] OpenAiChatGptAccountModels =
-    [
-        new("gpt-5.3-codex"),
-        new("gpt-5.3-codex-spark"),
-        new("gpt-5.5"),
-        new("gpt-5.4"),
-        new("gpt-5.4-mini"),
-        new("gpt-5.2"),
-        new("gpt-5.2-codex"),
-        new("gpt-5.1"),
-        new("gpt-5.1-codex-max"),
-        new("gpt-5.1-codex"),
-        new("gpt-5.1-codex-mini"),
-        new("gpt-5"),
-        new("gpt-5-codex"),
-        new("gpt-5-codex-mini")
-    ];
 
     private readonly HttpClient _httpClient;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
@@ -152,9 +135,12 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    LogOpenAiChatGptAccountModelFallback(
-                        $"HTTP {(int)response.StatusCode}");
-                    return OpenAiChatGptAccountModels;
+                    string detail = string.IsNullOrWhiteSpace(responseBody)
+                        ? $"Provider returned HTTP {(int)response.StatusCode}."
+                        : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
+
+                    throw new ModelProviderException(
+                        $"Unable to fetch OpenAI ChatGPT Plus/Pro models from the account API. {detail}");
                 }
 
                 IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
@@ -163,18 +149,20 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     return models;
                 }
 
-                LogOpenAiChatGptAccountModelFallback("empty or invalid model response");
-                return OpenAiChatGptAccountModels;
+                throw new ModelProviderException(
+                    "The OpenAI ChatGPT Plus/Pro account API returned an invalid models response.");
             }
             catch (HttpRequestException exception)
             {
-                LogOpenAiChatGptAccountModelFallback(exception.Message);
-                return OpenAiChatGptAccountModels;
+                throw new ModelProviderException(
+                    "Unable to fetch OpenAI ChatGPT Plus/Pro models from the account API.",
+                    exception);
             }
             catch (JsonException exception)
             {
-                LogOpenAiChatGptAccountModelFallback(exception.Message);
-                return OpenAiChatGptAccountModels;
+                throw new ModelProviderException(
+                    "The OpenAI ChatGPT Plus/Pro account API returned an invalid models response.",
+                    exception);
             }
         }
     }
@@ -294,13 +282,6 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         return null;
-    }
-
-    private void LogOpenAiChatGptAccountModelFallback(string reason)
-    {
-        _logger.LogWarning(
-            "Unable to fetch account-backed model list dynamically. Using fallback models. Reason: {Reason}",
-            reason);
     }
 
     private void LogDebugApiRequest(
