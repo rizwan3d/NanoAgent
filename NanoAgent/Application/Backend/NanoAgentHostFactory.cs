@@ -26,6 +26,11 @@ public static class NanoAgentHostFactory
             optional: true,
             reloadOnChange: false);
 
+        builder.Configuration.AddJsonFile(
+            Path.Combine(Directory.GetCurrentDirectory(), ".nanoagent", "agent-profile.json"),
+            optional: true,
+            reloadOnChange: false);
+
         builder.Logging.ClearProviders();
         builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 
