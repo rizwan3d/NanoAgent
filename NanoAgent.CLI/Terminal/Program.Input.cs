@@ -59,19 +59,13 @@ public static partial class Program
                 return;
             }
 
-            if (HandleConversationScrollInput(state, key))
+            if (HandleInputEditingKey(state, key))
             {
                 continue;
             }
 
-            if (IsBackspaceKey(key))
+            if (HandleConversationScrollInput(state, key))
             {
-                if (state.Input.Length > 0)
-                {
-                    state.Input.Remove(state.Input.Length - 1, 1);
-                    ResetSlashCommandSuggestions(state);
-                }
-
                 continue;
             }
 
@@ -98,12 +92,51 @@ public static partial class Program
 
             if (!char.IsControl(key.KeyChar))
             {
-                state.Input.Append(key.KeyChar);
-                state.SkipNextInputLineFeed = false;
-                ResetSlashCommandSuggestions(state);
+                InsertInputText(state, key.KeyChar.ToString());
                 appendedInputInBatch = true;
             }
         }
+    }
+
+    private static bool HandleInputEditingKey(AppState state, ConsoleKeyInfo key)
+    {
+        if (IsBackspaceKey(key))
+        {
+            DeleteInputBeforeCursor(state);
+            return true;
+        }
+
+        if (IsDeleteKey(key))
+        {
+            DeleteInputAtCursor(state);
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.LeftArrow && state.Input.Length > 0)
+        {
+            MoveInputCursor(state, -1);
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.RightArrow && state.Input.Length > 0)
+        {
+            MoveInputCursor(state, 1);
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.Home && state.Input.Length > 0)
+        {
+            MoveInputCursorToStart(state);
+            return true;
+        }
+
+        if (key.Key == ConsoleKey.End && state.Input.Length > 0)
+        {
+            MoveInputCursorToEnd(state);
+            return true;
+        }
+
+        return false;
     }
 
     private static bool TrySkipLineFeedAfterCarriageReturn(AppState state, ConsoleKeyInfo key)
@@ -121,6 +154,11 @@ public static partial class Program
     {
         return key.Key == ConsoleKey.Backspace ||
             key.KeyChar is '\b' or '\u007f';
+    }
+
+    private static bool IsDeleteKey(ConsoleKeyInfo key)
+    {
+        return key.Key == ConsoleKey.Delete;
     }
 
     private static bool IsEnterKey(ConsoleKeyInfo key)
@@ -327,6 +365,11 @@ public static partial class Program
             return;
         }
 
+        if (state.ActiveModal is not null)
+        {
+            return;
+        }
+
         HandleTerminalKeySequence(state, sequence);
     }
 
@@ -339,6 +382,11 @@ public static partial class Program
         }
 
         if (TryHandleSlashCommandSuggestionSequence(state, sequence))
+        {
+            return;
+        }
+
+        if (TryHandleInputEditingTerminalSequence(state, sequence))
         {
             return;
         }
@@ -378,6 +426,66 @@ public static partial class Program
         }
     }
 
+    private static bool TryHandleInputEditingTerminalSequence(AppState state, string sequence)
+    {
+        switch (sequence)
+        {
+            case "D":
+                if (state.Input.Length == 0)
+                {
+                    return false;
+                }
+
+                MoveInputCursor(state, -1);
+                return true;
+
+            case "C":
+                if (state.Input.Length == 0)
+                {
+                    return false;
+                }
+
+                MoveInputCursor(state, 1);
+                return true;
+
+            case "H":
+            case "1~":
+                if (state.Input.Length == 0)
+                {
+                    return false;
+                }
+
+                MoveInputCursorToStart(state);
+                return true;
+
+            case "F":
+            case "4~":
+                if (state.Input.Length == 0)
+                {
+                    return false;
+                }
+
+                MoveInputCursorToEnd(state);
+                return true;
+
+            default:
+                if (IsDeleteTerminalSequence(sequence))
+                {
+                    DeleteInputAtCursor(state);
+                    return true;
+                }
+
+                return false;
+        }
+    }
+
+    private static bool IsDeleteTerminalSequence(string sequence)
+    {
+        return sequence == "3~" ||
+            (sequence.StartsWith("3;", StringComparison.Ordinal) &&
+                sequence.EndsWith('~'));
+    }
+
     private static bool IsMultilineEnterTerminalSequence(string sequence)
     {
         return sequence is "13;2u" or "13;4u" or "13;5u" or "13;6u" or "13;7u" or "13;8u";
@@ -392,8 +500,7 @@ public static partial class Program
     {
         if (state.ActiveModal is null)
         {
-            state.Input.Append('\n');
-            ResetSlashCommandSuggestions(state);
+            InsertInputText(state, "\n");
         }
 
         state.SkipNextInputLineFeed = key.KeyChar == '\r';
@@ -422,9 +529,81 @@ public static partial class Program
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
 
-        state.Input.Append(normalized);
+        InsertInputText(state, normalized);
+    }
+
+    private static void InsertInputText(AppState state, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        int cursorIndex = ClampInputCursor(state);
+        state.Input.Insert(cursorIndex, text);
+        state.InputCursorIndex = cursorIndex + text.Length;
         state.SkipNextInputLineFeed = false;
         ResetSlashCommandSuggestions(state);
+    }
+
+    private static void DeleteInputBeforeCursor(AppState state)
+    {
+        int cursorIndex = ClampInputCursor(state);
+        if (cursorIndex <= 0)
+        {
+            state.SkipNextInputLineFeed = false;
+            return;
+        }
+
+        state.Input.Remove(cursorIndex - 1, 1);
+        state.InputCursorIndex = cursorIndex - 1;
+        state.SkipNextInputLineFeed = false;
+        ResetSlashCommandSuggestions(state);
+    }
+
+    private static void DeleteInputAtCursor(AppState state)
+    {
+        int cursorIndex = ClampInputCursor(state);
+        if (cursorIndex >= state.Input.Length)
+        {
+            state.SkipNextInputLineFeed = false;
+            return;
+        }
+
+        state.Input.Remove(cursorIndex, 1);
+        state.SkipNextInputLineFeed = false;
+        ResetSlashCommandSuggestions(state);
+    }
+
+    private static void MoveInputCursor(AppState state, int delta)
+    {
+        int cursorIndex = ClampInputCursor(state);
+        state.InputCursorIndex = Math.Clamp(
+            cursorIndex + delta,
+            0,
+            state.Input.Length);
+        state.SkipNextInputLineFeed = false;
+    }
+
+    private static void MoveInputCursorToStart(AppState state)
+    {
+        state.InputCursorIndex = 0;
+        state.SkipNextInputLineFeed = false;
+    }
+
+    private static void MoveInputCursorToEnd(AppState state)
+    {
+        state.InputCursorIndex = state.Input.Length;
+        state.SkipNextInputLineFeed = false;
+    }
+
+    private static int ClampInputCursor(AppState state)
+    {
+        state.InputCursorIndex = Math.Clamp(
+            state.InputCursorIndex,
+            0,
+            state.Input.Length);
+        return state.InputCursorIndex;
     }
 
     private static void ConsumeBracketedPasteInput(AppState state)
@@ -489,18 +668,20 @@ public static partial class Program
             return false;
         }
 
-        ConsoleKey? key = sequence switch
-        {
-            "A" => ConsoleKey.UpArrow,
-            "B" => ConsoleKey.DownArrow,
-            "C" => ConsoleKey.RightArrow,
-            "D" => ConsoleKey.LeftArrow,
-            "H" or "1~" => ConsoleKey.Home,
-            "F" or "4~" => ConsoleKey.End,
-            "5~" => ConsoleKey.PageUp,
-            "6~" => ConsoleKey.PageDown,
-            _ => null
-        };
+        ConsoleKey? key = IsDeleteTerminalSequence(sequence)
+            ? ConsoleKey.Delete
+            : sequence switch
+            {
+                "A" => ConsoleKey.UpArrow,
+                "B" => ConsoleKey.DownArrow,
+                "C" => ConsoleKey.RightArrow,
+                "D" => ConsoleKey.LeftArrow,
+                "H" or "1~" => ConsoleKey.Home,
+                "F" or "4~" => ConsoleKey.End,
+                "5~" => ConsoleKey.PageUp,
+                "6~" => ConsoleKey.PageDown,
+                _ => null
+            };
 
         if (key is null)
         {

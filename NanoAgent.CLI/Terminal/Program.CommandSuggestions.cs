@@ -11,6 +11,7 @@ public static partial class Program
         suggestions = [];
 
         if (state.ActiveModal is not null ||
+            state.InputCursorIndex != state.Input.Length ||
             state.SlashCommandSuggestionsDismissed)
         {
             return false;
@@ -139,6 +140,10 @@ public static partial class Program
                 MoveSlashCommandSuggestion(state, suggestions, -1);
                 return true;
 
+            case "D":
+                MoveSlashCommandSuggestion(state, suggestions, -1);
+                return true;
+
             case "B":
                 MoveSlashCommandSuggestion(state, suggestions, 1);
                 return true;
@@ -205,6 +210,7 @@ public static partial class Program
         state.Input.Append(suggestion.RequiresArgument
             ? suggestion.Command + " "
             : suggestion.Command);
+        state.InputCursorIndex = state.Input.Length;
         state.SlashCommandSuggestionsDismissed = true;
 
         if (submitCommand && !suggestion.RequiresArgument)

@@ -270,6 +270,7 @@ public static partial class Program
 
         string inputMarkup = BuildInputLineMarkup(
             state.Input.ToString(),
+            state.InputCursorIndex,
             state.IsBusy || state.IsStreaming);
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
@@ -364,9 +365,11 @@ public static partial class Program
 
     private static string BuildInputLineMarkup(
         string input,
+        int cursorIndex,
         bool isBusy)
     {
         string normalizedInput = input ?? string.Empty;
+        int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
         string busySuffixPlain = isBusy ? " (busy)" : string.Empty;
         string busySuffixMarkup = isBusy ? " [grey](busy)[/]" : string.Empty;
         const string promptPlain = "> ";
@@ -375,24 +378,38 @@ public static partial class Program
         int maxInputLength = Math.Max(
             1,
             contentWidth - promptPlain.Length - busySuffixPlain.Length - InputCursorColumnWidth);
-        IReadOnlyList<string> inputLines = WrapInputText(
+        IReadOnlyList<InputRenderLine> inputLines = WrapInputTextForCursor(
             normalizedInput,
+            normalizedCursorIndex,
             maxInputLength,
             Math.Max(1, contentWidth - 2 - InputCursorColumnWidth));
         List<string> renderedLines = [];
 
         for (int index = 0; index < inputLines.Count; index++)
         {
+            InputRenderLine inputLine = inputLines[index];
             bool showPrompt = index == 0;
-            bool showCursor = index == inputLines.Count - 1;
             string prefixMarkup = showPrompt ? promptMarkup : "  ";
             string suffixMarkup = showPrompt ? busySuffixMarkup : string.Empty;
-            string cursorMarkup = showCursor ? BuildInputCursorMarkup() : string.Empty;
+            string lineMarkup = BuildInputRenderLineMarkup(inputLine);
 
-            renderedLines.Add($"{prefixMarkup}{Markup.Escape(inputLines[index])}{cursorMarkup}{suffixMarkup}");
+            renderedLines.Add($"{prefixMarkup}{lineMarkup}{suffixMarkup}");
         }
 
         return string.Join('\n', renderedLines);
+    }
+
+    private static string BuildInputRenderLineMarkup(InputRenderLine line)
+    {
+        if (line.CursorColumn is not int cursorColumn)
+        {
+            return Markup.Escape(line.Text);
+        }
+
+        int normalizedCursorColumn = Math.Clamp(cursorColumn, 0, line.Text.Length);
+        string beforeCursor = line.Text[..normalizedCursorColumn];
+        string afterCursor = line.Text[normalizedCursorColumn..];
+        return Markup.Escape(beforeCursor) + BuildInputCursorMarkup() + Markup.Escape(afterCursor);
     }
 
     private static int GetInputPanelSize(AppState state)
@@ -431,8 +448,10 @@ public static partial class Program
         }
 
         string lineLabel = lineCount == 1 ? "line is" : "lines are";
+        string summary = $"{lineCount} {lineLabel} pasted";
         markup = BuildInputLineMarkup(
-            $"{lineCount} {lineLabel} pasted",
+            summary,
+            summary.Length,
             isBusy);
         return true;
     }
@@ -523,6 +542,83 @@ public static partial class Program
             }
 
             width = Math.Max(1, continuationLineWidth);
+        }
+
+        return lines;
+    }
+
+    private static IReadOnlyList<InputRenderLine> WrapInputTextForCursor(
+        string input,
+        int cursorIndex,
+        int firstLineWidth,
+        int continuationLineWidth)
+    {
+        string normalizedInput = (input ?? string.Empty)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
+        List<InputRenderLine> lines = [];
+        int width = Math.Max(1, firstLineWidth);
+        int globalLineStart = 0;
+        bool cursorRendered = false;
+        string[] logicalLines = normalizedInput.Split('\n');
+
+        for (int lineIndex = 0; lineIndex < logicalLines.Length; lineIndex++)
+        {
+            string logicalLine = logicalLines[lineIndex];
+
+            if (logicalLine.Length == 0)
+            {
+                int? cursorColumn = !cursorRendered && normalizedCursorIndex == globalLineStart
+                    ? 0
+                    : null;
+                cursorRendered |= cursorColumn is not null;
+                lines.Add(new InputRenderLine(string.Empty, cursorColumn));
+            }
+            else
+            {
+                int offset = 0;
+                while (offset < logicalLine.Length)
+                {
+                    int segmentStart = globalLineStart + offset;
+                    int length = Math.Min(width, logicalLine.Length - offset);
+                    int segmentEnd = segmentStart + length;
+                    int? cursorColumn = null;
+
+                    if (!cursorRendered &&
+                        normalizedCursorIndex >= segmentStart &&
+                        normalizedCursorIndex <= segmentEnd)
+                    {
+                        cursorColumn = normalizedCursorIndex - segmentStart;
+                        cursorRendered = true;
+                    }
+
+                    lines.Add(new InputRenderLine(
+                        logicalLine.Substring(offset, length),
+                        cursorColumn));
+                    offset += length;
+                    width = Math.Max(1, continuationLineWidth);
+                }
+            }
+
+            globalLineStart += logicalLine.Length;
+            if (lineIndex < logicalLines.Length - 1)
+            {
+                globalLineStart++;
+            }
+
+            width = Math.Max(1, continuationLineWidth);
+        }
+
+        if (lines.Count == 0)
+        {
+            return [new InputRenderLine(string.Empty, 0)];
+        }
+
+        if (!cursorRendered)
+        {
+            InputRenderLine lastLine = lines[^1];
+            lines[^1] = lastLine with { CursorColumn = lastLine.Text.Length };
         }
 
         return lines;

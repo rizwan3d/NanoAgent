@@ -37,6 +37,8 @@ public sealed class TextModalState : UiModalState
 
     public StringBuilder Value { get; } = new();
 
+    public int CursorIndex { get; private set; }
+
     public void AppendText(string text)
     {
         if (string.IsNullOrEmpty(text))
@@ -48,7 +50,9 @@ public sealed class TextModalState : UiModalState
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
 
-        Value.Append(normalized);
+        int cursorIndex = ClampCursor();
+        Value.Insert(cursorIndex, normalized);
+        CursorIndex = cursorIndex + normalized.Length;
     }
 
     public static TextModalState Create(
@@ -107,7 +111,12 @@ public sealed class TextModalState : UiModalState
             text = IsSecret ? "(secret hidden)" : string.Empty;
         }
 
-        return $"[bold green]>[/] {Markup.Escape(text)}{Program.BuildInputCursorMarkup()}";
+        int cursorIndex = Value.Length == 0 && IsSecret
+            ? text.Length
+            : Math.Clamp(CursorIndex, 0, text.Length);
+        string beforeCursor = text[..cursorIndex];
+        string afterCursor = text[cursorIndex..];
+        return $"[bold green]>[/] {Markup.Escape(beforeCursor)}{Program.BuildInputCursorMarkup()}{Markup.Escape(afterCursor)}";
     }
 
     public override void HandleKey(AppState state, ConsoleKeyInfo key)
@@ -115,11 +124,48 @@ public sealed class TextModalState : UiModalState
         if (key.Key == ConsoleKey.Backspace ||
             key.KeyChar is '\b' or '\u007f')
         {
-            if (Value.Length > 0)
+            int cursorIndex = ClampCursor();
+            if (cursorIndex > 0)
             {
-                Value.Remove(Value.Length - 1, 1);
+                Value.Remove(cursorIndex - 1, 1);
+                CursorIndex = cursorIndex - 1;
             }
 
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Delete)
+        {
+            int cursorIndex = ClampCursor();
+            if (cursorIndex < Value.Length)
+            {
+                Value.Remove(cursorIndex, 1);
+            }
+
+            return;
+        }
+
+        if (key.Key == ConsoleKey.LeftArrow)
+        {
+            CursorIndex = Math.Max(0, ClampCursor() - 1);
+            return;
+        }
+
+        if (key.Key == ConsoleKey.RightArrow)
+        {
+            CursorIndex = Math.Min(Value.Length, ClampCursor() + 1);
+            return;
+        }
+
+        if (key.Key == ConsoleKey.Home)
+        {
+            CursorIndex = 0;
+            return;
+        }
+
+        if (key.Key == ConsoleKey.End)
+        {
+            CursorIndex = Value.Length;
             return;
         }
 
@@ -138,7 +184,9 @@ public sealed class TextModalState : UiModalState
 
         if (!char.IsControl(key.KeyChar))
         {
-            Value.Append(key.KeyChar);
+            int cursorIndex = ClampCursor();
+            Value.Insert(cursorIndex, key.KeyChar);
+            CursorIndex = cursorIndex + 1;
         }
     }
 
@@ -157,5 +205,11 @@ public sealed class TextModalState : UiModalState
     {
         state.ActiveModal = null;
         _onSubmitted(Value.ToString());
+    }
+
+    private int ClampCursor()
+    {
+        CursorIndex = Math.Clamp(CursorIndex, 0, Value.Length);
+        return CursorIndex;
     }
 }
