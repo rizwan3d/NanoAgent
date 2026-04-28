@@ -15,13 +15,12 @@ permissions:
   pull-requests: write
 
 env:
-  GH_TOKEN: ${{ github.token }}
+  GH_TOKEN: ${{ secrets.NANOAI_GITHUB_TOKEN || github.token }}
   NANOAGENT_API_KEY: ${{ secrets.NANOAGENT_API_KEY }}
   NANOAGENT_BASE_URL: ${{ vars.NANOAGENT_BASE_URL }}
   NANOAGENT_MODEL: ${{ vars.NANOAGENT_MODEL || 'gpt-5.4' }}
   NANOAGENT_PROVIDER: ${{ vars.NANOAGENT_PROVIDER || 'openai' }}
   NANOAGENT_THINKING: ${{ vars.NANOAGENT_THINKING || 'off' }}
-  Application__Permissions__AutoApproveAllTools: "true"
   Application__Permissions__auto_approve_all_tools: "true"
 
 jobs:
@@ -35,7 +34,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
         with:
+          token: ${{ env.GH_TOKEN }}
           fetch-depth: 0
+
+      - name: Install OS sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap uidmap
+
+          if sudo sysctl kernel.unprivileged_userns_clone >/dev/null 2>&1; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+
+          if sudo sysctl user.max_user_namespaces >/dev/null 2>&1; then
+            sudo sysctl -w user.max_user_namespaces=28633
+          fi
+
+          if sudo sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+          if ! bwrap --die-with-parent --unshare-all --share-net --proc /proc --dev /dev --ro-bind / / true; then
+            echo "Bubblewrap sandbox is unavailable on this runner; disabling OS-level sandbox enforcement for NanoAI." >&2
+            echo "Application__Permissions__SandboxMode=DangerFullAccess" >> "$GITHUB_ENV"
+          fi
 
       - name: Install NanoAI
         run: |
@@ -44,6 +66,7 @@ jobs:
 
       - name: Handle issue with NanoAI
         env:
+          NANOAI_ARTIFACTS_DIR: ${{ runner.temp }}/nanoai-issue-handler
           NANOAI_ISSUE_NUMBER: ${{ github.event.issue.number }}
           NANOAI_BASE_BRANCH: ${{ github.event.repository.default_branch }}
         run: bash .github/nanoai-issue-handler.sh
@@ -53,6 +76,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nanoai-issue-handler
-          path: artifacts/nanoai-issue-handler
+          path: ${{ runner.temp }}/nanoai-issue-handler
           if-no-files-found: ignore
           retention-days: 14
