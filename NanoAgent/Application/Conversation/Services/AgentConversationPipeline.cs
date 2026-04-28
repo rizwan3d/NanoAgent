@@ -40,13 +40,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         - a valid structured tool call to one of the available tools
         Do not write markers such as <|channel>call:, <tool_call|>, assistant/tool protocol text, or tool-call JSON inside assistant content.
         """;
-    private const string OutputLimitRetryInstruction =
-        """
-        The previous provider response hit the output length limit before returning usable assistant content or tool calls. This output was rejected by the runtime and was not saved.
-        Continue the same task from the current conversation state and return a concise result.
-        Prefer a short, complete answer over a long exhaustive one. If this is a review, include only the highest-confidence actionable findings and keep each finding brief.
-        If work remains, call one available tool that materially advances the task instead of producing a long narrative.
-        """;
     private const string IncompletePlanRetryInstruction =
         """
         The previous provider response tried to finish while the live update_plan still had in_progress or pending work.
@@ -423,7 +416,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         {
             { IsRetryableRawToolCallResponse: true } => RawToolCallRetryInstruction,
             { IsRetryableIncompletePlanResponse: true } => IncompletePlanRetryInstruction,
-            { IsRetryableOutputLimitResponse: true } => OutputLimitRetryInstruction,
             _ => EmptyResponseRetryInstruction
         };
 

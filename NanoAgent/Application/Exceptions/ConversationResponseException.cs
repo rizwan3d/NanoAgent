@@ -8,14 +8,12 @@ public sealed class ConversationResponseException : Exception
         string message,
         bool isRetryableEmptyResponse = false,
         bool isRetryableRawToolCallResponse = false,
-        bool isRetryableIncompletePlanResponse = false,
-        bool isRetryableOutputLimitResponse = false)
+        bool isRetryableIncompletePlanResponse = false)
         : base(SecretRedactor.Redact(message))
     {
         IsRetryableEmptyResponse = isRetryableEmptyResponse;
         IsRetryableRawToolCallResponse = isRetryableRawToolCallResponse;
         IsRetryableIncompletePlanResponse = isRetryableIncompletePlanResponse;
-        IsRetryableOutputLimitResponse = isRetryableOutputLimitResponse;
     }
 
     public ConversationResponseException(
@@ -23,14 +21,12 @@ public sealed class ConversationResponseException : Exception
         Exception innerException,
         bool isRetryableEmptyResponse = false,
         bool isRetryableRawToolCallResponse = false,
-        bool isRetryableIncompletePlanResponse = false,
-        bool isRetryableOutputLimitResponse = false)
+        bool isRetryableIncompletePlanResponse = false)
         : base(SecretRedactor.Redact(message), innerException)
     {
         IsRetryableEmptyResponse = isRetryableEmptyResponse;
         IsRetryableRawToolCallResponse = isRetryableRawToolCallResponse;
         IsRetryableIncompletePlanResponse = isRetryableIncompletePlanResponse;
-        IsRetryableOutputLimitResponse = isRetryableOutputLimitResponse;
     }
 
     public bool IsRetryableEmptyResponse { get; }
@@ -39,11 +35,8 @@ public sealed class ConversationResponseException : Exception
 
     public bool IsRetryableIncompletePlanResponse { get; }
 
-    public bool IsRetryableOutputLimitResponse { get; }
-
     public bool IsRetryableProviderOutput =>
         IsRetryableEmptyResponse ||
         IsRetryableRawToolCallResponse ||
-        IsRetryableIncompletePlanResponse ||
-        IsRetryableOutputLimitResponse;
+        IsRetryableIncompletePlanResponse;
 }
