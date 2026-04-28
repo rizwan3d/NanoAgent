@@ -1,0 +1,58 @@
+name: NanoAI issue handler
+
+on:
+  issues:
+    types:
+      - labeled
+
+concurrency:
+  group: nanoai-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  NANOAGENT_API_KEY: ${{ secrets.NANOAGENT_API_KEY }}
+  NANOAGENT_BASE_URL: ${{ vars.NANOAGENT_BASE_URL }}
+  NANOAGENT_MODEL: ${{ vars.NANOAGENT_MODEL || 'gpt-5.4' }}
+  NANOAGENT_PROVIDER: ${{ vars.NANOAGENT_PROVIDER || 'openai' }}
+  NANOAGENT_THINKING: ${{ vars.NANOAGENT_THINKING || 'off' }}
+  Application__Permissions__AutoApproveAllTools: "true"
+  Application__Permissions__auto_approve_all_tools: "true"
+
+jobs:
+  handle:
+    name: NanoAI issue automation
+    if: ${{ github.event.label.name == 'nanoai' }}
+    runs-on: ubuntu-24.04
+    environment: production-release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install NanoAI
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Handle issue with NanoAI
+        env:
+          NANOAI_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          NANOAI_BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: bash .github/nanoai-issue-handler.sh
+
+      - name: Upload NanoAI artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: nanoai-issue-handler
+          path: artifacts/nanoai-issue-handler
+          if-no-files-found: ignore
+          retention-days: 14
