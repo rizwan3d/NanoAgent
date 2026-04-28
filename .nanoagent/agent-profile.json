@@ -1,0 +1,7 @@
+{
+  "Application": {
+    "Permissions": {
+      "auto_approve_all_tools": true
+    }
+  }
+}
