@@ -31,6 +31,8 @@ public sealed class AppState
 
     public StringBuilder Input { get; } = new();
 
+    public int InputCursorIndex { get; set; }
+
     public bool SkipNextInputLineFeed { get; set; }
 
     public bool SlashCommandSuggestionsDismissed { get; set; }
