@@ -2,7 +2,8 @@
 set -euo pipefail
 
 workspace="${GITHUB_WORKSPACE:-$(pwd)}"
-artifacts_dir="${NANOAI_ARTIFACTS_DIR:-artifacts/nanoai-issue-handler}"
+artifacts_base="${RUNNER_TEMP:-${workspace}/artifacts}"
+artifacts_dir="${NANOAI_ARTIFACTS_DIR:-${artifacts_base}/nanoai-issue-handler}"
 nanoai_command="${NANOAI_COMMAND:-nanoai}"
 issue_number="${NANOAI_ISSUE_NUMBER:?NANOAI_ISSUE_NUMBER is required.}"
 base_branch="${NANOAI_BASE_BRANCH:-${GITHUB_REF_NAME:-main}}"
@@ -46,6 +47,7 @@ prompt_file="${artifacts_dir}/issue-prompt.md"
 output_file="${artifacts_dir}/nanoai-output.md"
 status_file="${artifacts_dir}/git-status.txt"
 pr_body_file="${artifacts_dir}/pull-request-body.md"
+pr_error_file="${artifacts_dir}/pull-request-error.txt"
 
 gh issue view "$issue_number" \
   --json number,title,body,url,author,labels \
@@ -115,10 +117,26 @@ git push --set-upstream origin "$branch_name"
   sed -n '1,120p' "$output_file"
 } > "$pr_body_file"
 
-pr_url="$(gh pr create \
+if pr_url="$(gh pr create \
   --base "$base_branch" \
   --head "$branch_name" \
   --title "NanoAI: ${issue_title}" \
-  --body-file "$pr_body_file")"
+  --body-file "$pr_body_file" \
+  2> "$pr_error_file")"; then
+  comment_issue "NanoAI opened a pull request for #${issue_number}: ${pr_url}"
+  exit 0
+fi
 
-comment_issue "NanoAI opened a pull request for #${issue_number}: ${pr_url}"
+cat "$pr_error_file" >&2
+
+repo_url="${GITHUB_SERVER_URL:-https://github.com}/${GITHUB_REPOSITORY:-}"
+compare_url="${repo_url}/compare/${base_branch}...${branch_name}?expand=1"
+pr_error="$(cat "$pr_error_file")"
+
+if grep -qiE "GitHub Actions is not permitted|createPullRequest" "$pr_error_file"; then
+  comment_issue "NanoAI pushed branch \`${branch_name}\` for #${issue_number}, but GitHub refused PR creation for the workflow token. Open the PR manually: ${compare_url}. To let automation create PRs, enable the repository Actions setting for creating pull requests or configure a \`NANOAI_GITHUB_TOKEN\` secret with pull request write access."
+  exit 0
+fi
+
+comment_issue "NanoAI pushed branch \`${branch_name}\` for #${issue_number}, but pull request creation failed. Open the PR manually: ${compare_url}. Error: ${pr_error}"
+exit 1
