@@ -58,6 +58,8 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
 
+The installers show step status and download progress when run in an interactive terminal. Set `NANOAGENT_NO_PROGRESS=1` to keep output compact in CI logs.
+
 Restart your terminal if `nanoai` is not found immediately after installation.
 
 The CLI install scripts verify the archive checksum before extraction using `SHA256SUMS`, or the SHA256 digest from GitHub release metadata for older releases. Set `NANOAGENT_REQUIRE_SHA256=1` to make checksum availability mandatory.
