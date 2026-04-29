@@ -8,8 +8,10 @@ readonly EXECUTABLE_NAME="NanoAgent.CLI"
 readonly COMMAND_NAME="nanoai"
 readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
+readonly TOTAL_STEPS=7
 
 TEMP_ROOT=""
+CURRENT_STEP=0
 
 cleanup() {
   if [[ -n "${TEMP_ROOT:-}" && -d "$TEMP_ROOT" ]]; then
@@ -35,26 +37,95 @@ require_command() {
   fi
 }
 
+progress_enabled() {
+  local value="${NANOAGENT_NO_PROGRESS:-${NanoAgent_NO_PROGRESS:-}}"
+
+  case "$value" in
+    1|true|TRUE|True|yes|YES|Yes)
+      return 1
+      ;;
+    *)
+      [[ -t 2 ]]
+      ;;
+  esac
+}
+
+start_step() {
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  log "[$CURRENT_STEP/$TOTAL_STEPS] $1"
+}
+
+finish_step() {
+  log "    $1"
+}
+
+format_bytes() {
+  local bytes="$1"
+
+  awk -v bytes="$bytes" '
+    BEGIN {
+      split("B KiB MiB GiB", units, " ")
+      value = bytes + 0
+      unit = 1
+
+      while (value >= 1024 && unit < 4) {
+        value = value / 1024
+        unit++
+      }
+
+      if (unit == 1) {
+        printf "%d %s", value, units[unit]
+      } else {
+        printf "%.1f %s", value, units[unit]
+      }
+    }
+  '
+}
+
+file_size() {
+  wc -c < "$1" | tr -d '[:space:]'
+}
+
 download_to_file() {
   local url="$1"
   local destination="$2"
+  local show_progress="${3:-0}"
 
   if command -v curl >/dev/null 2>&1; then
-    curl -fsSL \
-      -H "User-Agent: ${APP_NAME}-installer" \
-      --retry 3 \
-      --retry-delay 2 \
-      --connect-timeout 15 \
-      -o "$destination" \
-      "$url"
+    local curl_args=(
+      -fL
+      -H "User-Agent: ${APP_NAME}-installer"
+      --retry 3
+      --retry-delay 2
+      --connect-timeout 15
+      -o "$destination"
+    )
+
+    if [[ "$show_progress" == "1" ]] && progress_enabled; then
+      curl_args+=(--progress-bar)
+    else
+      curl_args+=(-sS)
+    fi
+
+    curl "${curl_args[@]}" "$url"
     return
   fi
 
   if command -v wget >/dev/null 2>&1; then
-    wget -q \
-      --header="User-Agent: ${APP_NAME}-installer" \
-      -O "$destination" \
-      "$url"
+    local wget_args=(
+      --header="User-Agent: ${APP_NAME}-installer"
+      -O "$destination"
+    )
+
+    if [[ "$show_progress" == "1" ]] &&
+      progress_enabled &&
+      wget --help 2>&1 | grep -q -- '--show-progress'; then
+      wget_args+=(--show-progress --progress=bar:force)
+    else
+      wget_args+=(-q)
+    fi
+
+    wget "${wget_args[@]}" "$url"
     return
   fi
 
@@ -253,10 +324,6 @@ detect_platform() {
 }
 
 main() {
-  require_command unzip
-  require_command mktemp
-  require_command find
-
   local install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
   local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
   local tag="$requested_tag"
@@ -268,31 +335,45 @@ main() {
   local source_binary
   local destination_binary
 
+  log "NanoAgent CLI Installer"
+  start_step "Checking system requirements..."
+  require_command unzip
+  require_command mktemp
+  require_command find
+
+  platform="$(detect_platform)"
+  finish_step "Detected ${platform}."
+
+  start_step "Resolving release..."
   if [[ -z "$tag" ]]; then
     tag="$(resolve_latest_tag)"
   fi
 
-  platform="$(detect_platform)"
   asset_name="${APP_NAME}-${platform}.zip"
   download_url="https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${asset_name}"
 
-  log "Installing ${APP_NAME} ${tag} for ${platform} as '${COMMAND_NAME}'..."
-  log "Install directory: ${install_dir}"
+  finish_step "Using ${APP_NAME} ${tag} for ${platform}."
 
+  start_step "Preparing install directory..."
+  log "Install directory: ${install_dir}"
   TEMP_ROOT="$(mktemp -d)"
   archive_path="${TEMP_ROOT}/${asset_name}"
   extract_dir="${TEMP_ROOT}/extract"
 
   mkdir -p "$extract_dir" "$install_dir"
+  finish_step "Workspace ready."
 
-  log "Downloading ${asset_name}..."
-  if ! download_to_file "$download_url" "$archive_path"; then
+  start_step "Downloading ${asset_name}..."
+  if ! download_to_file "$download_url" "$archive_path" 1; then
     fail "Download failed from ${download_url}."
   fi
+  finish_step "Downloaded $(format_bytes "$(file_size "$archive_path")")."
 
+  start_step "Verifying download..."
   verify_archive_sha256 "$tag" "$asset_name" "$archive_path"
+  finish_step "Checksum verification passed."
 
-  log "Extracting archive..."
+  start_step "Extracting archive..."
   unzip -qo "$archive_path" -d "$extract_dir"
 
   source_binary="$(find "$extract_dir" -type f -name "$EXECUTABLE_NAME" | head -n 1)"
@@ -300,23 +381,27 @@ main() {
   if [[ -z "$source_binary" || ! -f "$source_binary" ]]; then
     fail "Expected executable '${EXECUTABLE_NAME}' was not found in ${asset_name}."
   fi
+  finish_step "Found ${EXECUTABLE_NAME}."
 
+  start_step "Installing command..."
   destination_binary="${install_dir}/${COMMAND_NAME}"
   cp "$source_binary" "$destination_binary"
   chmod 0755 "$destination_binary"
 
-  log "Installed '${COMMAND_NAME}' to ${destination_binary}"
+  finish_step "Installed '${COMMAND_NAME}' to ${destination_binary}."
 
   case ":${PATH}:" in
     *":${install_dir}:"*)
       log "The install directory is already on PATH."
+      log "Run '${COMMAND_NAME}' to start NanoAgent."
       ;;
     *)
       log "Add '${install_dir}' to your PATH if it is not already there."
+      log "For this shell, run: export PATH=\"${install_dir}:\$PATH\""
       ;;
   esac
 
-  log "Done."
+  log "Done. Thanks for installing NanoAgent."
 }
 
 main "${1:-}"

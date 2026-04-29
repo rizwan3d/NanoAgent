@@ -16,6 +16,9 @@ $ExecutableName = 'NanoAgent.CLI'
 $CommandName = 'nanoai'
 $AssetName = "$ExecutableName-win-x64.zip"
 $ChecksumsName = 'SHA256SUMS'
+$TotalSteps = 7
+$CurrentStep = 0
+$InstallActivity = "Installing $AppName"
 
 function Write-Status {
     param([string]$Message)
@@ -27,6 +30,94 @@ function Fail-Install {
     param([string]$Message)
 
     throw "[$AppName] $Message"
+}
+
+function Test-ProgressEnabled {
+    $value = if ($env:NANOAGENT_NO_PROGRESS) { $env:NANOAGENT_NO_PROGRESS } else { $env:NanoAgent_NO_PROGRESS }
+    if ($value -in @('1', 'true', 'TRUE', 'True', 'yes', 'YES', 'Yes')) {
+        return $false
+    }
+
+    try {
+        return -not [Console]::IsOutputRedirected
+    }
+    catch {
+        return $true
+    }
+}
+
+function Format-ByteSize {
+    param([long]$Bytes)
+
+    if ($Bytes -ge 1GB) {
+        return '{0:N1} GiB' -f ($Bytes / 1GB)
+    }
+
+    if ($Bytes -ge 1MB) {
+        return '{0:N1} MiB' -f ($Bytes / 1MB)
+    }
+
+    if ($Bytes -ge 1KB) {
+        return '{0:N1} KiB' -f ($Bytes / 1KB)
+    }
+
+    return "$Bytes B"
+}
+
+function Write-InstallerProgress {
+    param(
+        [string]$Activity = $script:InstallActivity,
+        [string]$Status = 'Working...',
+        [int]$PercentComplete = 0,
+        [switch]$Completed
+    )
+
+    if (-not (Test-ProgressEnabled)) {
+        return
+    }
+
+    $previousProgressPreference = $script:ProgressPreference
+
+    try {
+        $script:ProgressPreference = 'Continue'
+
+        if ($Completed) {
+            Write-Progress -Activity $Activity -Completed
+        }
+        else {
+            Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
+        }
+    }
+    finally {
+        $script:ProgressPreference = $previousProgressPreference
+    }
+}
+
+function Start-InstallStep {
+    param([string]$Message)
+
+    $script:CurrentStep++
+    $percent = [Math]::Min(99, [Math]::Floor((($script:CurrentStep - 1) / $script:TotalSteps) * 100))
+
+    Write-Status "[$script:CurrentStep/$script:TotalSteps] $Message"
+    Write-InstallerProgress -Status $Message -PercentComplete $percent
+}
+
+function Complete-InstallStep {
+    param([string]$Message)
+
+    $percent = [Math]::Min(100, [Math]::Floor(($script:CurrentStep / $script:TotalSteps) * 100))
+
+    if (-not [string]::IsNullOrWhiteSpace($Message)) {
+        Write-Status "    $Message"
+    }
+
+    $status = if ([string]::IsNullOrWhiteSpace($Message)) { 'Working...' } else { $Message }
+    Write-InstallerProgress -Status $status -PercentComplete $percent
+}
+
+function Complete-InstallerProgress {
+    Write-InstallerProgress -Completed
 }
 
 function Get-LatestTag {
@@ -52,10 +143,52 @@ function Save-UrlToFile {
         [string]$Url,
 
         [Parameter(Mandatory = $true)]
-        [string]$Path
+        [string]$Path,
+
+        [string]$Activity = 'Downloading',
+
+        [switch]$ShowProgress
     )
 
-    Invoke-WebRequest -Uri $Url -OutFile $Path -Headers @{ 'User-Agent' = "$AppName-installer" }
+    $lastError = $null
+
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        $previousProgressPreference = $script:ProgressPreference
+
+        try {
+            $script:ProgressPreference = if ($ShowProgress -and (Test-ProgressEnabled)) { 'Continue' } else { 'SilentlyContinue' }
+            $request = @{
+                Uri = $Url
+                OutFile = $Path
+                Headers = @{ 'User-Agent' = "$AppName-installer" }
+                ErrorAction = 'Stop'
+            }
+
+            if ($PSVersionTable.PSVersion.Major -lt 6) {
+                $request.UseBasicParsing = $true
+            }
+
+            Invoke-WebRequest @request
+            return
+        }
+        catch {
+            $lastError = $_
+            Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue
+
+            if ($attempt -lt 3) {
+                Write-Status "Download attempt $attempt failed; retrying..."
+                Start-Sleep -Seconds (2 * $attempt)
+            }
+        }
+        finally {
+            $script:ProgressPreference = $previousProgressPreference
+            if ($ShowProgress -and (Test-ProgressEnabled)) {
+                Write-InstallerProgress -Activity $Activity -Completed
+            }
+        }
+    }
+
+    throw $lastError
 }
 
 function Test-Sha256Required {
@@ -432,14 +565,21 @@ finally {
     Write-Status "Deferred update log: $logPath"
 }
 
+Write-Status 'NanoAgent CLI Installer'
+Start-InstallStep 'Checking system requirements...'
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -notin @('AMD64', 'x86_64')) {
     Fail-Install "Unsupported Windows architecture '$architecture'. This installer supports Windows x64 only."
 }
 
+Complete-InstallStep "Detected Windows $architecture."
+
+Start-InstallStep 'Resolving release...'
 if ([string]::IsNullOrWhiteSpace($Tag)) {
     $Tag = Get-LatestTag
 }
+
+Complete-InstallStep "Using $AppName $Tag for win-x64."
 
 $downloadUrl = "https://github.com/$Owner/$Repo/releases/download/$Tag/$AssetName"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$AppName-install-$([System.Guid]::NewGuid().ToString('N'))"
@@ -449,22 +589,30 @@ $destinationPath = Join-Path $InstallDir "$CommandName.exe"
 $cleanupTempRoot = $true
 
 try {
-    Write-Status "Installing $AppName $Tag for win-x64 as '$CommandName'..."
+    Write-Status "Installing as '$CommandName'..."
+
+    Start-InstallStep 'Preparing install directory...'
     Write-Status "Install directory: $InstallDir"
 
     New-Item -ItemType Directory -Path $tempRoot, $extractDir, $InstallDir -Force | Out-Null
+    Complete-InstallStep 'Workspace ready.'
 
-    Write-Status "Downloading $AssetName..."
+    Start-InstallStep "Downloading $AssetName..."
     try {
-        Save-UrlToFile -Url $downloadUrl -Path $archivePath
+        Save-UrlToFile -Url $downloadUrl -Path $archivePath -Activity "Downloading $AssetName" -ShowProgress
     }
     catch {
         Fail-Install "Download failed from $downloadUrl. $($_.Exception.Message)"
     }
 
-    Test-ArchiveSha256 -Tag $Tag -ArchivePath $archivePath -TempRoot $tempRoot
+    $downloadedSize = (Get-Item -LiteralPath $archivePath).Length
+    Complete-InstallStep "Downloaded $AssetName ($(Format-ByteSize -Bytes $downloadedSize))."
 
-    Write-Status 'Extracting archive...'
+    Start-InstallStep 'Verifying download...'
+    Test-ArchiveSha256 -Tag $Tag -ArchivePath $archivePath -TempRoot $tempRoot
+    Complete-InstallStep 'Checksum verification passed.'
+
+    Start-InstallStep 'Extracting archive...'
     Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
 
     $sourcePath = Join-Path $extractDir "$ExecutableName.exe"
@@ -472,6 +620,9 @@ try {
         Fail-Install "Expected executable '$ExecutableName.exe' was not found in $AssetName."
     }
 
+    Complete-InstallStep "Found $ExecutableName.exe."
+
+    Start-InstallStep 'Installing command...'
     $waitProcessId = Resolve-WaitForProcessId -RequestedProcessId $WaitForProcessId -DestinationPath $destinationPath
     if ($waitProcessId -gt 0) {
         Start-DeferredInstall -SourcePath $sourcePath -DestinationPath $destinationPath -ProcessId $waitProcessId -CleanupRoot $tempRoot
@@ -510,7 +661,9 @@ try {
         Write-Status 'The install directory is already on your user PATH.'
     }
 
-    Write-Status 'Done.'
+    Complete-InstallStep 'Installation finished.'
+    Complete-InstallerProgress
+    Write-Status "Done. Run '$CommandName' to start NanoAgent."
 }
 finally {
     if ($cleanupTempRoot -and (Test-Path -LiteralPath $tempRoot)) {
