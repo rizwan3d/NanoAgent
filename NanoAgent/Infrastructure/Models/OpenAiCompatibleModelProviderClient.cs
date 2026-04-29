@@ -17,17 +17,22 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
 
     private readonly HttpClient _httpClient;
+    private readonly IOpenAiCodexClientVersionProvider _openAiCodexClientVersionProvider;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
     public OpenAiCompatibleModelProviderClient(
         HttpClient httpClient,
         ILogger<OpenAiCompatibleModelProviderClient> logger,
-        IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null)
+        IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
+        IOpenAiCodexClientVersionProvider? openAiCodexClientVersionProvider = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
+        _openAiCodexClientVersionProvider = openAiCodexClientVersionProvider ??
+            new StaticOpenAiCodexClientVersionProvider(
+                GitHubOpenAiCodexClientVersionProvider.FallbackClientVersion);
     }
 
     public async Task<IReadOnlyList<AvailableModel>> GetAvailableModelsAsync(
@@ -102,6 +107,8 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 storedCredentials,
                 forceRefresh: false,
                 cancellationToken);
+        string accountClientVersion = await _openAiCodexClientVersionProvider.GetClientVersionAsync(
+            cancellationToken);
 
         bool forcedRefreshAfterAuthFailure = false;
 
@@ -111,7 +118,8 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             {
                 using HttpRequestMessage request = CreateOpenAiChatGptAccountModelsRequest(
                     baseUri,
-                    credential);
+                    credential,
+                    accountClientVersion);
                 LogDebugApiRequest(request.Method, request.RequestUri);
 
                 using HttpResponseMessage response = await _httpClient.SendAsync(
@@ -169,9 +177,12 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 
     private HttpRequestMessage CreateOpenAiChatGptAccountModelsRequest(
         Uri baseUri,
-        OpenAiChatGptAccountResolvedCredential credential)
+        OpenAiChatGptAccountResolvedCredential credential,
+        string accountClientVersion)
     {
-        HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
+        HttpRequestMessage request = new(
+            HttpMethod.Get,
+            new Uri(baseUri, $"models?client_version={Uri.EscapeDataString(accountClientVersion)}"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
         request.Headers.TryAddWithoutValidation("originator", Originator);
         request.Headers.TryAddWithoutValidation("User-Agent", "NanoAgent/1.0");
@@ -306,5 +317,20 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             (int)statusCode,
             responseBody);
 #endif
+    }
+
+    private sealed class StaticOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider
+    {
+        private readonly string _clientVersion;
+
+        public StaticOpenAiCodexClientVersionProvider(string clientVersion)
+        {
+            _clientVersion = clientVersion;
+        }
+
+        public Task<string> GetClientVersionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_clientVersion);
+        }
     }
 }
