@@ -149,7 +149,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient, credentialService.Object);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            credentialService.Object,
+            new StubOpenAiCodexClientVersionProvider("0.125.0"));
 
         IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
             new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
@@ -160,6 +163,7 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         handler.AuthorizationHeader.Should().Be("Bearer access-token");
         handler.AccountHeader.Should().Be("acct_123");
         models.Select(model => model.Id).Should().Equal("account-model-a", "account-model-b");
+        handler.RequestUri!.Query.Should().Be("?client_version=0.125.0");
         credentialService.VerifyAll();
     }
 
@@ -237,12 +241,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
     private static OpenAiCompatibleModelProviderClient CreateSut(
         HttpClient httpClient,
-        IOpenAiChatGptAccountCredentialService? credentialService = null)
+        IOpenAiChatGptAccountCredentialService? credentialService = null,
+        IOpenAiCodexClientVersionProvider? versionProvider = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
             NullLogger<OpenAiCompatibleModelProviderClient>.Instance,
-            credentialService);
+            credentialService,
+            versionProvider);
+    }
+
+    private sealed class StubOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider
+    {
+        private readonly string _clientVersion;
+
+        public StubOpenAiCodexClientVersionProvider(string clientVersion)
+        {
+            _clientVersion = clientVersion;
+        }
+
+        public Task<string> GetClientVersionAsync(CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_clientVersion);
+        }
     }
 
     private sealed class RecordingHandler : HttpMessageHandler
