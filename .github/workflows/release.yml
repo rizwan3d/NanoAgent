@@ -333,10 +333,55 @@ jobs:
         with:
           path: ./artifacts/release
 
+      - name: Stage release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_dir="$GITHUB_WORKSPACE/artifacts/release-assets"
+          mkdir -p "$release_dir"
+
+          while IFS= read -r asset_path; do
+            asset_name="$(basename "$asset_path")"
+            destination="$release_dir/$asset_name"
+
+            if [[ -e "$destination" ]]; then
+              echo "Duplicate release asset name detected: $asset_name" >&2
+              exit 1
+            fi
+
+            cp "$asset_path" "$destination"
+          done < <(
+            find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) |
+              sort
+          )
+
+          asset_count="$(find "$release_dir" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+          if [[ "$asset_count" -eq 0 ]]; then
+            echo "No release assets were found." >&2
+            exit 1
+          fi
+
+      - name: Create SHA256 checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          release_dir="$GITHUB_WORKSPACE/artifacts/release-assets"
+
+          (
+            cd "$release_dir"
+            find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' |
+              sort -z |
+              xargs -0 sha256sum
+          ) > "$release_dir/SHA256SUMS"
+
       - name: Create release notes
         id: release_notes
         shell: bash
         run: |
+          set -euo pipefail
+
           notes_file="$RUNNER_TEMP/release-notes.md"
           previous_tag="$(git tag --sort=-creatordate | grep -Fxv "$RELEASE_TAG" | head -n 1 || true)"
 
@@ -346,20 +391,25 @@ jobs:
             commit_lines="$(git log HEAD --pretty=format:'- %s (%h)' --no-merges)"
           fi
 
-          package_lines="$(
-            find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) |
+          asset_lines="$(
+            find "$GITHUB_WORKSPACE/artifacts/release-assets" -maxdepth 1 -type f |
               sort |
-              while IFS= read -r package_path; do
-                printf -- '- %s\n' "$(basename "$package_path")"
+              while IFS= read -r asset_path; do
+                printf -- '- %s\n' "$(basename "$asset_path")"
               done
           )"
 
           {
             echo "# NanoAgent $RELEASE_TAG"
             echo
-            echo "## Packages"
+            echo "## Release assets"
             echo
-            echo "${package_lines:-- No packages were produced.}"
+            echo "${asset_lines:-- No release assets were produced.}"
+            echo
+            echo "## Verification"
+            echo
+            echo "- SHA256 hashes are published in SHA256SUMS."
+            echo "- The install scripts verify downloaded CLI archives against SHA256SUMS when it is available."
             echo
             echo "## Commit messages"
             echo
@@ -373,13 +423,15 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          set -euo pipefail
+
           tag="$RELEASE_TAG"
           title="NanoAgent $tag"
           target_sha="$(git rev-parse HEAD)"
-          mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release" -type f \( -name '*.zip' -o -name '*.exe' \) | sort)
+          mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release-assets" -maxdepth 1 -type f | sort)
 
           if [[ "${#assets[@]}" -eq 0 ]]; then
-            echo "No packaged artifacts were found." >&2
+            echo "No release assets were found." >&2
             exit 1
           fi
 
