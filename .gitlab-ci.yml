@@ -1,6 +1,7 @@
 stages:
   - review
-
+  - docker
+  
 nanoai_merge_request_review:
   stage: review
   image: ubuntu:24.04
@@ -21,3 +22,29 @@ nanoai_merge_request_review:
     expire_in: 14 days
     paths:
       - artifacts/nanoai-review/
+
+docker_build_push:
+  stage: docker
+  image: docker:27
+  services:
+    - name: docker:27-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+
+    REGISTRY_URL: server.alfain.tech:27500
+    IMAGE_NAME: server.alfain.tech:27500/qrcode/qr-code
+
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+
+  before_script:
+    - echo "$REGISTRY_TOKEN" | docker login "$REGISTRY_URL" -u "$REGISTRY_USERNAME" --password-stdin
+
+  script:
+    - docker build -t "$IMAGE_NAME:latest" -t "$IMAGE_NAME:$CI_COMMIT_SHORT_SHA" .
+    - docker push "$IMAGE_NAME:latest"
+    - docker push "$IMAGE_NAME:$CI_COMMIT_SHORT_SHA"
