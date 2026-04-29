@@ -207,6 +207,7 @@ public static partial class Program
 
         SlashCommandSuggestion suggestion = suggestions[state.SlashCommandSuggestionIndex];
         state.Input.Clear();
+        state.CollapsedInputPastes.Clear();
         state.Input.Append(suggestion.RequiresArgument
             ? suggestion.Command + " "
             : suggestion.Command);

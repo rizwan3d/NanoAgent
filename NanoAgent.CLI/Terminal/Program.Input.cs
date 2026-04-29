@@ -8,6 +8,10 @@ public static partial class Program
     {
         bool appendedInputInBatch = false;
         int pastedLineBreaksInBatch = 0;
+        int inputBatchStartIndex = 0;
+        int inputBatchEndIndex = 0;
+        bool insertedInputInBatch = false;
+        bool likelyPastedInputInBatch = false;
 
         while (Console.KeyAvailable)
         {
@@ -73,15 +77,30 @@ public static partial class Program
             {
                 if (IsMultilineEnterKey(key))
                 {
+                    int cursorIndexBeforeInsert = state.InputCursorIndex;
                     AppendInputLineBreak(state, key);
+                    TrackInputInsertedInBatch(
+                        ref insertedInputInBatch,
+                        ref inputBatchStartIndex,
+                        ref inputBatchEndIndex,
+                        cursorIndexBeforeInsert,
+                        state.InputCursorIndex);
                     appendedInputInBatch = true;
                     continue;
                 }
 
                 if (IsLikelyPastedLineBreak(key, appendedInputInBatch, pastedLineBreaksInBatch))
                 {
+                    int cursorIndexBeforeInsert = state.InputCursorIndex;
                     AppendInputLineBreak(state, key);
+                    TrackInputInsertedInBatch(
+                        ref insertedInputInBatch,
+                        ref inputBatchStartIndex,
+                        ref inputBatchEndIndex,
+                        cursorIndexBeforeInsert,
+                        state.InputCursorIndex);
                     appendedInputInBatch = true;
+                    likelyPastedInputInBatch = true;
                     pastedLineBreaksInBatch++;
                     continue;
                 }
@@ -92,9 +111,24 @@ public static partial class Program
 
             if (!char.IsControl(key.KeyChar))
             {
+                int cursorIndexBeforeInsert = state.InputCursorIndex;
                 InsertInputText(state, key.KeyChar.ToString());
+                TrackInputInsertedInBatch(
+                    ref insertedInputInBatch,
+                    ref inputBatchStartIndex,
+                    ref inputBatchEndIndex,
+                    cursorIndexBeforeInsert,
+                    state.InputCursorIndex);
                 appendedInputInBatch = true;
             }
+        }
+
+        if (likelyPastedInputInBatch && insertedInputInBatch)
+        {
+            TryAddCollapsedInputPaste(
+                state,
+                inputBatchStartIndex,
+                inputBatchEndIndex - inputBatchStartIndex);
         }
     }
 
@@ -506,7 +540,10 @@ public static partial class Program
         state.SkipNextInputLineFeed = key.KeyChar == '\r';
     }
 
-    private static void AppendInputText(AppState state, string text)
+    private static void AppendInputText(
+        AppState state,
+        string text,
+        bool collapseLargePaste = false)
     {
         if (string.IsNullOrEmpty(text))
         {
@@ -529,10 +566,16 @@ public static partial class Program
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
 
-        InsertInputText(state, normalized);
+        InsertInputText(
+            state,
+            normalized,
+            collapseLargePaste);
     }
 
-    private static void InsertInputText(AppState state, string text)
+    private static void InsertInputText(
+        AppState state,
+        string text,
+        bool collapseLargePaste = false)
     {
         if (string.IsNullOrEmpty(text))
         {
@@ -540,8 +583,19 @@ public static partial class Program
         }
 
         int cursorIndex = ClampInputCursor(state);
+        AdjustCollapsedInputPastesForInsertion(state, cursorIndex, text.Length);
         state.Input.Insert(cursorIndex, text);
         state.InputCursorIndex = cursorIndex + text.Length;
+
+        if (collapseLargePaste &&
+            TryGetLargePasteLineCount(text, out int lineCount))
+        {
+            state.CollapsedInputPastes.Add(new CollapsedInputPaste(
+                cursorIndex,
+                text.Length,
+                lineCount));
+        }
+
         state.SkipNextInputLineFeed = false;
         ResetSlashCommandSuggestions(state);
     }
@@ -555,7 +609,9 @@ public static partial class Program
             return;
         }
 
-        state.Input.Remove(cursorIndex - 1, 1);
+        int deleteIndex = cursorIndex - 1;
+        AdjustCollapsedInputPastesForDeletion(state, deleteIndex, length: 1);
+        state.Input.Remove(deleteIndex, 1);
         state.InputCursorIndex = cursorIndex - 1;
         state.SkipNextInputLineFeed = false;
         ResetSlashCommandSuggestions(state);
@@ -570,6 +626,7 @@ public static partial class Program
             return;
         }
 
+        AdjustCollapsedInputPastesForDeletion(state, cursorIndex, length: 1);
         state.Input.Remove(cursorIndex, 1);
         state.SkipNextInputLineFeed = false;
         ResetSlashCommandSuggestions(state);
@@ -606,6 +663,123 @@ public static partial class Program
         return state.InputCursorIndex;
     }
 
+    private static void TrackInputInsertedInBatch(
+        ref bool insertedInputInBatch,
+        ref int inputBatchStartIndex,
+        ref int inputBatchEndIndex,
+        int startIndex,
+        int endIndex)
+    {
+        if (endIndex < startIndex)
+        {
+            return;
+        }
+
+        if (!insertedInputInBatch)
+        {
+            inputBatchStartIndex = startIndex;
+            inputBatchEndIndex = endIndex;
+            insertedInputInBatch = true;
+            return;
+        }
+
+        inputBatchStartIndex = Math.Min(inputBatchStartIndex, startIndex);
+        inputBatchEndIndex = Math.Max(inputBatchEndIndex, endIndex);
+    }
+
+    private static bool TryGetLargePasteLineCount(string text, out int lineCount)
+    {
+        lineCount = GetInputLogicalLineCount(text);
+        return lineCount > MultilinePastePreviewLineThreshold;
+    }
+
+    private static bool TryAddCollapsedInputPaste(
+        AppState state,
+        int startIndex,
+        int length)
+    {
+        if (length <= 0 ||
+            startIndex < 0 ||
+            startIndex + length > state.Input.Length)
+        {
+            return false;
+        }
+
+        string text = state.Input.ToString(startIndex, length);
+        if (!TryGetLargePasteLineCount(text, out int lineCount))
+        {
+            return false;
+        }
+
+        int endIndex = startIndex + length;
+        bool overlapsExistingPaste = state.CollapsedInputPastes.Any(
+            paste => startIndex < paste.EndIndex && endIndex > paste.StartIndex);
+        if (overlapsExistingPaste)
+        {
+            return false;
+        }
+
+        state.CollapsedInputPastes.Add(new CollapsedInputPaste(
+            startIndex,
+            length,
+            lineCount));
+        return true;
+    }
+
+    private static void AdjustCollapsedInputPastesForInsertion(
+        AppState state,
+        int insertIndex,
+        int length)
+    {
+        if (length <= 0 ||
+            state.CollapsedInputPastes.Count == 0)
+        {
+            return;
+        }
+
+        for (int index = state.CollapsedInputPastes.Count - 1; index >= 0; index--)
+        {
+            CollapsedInputPaste paste = state.CollapsedInputPastes[index];
+
+            if (insertIndex <= paste.StartIndex)
+            {
+                paste.StartIndex += length;
+            }
+            else if (insertIndex < paste.EndIndex)
+            {
+                state.CollapsedInputPastes.RemoveAt(index);
+            }
+        }
+    }
+
+    private static void AdjustCollapsedInputPastesForDeletion(
+        AppState state,
+        int deleteIndex,
+        int length)
+    {
+        if (length <= 0 ||
+            state.CollapsedInputPastes.Count == 0)
+        {
+            return;
+        }
+
+        int deleteEndIndex = deleteIndex + length;
+        for (int index = state.CollapsedInputPastes.Count - 1; index >= 0; index--)
+        {
+            CollapsedInputPaste paste = state.CollapsedInputPastes[index];
+
+            if (deleteEndIndex <= paste.StartIndex)
+            {
+                paste.StartIndex -= length;
+            }
+            else if (deleteIndex < paste.EndIndex &&
+                deleteEndIndex > paste.StartIndex)
+            {
+                state.CollapsedInputPastes.RemoveAt(index);
+            }
+        }
+    }
+
     private static void ConsumeBracketedPasteInput(AppState state)
     {
         StringBuilder pastedText = new();
@@ -615,14 +789,20 @@ public static partial class Program
             if (key.KeyChar == '\u001b' &&
                 TryConsumeBracketedPasteTerminator(pastedText))
             {
-                AppendInputText(state, pastedText.ToString());
+                AppendInputText(
+                    state,
+                    pastedText.ToString(),
+                    collapseLargePaste: true);
                 return;
             }
 
             pastedText.Append(key.KeyChar);
         }
 
-        AppendInputText(state, pastedText.ToString());
+        AppendInputText(
+            state,
+            pastedText.ToString(),
+            collapseLargePaste: true);
     }
 
     private static bool TryConsumeBracketedPasteTerminator(StringBuilder pastedText)

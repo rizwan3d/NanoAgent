@@ -1,4 +1,5 @@
 ﻿using Spectre.Console;
+using System.Text;
 using Spectre.Console.Rendering;
 
 namespace NanoAgent.CLI;
@@ -260,18 +261,47 @@ public static partial class Program
             return state.ActiveModal.BuildInputMarkup();
         }
 
+        string input = state.Input.ToString();
+        bool isBusy = state.IsBusy || state.IsStreaming;
+        InputDisplayText inputDisplay = BuildInputDisplayText(
+            input,
+            state.InputCursorIndex,
+            state.CollapsedInputPastes);
+
+        if (inputDisplay.HasCollapsedPastes)
+        {
+            return BuildInputMarkupWithSuggestions(
+                state,
+                inputDisplay.Text,
+                inputDisplay.CursorIndex,
+                isBusy);
+        }
+
         if (TryBuildLargeInputPasteMarkup(
-            state.Input.ToString(),
-            state.IsBusy || state.IsStreaming,
+            input,
+            isBusy,
             out string largePasteMarkup))
         {
             return largePasteMarkup;
         }
 
-        string inputMarkup = BuildInputLineMarkup(
-            state.Input.ToString(),
+        return BuildInputMarkupWithSuggestions(
+            state,
+            input,
             state.InputCursorIndex,
-            state.IsBusy || state.IsStreaming);
+            isBusy);
+    }
+
+    private static string BuildInputMarkupWithSuggestions(
+        AppState state,
+        string input,
+        int cursorIndex,
+        bool isBusy)
+    {
+        string inputMarkup = BuildInputLineMarkup(
+            input,
+            cursorIndex,
+            isBusy);
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -420,12 +450,21 @@ public static partial class Program
         }
 
         string input = state.Input.ToString();
-        int bodyLineCount = GetInputLogicalLineCount(input) > MultilinePastePreviewLineThreshold
-            ? 1
-            : WrapInputText(
-                    input,
-                    GetInputFirstLineTextWidth(state.IsBusy || state.IsStreaming),
-                    GetInputContinuationLineTextWidth()).Count;
+        bool isBusy = state.IsBusy || state.IsStreaming;
+        InputDisplayText inputDisplay = BuildInputDisplayText(
+            input,
+            state.InputCursorIndex,
+            state.CollapsedInputPastes);
+        string visibleInput = inputDisplay.HasCollapsedPastes
+            ? inputDisplay.Text
+            : input;
+        int bodyLineCount = !inputDisplay.HasCollapsedPastes &&
+            GetInputLogicalLineCount(input) > MultilinePastePreviewLineThreshold
+                ? 1
+                : WrapInputText(
+                        visibleInput,
+                        GetInputFirstLineTextWidth(isBusy),
+                        GetInputContinuationLineTextWidth()).Count;
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -433,6 +472,134 @@ public static partial class Program
         }
 
         return Math.Max(3, bodyLineCount + 2);
+    }
+
+    private static InputDisplayText BuildInputDisplayText(
+        string input,
+        int cursorIndex,
+        IReadOnlyList<CollapsedInputPaste> collapsedPastes)
+    {
+        string normalizedInput = input ?? string.Empty;
+        int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
+        List<CollapsedInputPaste> validPastes = collapsedPastes
+            .Where(paste => paste.Length > 0 &&
+                paste.LineCount > MultilinePastePreviewLineThreshold &&
+                paste.StartIndex >= 0 &&
+                paste.StartIndex < normalizedInput.Length)
+            .OrderBy(paste => paste.StartIndex)
+            .ToList();
+
+        if (validPastes.Count == 0)
+        {
+            return new InputDisplayText(
+                normalizedInput,
+                normalizedCursorIndex,
+                HasCollapsedPastes: false);
+        }
+
+        StringBuilder display = new();
+        int inputIndex = 0;
+        int? displayCursorIndex = null;
+
+        foreach (CollapsedInputPaste paste in validPastes)
+        {
+            int pasteStartIndex = Math.Clamp(paste.StartIndex, 0, normalizedInput.Length);
+            int pasteEndIndex = Math.Clamp(paste.EndIndex, pasteStartIndex, normalizedInput.Length);
+            if (pasteStartIndex < inputIndex)
+            {
+                continue;
+            }
+
+            AppendVisibleInputRange(
+                normalizedInput,
+                inputIndex,
+                pasteStartIndex,
+                normalizedCursorIndex,
+                display,
+                ref displayCursorIndex);
+
+            string summary = BuildCollapsedPasteSummary(paste.LineCount);
+            bool hasSuffix = pasteEndIndex < normalizedInput.Length;
+            string separator = GetCollapsedPasteDisplaySeparator(
+                normalizedInput,
+                pasteStartIndex,
+                pasteEndIndex,
+                hasSuffix);
+
+            if (displayCursorIndex is null &&
+                normalizedCursorIndex > pasteStartIndex &&
+                normalizedCursorIndex < pasteEndIndex)
+            {
+                displayCursorIndex = display.Length + summary.Length;
+            }
+
+            display.Append(summary);
+            display.Append(separator);
+
+            if (displayCursorIndex is null &&
+                normalizedCursorIndex == pasteEndIndex)
+            {
+                displayCursorIndex = display.Length;
+            }
+
+            inputIndex = pasteEndIndex;
+        }
+
+        AppendVisibleInputRange(
+            normalizedInput,
+            inputIndex,
+            normalizedInput.Length,
+            normalizedCursorIndex,
+            display,
+            ref displayCursorIndex);
+
+        return new InputDisplayText(
+            display.ToString(),
+            Math.Clamp(displayCursorIndex ?? display.Length, 0, display.Length),
+            HasCollapsedPastes: true);
+    }
+
+    private static void AppendVisibleInputRange(
+        string input,
+        int startIndex,
+        int endIndex,
+        int cursorIndex,
+        StringBuilder display,
+        ref int? displayCursorIndex)
+    {
+        int safeStartIndex = Math.Clamp(startIndex, 0, input.Length);
+        int safeEndIndex = Math.Clamp(endIndex, safeStartIndex, input.Length);
+
+        if (displayCursorIndex is null &&
+            cursorIndex >= safeStartIndex &&
+            cursorIndex <= safeEndIndex)
+        {
+            displayCursorIndex = display.Length + cursorIndex - safeStartIndex;
+        }
+
+        display.Append(input, safeStartIndex, safeEndIndex - safeStartIndex);
+    }
+
+    private static string GetCollapsedPasteDisplaySeparator(
+        string input,
+        int pasteStartIndex,
+        int pasteEndIndex,
+        bool hasSuffix)
+    {
+        if (!hasSuffix ||
+            pasteEndIndex <= pasteStartIndex)
+        {
+            return string.Empty;
+        }
+
+        if (input[pasteEndIndex] == '\n')
+        {
+            return string.Empty;
+        }
+
+        return input[pasteEndIndex - 1] == '\n'
+            ? "\n"
+            : " ";
     }
 
     private static bool TryBuildLargeInputPasteMarkup(
@@ -447,13 +614,18 @@ public static partial class Program
             return false;
         }
 
-        string lineLabel = lineCount == 1 ? "line is" : "lines are";
-        string summary = $"{lineCount} {lineLabel} pasted";
+        string summary = BuildCollapsedPasteSummary(lineCount);
         markup = BuildInputLineMarkup(
             summary,
             summary.Length,
             isBusy);
         return true;
+    }
+
+    private static string BuildCollapsedPasteSummary(int lineCount)
+    {
+        string lineLabel = lineCount == 1 ? "line is" : "lines are";
+        return $"{lineCount} {lineLabel} pasted";
     }
 
     private static int GetInputLogicalLineCount(string input)
