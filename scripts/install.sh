@@ -6,6 +6,7 @@ readonly REPO="NanoAgent"
 readonly APP_NAME="NanoAgent.CLI"
 readonly EXECUTABLE_NAME="NanoAgent.CLI"
 readonly COMMAND_NAME="nanoai"
+readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 
 TEMP_ROOT=""
@@ -58,6 +59,134 @@ download_to_file() {
   fi
 
   fail "Neither curl nor wget is available. Install one of them and try again."
+}
+
+sha256_required() {
+  local value="${NANOAGENT_REQUIRE_SHA256:-${NanoAgent_REQUIRE_SHA256:-}}"
+
+  case "$value" in
+    1|true|TRUE|True|yes|YES|Yes)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+compute_sha256() {
+  local path="$1"
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$path" | awk '{ print tolower($1) }'
+    return
+  fi
+
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$path" | awk '{ print tolower($1) }'
+    return
+  fi
+
+  if command -v openssl >/dev/null 2>&1; then
+    openssl dgst -sha256 -r "$path" | awk '{ print tolower($1) }'
+    return
+  fi
+
+  fail "No SHA256 checksum tool is available. Install sha256sum, shasum, or openssl and try again."
+}
+
+read_expected_sha256() {
+  local asset_name="$1"
+  local checksums_path="$2"
+
+  awk -v name="$asset_name" '
+    {
+      hash = $1
+      file = $2
+      sub(/^\*/, "", file)
+      sub(/^\.\//, "", file)
+
+      if (file == name) {
+        print hash
+        exit
+      }
+    }
+  ' "$checksums_path"
+}
+
+read_release_asset_sha256() {
+  local asset_name="$1"
+  local metadata_path="$2"
+  local escaped_asset_name
+
+  escaped_asset_name="$(printf '%s\n' "$asset_name" | sed 's/[.[\*^$\\]/\\&/g')"
+
+  sed 's/},{/}\
+{/g' "$metadata_path" |
+    sed -n "/\"name\":\"${escaped_asset_name}\"/s/.*\"digest\":\"sha256:\([0-9A-Fa-f]\{64\}\)\".*/\1/p" |
+    head -n 1
+}
+
+resolve_release_asset_sha256() {
+  local tag="$1"
+  local asset_name="$2"
+  local metadata_url="https://api.github.com/repos/${OWNER}/${REPO}/releases/tags/${tag}"
+  local metadata_path="${TEMP_ROOT}/release-metadata.json"
+  local digest
+
+  if ! download_to_file "$metadata_url" "$metadata_path"; then
+    return 1
+  fi
+
+  digest="$(read_release_asset_sha256 "$asset_name" "$metadata_path" | tr '[:upper:]' '[:lower:]')"
+  if [[ -z "$digest" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$digest"
+}
+
+verify_archive_sha256() {
+  local tag="$1"
+  local asset_name="$2"
+  local archive_path="$3"
+  local checksums_url="https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${CHECKSUMS_NAME}"
+  local checksums_path="${TEMP_ROOT}/${CHECKSUMS_NAME}"
+  local expected_sha256
+  local actual_sha256
+
+  log "Downloading ${CHECKSUMS_NAME}..."
+  if ! download_to_file "$checksums_url" "$checksums_path"; then
+    expected_sha256="$(resolve_release_asset_sha256 "$tag" "$asset_name" || true)"
+
+    if [[ -z "$expected_sha256" ]]; then
+      if sha256_required; then
+        fail "Unable to download ${CHECKSUMS_NAME} from ${checksums_url}, and no GitHub release metadata digest was found."
+      fi
+
+      log "${CHECKSUMS_NAME} was not found for ${tag}; continuing without checksum verification. Set NANOAGENT_REQUIRE_SHA256=1 to require it."
+      return
+    fi
+
+    log "Using SHA256 digest from GitHub release metadata for ${asset_name}."
+  else
+    expected_sha256="$(read_expected_sha256 "$asset_name" "$checksums_path" | tr '[:upper:]' '[:lower:]')"
+  fi
+
+  if [[ -z "$expected_sha256" ]]; then
+    fail "${CHECKSUMS_NAME} does not contain a checksum for ${asset_name}."
+  fi
+
+  if ! printf '%s\n' "$expected_sha256" | grep -Eq '^[0-9a-f]{64}$'; then
+    fail "${CHECKSUMS_NAME} contains an invalid SHA256 checksum for ${asset_name}."
+  fi
+
+  actual_sha256="$(compute_sha256 "$archive_path")"
+  if [[ "$actual_sha256" != "$expected_sha256" ]]; then
+    fail "SHA256 verification failed for ${asset_name}. Expected ${expected_sha256}, got ${actual_sha256}."
+  fi
+
+  log "Verified SHA256 checksum for ${asset_name}."
 }
 
 resolve_latest_tag() {
@@ -160,6 +289,8 @@ main() {
   if ! download_to_file "$download_url" "$archive_path"; then
     fail "Download failed from ${download_url}."
   fi
+
+  verify_archive_sha256 "$tag" "$asset_name" "$archive_path"
 
   log "Extracting archive..."
   unzip -qo "$archive_path" -d "$extract_dir"

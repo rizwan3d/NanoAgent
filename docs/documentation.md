@@ -42,6 +42,8 @@ Release downloads are published at:
 https://github.com/rizwan3d/NanoAgent/releases/latest
 ```
 
+New release assets include `SHA256SUMS` beside the downloads. For manual downloads, compare the published SHA256 hash with your downloaded file before running it.
+
 ### CLI
 
 macOS / Linux:
@@ -57,6 +59,8 @@ irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.
 ```
 
 Restart your terminal if `nanoai` is not found immediately after installation.
+
+The CLI install scripts verify the archive checksum before extraction using `SHA256SUMS`, or the SHA256 digest from GitHub release metadata for older releases. Set `NANOAGENT_REQUIRE_SHA256=1` to make checksum availability mandatory.
 
 ## First Run
 
