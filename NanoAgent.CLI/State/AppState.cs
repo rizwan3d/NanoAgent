@@ -31,6 +31,8 @@ public sealed class AppState
 
     public StringBuilder Input { get; } = new();
 
+    public List<CollapsedInputPaste> CollapsedInputPastes { get; } = [];
+
     public int InputCursorIndex { get; set; }
 
     public bool SkipNextInputLineFeed { get; set; }

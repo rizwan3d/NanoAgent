@@ -14,6 +14,11 @@ public static partial class Program
         string Text,
         int? CursorColumn);
 
+    private readonly record struct InputDisplayText(
+        string Text,
+        int CursorIndex,
+        bool HasCollapsedPastes);
+
     private readonly record struct MarkdownFragment(
         string Text,
         string Style);
