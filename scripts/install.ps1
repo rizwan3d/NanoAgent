@@ -15,6 +15,7 @@ $AppName = 'NanoAgent.CLI'
 $ExecutableName = 'NanoAgent.CLI'
 $CommandName = 'nanoai'
 $AssetName = "$ExecutableName-win-x64.zip"
+$ChecksumsName = 'SHA256SUMS'
 
 function Write-Status {
     param([string]$Message)
@@ -43,6 +44,144 @@ function Get-LatestTag {
     }
 
     return [string]$response.tag_name
+}
+
+function Save-UrlToFile {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    Invoke-WebRequest -Uri $Url -OutFile $Path -Headers @{ 'User-Agent' = "$AppName-installer" }
+}
+
+function Test-Sha256Required {
+    $value = $env:NANOAGENT_REQUIRE_SHA256
+
+    return $value -in @('1', 'true', 'TRUE', 'True', 'yes', 'YES', 'Yes')
+}
+
+function Get-ExpectedSha256 {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ChecksumsPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileName
+    )
+
+    foreach ($line in Get-Content -LiteralPath $ChecksumsPath) {
+        if ([string]::IsNullOrWhiteSpace($line)) {
+            continue
+        }
+
+        $parts = $line.Trim() -split '\s+', 2
+        if ($parts.Count -ne 2) {
+            continue
+        }
+
+        $hash = $parts[0].ToLowerInvariant()
+        $name = $parts[1].TrimStart([char]'*')
+        if ($name.StartsWith('./', [StringComparison]::Ordinal)) {
+            $name = $name.Substring(2)
+        }
+
+        if ($name -eq $FileName) {
+            return $hash
+        }
+    }
+
+    return $null
+}
+
+function Get-ReleaseAssetSha256 {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Tag,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileName
+    )
+
+    $metadataUrl = "https://api.github.com/repos/$Owner/$Repo/releases/tags/$Tag"
+
+    try {
+        $release = Invoke-RestMethod -Uri $metadataUrl -Headers @{ 'User-Agent' = "$AppName-installer" }
+    }
+    catch {
+        return $null
+    }
+
+    foreach ($asset in @($release.assets)) {
+        if ([string]$asset.name -ne $FileName) {
+            continue
+        }
+
+        $digest = [string]$asset.digest
+        if ($digest.StartsWith('sha256:', [System.StringComparison]::OrdinalIgnoreCase)) {
+            return $digest.Substring(7).ToLowerInvariant()
+        }
+    }
+
+    return $null
+}
+
+function Test-ArchiveSha256 {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Tag,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ArchivePath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TempRoot
+    )
+
+    $checksumsUrl = "https://github.com/$Owner/$Repo/releases/download/$Tag/$ChecksumsName"
+    $checksumsPath = Join-Path $TempRoot $ChecksumsName
+    $expectedSha256 = $null
+
+    Write-Status "Downloading $ChecksumsName..."
+    try {
+        Save-UrlToFile -Url $checksumsUrl -Path $checksumsPath
+    }
+    catch {
+        $expectedSha256 = Get-ReleaseAssetSha256 -Tag $Tag -FileName $AssetName
+
+        if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
+            if (Test-Sha256Required) {
+                Fail-Install "Unable to download $ChecksumsName from $checksumsUrl, and no GitHub release metadata digest was found. $($_.Exception.Message)"
+            }
+
+            Write-Status "$ChecksumsName was not found for $Tag; continuing without checksum verification. Set NANOAGENT_REQUIRE_SHA256=1 to require it."
+            return
+        }
+
+        Write-Status "Using SHA256 digest from GitHub release metadata for $AssetName."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
+        $expectedSha256 = Get-ExpectedSha256 -ChecksumsPath $checksumsPath -FileName $AssetName
+    }
+
+    if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
+        Fail-Install "$ChecksumsName does not contain a checksum for $AssetName."
+    }
+
+    if ($expectedSha256 -notmatch '^[0-9a-f]{64}$') {
+        Fail-Install "$ChecksumsName contains an invalid SHA256 checksum for $AssetName."
+    }
+
+    $actualSha256 = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualSha256 -ne $expectedSha256) {
+        Fail-Install "SHA256 verification failed for $AssetName. Expected $expectedSha256, got $actualSha256."
+    }
+
+    Write-Status "Verified SHA256 checksum for $AssetName."
 }
 
 function Test-PathContainsDirectory {
@@ -317,11 +456,13 @@ try {
 
     Write-Status "Downloading $AssetName..."
     try {
-        Invoke-WebRequest -Uri $downloadUrl -OutFile $archivePath -Headers @{ 'User-Agent' = "$AppName-installer" }
+        Save-UrlToFile -Url $downloadUrl -Path $archivePath
     }
     catch {
         Fail-Install "Download failed from $downloadUrl. $($_.Exception.Message)"
     }
+
+    Test-ArchiveSha256 -Tag $Tag -ArchivePath $archivePath -TempRoot $tempRoot
 
     Write-Status 'Extracting archive...'
     Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
