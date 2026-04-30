@@ -328,7 +328,7 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_ExplainUnsupportedSandboxBlock()
+    public async Task ExecuteAsync_Should_ExplainUnsupportedSandboxFallback()
     {
         Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
         shellCommandService
@@ -350,10 +350,10 @@ public sealed class ShellCommandToolTests
             CancellationToken.None);
 
         result.Status.Should().Be(ToolResultStatus.Success);
-        result.Message.Should().Contain("command was blocked");
+        result.Message.Should().Contain("without OS-level sandbox enforcement");
         result.RenderPayload!.Text.Should().Contain("Sandbox enforcement: unsupported");
         result.RenderPayload.Text.Should().Contain("Sandbox note:");
-        result.RenderPayload.Text.Should().Contain("command was blocked");
+        result.RenderPayload.Text.Should().Contain("without OS-level sandbox enforcement");
     }
 
     [Fact]
