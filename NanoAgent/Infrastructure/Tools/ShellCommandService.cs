@@ -6,7 +6,6 @@ using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
 using System.Collections.Concurrent;
 using System.ComponentModel;
-using System.Diagnostics;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
@@ -152,20 +151,6 @@ internal sealed class ShellCommandService : IShellCommandService
                 terminalAction: "start"));
         }
 
-        if (string.Equals(
-                prepared.SandboxPlan.Enforcement,
-                ShellCommandSandboxPlanner.WindowsAppContainerEnforcement,
-                StringComparison.Ordinal))
-        {
-            return Task.FromResult(CreateExecutionFailureResult(
-                request,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                "Background terminals do not support Windows AppContainer sandbox enforcement.",
-                background: true,
-                terminalAction: "start"));
-        }
-
         if (prepared.ProcessRequest.UsePseudoTerminal)
         {
             return Task.FromResult(CreateExecutionFailureResult(
@@ -181,7 +166,8 @@ internal sealed class ShellCommandService : IShellCommandService
         {
             BackgroundTerminal terminal = StartBackgroundTerminal(
                 request,
-                prepared);
+                prepared,
+                cancellationToken);
             _backgroundTerminals[terminal.Id] = terminal;
 
             return Task.FromResult(CreateBackgroundResult(
@@ -193,6 +179,18 @@ internal sealed class ShellCommandService : IShellCommandService
                 standardError: string.Empty));
         }
         catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}",
+                background: true,
+                terminalAction: "start"));
+        }
+        catch (Exception exception) when (
+            IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement) &&
+            exception is not OperationCanceledException)
         {
             return Task.FromResult(CreateExecutionFailureResult(
                 request,
@@ -360,16 +358,12 @@ internal sealed class ShellCommandService : IShellCommandService
 
     private BackgroundTerminal StartBackgroundTerminal(
         ShellCommandExecutionRequest request,
-        PreparedShellCommand prepared)
+        PreparedShellCommand prepared,
+        CancellationToken cancellationToken)
     {
-        ProcessStartInfo startInfo = CreateBackgroundStartInfo(prepared.ProcessRequest);
-        Process process = new()
-        {
-            StartInfo = startInfo,
-            EnableRaisingEvents = true
-        };
-
-        process.Start();
+        IBackgroundProcess process = _processRunner.StartBackground(
+            prepared.ProcessRequest,
+            cancellationToken);
 
         string terminalId = "terminal-" + Interlocked.Increment(ref _backgroundTerminalSequence).ToString("D", System.Globalization.CultureInfo.InvariantCulture);
         BackgroundTerminal terminal = new(
@@ -385,41 +379,6 @@ internal sealed class ShellCommandService : IShellCommandService
             process);
         terminal.StartReaders();
         return terminal;
-    }
-
-    private static ProcessStartInfo CreateBackgroundStartInfo(ProcessExecutionRequest request)
-    {
-        ProcessStartInfo startInfo = new()
-        {
-            FileName = request.FileName,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        if (!string.IsNullOrWhiteSpace(request.WorkingDirectory))
-        {
-            startInfo.WorkingDirectory = request.WorkingDirectory;
-        }
-
-        foreach (string argument in request.Arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        if (request.EnvironmentVariables is not null)
-        {
-            foreach (KeyValuePair<string, string> environmentVariable in request.EnvironmentVariables)
-            {
-                if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
-                {
-                    startInfo.Environment[environmentVariable.Key] = environmentVariable.Value;
-                }
-            }
-        }
-
-        return startInfo;
     }
 
     private static ShellCommandExecutionResult CreateBackgroundResult(
@@ -672,7 +631,7 @@ internal sealed class ShellCommandService : IShellCommandService
             string? justification,
             string sandboxMode,
             string sandboxEnforcement,
-            Process process)
+            IBackgroundProcess process)
         {
             Id = id;
             Command = command;
@@ -692,7 +651,7 @@ internal sealed class ShellCommandService : IShellCommandService
 
         public string? Justification { get; }
 
-        public Process Process { get; }
+        public IBackgroundProcess Process { get; }
 
         public string SandboxEnforcement { get; }
 
@@ -755,26 +714,16 @@ internal sealed class ShellCommandService : IShellCommandService
             {
                 return 0;
             }
+            catch (Win32Exception)
+            {
+                return 0;
+            }
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             _stopped = true;
-            try
-            {
-                if (!Process.HasExited)
-                {
-                    Process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (Win32Exception)
-            {
-            }
-
-            await WaitForExitAsync(cancellationToken);
+            await Process.StopAsync(cancellationToken);
             await CompleteReadersAsync(cancellationToken);
         }
 
@@ -786,17 +735,6 @@ internal sealed class ShellCommandService : IShellCommandService
         public void Dispose()
         {
             Process.Dispose();
-        }
-
-        private async Task WaitForExitAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                await Process.WaitForExitAsync(cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-            }
         }
 
         private void AppendStandardOutput(string value)
