@@ -1,6 +1,6 @@
+using NanoAgent.Application.Models;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
-using NanoAgent.Application.Models;
 
 namespace NanoAgent.Application.Tools.Serialization;
 

@@ -1,5 +1,5 @@
-using System.Text.Json.Serialization;
 using NanoAgent.Application.Models;
+using System.Text.Json.Serialization;
 
 namespace NanoAgent.Application.Conversation.Serialization;
 

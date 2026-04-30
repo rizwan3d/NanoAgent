@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Serialization;
 using NanoAgent.Application.Exceptions;
@@ -8,7 +9,6 @@ using NanoAgent.Application.Planning;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
-using Microsoft.Extensions.Logging;
 using System.Text.Json;
 
 namespace NanoAgent.Application.Conversation.Services;

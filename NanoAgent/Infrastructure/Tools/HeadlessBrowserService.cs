@@ -1,10 +1,10 @@
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Tools.Models;
+using NanoAgent.Infrastructure.Secrets;
 using System.ComponentModel;
 using System.Globalization;
 using System.Net;
 using System.Text.RegularExpressions;
-using NanoAgent.Application.Abstractions;
-using NanoAgent.Application.Tools.Models;
-using NanoAgent.Infrastructure.Secrets;
 
 namespace NanoAgent.Infrastructure.Tools;
 

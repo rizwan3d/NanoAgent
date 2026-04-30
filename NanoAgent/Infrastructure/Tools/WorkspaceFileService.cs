@@ -1,4 +1,3 @@
-using System.Text;
 using DiffPlex.DiffBuilder;
 using DiffPlex.DiffBuilder.Model;
 using NanoAgent.Application.Abstractions;
@@ -6,6 +5,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
+using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
 

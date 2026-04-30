@@ -1,9 +1,9 @@
-using System.Globalization;
-using System.Reflection;
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Secrets;
+using System.Globalization;
+using System.Reflection;
+using System.Text.Json;
 
 namespace NanoAgent.Infrastructure.Updates;
 

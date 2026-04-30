@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using Microsoft.Extensions.Options;
 
 namespace NanoAgent.Infrastructure.Configuration;
 

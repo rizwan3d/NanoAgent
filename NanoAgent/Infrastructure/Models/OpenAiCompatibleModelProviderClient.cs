@@ -1,11 +1,11 @@
-using System.Net.Http.Headers;
-using System.Globalization;
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.OpenAi;
-using Microsoft.Extensions.Logging;
+using System.Globalization;
+using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace NanoAgent.Infrastructure.Models;
 
