@@ -6,7 +6,7 @@ using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Tools.Services;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Plugins;
-using NanoAgent.Infrastructure.Plugins.GitHub;
+using NanoAgent.Plugin.GitHub;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -36,13 +36,28 @@ public sealed class GitHubPluginToolTests : IDisposable
             .Should()
             .Equal(
                 "plugin__github__repository",
+                "plugin__github__branch",
+                "plugin__github__commit",
+                "plugin__github__compare_refs",
                 "plugin__github__issue",
-                "plugin__github__pull_request");
+                "plugin__github__issue_comments",
+                "plugin__github__list_issues",
+                "plugin__github__pull_request",
+                "plugin__github__pull_request_files",
+                "plugin__github__pull_request_reviews",
+                "plugin__github__pull_request_review_comments",
+                "plugin__github__list_pull_requests",
+                "plugin__github__check_runs_for_ref",
+                "plugin__github__workflow_runs",
+                "plugin__github__latest_release",
+                "plugin__github__search_issues",
+                "plugin__github__search_repositories",
+                "plugin__github__search_code");
         provider.GetStatuses().Should().ContainSingle(status =>
             status.Name == "github" &&
             status.Kind == "plugin" &&
             status.IsAvailable &&
-            status.ToolCount == 3);
+            status.ToolCount == 18);
 
         ToolRegistry registry = new(
             [],
@@ -76,7 +91,7 @@ public sealed class GitHubPluginToolTests : IDisposable
             CancellationToken.None);
 
         result.Status.Should().Be(ToolResultStatus.Success);
-        result.Message.Should().Be("Loaded GitHub repository 'octocat/Hello-World'.");
+        result.Message.Should().Be("Loaded GitHub repository for octocat/Hello-World.");
         result.JsonResult.Should().Contain("\"full_name\":\"octocat/Hello-World\"");
         result.RenderPayload!.Text.Should().Contain("A test repository.");
         handler.LastRequest!.RequestUri!.AbsoluteUri.Should().Be("https://api.github.com/repos/octocat/Hello-World");
@@ -131,6 +146,63 @@ public sealed class GitHubPluginToolTests : IDisposable
 
         result.Status.Should().Be(ToolResultStatus.InvalidArguments);
         result.Message.Should().Contain("owner/name");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_SearchIssuesWithQualifiers()
+    {
+        StubHttpMessageHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                {
+                  "total_count": 1,
+                  "items": [
+                    {
+                      "title": "Fix search",
+                      "state": "open",
+                      "html_url": "https://github.com/acme/project/issues/5"
+                    }
+                  ]
+                }
+                """)
+        });
+        GitHubPluginTool tool = CreateTool(handler, GitHubPluginToolKind.SearchIssues);
+
+        ToolResult result = await tool.ExecuteAsync(
+            CreateContext(tool.Name, """{ "query": "label:bug", "repository": "acme/project", "state": "open", "type": "issue", "per_page": 5 }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        handler.LastRequest!.RequestUri!.AbsoluteUri.Should().Be("https://api.github.com/search/issues?q=label%3Abug%20repo%3Aacme%2Fproject%20state%3Aopen%20type%3Aissue&per_page=5");
+        result.RenderPayload!.Text.Should().Contain("Fix search");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReadPullRequestFilesArray()
+    {
+        StubHttpMessageHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                """
+                [
+                  {
+                    "filename": "src/App.cs",
+                    "status": "modified",
+                    "sha": "abc123"
+                  }
+                ]
+                """)
+        });
+        GitHubPluginTool tool = CreateTool(handler, GitHubPluginToolKind.PullRequestFiles);
+
+        ToolResult result = await tool.ExecuteAsync(
+            CreateContext(tool.Name, """{ "repository": "acme/project", "number": 7 }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        handler.LastRequest!.RequestUri!.AbsoluteUri.Should().Be("https://api.github.com/repos/acme/project/pulls/7/files");
+        result.RenderPayload!.Text.Should().Contain("src/App.cs");
     }
 
     public void Dispose()
@@ -192,7 +264,7 @@ public sealed class GitHubPluginToolTests : IDisposable
 
         public HttpClient CreateClient(string name)
         {
-            name.Should().Be("NanoAgent.Plugins.GitHub");
+            name.Should().Be(ServiceCollectionExtensions.HttpClientName);
             return new HttpClient(_handler, disposeHandler: false);
         }
     }

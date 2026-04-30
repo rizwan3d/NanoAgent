@@ -34,5 +34,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\NanoAgent\NanoAgent.csproj" />
+    <ProjectReference Include="..\NanoAgent.Plugin.GitHub\NanoAgent.Plugin.GitHub.csproj" />
   </ItemGroup>
 </Project>
