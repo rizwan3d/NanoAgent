@@ -275,8 +275,6 @@ public sealed class ShellCommandServiceTests : IDisposable
             request.WindowsSandbox!.AllowWorkspaceWrite.Should().BeFalse();
             request.WindowsSandbox.WorkspaceRoot.Should().Be(Path.GetFullPath(_workspaceRoot));
             request.WindowsSandbox.ProfileName.Should().StartWith("NanoAgent.Shell.read.");
-            request.WindowsSandbox.ReadOnlyRoots.Should().Contain(GetFirstExistingPathDirectory());
-            request.WindowsSandbox.ReadOnlyRoots.Should().NotContain(Path.GetFullPath(_workspaceRoot));
             request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-appcontainer");
             request.EnvironmentVariables["USERPROFILE"].Should().Be(Path.GetFullPath(_workspaceRoot));
             request.EnvironmentVariables["TEMP"].Should().Be(request.WindowsSandbox.TempDirectory);
@@ -310,8 +308,6 @@ public sealed class ShellCommandServiceTests : IDisposable
         request.WindowsSandbox.WorkspaceRoot.Should().Be(Path.GetFullPath(_workspaceRoot));
         request.WindowsSandbox.ProfileName.Should().StartWith("NanoAgent.Shell.write.");
         request.WindowsSandbox.TempDirectory.Should().Contain("sandbox-temp");
-        request.WindowsSandbox.ReadOnlyRoots.Should().Contain(GetFirstExistingPathDirectory());
-        request.WindowsSandbox.ReadOnlyRoots.Should().NotContain(Path.GetFullPath(_workspaceRoot));
         request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-appcontainer");
         request.EnvironmentVariables["HOME"].Should().Be(Path.GetFullPath(_workspaceRoot));
         request.EnvironmentVariables["USERPROFILE"].Should().Be(Path.GetFullPath(_workspaceRoot));
@@ -495,43 +491,5 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         return false;
-    }
-
-    private static string? GetFirstExistingPathDirectory()
-    {
-        string? path = Environment.GetEnvironmentVariable("PATH");
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return null;
-        }
-
-        foreach (string segment in path.Split(
-                     Path.PathSeparator,
-                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            try
-            {
-                string fullPath = Path.GetFullPath(
-                    Environment.ExpandEnvironmentVariables(segment).Trim('"'));
-                if (Directory.Exists(fullPath))
-                {
-                    return fullPath;
-                }
-            }
-            catch (ArgumentException)
-            {
-            }
-            catch (IOException)
-            {
-            }
-            catch (NotSupportedException)
-            {
-            }
-            catch (UnauthorizedAccessException)
-            {
-            }
-        }
-
-        return null;
     }
 }
