@@ -58,6 +58,12 @@ public static partial class Program
                 return;
             }
 
+            if (key.Key == ConsoleKey.F3)
+            {
+                TogglePlanPanel(state);
+                return;
+            }
+
             if (TryHandleSlashCommandSuggestionInput(state, key))
             {
                 return;
@@ -446,6 +452,11 @@ public static partial class Program
             case "Q":
             case "12~":
                 RequestModelSelection(state);
+                return;
+
+            case "R":
+            case "13~":
+                TogglePlanPanel(state);
                 return;
 
             case "5~":

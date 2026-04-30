@@ -2,7 +2,7 @@
   "profiles": {
     "NanoAgent.CLI": {
       "commandName": "Project",
-      "workingDirectory": "C:\\Users\\allga\\source\\repos\\FinalAgent\\NanoAgent\\bin\\Debug\\net10.0\\code"
+      "workingDirectory": "C:\\Users\\allga\\source\\repos\\NanoAgent\\NanoAgent\\NanoAgent\\bin\\Debug\\net10.0\\code"
     }
   }
 }
