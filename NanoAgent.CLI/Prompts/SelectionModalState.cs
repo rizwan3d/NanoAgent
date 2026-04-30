@@ -159,7 +159,7 @@ public sealed class SelectionModalState<T> : UiModalState
             return;
         }
 
-        if (key.Key == ConsoleKey.Escape && AllowCancellation)
+        if (IsCancellationKey(key) && AllowCancellation)
         {
             Cancel(state);
             return;
