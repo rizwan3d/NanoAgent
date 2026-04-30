@@ -318,12 +318,12 @@ internal sealed class ProcessRunner : IProcessRunner
                 stdoutRead,
                 FileAccess.Read,
                 bufferSize: 4096,
-                isAsync: false);
+                isAsync: true);
             await using FileStream stderrStream = new(
                 stderrRead,
                 FileAccess.Read,
                 bufferSize: 4096,
-                isAsync: false);
+                isAsync: true);
             using StreamReader stdoutReader = new(
                 stdoutStream,
                 Encoding.UTF8,
@@ -332,20 +332,20 @@ internal sealed class ProcessRunner : IProcessRunner
                 stderrStream,
                 Encoding.UTF8,
                 detectEncodingFromByteOrderMarks: false);
-            Task<string> standardOutputTask = ReadToEndCappedInBackgroundAsync(
+            Task<string> standardOutputTask = ReadToEndCappedAsync(
                 stdoutReader,
                 request.MaxOutputCharacters,
                 cancellationToken);
-            Task<string> standardErrorTask = ReadToEndCappedInBackgroundAsync(
+            Task<string> standardErrorTask = ReadToEndCappedAsync(
                 stderrReader,
                 request.MaxOutputCharacters,
                 cancellationToken);
 
             await using (FileStream stdinStream = new(
-                stdinWrite,
-                FileAccess.Write,
-                bufferSize: 4096,
-                isAsync: false))
+                             stdinWrite,
+                             FileAccess.Write,
+                             bufferSize: 4096,
+                             isAsync: true))
             {
                 if (request.StandardInput is not null)
                 {
@@ -1292,19 +1292,6 @@ internal sealed class ProcessRunner : IProcessRunner
         return builder.ToString();
     }
 
-    private static Task<string> ReadToEndCappedInBackgroundAsync(
-        TextReader reader,
-        int? maxCharacters,
-        CancellationToken cancellationToken)
-    {
-        return Task.Run(
-            async () => await ReadToEndCappedAsync(
-                reader,
-                maxCharacters,
-                cancellationToken),
-            cancellationToken);
-    }
-
     private static async Task DrainAsync(
         TextReader reader,
         CancellationToken cancellationToken)
@@ -1463,7 +1450,7 @@ internal sealed class ProcessRunner : IProcessRunner
                 handle,
                 FileAccess.Read,
                 bufferSize: 4096,
-                isAsync: false);
+                isAsync: true);
             return new StreamReader(
                 stream,
                 Encoding.UTF8,
