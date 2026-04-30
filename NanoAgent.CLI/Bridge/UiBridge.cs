@@ -191,6 +191,7 @@ public sealed class UiBridge : IUiBridge
             state.ActivityText = progress.Tasks.Count == 0
                 ? "Working"
                 : $"Plan {progress.CompletedTaskCount}/{progress.Tasks.Count}";
+            state.LatestPlanText = description;
 
             state.AddSystemMessage(description);
         });

@@ -23,7 +23,7 @@ public static partial class Program
         }
         else
         {
-            root["body"].Update(BuildMessagesPanel(state));
+            root["body"].Update(BuildBodyPanel(state));
         }
 
         root["input"].Update(BuildInputPanel(state));
@@ -55,6 +55,31 @@ public static partial class Program
     {
         return new Panel(new Markup(BuildMessagesMarkup(state)))
             .Header("[bold]Conversation[/]")
+            .Border(BoxBorder.Rounded)
+            .Expand();
+    }
+
+    private static IRenderable BuildBodyPanel(AppState state)
+    {
+        if (!HasPinnedPlan(state))
+        {
+            return BuildMessagesPanel(state);
+        }
+
+        Layout body = new Layout("body")
+            .SplitRows(
+                new Layout("messages").Ratio(1),
+                new Layout("plan").Size(GetPinnedPlanPanelSize(state)));
+
+        body["messages"].Update(BuildMessagesPanel(state));
+        body["plan"].Update(BuildPinnedPlanPanel(state));
+        return body;
+    }
+
+    private static IRenderable BuildPinnedPlanPanel(AppState state)
+    {
+        return new Panel(new Markup(BuildPinnedPlanMarkup(state)))
+            .Header("[bold cyan]Plan[/] [grey](F3 to hide)[/]")
             .Border(BoxBorder.Rounded)
             .Expand();
     }
@@ -236,6 +261,11 @@ public static partial class Program
                 ? GetInputPanelSize(state) + 6
                 : state.ActiveModal.PanelSize + GetInputPanelSize(state) + 7);
 
+        if (state.ActiveModal is null && HasPinnedPlan(state))
+        {
+            reservedLines += GetPinnedPlanPanelSize(state);
+        }
+
         return Math.Max(5, Console.WindowHeight - reservedLines);
     }
 
@@ -252,6 +282,77 @@ public static partial class Program
             state.ConversationScrollOffset + delta,
             0,
             maxScrollOffset);
+    }
+
+    private static bool HasPinnedPlan(AppState state)
+    {
+        return state.IsPlanPinned && !string.IsNullOrWhiteSpace(state.LatestPlanText);
+    }
+
+    private static int GetPinnedPlanPanelSize(AppState state)
+    {
+        int contentWidth = Math.Max(20, Console.WindowWidth - 8);
+        int bodyLineCount = GetPinnedPlanLines(state)
+            .Sum(line => WrapText(line, contentWidth).Count);
+        int availableBodySize = Math.Max(
+            5,
+            Console.WindowHeight - HeaderPanelSize - GetInputPanelSize(state) - 1);
+        int maxPanelSize = Math.Min(12, Math.Max(5, availableBodySize - 5));
+
+        return Math.Clamp(bodyLineCount + 2, 5, maxPanelSize);
+    }
+
+    private static string BuildPinnedPlanMarkup(AppState state)
+    {
+        int contentWidth = Math.Max(20, Console.WindowWidth - 8);
+        int maxBodyLines = Math.Max(1, GetPinnedPlanPanelSize(state) - 2);
+        List<string> renderedLines = [];
+
+        foreach (string line in GetPinnedPlanLines(state))
+        {
+            foreach (string wrappedLine in WrapText(line, contentWidth))
+            {
+                renderedLines.Add(FormatPinnedPlanLine(wrappedLine));
+            }
+        }
+
+        if (renderedLines.Count > maxBodyLines)
+        {
+            renderedLines = renderedLines
+                .Take(Math.Max(0, maxBodyLines - 1))
+                .ToList();
+            renderedLines.Add("[grey]...[/]");
+        }
+
+        return string.Join('\n', renderedLines);
+    }
+
+    private static string[] GetPinnedPlanLines(AppState state)
+    {
+        return (state.LatestPlanText ?? string.Empty)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n');
+    }
+
+    private static string FormatPinnedPlanLine(string line)
+    {
+        if (line.StartsWith("Plan progress:", StringComparison.Ordinal))
+        {
+            return $"[bold]{Markup.Escape(line)}[/]";
+        }
+
+        if (line.StartsWith("\u2713 ", StringComparison.Ordinal))
+        {
+            return $"[green]{Markup.Escape(line)}[/]";
+        }
+
+        if (line.StartsWith("\u2610 ", StringComparison.Ordinal))
+        {
+            return $"[grey]{Markup.Escape(line)}[/]";
+        }
+
+        return Markup.Escape(line);
     }
 
     private static string BuildInputMarkup(AppState state)
@@ -325,8 +426,8 @@ public static partial class Program
         if (state.HasFatalError)
         {
             return BuildFooterLineMarkup(
-                "Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
-                "[grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
+                "Wheel/PgUp/PgDn: scroll  |  Ctrl+C: quit  |  /help",
+                "[grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
                 BuildCompletionNote(state));
         }
 
@@ -339,8 +440,8 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "Enter: send  |  Shift+Enter: newline  |  F2: model  |  Wheel/PgUp/PgDn: scroll  |  Esc/Ctrl+C: quit  |  /help",
-            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]F2: model[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
+            "Enter: send  |  Shift+Enter: newline  |  F2: model  |  Wheel/PgUp/PgDn: scroll  |  Ctrl+C: quit  |  /help",
+            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]F2: model[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
             BuildCompletionNote(state));
     }
 
@@ -387,7 +488,7 @@ public static partial class Program
         lines.Add(
             $"[grey]  Sponsor:[/] [yellow]{Markup.Escape(SponsorName)}[/] [grey]([/][italic]{Markup.Escape(SponsorUrl)}[/][grey])[/]");
         lines.Add($"[grey]  {new string('-', HeaderDividerWidth)}[/]");
-        lines.Add("[grey]  Chat in the terminal. Press F2 to choose a model, Ctrl+C or /exit to quit.[/]");
+        lines.Add("[grey]  Chat in the terminal. Press F2 to choose a model, F3 to pin the latest plan, Ctrl+C or /exit to quit.[/]");
         lines.Add("[grey]  Press Esc while a response is running to interrupt the current request.[/]");
 
         return string.Join('\n', lines);

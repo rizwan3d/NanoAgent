@@ -49,6 +49,10 @@ public sealed class AppState
 
     public bool IsStreaming { get; set; }
 
+    public bool IsPlanPinned { get; set; }
+
+    public string? LatestPlanText { get; set; }
+
     public CancellationTokenSource LifetimeCancellation { get; } = new();
 
     public List<ChatMessage> Messages { get; } = [];
