@@ -276,7 +276,7 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
-    public void PermissionRequirements_Should_AllowCommonProjectToolchainCommands()
+    public void PermissionRequirements_Should_DefineShellArgumentPolicyWithoutCommandCatalog()
     {
         ToolRegistry registry = new(
             [new ShellCommandTool(Mock.Of<IShellCommandService>())],
@@ -289,22 +289,10 @@ public sealed class ShellCommandToolTests
         found.Should().BeTrue();
         registration.Should().NotBeNull();
         registration!.PermissionPolicy.Shell.Should().NotBeNull();
-        registration.PermissionPolicy.Shell!.AllowedCommands.Should().Contain(
-        [
-            "cd",
-            "dotnet",
-            "mkdir",
-            "npm",
-            "npx",
-            "node",
-            "python",
-            "pytest",
-            "cargo",
-            "go",
-            "mvn",
-            "gradle",
-            "make"
-        ]);
+        registration.PermissionPolicy.Shell!.CommandArgumentName.Should().Be("command");
+        registration.PermissionPolicy.Shell.SandboxPermissionsArgumentName.Should().Be("sandbox_permissions");
+        registration.PermissionPolicy.Shell.JustificationArgumentName.Should().Be("justification");
+        registration.PermissionPolicy.Shell.PrefixRuleArgumentName.Should().Be("prefix_rule");
     }
 
     private static ToolExecutionContext CreateContext(

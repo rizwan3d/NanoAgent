@@ -360,7 +360,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         name: dotnet
         description: Use for .NET build, test, package, and project-file work.
         ---
-        Prefer repo-native `dotnet build` and `dotnet test` commands.
+        Prefer repo-native build and test commands.
         Inspect the relevant `.csproj` before changing package references.
         Keep package and target framework changes narrowly scoped.
         """;

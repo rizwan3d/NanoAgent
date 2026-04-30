@@ -317,8 +317,8 @@ Shell sandboxing depends on the operating system. Linux uses `bubblewrap` when a
 Use overrides for temporary decisions:
 
 ```text
-/allow shell_safe "dotnet test"
-/deny shell "rm -rf"
+/allow bash "<command-pattern>"
+/deny bash "<command-pattern>"
 ```
 
 Overrides are session-scoped. For durable policy, edit configuration.
@@ -341,19 +341,14 @@ Overrides are session-scoped. For durable policy, edit configuration.
       "shell": {
         "allow": {
           "commands": [
-            "dotnet build",
-            "dotnet test",
-            "npm test",
-            "pnpm test",
-            "cargo test"
+            "your-build-command",
+            "your-test-command"
           ]
         },
         "deny": {
           "commands": [
-            "rm -rf",
-            "sudo",
-            "curl | sh",
-            "Invoke-WebRequest | iex"
+            "dangerous-command-pattern",
+            "network-installer-pattern"
           ]
         }
       }
@@ -361,6 +356,8 @@ Overrides are session-scoped. For durable policy, edit configuration.
   }
 }
 ```
+
+`shell_safe` controls the mode applied to the command patterns you list under `shell.allow.commands`; NanoAgent does not ship a built-in shell command allow catalog.
 
 The `network` shortcut applies to built-in `webfetch` tools, including `web_run` and `headless_browser`. `headless_browser` renders pages through an installed Chromium-family browser such as Microsoft Edge, Google Chrome, or Chromium.
 
