@@ -39,6 +39,19 @@ public sealed class CodeIntelligenceToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_RenameHasNoNewName()
+    {
+        CodeIntelligenceTool sut = new(Mock.Of<ICodeIntelligenceService>());
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "action": "rename_symbol", "path": "Program.cs", "line": 5, "character": 3 }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("newName");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_QueryServiceWithResolvedPath()
     {
         string workspaceRoot = Path.Combine(
@@ -91,6 +104,41 @@ public sealed class CodeIntelligenceToolTests
                 Directory.Delete(workspaceRoot, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_QueryServiceWithExpandedOperationArguments()
+    {
+        Mock<ICodeIntelligenceService> service = new(MockBehavior.Strict);
+        service
+            .Setup(sut => sut.QueryAsync(
+                It.Is<CodeIntelligenceRequest>(request =>
+                    request.Action == "call_hierarchy" &&
+                    request.Path == "Program.cs" &&
+                    request.Line == 5 &&
+                    request.Character == 3 &&
+                    request.CallDirection == "incoming" &&
+                    request.Query == "Example" &&
+                    request.NewName == null),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new CodeIntelligenceResult(
+                "call_hierarchy",
+                "Program.cs",
+                "csharp",
+                "C# language server",
+                [new CodeIntelligenceItem("IncomingCall", "Caller", null, "Program.cs", 10, 1, 10, 15, null)],
+                HoverText: null,
+                Warnings: []));
+
+        CodeIntelligenceTool sut = new(service.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "action": "call_hierarchy", "path": "Program.cs", "line": 5, "character": 3, "callDirection": "incoming", "query": "Example" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.JsonResult.Should().Contain("IncomingCall");
+        service.VerifyAll();
     }
 
     [Fact]
