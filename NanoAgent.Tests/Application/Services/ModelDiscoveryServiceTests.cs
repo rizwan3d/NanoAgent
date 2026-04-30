@@ -36,9 +36,9 @@ public sealed class ModelDiscoveryServiceTests
                 "test-key",
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync([
-                new AvailableModel("gpt-5-mini"),
-                new AvailableModel("gpt-5"),
-                new AvailableModel("gpt-5")
+                new AvailableModel("gpt-5-mini", 128_000),
+                new AvailableModel("gpt-5", 400_000),
+                new AvailableModel("gpt-5", 8_000)
             ]);
 
         ModelSelectionSettings settings = new(TimeSpan.FromMinutes(5));
@@ -58,6 +58,7 @@ public sealed class ModelDiscoveryServiceTests
         result.ConfiguredDefaultStatus.Should().Be(ConfiguredDefaultModelStatus.Matched);
         result.HadDuplicateModelIds.Should().BeTrue();
         result.AvailableModels.Select(model => model.Id).Should().Equal("gpt-5-mini", "gpt-5");
+        result.AvailableModels.Select(model => model.ContextWindowTokens).Should().Equal(128_000, 400_000);
         configurationStore.Verify(store => store.SaveAsync(It.IsAny<AgentConfiguration>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 

@@ -68,7 +68,12 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
                     0,
                     "Passed",
                     null)]),
-            workspacePath: _tempRoot);
+            workspacePath: _tempRoot,
+            modelContextWindowTokens: new Dictionary<string, int>
+            {
+                ["gpt-5-mini"] = 128_000,
+                ["gpt-4.1"] = 1_000_000
+            });
 
         await sut.SaveAsync(snapshot, CancellationToken.None);
         ConversationSectionSnapshot? loadedSnapshot = await sut.LoadAsync(snapshot.SectionId, CancellationToken.None);
@@ -78,6 +83,8 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         loadedSnapshot.Title.Should().Be("Todo App Session");
         loadedSnapshot.ActiveModelId.Should().Be("gpt-5-mini");
         loadedSnapshot.AvailableModelIds.Should().Equal("gpt-5-mini", "gpt-4.1");
+        loadedSnapshot.ModelContextWindowTokens.Should().Contain("gpt-5-mini", 128_000);
+        loadedSnapshot.ModelContextWindowTokens.Should().Contain("gpt-4.1", 1_000_000);
         loadedSnapshot.ProviderProfile.Should().Be(snapshot.ProviderProfile);
         loadedSnapshot.Turns.Should().ContainSingle();
         loadedSnapshot.Turns[0].UserInput.Should().Be("build a todo app");

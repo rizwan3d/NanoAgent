@@ -364,6 +364,7 @@ public static partial class Program
         state.SectionResumeCommand = sessionInfo.SectionResumeCommand;
         state.ProviderName = sessionInfo.ProviderName;
         state.ActiveModelId = sessionInfo.ModelId;
+        state.ActiveModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;
     }
 
     private static void RenderResumedSection(

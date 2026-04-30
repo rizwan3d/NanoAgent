@@ -59,6 +59,7 @@ internal sealed class ReplSectionService : IReplSectionService
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
@@ -75,7 +76,8 @@ internal sealed class ReplSectionService : IReplSectionService
             availableModelIds,
             sectionCreatedAtUtc: now,
             sectionUpdatedAtUtc: now,
-            agentProfile: agentProfile);
+            agentProfile: agentProfile,
+            modelContextWindowTokens: modelContextWindowTokens);
 
         await _sectionStore.SaveAsync(
             session.CreateSectionSnapshot(now),
@@ -146,7 +148,8 @@ internal sealed class ReplSectionService : IReplSectionService
             agentProfile: profileOverride ?? _profileResolver.Resolve(snapshot.AgentProfileName),
             reasoningEffort: snapshot.ReasoningEffort,
             sessionState: snapshot.SessionState,
-            workspacePath: snapshot.WorkspacePath);
+            workspacePath: snapshot.WorkspacePath,
+            modelContextWindowTokens: snapshot.ModelContextWindowTokens);
 
         if (!session.HasGeneratedSectionTitle &&
             session.TryGetFirstUserPrompt(out string? firstUserPrompt) &&

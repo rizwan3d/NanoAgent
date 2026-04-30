@@ -41,6 +41,7 @@ public partial class ChatViewModel : ViewModelBase
     private readonly DispatcherTimer _progressTimer;
     private readonly DispatcherTimer _selectionPromptTimer;
     private DateTimeOffset? _currentRunStartedAt;
+    private int? _activeModelContextWindowTokens;
     private bool _isApplyingSessionInfo;
     private bool _isApplyingPromptCommandSuggestion;
     private bool _promptCommandSuggestionsDismissed;
@@ -1091,9 +1092,11 @@ public partial class ChatViewModel : ViewModelBase
             }
 
             SelectedModelId = sessionInfo.ModelId;
+            _activeModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;
             SelectedThinkingMode = sessionInfo.ThinkingMode;
             SelectedProfileName = sessionInfo.AgentProfileName;
             HasSessionOptions = true;
+            UpdateProgressText();
         }
         finally
         {
@@ -1216,26 +1219,45 @@ public partial class ChatViewModel : ViewModelBase
     {
         if (_currentRunStartedAt is null)
         {
-            ProgressText = "(0s \u00B7 0 tokens)";
+            ProgressText = FormatProgressText(
+                TimeSpan.Zero,
+                0,
+                _activeModelContextWindowTokens,
+                0);
             return;
         }
 
-        ProgressText = FormatProgressText(GetLiveElapsed(), GetLiveEstimatedTokens());
+        ProgressText = FormatProgressText(
+            GetLiveElapsed(),
+            GetLiveEstimatedTokens(),
+            _activeModelContextWindowTokens,
+            GetLiveEstimatedTokens());
     }
 
     private string? FormatFinalProgressText(AgentRunResult result, bool allowLiveFallback)
     {
         if (result.Elapsed is { } elapsed && result.EstimatedTokens is { } estimatedTokens)
         {
-            return FormatProgressText(elapsed, estimatedTokens);
+            return FormatProgressText(
+                elapsed,
+                estimatedTokens,
+                _activeModelContextWindowTokens,
+                result.EstimatedContextWindowUsedTokens);
         }
 
         return allowLiveFallback ? ProgressText : null;
     }
 
-    private static string FormatProgressText(TimeSpan elapsed, int estimatedTokens)
+    private static string FormatProgressText(
+        TimeSpan elapsed,
+        int estimatedTokens,
+        int? contextWindowTokens,
+        int? contextWindowUsedTokens)
     {
-        return $"({FormatElapsed(elapsed)} \u00B7 {FormatTokens(estimatedTokens)} tokens)";
+        string baseText = $"{FormatElapsed(elapsed)} \u00B7 {FormatTokens(estimatedTokens)} tokens";
+        return contextWindowTokens is > 0
+            ? $"({baseText} \u00B7 {FormatContextWindowUsage(contextWindowUsedTokens ?? 0, contextWindowTokens.Value)} \u00B7 {FormatContextWindowTokens(contextWindowTokens.Value)} context)"
+            : $"({baseText})";
     }
 
     private TimeSpan GetLiveElapsed()
@@ -1285,6 +1307,46 @@ public partial class ChatViewModel : ViewModelBase
             MidpointRounding.AwayFromZero);
 
         return $"{rounded.ToString(format, CultureInfo.InvariantCulture)}k";
+    }
+
+    private static string FormatContextWindowUsage(
+        int contextWindowUsedTokens,
+        int contextWindowTokens)
+    {
+        int safeUsedTokens = Math.Max(0, contextWindowUsedTokens);
+        int safeContextWindowTokens = Math.Max(1, contextWindowTokens);
+        int percentage = (int)Math.Round(
+            safeUsedTokens / (double)safeContextWindowTokens * 100d,
+            MidpointRounding.AwayFromZero);
+
+        return $"({percentage}%) {FormatTokens(safeUsedTokens)} Used";
+    }
+
+    private static string FormatContextWindowTokens(int contextWindowTokens)
+    {
+        int safeValue = Math.Max(0, contextWindowTokens);
+        if (safeValue < 1_000)
+        {
+            return safeValue.ToString(CultureInfo.InvariantCulture);
+        }
+
+        if (safeValue < 1_000_000)
+        {
+            return FormatScaledMetric(safeValue / 1_000d, "k");
+        }
+
+        return FormatScaledMetric(safeValue / 1_000_000d, "m");
+    }
+
+    private static string FormatScaledMetric(double value, string suffix)
+    {
+        string format = value >= 10d ? "0" : "0.#";
+        double rounded = Math.Round(
+            value,
+            value >= 10d ? 0 : 1,
+            MidpointRounding.AwayFromZero);
+
+        return $"{rounded.ToString(format, CultureInfo.InvariantCulture)}{suffix}";
     }
 
 }

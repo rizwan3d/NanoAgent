@@ -21,7 +21,8 @@ internal static class AgentDelegationSupport
             parentSession.AvailableModelIds,
             agentProfile: subagentProfile,
             reasoningEffort: parentSession.ReasoningEffort,
-            workspacePath: parentSession.WorkspacePath);
+            workspacePath: parentSession.WorkspacePath,
+            modelContextWindowTokens: parentSession.ModelContextWindowTokens);
 
         _ = childSession.TrySetWorkingDirectory(parentSession.WorkingDirectory, out _);
 

@@ -11,6 +11,7 @@ public interface IReplSectionService
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens,
         CancellationToken cancellationToken);
 
     void EnsureTitleGenerationStarted(

@@ -35,6 +35,7 @@ internal sealed class SessionAppService : ISessionAppService
             request.ActiveModelId,
             request.AvailableModelIds,
             profile,
+            request.ModelContextWindowTokens,
             cancellationToken);
 
         ApplyReasoningEffort(session, request.ReasoningEffort);

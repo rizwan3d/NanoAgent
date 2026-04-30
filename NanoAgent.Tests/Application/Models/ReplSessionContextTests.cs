@@ -189,7 +189,12 @@ public sealed class ReplSessionContextTests
         session.ReplaceProviderConfiguration(
             providerProfile,
             "openai/gpt-5.4",
-            ["openai/gpt-5.4", "anthropic/claude-sonnet-4.6"]);
+            ["openai/gpt-5.4", "anthropic/claude-sonnet-4.6"],
+            new Dictionary<string, int>
+            {
+                ["openai/gpt-5.4"] = 400_000,
+                ["anthropic/claude-sonnet-4.6"] = 200_000
+            });
 
         ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
             session.SectionCreatedAtUtc.AddMinutes(1));
@@ -197,11 +202,14 @@ public sealed class ReplSessionContextTests
         session.ProviderProfile.Should().Be(providerProfile);
         session.ProviderName.Should().Be("OpenRouter");
         session.ActiveModelId.Should().Be("openai/gpt-5.4");
+        session.ActiveModelContextWindowTokens.Should().Be(400_000);
         session.AvailableModelIds.Should().Equal("openai/gpt-5.4", "anthropic/claude-sonnet-4.6");
         session.IsPersistedStateDirty.Should().BeTrue();
         snapshot.ProviderProfile.Should().Be(providerProfile);
         snapshot.ActiveModelId.Should().Be("openai/gpt-5.4");
         snapshot.AvailableModelIds.Should().Equal("openai/gpt-5.4", "anthropic/claude-sonnet-4.6");
+        snapshot.ModelContextWindowTokens.Should().Contain("openai/gpt-5.4", 400_000);
+        snapshot.ModelContextWindowTokens.Should().Contain("anthropic/claude-sonnet-4.6", 200_000);
     }
 
     [Fact]

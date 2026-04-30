@@ -61,6 +61,7 @@ public sealed class AgentRunner : IAsyncDisposable
                     output.ToolOutput,
                     output.Elapsed,
                     output.EstimatedTokens,
+                    output.EstimatedContextWindowUsedTokens,
                     output.SessionInfo ?? sessionInfo);
             }
             finally
@@ -280,7 +281,8 @@ public sealed class AgentRunner : IAsyncDisposable
             responseText,
             ToolOutput: [],
             result.Metrics?.Elapsed,
-            result.Metrics?.DisplayedEstimatedOutputTokens);
+            result.Metrics?.DisplayedEstimatedOutputTokens,
+            result.Metrics?.EstimatedTotalTokens);
     }
 
     private async Task<AgentRunOutput> RunCommandAsync(
@@ -397,6 +399,7 @@ internal sealed record AgentRunOutput(
     IReadOnlyList<string>? ToolOutput = null,
     TimeSpan? Elapsed = null,
     int? EstimatedTokens = null,
+    int? EstimatedContextWindowUsedTokens = null,
     BackendSessionInfo? SessionInfo = null);
 
 public sealed record AgentRunResult(
@@ -405,4 +408,5 @@ public sealed record AgentRunResult(
     IReadOnlyList<string>? ToolOutput = null,
     TimeSpan? Elapsed = null,
     int? EstimatedTokens = null,
+    int? EstimatedContextWindowUsedTokens = null,
     BackendSessionInfo? SessionInfo = null);
