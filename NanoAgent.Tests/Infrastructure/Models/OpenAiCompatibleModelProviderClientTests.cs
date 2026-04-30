@@ -1,13 +1,12 @@
-using System.Net;
-using System.Net.Http;
-using System.Text;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.OpenAi;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
+using System.Net;
+using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Models;
 

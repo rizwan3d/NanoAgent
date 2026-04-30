@@ -1,8 +1,8 @@
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Application.Commands;
 

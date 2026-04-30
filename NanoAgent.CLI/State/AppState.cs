@@ -1,5 +1,5 @@
-using System.Text;
 using NanoAgent.Application.Backend;
+using System.Text;
 
 namespace NanoAgent.CLI;
 

@@ -1,8 +1,8 @@
+using FluentAssertions;
+using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Tools;
-using NanoAgent.Application.Abstractions;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Application.Profiles;
 

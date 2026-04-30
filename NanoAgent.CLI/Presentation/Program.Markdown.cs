@@ -1,5 +1,5 @@
-﻿using System.Text;
-using Spectre.Console;
+﻿using Spectre.Console;
+using System.Text;
 
 namespace NanoAgent.CLI;
 

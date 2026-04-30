@@ -1,9 +1,9 @@
-using NanoAgent.Application.Abstractions;
-using NanoAgent.Infrastructure.Logging;
 using FluentAssertions;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Infrastructure.Logging;
 
 namespace NanoAgent.Tests.Infrastructure.Logging;
 

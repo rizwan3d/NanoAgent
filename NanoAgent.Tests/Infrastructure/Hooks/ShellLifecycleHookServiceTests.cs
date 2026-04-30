@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
@@ -5,7 +6,6 @@ using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Secrets;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Hooks;
 

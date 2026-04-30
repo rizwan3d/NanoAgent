@@ -1,10 +1,10 @@
+using FluentAssertions;
+using Moq;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Services;
 using NanoAgent.Domain.Models;
-using FluentAssertions;
-using Moq;
 
 namespace NanoAgent.Tests.Application.Services;
 

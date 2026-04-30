@@ -1,8 +1,8 @@
-using System.Text;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
+using System.Text;
 
 namespace NanoAgent.CLI;
 

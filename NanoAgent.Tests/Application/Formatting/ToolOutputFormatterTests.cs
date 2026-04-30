@@ -1,6 +1,6 @@
+using FluentAssertions;
 using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Application.Formatting;
 

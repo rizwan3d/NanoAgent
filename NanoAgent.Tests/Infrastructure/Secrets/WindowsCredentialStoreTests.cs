@@ -1,6 +1,6 @@
-using System.Text;
-using NanoAgent.Infrastructure.Secrets;
 using FluentAssertions;
+using NanoAgent.Infrastructure.Secrets;
+using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Secrets;
 

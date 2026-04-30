@@ -1,8 +1,8 @@
+using FluentAssertions;
+using Microsoft.Extensions.Configuration;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Infrastructure.Configuration;
-using FluentAssertions;
-using Microsoft.Extensions.Configuration;
 
 namespace NanoAgent.Tests.Infrastructure.Configuration;
 

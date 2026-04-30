@@ -1,6 +1,6 @@
+using FluentAssertions;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Tests.Infrastructure.Secrets.TestDoubles;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Secrets;
 

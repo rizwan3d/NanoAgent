@@ -1,9 +1,8 @@
-using System.Text.Json;
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Tools.Services;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Application.Tools.Services;
 

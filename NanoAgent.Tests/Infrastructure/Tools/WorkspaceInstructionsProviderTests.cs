@@ -1,7 +1,7 @@
+using FluentAssertions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Tools;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 

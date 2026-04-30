@@ -1,12 +1,12 @@
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
-using NanoAgent.Application.Tools.Services;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Tools.Services;
 using NanoAgent.Domain.Models;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Application.Tools.Services;
 

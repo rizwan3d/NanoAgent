@@ -1,5 +1,6 @@
-using System.Text.Json;
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Moq;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
@@ -8,8 +9,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
-using FluentAssertions;
-using Moq;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools;
 

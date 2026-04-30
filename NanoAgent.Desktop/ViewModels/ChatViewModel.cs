@@ -1,7 +1,3 @@
-using System;
-using System.Collections.ObjectModel;
-using System.Globalization;
-using System.Threading.Tasks;
 using Avalonia.Input;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -9,6 +5,8 @@ using CommunityToolkit.Mvvm.Input;
 using NanoAgent.Application.Backend;
 using NanoAgent.Desktop.Models;
 using NanoAgent.Desktop.Services;
+using System.Collections.ObjectModel;
+using System.Globalization;
 
 namespace NanoAgent.Desktop.ViewModels;
 
