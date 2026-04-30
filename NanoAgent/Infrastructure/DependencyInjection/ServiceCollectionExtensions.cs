@@ -7,6 +7,7 @@ using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.OpenAi;
 using NanoAgent.Infrastructure.Plugins;
+using NanoAgent.Infrastructure.Plugins.GitHub;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Updates;
 using NanoAgent.Application.Abstractions;
@@ -54,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDynamicToolProvider, CustomToolDynamicProvider>();
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();
         services.AddSingleton<IDynamicToolProvider, PluginDynamicProvider>();
+        services.AddSingleton<IPluginToolFactory, GitHubPluginToolFactory>();
         services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreatePermissionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
@@ -84,6 +86,11 @@ public static class ServiceCollectionExtensions
         services.AddHttpClient("NanoAgent.Mcp", client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
+        services.AddHttpClient("NanoAgent.Plugins.GitHub", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
         services.AddSingleton<IAgentConfigurationStore, JsonAgentConfigurationStore>();

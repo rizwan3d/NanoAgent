@@ -6,7 +6,6 @@ using System.Threading.Tasks;
 using NanoAgent.Application.Backend;
 using NanoAgent.Application.Models;
 using NanoAgent.Desktop.Models;
-using NanoAgent.Plugin.GitHub;
 using DesktopChatMessage = NanoAgent.Desktop.Models.ChatMessage;
 
 namespace NanoAgent.Desktop.Services;
@@ -179,7 +178,7 @@ public sealed class AgentRunner : IAsyncDisposable
                 AddBridgeConversationMessage,
                 SetSelectionPrompt,
                 SetTextPrompt);
-            _backend = CreateBackend(CreateBackendArgs(normalizedSectionId));
+            _backend = new NanoAgentBackend(CreateBackendArgs(normalizedSectionId));
 
             BackendSessionInfo session = await _backend.InitializeAsync(_bridge, cancellationToken);
             _workingDirectory = workingDirectory;
@@ -365,13 +364,6 @@ public sealed class AgentRunner : IAsyncDisposable
         return string.IsNullOrWhiteSpace(sectionId)
             ? []
             : ["--section", sectionId];
-    }
-
-    private static NanoAgentBackend CreateBackend(string[] args)
-    {
-        return new NanoAgentBackend(
-            args,
-            static services => services.AddGitHubPlugin());
     }
 
     private static string? NormalizeSectionIdOrNull(string? sectionId)

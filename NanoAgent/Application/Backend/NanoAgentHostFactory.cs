@@ -16,17 +16,6 @@ public static class NanoAgentHostFactory
         IUiBridge uiBridge,
         string[] args)
     {
-        return Create(
-            uiBridge,
-            args,
-            configureServices: null);
-    }
-
-    public static IHost Create(
-        IUiBridge uiBridge,
-        string[] args,
-        Action<IServiceCollection>? configureServices)
-    {
         ArgumentNullException.ThrowIfNull(uiBridge);
         ArgumentNullException.ThrowIfNull(args);
 
@@ -50,7 +39,6 @@ public static class NanoAgentHostFactory
             .AddApplication()
             .AddReplCommands()
             .AddInfrastructure(builder.Configuration);
-        configureServices?.Invoke(builder.Services);
 
         builder.Services.AddSingleton<ISelectionPrompt, UiSelectionPrompt>();
         builder.Services.AddSingleton<ITextPrompt, UiTextPrompt>();

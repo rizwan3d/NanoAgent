@@ -2,7 +2,6 @@ using System.Text;
 using NanoAgent.Application.Backend;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Plugin.GitHub;
 using Spectre.Console;
 
 namespace NanoAgent.CLI;
@@ -113,7 +112,7 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
-        INanoAgentBackend backend = CreateBackend(args ?? []);
+        INanoAgentBackend backend = new NanoAgentBackend(args ?? []);
         AppState state = new(uiBridge, backend);
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
         {
@@ -179,7 +178,7 @@ public static partial class Program
 
         ConsoleBridge uiBridge = new(providerAuthKey);
         string[] backendArgs = [..args, "--no-update-check"];
-        await using INanoAgentBackend backend = CreateBackend(backendArgs);
+        await using INanoAgentBackend backend = new NanoAgentBackend(backendArgs);
         using CancellationTokenSource cancellation = new();
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
         {
@@ -404,12 +403,5 @@ public static partial class Program
                 state.AddMessage(role.Value, message.Content);
             }
         }
-    }
-
-    private static NanoAgentBackend CreateBackend(string[] args)
-    {
-        return new NanoAgentBackend(
-            args,
-            static services => services.AddGitHubPlugin());
     }
 }

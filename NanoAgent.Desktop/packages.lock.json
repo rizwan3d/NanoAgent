@@ -531,13 +531,6 @@
           "Microsoft.Extensions.Http": "[10.0.0, )",
           "Microsoft.Extensions.Options.ConfigurationExtensions": "[10.0.0, )"
         }
-      },
-      "nanoagent.plugin.github": {
-        "type": "Project",
-        "dependencies": {
-          "Microsoft.Extensions.Http": "[10.0.0, )",
-          "NanoAgent": "[1.0.0, )"
-        }
       }
     }
   }
