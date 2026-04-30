@@ -19,6 +19,21 @@ internal static class ShellCommandSandboxPlanner
     public const string UnsupportedEnforcement = "unsupported";
     public const string BubblewrapEnforcement = "bubblewrap";
     public const string SandboxExecEnforcement = "sandbox-exec";
+    private static readonly string[] LinuxReadOnlySystemPaths =
+    [
+        "/usr",
+        "/bin",
+        "/lib",
+        "/lib64",
+        "/sbin",
+        "/etc/alternatives",
+        "/etc/ca-certificates",
+        "/etc/hosts",
+        "/etc/nsswitch.conf",
+        "/etc/pki",
+        "/etc/resolv.conf",
+        "/etc/ssl"
+    ];
 
     public static ShellCommandSandboxPlan Create(
         ProcessExecutionRequest shellRequest,
@@ -77,16 +92,30 @@ internal static class ShellCommandSandboxPlanner
             "/proc",
             "--dev",
             "/dev",
-            "--ro-bind",
-            "/",
-            "/"
+            "--dir",
+            "/etc",
+            "--dir",
+            "/tmp",
+            "--dir",
+            "/var",
+            "--dir",
+            "/var/tmp"
         ];
+
+        AddLinuxReadOnlySystemMounts(arguments);
+        AddLinuxWritableTempMount(arguments, "/tmp", workspaceRoot);
+        AddLinuxWritableTempMount(arguments, "/var/tmp", workspaceRoot);
+        AddLinuxSandboxDirectories(arguments, workspaceRoot);
 
         if (effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite)
         {
-            AddLinuxWritableTempMount(arguments, "/tmp", workspaceRoot);
-            AddLinuxWritableTempMount(arguments, "/var/tmp", workspaceRoot);
             arguments.Add("--bind");
+            arguments.Add(workspaceRoot);
+            arguments.Add(workspaceRoot);
+        }
+        else
+        {
+            arguments.Add("--ro-bind");
             arguments.Add(workspaceRoot);
             arguments.Add(workspaceRoot);
         }
@@ -104,6 +133,59 @@ internal static class ShellCommandSandboxPlanner
                 WorkingDirectory = workspaceRoot
             },
             BubblewrapEnforcement);
+    }
+
+    private static void AddLinuxReadOnlySystemMounts(List<string> arguments)
+    {
+        foreach (string path in LinuxReadOnlySystemPaths)
+        {
+            if (!File.Exists(path) && !Directory.Exists(path))
+            {
+                continue;
+            }
+
+            arguments.Add("--ro-bind-try");
+            arguments.Add(path);
+            arguments.Add(path);
+        }
+    }
+
+    private static void AddLinuxSandboxDirectories(
+        List<string> arguments,
+        string workspaceRoot)
+    {
+        HashSet<string> existingDirectories = new(
+            ["/etc", "/tmp", "/var", "/var/tmp"],
+            StringComparer.Ordinal);
+
+        foreach (string directory in EnumerateParentDirectories(workspaceRoot))
+        {
+            if (!existingDirectories.Add(directory))
+            {
+                continue;
+            }
+
+            arguments.Add("--dir");
+            arguments.Add(directory);
+        }
+    }
+
+    private static IEnumerable<string> EnumerateParentDirectories(string path)
+    {
+        Stack<string> parents = new();
+        string? parent = Path.GetDirectoryName(Path.GetFullPath(path));
+
+        while (!string.IsNullOrWhiteSpace(parent) &&
+               parent != Path.GetPathRoot(parent))
+        {
+            parents.Push(parent);
+            parent = Path.GetDirectoryName(parent);
+        }
+
+        while (parents.Count > 0)
+        {
+            yield return parents.Pop();
+        }
     }
 
     private static void AddLinuxWritableTempMount(
@@ -190,7 +272,7 @@ internal static class ShellCommandSandboxPlanner
         return new ShellCommandSandboxPlan(
             shellRequest,
             UnsupportedEnforcement,
-            $"{reason} The effective sandbox mode is '{ToWireValue(effectiveSandboxMode)}'. The command will run after NanoAgent permission approval without OS-level sandbox enforcement.");
+            $"{reason} The effective sandbox mode is '{ToWireValue(effectiveSandboxMode)}'. The command was blocked. Rerun with sandbox_permissions 'require_escalated' and a justification to allow full host access.");
     }
 
     private static string ToSandboxString(string value)

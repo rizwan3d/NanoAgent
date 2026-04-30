@@ -47,6 +47,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             request.FileName.Should().Be("bwrap");
             request.WorkingDirectory.Should().Be(Path.GetFullPath(_workspaceRoot));
+            ContainsArgumentSequence(request.Arguments, "--ro-bind", "/", "/").Should().BeFalse();
             request.Arguments.Should().ContainInOrder(
                 "--bind",
                 Path.GetFullPath(_workspaceRoot),
@@ -258,6 +259,11 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             request.FileName.Should().Be("bwrap");
             request.Arguments.Should().NotContain("--bind");
+            request.Arguments.Should().ContainInOrder(
+                "--ro-bind",
+                Path.GetFullPath(_workspaceRoot),
+                Path.GetFullPath(_workspaceRoot));
+            ContainsArgumentSequence(request.Arguments, "--ro-bind", "/", "/").Should().BeFalse();
             request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("bubblewrap");
         }
         else if (OperatingSystem.IsMacOS())
@@ -270,7 +276,7 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_RunWithoutOsSandbox_When_OsSandboxIsUnsupported()
+    public async Task ExecuteAsync_Should_BlockCommand_When_OsSandboxIsUnsupported()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -278,7 +284,6 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         FakeProcessRunner processRunner = new();
-        processRunner.EnqueueResult(new ProcessExecutionResult(0, "10.0.103", string.Empty));
         ShellCommandService sut = new(
             processRunner,
             new StubWorkspaceRootProvider(_workspaceRoot));
@@ -287,12 +292,11 @@ public sealed class ShellCommandServiceTests : IDisposable
             new ShellCommandExecutionRequest("dotnet --version", null),
             CancellationToken.None);
 
-        processRunner.Requests.Should().ContainSingle();
-        ProcessExecutionRequest request = processRunner.Requests[0];
-        request.FileName.Should().Be("powershell");
-        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("unsupported");
-        result.ExitCode.Should().Be(0);
-        result.StandardOutput.Should().Be("10.0.103");
+        processRunner.Requests.Should().BeEmpty();
+        result.ExitCode.Should().Be(126);
+        result.StandardOutput.Should().BeEmpty();
+        result.StandardError.Should().Contain("blocked");
+        result.StandardError.Should().Contain("require_escalated");
         result.SandboxMode.Should().Be("workspace-write");
         result.SandboxEnforcement.Should().Be("unsupported");
     }
@@ -374,5 +378,35 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             return _workspaceRoot;
         }
+    }
+
+    private static bool ContainsArgumentSequence(
+        IReadOnlyList<string> arguments,
+        params string[] expected)
+    {
+        if (expected.Length == 0 || arguments.Count < expected.Length)
+        {
+            return false;
+        }
+
+        for (int index = 0; index <= arguments.Count - expected.Length; index++)
+        {
+            bool matches = true;
+            for (int expectedIndex = 0; expectedIndex < expected.Length; expectedIndex++)
+            {
+                if (!string.Equals(arguments[index + expectedIndex], expected[expectedIndex], StringComparison.Ordinal))
+                {
+                    matches = false;
+                    break;
+                }
+            }
+
+            if (matches)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
