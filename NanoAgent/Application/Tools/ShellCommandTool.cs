@@ -8,7 +8,7 @@ namespace NanoAgent.Application.Tools;
 internal sealed class ShellCommandTool : ITool
 {
     private const string UnsupportedSandboxEnforcement = "unsupported";
-    private const string UnsupportedSandboxNote = "OS-level shell sandboxing is not available on this platform; the command was blocked unless it is rerun with sandbox_permissions 'require_escalated' and a justification.";
+    private const string UnsupportedSandboxNote = "OS-level shell sandboxing is not available on this platform; the command ran after NanoAgent permission approval without OS-level sandbox enforcement.";
 
     private readonly IShellCommandService _shellCommandService;
 
@@ -374,8 +374,6 @@ internal sealed class ShellCommandTool : ITool
 
         return result.TerminalAction switch
         {
-            "start" when string.Equals(result.TerminalStatus, "failed", StringComparison.Ordinal) =>
-                $"Failed to start background terminal for command '{result.Command}'.",
             "start" => $"Started background terminal '{result.TerminalId}' for command '{result.Command}'.",
             "read" => $"Read background terminal '{result.TerminalId}' with status '{result.TerminalStatus}'.",
             "stop" => $"Stopped background terminal '{result.TerminalId}'.",
