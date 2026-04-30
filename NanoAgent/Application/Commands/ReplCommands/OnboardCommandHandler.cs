@@ -1,7 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Commands;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Commands;

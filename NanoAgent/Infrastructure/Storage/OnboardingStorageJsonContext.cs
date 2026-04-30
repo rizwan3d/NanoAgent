@@ -1,6 +1,6 @@
 using NanoAgent.Application.Models;
-using System.Text.Json.Serialization;
 using NanoAgent.Domain.Models;
+using System.Text.Json.Serialization;
 
 namespace NanoAgent.Infrastructure.Storage;
 

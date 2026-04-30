@@ -1,8 +1,8 @@
+using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using NanoAgent.Application.Models;
-using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Formatting;
 

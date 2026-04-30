@@ -1,8 +1,8 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using System.Text.Json;
 
 namespace NanoAgent.Application.Tools;
 

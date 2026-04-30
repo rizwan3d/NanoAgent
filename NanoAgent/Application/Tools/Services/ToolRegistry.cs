@@ -1,6 +1,6 @@
-using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using System.Text.Json;
 
 namespace NanoAgent.Application.Tools.Services;
 

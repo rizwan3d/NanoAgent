@@ -1,5 +1,5 @@
-using System.Text;
 using NanoAgent.Application.Models;
+using System.Text;
 
 namespace NanoAgent.Application.Commands;
 

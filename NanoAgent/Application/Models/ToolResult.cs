@@ -1,5 +1,5 @@
-using System.Text.Json;
 using NanoAgent.Application.Utilities;
+using System.Text.Json;
 
 namespace NanoAgent.Application.Models;
 

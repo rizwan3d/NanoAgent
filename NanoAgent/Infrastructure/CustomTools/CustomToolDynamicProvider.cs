@@ -1,9 +1,8 @@
-using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
-using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
-using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace NanoAgent.Infrastructure.CustomTools;
 
