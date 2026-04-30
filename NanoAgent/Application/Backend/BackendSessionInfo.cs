@@ -5,6 +5,7 @@ public sealed record BackendSessionInfo(
     string SectionResumeCommand,
     string ProviderName,
     string ModelId,
+    int? ActiveModelContextWindowTokens,
     IReadOnlyList<string> AvailableModelIds,
     string ThinkingMode,
     string AgentProfileName,

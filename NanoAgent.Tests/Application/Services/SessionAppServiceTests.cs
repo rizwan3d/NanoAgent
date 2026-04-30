@@ -30,6 +30,10 @@ public sealed class SessionAppServiceTests
                 "gpt-5-mini",
                 It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
                 It.Is<IAgentProfile>(profile => profile.Name == "plan"),
+                It.Is<IReadOnlyDictionary<string, int>?>(tokens => HasContextWindow(
+                    tokens,
+                    "gpt-5-mini",
+                    128_000)),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -43,7 +47,11 @@ public sealed class SessionAppServiceTests
                 providerProfile,
                 "gpt-5-mini",
                 ["gpt-5-mini"],
-                "plan"),
+                ProfileName: "plan",
+                ModelContextWindowTokens: new Dictionary<string, int>
+                {
+                    ["gpt-5-mini"] = 128_000
+                }),
             CancellationToken.None);
 
         result.AgentProfile.Name.Should().Be("plan");
@@ -70,6 +78,7 @@ public sealed class SessionAppServiceTests
                 "gpt-5-mini",
                 It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
                 It.Is<IAgentProfile>(profile => profile.Name == "build"),
+                It.IsAny<IReadOnlyDictionary<string, int>?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -108,6 +117,7 @@ public sealed class SessionAppServiceTests
                 "gpt-5.4",
                 It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5.4" })),
                 It.Is<IAgentProfile>(profile => profile.Name == "build"),
+                It.IsAny<IReadOnlyDictionary<string, int>?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -148,6 +158,16 @@ public sealed class SessionAppServiceTests
         await action.Should()
             .ThrowAsync<ArgumentException>()
             .WithMessage("*Unknown agent profile 'ops'*build*plan*review*general*explore*");
+    }
+
+    private static bool HasContextWindow(
+        IReadOnlyDictionary<string, int>? tokens,
+        string modelId,
+        int expectedContextWindowTokens)
+    {
+        return tokens is not null &&
+            tokens.TryGetValue(modelId, out int contextWindowTokens) &&
+            contextWindowTokens == expectedContextWindowTokens;
     }
 
     [Fact]

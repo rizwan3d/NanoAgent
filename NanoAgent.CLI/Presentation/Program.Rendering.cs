@@ -805,12 +805,20 @@ public static partial class Program
 
         if (state.CurrentTurnStartedAt is null || (!state.IsBusy && !state.IsStreaming))
         {
-            return DefaultCompletionNote;
+            return FormatCompletionNote(
+                TimeSpan.Zero,
+                0,
+                state.ActiveModelContextWindowTokens,
+                0);
         }
 
         TimeSpan elapsed = DateTimeOffset.UtcNow - state.CurrentTurnStartedAt.Value;
         int estimatedTokens = (int)Math.Floor(Math.Max(0d, elapsed.TotalSeconds) * EstimatedLiveTokensPerSecond);
-        return FormatCompletionNote(elapsed, estimatedTokens);
+        return FormatCompletionNote(
+            elapsed,
+            estimatedTokens,
+            state.ActiveModelContextWindowTokens,
+            estimatedTokens);
     }
 
     private static string BuildFooterLineMarkup(
@@ -841,9 +849,14 @@ public static partial class Program
 
     private static string FormatCompletionNote(
         TimeSpan elapsed,
-        int estimatedTokens)
+        int estimatedTokens,
+        int? contextWindowTokens,
+        int? contextWindowUsedTokens)
     {
-        return $"({FormatMetricElapsed(elapsed)} · {FormatMetricTokens(estimatedTokens)} tokens)";
+        string baseNote = $"{FormatMetricElapsed(elapsed)} · {FormatMetricTokens(estimatedTokens)} tokens";
+        return contextWindowTokens is > 0
+            ? $"({baseNote} · {FormatContextWindowUsage(contextWindowUsedTokens ?? 0, contextWindowTokens.Value)} · {FormatContextWindowTokens(contextWindowTokens.Value)} context)"
+            : $"({baseNote})";
     }
 
     private static string FormatMetricElapsed(TimeSpan elapsed)
@@ -880,6 +893,46 @@ public static partial class Program
             MidpointRounding.AwayFromZero);
 
         return $"{rounded.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}k";
+    }
+
+    private static string FormatContextWindowUsage(
+        int contextWindowUsedTokens,
+        int contextWindowTokens)
+    {
+        int safeUsedTokens = Math.Max(0, contextWindowUsedTokens);
+        int safeContextWindowTokens = Math.Max(1, contextWindowTokens);
+        int percentage = (int)Math.Round(
+            safeUsedTokens / (double)safeContextWindowTokens * 100d,
+            MidpointRounding.AwayFromZero);
+
+        return $"({percentage}%) {FormatMetricTokens(safeUsedTokens)} Used";
+    }
+
+    private static string FormatContextWindowTokens(int contextWindowTokens)
+    {
+        int safeValue = Math.Max(0, contextWindowTokens);
+        if (safeValue < 1_000)
+        {
+            return safeValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+
+        if (safeValue < 1_000_000)
+        {
+            return FormatScaledMetric(safeValue / 1_000d, "k");
+        }
+
+        return FormatScaledMetric(safeValue / 1_000_000d, "m");
+    }
+
+    private static string FormatScaledMetric(double value, string suffix)
+    {
+        string format = value >= 10d ? "0" : "0.#";
+        double rounded = Math.Round(
+            value,
+            value >= 10d ? 0 : 1,
+            MidpointRounding.AwayFromZero);
+
+        return $"{rounded.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}{suffix}";
     }
 
     private static string StripMarkup(string markup)

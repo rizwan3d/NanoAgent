@@ -36,6 +36,32 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_ParseContextWindowMetadata_When_Returned()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "model-a", "context_length": 128000 },
+                { "id": "model-b", "inputTokenLimit": 1048576 },
+                { "id": "model-c", "limits": { "context_window_tokens": "32768" } },
+                { "id": "model-d", "context_length": -1 }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234"),
+            "test-key",
+            CancellationToken.None);
+
+        models.Select(model => model.ContextWindowTokens)
+            .Should()
+            .Equal(new int?[] { 128_000, 1_048_576, 32_768, null });
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestModelsRelativeToExplicitV1BaseUrl_When_CompatibleProviderBaseUrlAlreadyIncludesV1()
     {
         RecordingHandler handler = new("""

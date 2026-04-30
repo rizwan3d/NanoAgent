@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Globalization;
 using System.Text.Json;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
@@ -15,6 +16,32 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private const string Originator = "nanoagent";
     private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
+    private static readonly string[] ContextWindowPropertyNames =
+    [
+        "context_length",
+        "contextLength",
+        "context_window",
+        "contextWindow",
+        "context_window_tokens",
+        "contextWindowTokens",
+        "max_context_length",
+        "maxContextLength",
+        "max_context_tokens",
+        "maxContextTokens",
+        "input_token_limit",
+        "inputTokenLimit",
+        "max_input_tokens",
+        "maxInputTokens"
+    ];
+    private static readonly string[] ContextWindowContainerPropertyNames =
+    [
+        "metadata",
+        "limits",
+        "capabilities",
+        "architecture",
+        "top_provider",
+        "topProvider"
+    ];
 
     private readonly HttpClient _httpClient;
     private readonly IOpenAiCodexClientVersionProvider _openAiCodexClientVersionProvider;
@@ -236,7 +263,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             string? id = TryGetModelId(item);
             if (!string.IsNullOrWhiteSpace(id))
             {
-                models.Add(new AvailableModel(id.Trim()));
+                models.Add(new AvailableModel(
+                    id.Trim(),
+                    TryGetContextWindowTokens(item)));
             }
         }
 
@@ -269,6 +298,80 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 
         modelsElement = default;
         return false;
+    }
+
+    private static int? TryGetContextWindowTokens(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (MatchesAny(property.Name, ContextWindowPropertyNames) &&
+                TryReadPositiveInt32(property.Value, out int tokens))
+            {
+                return tokens;
+            }
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (MatchesAny(property.Name, ContextWindowContainerPropertyNames) &&
+                TryGetContextWindowTokens(property.Value) is { } nestedTokens)
+            {
+                return nestedTokens;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryReadPositiveInt32(JsonElement value, out int result)
+    {
+        result = 0;
+        long numericValue;
+
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            if (!value.TryGetInt64(out numericValue))
+            {
+                return false;
+            }
+        }
+        else if (value.ValueKind == JsonValueKind.String)
+        {
+            string? rawValue = value.GetString();
+            if (!long.TryParse(
+                    rawValue,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out numericValue))
+            {
+                return false;
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        if (numericValue <= 0 || numericValue > int.MaxValue)
+        {
+            return false;
+        }
+
+        result = (int)numericValue;
+        return true;
+    }
+
+    private static bool MatchesAny(string value, IReadOnlyList<string> candidates)
+    {
+        return candidates.Any(candidate => string.Equals(
+            candidate,
+            value,
+            StringComparison.OrdinalIgnoreCase));
     }
 
     private static string? TryGetModelId(JsonElement item)

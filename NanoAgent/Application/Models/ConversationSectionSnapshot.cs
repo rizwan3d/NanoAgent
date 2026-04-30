@@ -19,7 +19,8 @@ public sealed class ConversationSectionSnapshot
         string? agentProfileName = null,
         string? reasoningEffort = null,
         SessionStateSnapshot? sessionState = null,
-        string? workspacePath = null)
+        string? workspacePath = null,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -55,6 +56,9 @@ public sealed class ConversationSectionSnapshot
             ? BuiltInAgentProfiles.BuildName
             : agentProfileName.Trim();
         AvailableModelIds = normalizedAvailableModelIds;
+        ModelContextWindowTokens = NormalizeModelContextWindowTokens(
+            modelContextWindowTokens,
+            AvailableModelIds);
         CreatedAtUtc = createdAtUtc;
         ProviderProfile = providerProfile;
         ReasoningEffort = ReasoningEffortOptions.NormalizeOrNull(reasoningEffort);
@@ -80,6 +84,8 @@ public sealed class ConversationSectionSnapshot
 
     public DateTimeOffset CreatedAtUtc { get; }
 
+    public IReadOnlyDictionary<string, int> ModelContextWindowTokens { get; }
+
     public AgentProviderProfile ProviderProfile { get; }
 
     public PendingExecutionPlan? PendingExecutionPlan { get; }
@@ -99,4 +105,32 @@ public sealed class ConversationSectionSnapshot
     public DateTimeOffset UpdatedAtUtc { get; }
 
     public string? WorkspacePath { get; }
+
+    private static Dictionary<string, int> NormalizeModelContextWindowTokens(
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        IReadOnlyList<string> availableModelIds)
+    {
+        Dictionary<string, int> normalized = new(StringComparer.Ordinal);
+        if (modelContextWindowTokens is null || modelContextWindowTokens.Count == 0)
+        {
+            return normalized;
+        }
+
+        HashSet<string> available = new(availableModelIds, StringComparer.Ordinal);
+        foreach ((string modelId, int contextWindowTokens) in modelContextWindowTokens)
+        {
+            if (string.IsNullOrWhiteSpace(modelId) || contextWindowTokens <= 0)
+            {
+                continue;
+            }
+
+            string normalizedModelId = modelId.Trim();
+            if (available.Contains(normalizedModelId))
+            {
+                normalized[normalizedModelId] = contextWindowTokens;
+            }
+        }
+
+        return normalized;
+    }
 }

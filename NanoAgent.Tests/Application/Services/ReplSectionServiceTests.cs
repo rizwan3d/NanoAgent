@@ -81,6 +81,7 @@ public sealed class ReplSectionServiceTests
             "gpt-5-mini",
             ["gpt-5-mini"],
             BuiltInAgentProfiles.Build,
+            null,
             CancellationToken.None);
 
         sut.EnsureTitleGenerationStarted(session, "build a todo app");
@@ -114,7 +115,12 @@ public sealed class ReplSectionServiceTests
                 "plan the todo app",
                 "Plan\n1. Inspect\n2. Implement\n3. Validate",
                 ["Inspect", "Implement", "Validate"]),
-            reasoningEffort: "on");
+            reasoningEffort: "on",
+            modelContextWindowTokens: new Dictionary<string, int>
+            {
+                ["gpt-5-mini"] = 128_000,
+                ["gpt-4.1"] = 1_000_000
+            });
 
         Mock<IConversationSectionStore> sectionStore = new(MockBehavior.Strict);
         sectionStore
@@ -144,6 +150,7 @@ public sealed class ReplSectionServiceTests
         session.SectionTitle.Should().Be("Todo App Session");
         session.IsResumedSection.Should().BeTrue();
         session.ActiveModelId.Should().Be("gpt-5-mini");
+        session.ActiveModelContextWindowTokens.Should().Be(128_000);
         session.AvailableModelIds.Should().Equal("gpt-5-mini", "gpt-4.1");
         session.TotalEstimatedOutputTokens.Should().Be(19);
         session.ReasoningEffort.Should().Be("on");

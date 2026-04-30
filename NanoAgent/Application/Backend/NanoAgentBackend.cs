@@ -4,6 +4,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
+using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Backend;
 
@@ -76,7 +77,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     modelResult.SelectedModelId,
                     modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
                     options.ProfileName,
-                    reasoningEffort),
+                    reasoningEffort,
+                    CreateModelContextWindowMap(modelResult.AvailableModels)),
                 cancellationToken);
         }
 
@@ -203,12 +205,31 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             session.SectionResumeCommand,
             session.ProviderName,
             session.ActiveModelId,
+            session.ActiveModelContextWindowTokens,
             session.AvailableModelIds,
             ReasoningEffortOptions.Format(session.ReasoningEffort),
             session.AgentProfileName,
             session.SectionTitle,
             session.IsResumedSection,
             BackendConversationHistoryFormatter.Create(session));
+    }
+
+    private static IReadOnlyDictionary<string, int> CreateModelContextWindowMap(
+        IEnumerable<AvailableModel> models)
+    {
+        Dictionary<string, int> contextWindowTokens = new(StringComparer.Ordinal);
+        foreach (AvailableModel model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Id) ||
+                model.ContextWindowTokens is not > 0)
+            {
+                continue;
+            }
+
+            contextWindowTokens[model.Id.Trim()] = model.ContextWindowTokens.Value;
+        }
+
+        return contextWindowTokens;
     }
 
     private async Task PromptForUpdateIfAvailableAsync(
