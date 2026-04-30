@@ -14,5 +14,4 @@ internal sealed record WindowsSandboxConfiguration(
     string ProfileName,
     string WorkspaceRoot,
     string TempDirectory,
-    bool AllowWorkspaceWrite,
-    IReadOnlyList<string> ReadOnlyRoots);
+    bool AllowWorkspaceWrite);
