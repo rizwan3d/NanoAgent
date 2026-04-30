@@ -567,7 +567,9 @@ public sealed class ReplSessionContext
             Command = NormalizeStateText(command.Command, MaxPromptFieldCharacters),
             WorkingDirectory = NormalizeStateText(command.WorkingDirectory, MaxPromptFieldCharacters),
             StandardOutput = NormalizeOptionalStateText(command.StandardOutput, MaxStateTextCharacters),
-            StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters)
+            StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters),
+            TerminalId = NormalizeOptionalStateText(command.TerminalId, MaxPromptFieldCharacters),
+            TerminalStatus = NormalizeOptionalStateText(command.TerminalStatus, MaxPromptFieldCharacters)
         };
 
         lock (_syncRoot)
@@ -1028,7 +1030,9 @@ public sealed class ReplSessionContext
                 Command = NormalizeStateText(command.Command, MaxPromptFieldCharacters),
                 WorkingDirectory = NormalizeStateText(command.WorkingDirectory, MaxPromptFieldCharacters),
                 StandardOutput = NormalizeOptionalStateText(command.StandardOutput, MaxStateTextCharacters),
-                StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters)
+                StandardError = NormalizeOptionalStateText(command.StandardError, MaxStateTextCharacters),
+                TerminalId = NormalizeOptionalStateText(command.TerminalId, MaxPromptFieldCharacters),
+                TerminalStatus = NormalizeOptionalStateText(command.TerminalStatus, MaxPromptFieldCharacters)
             });
         }
 
@@ -1138,9 +1142,33 @@ public sealed class ReplSessionContext
                 .Append(": `")
                 .Append(command.Command)
                 .Append("` in ")
-                .Append(command.WorkingDirectory)
-                .Append(" exited ")
-                .Append(command.ExitCode.ToString(CultureInfo.InvariantCulture));
+                .Append(command.WorkingDirectory);
+
+            if (command.Background)
+            {
+                builder
+                    .Append(" background terminal ")
+                    .Append(string.IsNullOrWhiteSpace(command.TerminalId)
+                        ? "(unknown)"
+                        : command.TerminalId)
+                    .Append(" status ")
+                    .Append(string.IsNullOrWhiteSpace(command.TerminalStatus)
+                        ? "unknown"
+                        : command.TerminalStatus);
+
+                if (command.ExitCode >= 0)
+                {
+                    builder
+                        .Append(" exit ")
+                        .Append(command.ExitCode.ToString(CultureInfo.InvariantCulture));
+                }
+            }
+            else
+            {
+                builder
+                    .Append(" exited ")
+                    .Append(command.ExitCode.ToString(CultureInfo.InvariantCulture));
+            }
 
             if (!string.IsNullOrWhiteSpace(command.StandardOutput))
             {

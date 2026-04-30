@@ -297,6 +297,62 @@ public sealed class ShellCommandServiceTests : IDisposable
         result.SandboxEnforcement.Should().Be("unsupported");
     }
 
+    [Fact]
+    public async Task BackgroundTerminal_Should_StartReadAndStopCommand()
+    {
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+        string command = OperatingSystem.IsWindows()
+            ? "Write-Output ready; Start-Sleep -Seconds 30"
+            : "printf ready; sleep 30";
+
+        ShellCommandExecutionResult started = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest(command, null),
+            CancellationToken.None);
+
+        started.Background.Should().BeTrue();
+        started.TerminalId.Should().NotBeNullOrWhiteSpace();
+        started.TerminalStatus.Should().Be("running");
+
+        string terminalId = started.TerminalId!;
+        try
+        {
+            string output = string.Empty;
+            for (int attempt = 0; attempt < 20 && !output.Contains("ready", StringComparison.Ordinal); attempt++)
+            {
+                ShellCommandExecutionResult read = await sut.ReadBackgroundAsync(
+                    terminalId,
+                    CancellationToken.None);
+                output += read.StandardOutput;
+                await Task.Delay(50);
+            }
+
+            output.Should().Contain("ready");
+
+            ShellCommandExecutionResult stopped = await sut.StopBackgroundAsync(
+                terminalId,
+                CancellationToken.None);
+            stopped.TerminalStatus.Should().Be("stopped");
+            stopped.ExitCode.Should().Be(0);
+
+            ShellCommandExecutionResult missing = await sut.ReadBackgroundAsync(
+                terminalId,
+                CancellationToken.None);
+            missing.TerminalStatus.Should().Be("not_found");
+        }
+        finally
+        {
+            await sut.StopBackgroundAsync(
+                terminalId,
+                CancellationToken.None);
+        }
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

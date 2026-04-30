@@ -6,4 +6,7 @@ public sealed record SessionTerminalCommand(
     string WorkingDirectory,
     int ExitCode,
     string? StandardOutput,
-    string? StandardError);
+    string? StandardError,
+    bool Background = false,
+    string? TerminalId = null,
+    string? TerminalStatus = null);

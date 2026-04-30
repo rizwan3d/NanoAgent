@@ -17,7 +17,7 @@ internal sealed class ShellCommandTool : ITool
         _shellCommandService = shellCommandService;
     }
 
-    public string Description => "Run an OS-native shell command in the current workspace to inspect files, probe toolchains, scaffold projects, install or restore dependencies, build, test, lint, or execute short multi-command chains, optionally attached to a pseudo-terminal or run interactive commands, and capture stdout, stderr, and exit code.";
+    public string Description => "Run an OS-native shell command in the current workspace to inspect files, probe toolchains, scaffold projects, install or restore dependencies, build, test, lint, or execute short multi-command chains; commands can run in the foreground optionally attached to a pseudo-terminal or run interactive commands or as background terminals that can be read or stopped later.";
 
     public string Name => AgentToolNames.ShellCommand;
 
@@ -47,7 +47,16 @@ internal sealed class ShellCommandTool : ITool
           "properties": {
             "command": {
               "type": "string",
-              "description": "Shell command to execute."
+              "description": "Shell command to execute. Required for terminal_action 'run' and 'start'."
+            },
+            "terminal_action": {
+              "type": "string",
+              "enum": ["run", "start", "read", "stop"],
+              "description": "Use 'run' for foreground execution, 'start' to create a background terminal, 'read' to collect new output from a background terminal, or 'stop' to terminate one. Defaults to 'run'."
+            },
+            "terminal_id": {
+              "type": "string",
+              "description": "Background terminal id. Required for terminal_action 'read' and 'stop'."
             },
             "workingDirectory": {
               "type": "string",
@@ -70,9 +79,12 @@ internal sealed class ShellCommandTool : ITool
             "pty": {
               "type": "boolean",
               "description": "When true, run the command attached to a pseudo-terminal so terminal-aware programs can emit interactive-style output."
+            },
+            "background": {
+              "type": "boolean",
+              "description": "Shortcut for terminal_action 'start'."
             }
           },
-          "required": ["command"],
           "additionalProperties": false
         }
         """;
@@ -83,6 +95,21 @@ internal sealed class ShellCommandTool : ITool
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
+
+        if (!TryGetTerminalAction(context, out string terminalAction, out ToolResult? actionError))
+        {
+            return actionError!;
+        }
+
+        if (string.Equals(terminalAction, "read", StringComparison.Ordinal))
+        {
+            return await ReadBackgroundTerminalAsync(context, cancellationToken);
+        }
+
+        if (string.Equals(terminalAction, "stop", StringComparison.Ordinal))
+        {
+            return await StopBackgroundTerminalAsync(context, cancellationToken);
+        }
 
         if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "command", out string? command))
         {
@@ -139,22 +166,104 @@ internal sealed class ShellCommandTool : ITool
                     exception.Message));
         }
 
-        ShellCommandExecutionResult result = await _shellCommandService.ExecuteAsync(
-            new ShellCommandExecutionRequest(
-                safeCommand,
-                effectiveWorkingDirectory,
-                sandboxPermissions,
-                justification,
-                prefixRule,
-                pseudoTerminal),
-            cancellationToken);
+        ShellCommandExecutionRequest executionRequest = CreateExecutionRequest(
+            safeCommand,
+            effectiveWorkingDirectory,
+            sandboxPermissions,
+            justification,
+            prefixRule,
+            pseudoTerminal,
+            terminalAction);
+        ShellCommandExecutionResult result = string.Equals(terminalAction, "start", StringComparison.Ordinal)
+            ? await _shellCommandService.StartBackgroundAsync(executionRequest, cancellationToken)
+            : await _shellCommandService.ExecuteAsync(executionRequest, cancellationToken);
         SessionStateToolRecorder.RecordShellCommand(context.Session, result);
+
+        if (string.Equals(terminalAction, "start", StringComparison.Ordinal))
+        {
+            return CreateShellToolResult(
+                context,
+                result,
+                sessionDirectoryUpdate: null);
+        }
 
         string? sessionDirectoryUpdate = UpdateSessionWorkingDirectoryAfterCd(
             context.Session,
             safeCommand,
             effectiveWorkingDirectory,
             result.ExitCode);
+        return CreateShellToolResult(
+            context,
+            result,
+            sessionDirectoryUpdate);
+    }
+
+    private async Task<ToolResult> ReadBackgroundTerminalAsync(
+        ToolExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "terminal_id", out string? terminalId))
+        {
+            return ToolResultFactory.InvalidArguments(
+                "missing_terminal_id",
+                "Tool 'shell_command' requires a non-empty 'terminal_id' when terminal_action is 'read'.",
+                new ToolRenderPayload(
+                    "Invalid shell_command arguments",
+                    "Provide a background terminal id."));
+        }
+
+        ShellCommandExecutionResult result = await _shellCommandService.ReadBackgroundAsync(
+            terminalId!,
+            cancellationToken);
+        return CreateBackgroundTerminalToolResult(context, result);
+    }
+
+    private async Task<ToolResult> StopBackgroundTerminalAsync(
+        ToolExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "terminal_id", out string? terminalId))
+        {
+            return ToolResultFactory.InvalidArguments(
+                "missing_terminal_id",
+                "Tool 'shell_command' requires a non-empty 'terminal_id' when terminal_action is 'stop'.",
+                new ToolRenderPayload(
+                    "Invalid shell_command arguments",
+                    "Provide a background terminal id."));
+        }
+
+        ShellCommandExecutionResult result = await _shellCommandService.StopBackgroundAsync(
+            terminalId!,
+            cancellationToken);
+        return CreateBackgroundTerminalToolResult(context, result);
+    }
+
+    private ToolResult CreateBackgroundTerminalToolResult(
+        ToolExecutionContext context,
+        ShellCommandExecutionResult result)
+    {
+        if (string.Equals(result.TerminalStatus, "not_found", StringComparison.Ordinal))
+        {
+            return ToolResultFactory.NotFound(
+                "background_terminal_not_found",
+                $"Background terminal '{result.TerminalId}' was not found.",
+                new ToolRenderPayload(
+                    "Background terminal not found",
+                    result.StandardError));
+        }
+
+        SessionStateToolRecorder.RecordShellCommand(context.Session, result);
+        return CreateShellToolResult(
+            context,
+            result,
+            sessionDirectoryUpdate: null);
+    }
+
+    private ToolResult CreateShellToolResult(
+        ToolExecutionContext context,
+        ShellCommandExecutionResult result,
+        string? sessionDirectoryUpdate)
+    {
         string renderText =
             $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +
             $"Session working directory: {context.Session.WorkingDirectory}{Environment.NewLine}" +
@@ -163,10 +272,11 @@ internal sealed class ShellCommandTool : ITool
             $"Sandbox enforcement: {result.SandboxEnforcement}{Environment.NewLine}" +
             CreateSandboxNoteLine(result) +
             $"Pseudo terminal: {result.PseudoTerminal}{Environment.NewLine}" +
-            $"Exit code: {result.ExitCode}{Environment.NewLine}" +
+            CreateBackgroundTerminalLines(result) +
+            CreateExitCodeLine(result) +
             $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
             $"STDERR:{Environment.NewLine}{result.StandardError}";
-        string message = $"Executed shell command '{result.Command}' with exit code {result.ExitCode}.";
+        string message = CreateResultMessage(result);
         if (IsUnsupportedSandboxResult(result))
         {
             message += " " + UnsupportedSandboxNote;
@@ -184,6 +294,91 @@ internal sealed class ShellCommandTool : ITool
             new ToolRenderPayload(
                 $"Shell command: {result.Command}",
                 renderText));
+    }
+
+    private static ShellCommandExecutionRequest CreateExecutionRequest(
+        string command,
+        string effectiveWorkingDirectory,
+        ShellCommandSandboxPermissions sandboxPermissions,
+        string? justification,
+        IReadOnlyList<string> prefixRule,
+        bool pseudoTerminal,
+        string terminalAction)
+    {
+        return new ShellCommandExecutionRequest(
+            command,
+            effectiveWorkingDirectory,
+            sandboxPermissions,
+            justification,
+            prefixRule,
+            string.Equals(terminalAction, "start", StringComparison.Ordinal)
+                ? false
+                : pseudoTerminal);
+    }
+
+    private static bool TryGetTerminalAction(
+        ToolExecutionContext context,
+        out string terminalAction,
+        out ToolResult? error)
+    {
+        string? requestedAction = ToolArguments.GetOptionalString(
+            context.Arguments,
+            "terminal_action");
+        bool background = ToolArguments.GetBoolean(context.Arguments, "background");
+        terminalAction = string.IsNullOrWhiteSpace(requestedAction)
+            ? background ? "start" : "run"
+            : requestedAction.Trim().ToLowerInvariant();
+        error = null;
+
+        if (terminalAction is "run" or "start" or "read" or "stop")
+        {
+            return true;
+        }
+
+        error = ToolResultFactory.InvalidArguments(
+            "invalid_terminal_action",
+            $"Tool 'shell_command' received invalid terminal_action '{requestedAction}'. Expected 'run', 'start', 'read', or 'stop'.",
+            new ToolRenderPayload(
+                "Invalid shell_command arguments",
+                "terminal_action must be 'run', 'start', 'read', or 'stop'."));
+        return false;
+    }
+
+    private static string CreateBackgroundTerminalLines(ShellCommandExecutionResult result)
+    {
+        if (!result.Background)
+        {
+            return string.Empty;
+        }
+
+        return
+            $"Background terminal: {result.TerminalId}{Environment.NewLine}" +
+            $"Terminal action: {result.TerminalAction}{Environment.NewLine}" +
+            $"Terminal status: {result.TerminalStatus}{Environment.NewLine}";
+    }
+
+    private static string CreateExitCodeLine(ShellCommandExecutionResult result)
+    {
+        return result.Background &&
+               string.Equals(result.TerminalStatus, "running", StringComparison.Ordinal)
+            ? $"Exit code: pending{Environment.NewLine}"
+            : $"Exit code: {result.ExitCode}{Environment.NewLine}";
+    }
+
+    private static string CreateResultMessage(ShellCommandExecutionResult result)
+    {
+        if (!result.Background)
+        {
+            return $"Executed shell command '{result.Command}' with exit code {result.ExitCode}.";
+        }
+
+        return result.TerminalAction switch
+        {
+            "start" => $"Started background terminal '{result.TerminalId}' for command '{result.Command}'.",
+            "read" => $"Read background terminal '{result.TerminalId}' with status '{result.TerminalStatus}'.",
+            "stop" => $"Stopped background terminal '{result.TerminalId}'.",
+            _ => $"Updated background terminal '{result.TerminalId}' with status '{result.TerminalStatus}'."
+        };
     }
 
     private static string? UpdateSessionWorkingDirectoryAfterCd(
