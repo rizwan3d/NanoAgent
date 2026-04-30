@@ -53,6 +53,12 @@ public abstract class UiModalState
 
     public abstract void HandleKey(AppState state, ConsoleKeyInfo key);
 
+    protected static bool IsCancellationKey(ConsoleKeyInfo key)
+    {
+        return key.Key == ConsoleKey.Escape ||
+            key.KeyChar == '\u001b';
+    }
+
     public virtual void Update(AppState state)
     {
         if (DeadlineUtc is null)

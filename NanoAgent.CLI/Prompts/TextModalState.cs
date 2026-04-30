@@ -176,7 +176,7 @@ public sealed class TextModalState : UiModalState
             return;
         }
 
-        if (key.Key == ConsoleKey.Escape && AllowCancellation)
+        if (IsCancellationKey(key) && AllowCancellation)
         {
             Cancel(state);
             return;

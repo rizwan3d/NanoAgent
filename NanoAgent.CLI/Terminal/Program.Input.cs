@@ -281,6 +281,14 @@ public static partial class Program
             return true;
         }
 
+        if (state.ActiveModal is not null)
+        {
+            state.ActiveModal.HandleKey(
+                state,
+                new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
+            return true;
+        }
+
         return true;
     }
 
