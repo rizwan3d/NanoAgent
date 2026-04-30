@@ -11,10 +11,13 @@ internal sealed class ProcessRunner : IProcessRunner
 {
     private const uint CreateUnicodeEnvironment = 0x00000400;
     private const uint ExtendedStartupInfoPresent = 0x00080000;
+    private const uint HandleFlagInherit = 0x00000001;
+    private const uint StartFUseStdHandles = 0x00000100;
     private const uint WaitObject0 = 0x00000000;
     private const uint WaitTimeout = 0x00000102;
     private const uint WaitFailed = 0xFFFFFFFF;
     private static readonly IntPtr ProcThreadAttributePseudoConsole = 0x00020016;
+    private static readonly IntPtr ProcThreadAttributeSecurityCapabilities = 0x00020009;
 
     public async Task<ProcessExecutionResult> RunAsync(
         ProcessExecutionRequest request,
@@ -25,6 +28,13 @@ internal sealed class ProcessRunner : IProcessRunner
         if (request.UsePseudoTerminal)
         {
             return await RunWithPseudoTerminalAsync(
+                request,
+                cancellationToken);
+        }
+
+        if (request.WindowsSandbox is not null)
+        {
+            return await RunWithWindowsAppContainerAsync(
                 request,
                 cancellationToken);
         }
@@ -112,6 +122,12 @@ internal sealed class ProcessRunner : IProcessRunner
         ProcessExecutionRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.WindowsSandbox is not null)
+        {
+            throw new PlatformNotSupportedException(
+                "Windows AppContainer sandbox execution does not support pseudo terminals.");
+        }
+
         if (OperatingSystem.IsWindows())
         {
             try
@@ -137,6 +153,207 @@ internal sealed class ProcessRunner : IProcessRunner
 
         throw new PlatformNotSupportedException(
             "PTY process execution is not supported on this platform.");
+    }
+
+    private async Task<ProcessExecutionResult> RunWithWindowsAppContainerAsync(
+        ProcessExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException(
+                "Windows AppContainer sandbox execution is only supported on Windows.");
+        }
+
+        WindowsSandboxConfiguration sandbox = request.WindowsSandbox
+            ?? throw new InvalidOperationException("Windows sandbox configuration is missing.");
+        Directory.CreateDirectory(sandbox.TempDirectory);
+
+        IntPtr appContainerSid = EnsureAppContainerProfile(sandbox);
+        try
+        {
+            string appContainerSidText = ConvertSidToString(appContainerSid);
+            GrantAppContainerFileAccess(
+                appContainerSidText,
+                sandbox.WorkspaceRoot,
+                sandbox.AllowWorkspaceWrite);
+            GrantAppContainerFileAccess(
+                appContainerSidText,
+                sandbox.TempDirectory,
+                allowWrite: true);
+
+            return await RunWindowsAppContainerDirectAsync(
+                request,
+                appContainerSid,
+                cancellationToken);
+        }
+        finally
+        {
+            if (appContainerSid != IntPtr.Zero)
+            {
+                FreeSid(appContainerSid);
+            }
+        }
+    }
+
+    private async Task<ProcessExecutionResult> RunWindowsAppContainerDirectAsync(
+        ProcessExecutionRequest request,
+        IntPtr appContainerSid,
+        CancellationToken cancellationToken)
+    {
+        CreateInputPipe(out SafeFileHandle stdinRead, out SafeFileHandle stdinWrite);
+        CreateOutputPipe(out SafeFileHandle stdoutRead, out SafeFileHandle stdoutWrite);
+        CreateOutputPipe(out SafeFileHandle stderrRead, out SafeFileHandle stderrWrite);
+
+        IntPtr attributeList = IntPtr.Zero;
+        IntPtr securityCapabilitiesBuffer = IntPtr.Zero;
+        IntPtr environmentBlock = IntPtr.Zero;
+        ProcessInformation processInformation = default;
+
+        try
+        {
+            SecurityCapabilities securityCapabilities = new()
+            {
+                AppContainerSid = appContainerSid
+            };
+            securityCapabilitiesBuffer = Marshal.AllocHGlobal(Marshal.SizeOf<SecurityCapabilities>());
+            Marshal.StructureToPtr(securityCapabilities, securityCapabilitiesBuffer, fDeleteOld: false);
+            attributeList = CreateSecurityCapabilitiesAttributeList(securityCapabilitiesBuffer);
+            environmentBlock = CreateWindowsEnvironmentBlock(request.EnvironmentVariables);
+
+            StartupInfoEx startupInfo = new()
+            {
+                StartupInfo =
+                {
+                    cb = Marshal.SizeOf<StartupInfoEx>(),
+                    dwFlags = (int)StartFUseStdHandles,
+                    hStdInput = stdinRead.DangerousGetHandle(),
+                    hStdOutput = stdoutWrite.DangerousGetHandle(),
+                    hStdError = stderrWrite.DangerousGetHandle()
+                },
+                lpAttributeList = attributeList
+            };
+            string commandLineText = BuildWindowsCommandLine(request);
+            StringBuilder commandLine = new(commandLineText, commandLineText.Length + 1);
+
+            bool created = CreateProcessW(
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                true,
+                ExtendedStartupInfoPresent | CreateUnicodeEnvironment,
+                environmentBlock,
+                string.IsNullOrWhiteSpace(request.WorkingDirectory) ? null : request.WorkingDirectory,
+                ref startupInfo,
+                out processInformation);
+            if (!created)
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            stdinRead.Dispose();
+            stdoutWrite.Dispose();
+            stderrWrite.Dispose();
+
+            await using FileStream stdoutStream = new(
+                stdoutRead,
+                FileAccess.Read,
+                bufferSize: 4096,
+                isAsync: true);
+            await using FileStream stderrStream = new(
+                stderrRead,
+                FileAccess.Read,
+                bufferSize: 4096,
+                isAsync: true);
+            using StreamReader stdoutReader = new(
+                stdoutStream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: false);
+            using StreamReader stderrReader = new(
+                stderrStream,
+                Encoding.UTF8,
+                detectEncodingFromByteOrderMarks: false);
+            Task<string> standardOutputTask = ReadToEndCappedAsync(
+                stdoutReader,
+                request.MaxOutputCharacters,
+                cancellationToken);
+            Task<string> standardErrorTask = ReadToEndCappedAsync(
+                stderrReader,
+                request.MaxOutputCharacters,
+                cancellationToken);
+
+            await using (FileStream stdinStream = new(
+                             stdinWrite,
+                             FileAccess.Write,
+                             bufferSize: 4096,
+                             isAsync: true))
+            {
+                if (request.StandardInput is not null)
+                {
+                    byte[] inputBytes = Encoding.UTF8.GetBytes(request.StandardInput);
+                    await stdinStream.WriteAsync(inputBytes, cancellationToken);
+                    await stdinStream.FlushAsync(cancellationToken);
+                }
+            }
+
+            int exitCode;
+            try
+            {
+                exitCode = await WaitForWindowsProcessExitAsync(
+                    processInformation.hProcess,
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                TryTerminateWindowsProcess(processInformation.hProcess);
+                throw;
+            }
+
+            return new ProcessExecutionResult(
+                exitCode,
+                await standardOutputTask,
+                await standardErrorTask);
+        }
+        catch
+        {
+            if (processInformation.hProcess != IntPtr.Zero)
+            {
+                TryTerminateWindowsProcess(processInformation.hProcess);
+            }
+
+            stdinRead.Dispose();
+            stdinWrite.Dispose();
+            stdoutRead.Dispose();
+            stdoutWrite.Dispose();
+            stderrRead.Dispose();
+            stderrWrite.Dispose();
+            throw;
+        }
+        finally
+        {
+            FreePseudoConsoleAttributeList(attributeList);
+
+            if (securityCapabilitiesBuffer != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(securityCapabilitiesBuffer);
+            }
+
+            if (environmentBlock != IntPtr.Zero)
+            {
+                Marshal.FreeHGlobal(environmentBlock);
+            }
+
+            if (processInformation.hThread != IntPtr.Zero)
+            {
+                CloseHandle(processInformation.hThread);
+            }
+
+            if (processInformation.hProcess != IntPtr.Zero)
+            {
+                CloseHandle(processInformation.hProcess);
+            }
+        }
     }
 
     private Task<ProcessExecutionResult> RunWithLinuxPseudoTerminalAsync(
@@ -369,6 +586,52 @@ internal sealed class ProcessRunner : IProcessRunner
         }
     }
 
+    private static IntPtr CreateSecurityCapabilitiesAttributeList(IntPtr securityCapabilitiesBuffer)
+    {
+        IntPtr size = IntPtr.Zero;
+        _ = InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+        if (size == IntPtr.Zero)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        IntPtr attributeList = Marshal.AllocHGlobal(size);
+        bool initialized = false;
+
+        try
+        {
+            if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref size))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            initialized = true;
+            if (!UpdateProcThreadAttribute(
+                    attributeList,
+                    0,
+                    ProcThreadAttributeSecurityCapabilities,
+                    securityCapabilitiesBuffer,
+                    (IntPtr)Marshal.SizeOf<SecurityCapabilities>(),
+                    IntPtr.Zero,
+                    IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return attributeList;
+        }
+        catch
+        {
+            if (initialized)
+            {
+                DeleteProcThreadAttributeList(attributeList);
+            }
+
+            Marshal.FreeHGlobal(attributeList);
+            throw;
+        }
+    }
+
     private static void FreePseudoConsoleAttributeList(IntPtr attributeList)
     {
         if (attributeList == IntPtr.Zero)
@@ -416,16 +679,177 @@ internal sealed class ProcessRunner : IProcessRunner
         return buffer;
     }
 
+    private static IntPtr EnsureAppContainerProfile(WindowsSandboxConfiguration sandbox)
+    {
+        int result = CreateAppContainerProfile(
+            sandbox.ProfileName,
+            sandbox.ProfileName,
+            "NanoAgent shell sandbox",
+            IntPtr.Zero,
+            0,
+            out IntPtr appContainerSid);
+        if (result == 0)
+        {
+            return appContainerSid;
+        }
+
+        const int HRESULT_FROM_WIN32_ERROR_ALREADY_EXISTS = unchecked((int)0x800700B7);
+        if (result != HRESULT_FROM_WIN32_ERROR_ALREADY_EXISTS)
+        {
+            throw new Win32Exception(result, $"Unable to create Windows AppContainer profile '{sandbox.ProfileName}'.");
+        }
+
+        int deriveResult = DeriveAppContainerSidFromAppContainerName(
+            sandbox.ProfileName,
+            out appContainerSid);
+        if (deriveResult != 0)
+        {
+            throw new Win32Exception(deriveResult, $"Unable to load Windows AppContainer profile '{sandbox.ProfileName}'.");
+        }
+
+        return appContainerSid;
+    }
+
+    private static void GrantAppContainerFileAccess(
+        string appContainerSid,
+        string path,
+        bool allowWrite)
+    {
+        string fullPath = Path.GetFullPath(path);
+        Directory.CreateDirectory(fullPath);
+        string permission = allowWrite
+            ? "(OI)(CI)M"
+            : "(OI)(CI)RX";
+
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = "icacls",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add(fullPath);
+        startInfo.ArgumentList.Add("/grant:r");
+        startInfo.ArgumentList.Add($"*{appContainerSid}:{permission}");
+        startInfo.ArgumentList.Add("/T");
+        startInfo.ArgumentList.Add("/C");
+
+        using Process process = new()
+        {
+            StartInfo = startInfo
+        };
+        process.Start();
+        string standardOutput = process.StandardOutput.ReadToEnd();
+        string standardError = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0)
+        {
+            string output = string.IsNullOrWhiteSpace(standardError)
+                ? standardOutput
+                : standardError;
+            throw new Win32Exception(
+                process.ExitCode,
+                $"Unable to grant Windows AppContainer access to '{fullPath}': {output.Trim()}");
+        }
+    }
+
+    private static string ConvertSidToString(IntPtr sid)
+    {
+        if (!ConvertSidToStringSidW(sid, out IntPtr stringSid))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        try
+        {
+            return Marshal.PtrToStringUni(stringSid) ??
+                throw new InvalidOperationException("Windows returned an empty AppContainer SID.");
+        }
+        finally
+        {
+            LocalFree(stringSid);
+        }
+    }
+
+    private static void CreateInheritablePipe(
+        out SafeFileHandle readPipe,
+        out SafeFileHandle writePipe)
+    {
+        SecurityAttributes securityAttributes = new()
+        {
+            nLength = Marshal.SizeOf<SecurityAttributes>(),
+            bInheritHandle = true
+        };
+
+        if (!CreatePipe(out readPipe, out writePipe, ref securityAttributes, 0))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
+    private static void CreateInputPipe(
+        out SafeFileHandle readPipe,
+        out SafeFileHandle writePipe)
+    {
+        CreateInheritablePipe(out readPipe, out writePipe);
+        try
+        {
+            ClearHandleInheritance(writePipe);
+        }
+        catch
+        {
+            readPipe.Dispose();
+            writePipe.Dispose();
+            throw;
+        }
+    }
+
+    private static void CreateOutputPipe(
+        out SafeFileHandle readPipe,
+        out SafeFileHandle writePipe)
+    {
+        CreateInheritablePipe(out readPipe, out writePipe);
+        try
+        {
+            ClearHandleInheritance(readPipe);
+        }
+        catch
+        {
+            readPipe.Dispose();
+            writePipe.Dispose();
+            throw;
+        }
+    }
+
+    private static void ClearHandleInheritance(SafeFileHandle handle)
+    {
+        if (!SetHandleInformation(handle, HandleFlagInherit, 0))
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+    }
+
     private static async Task<int> WaitForWindowsProcessExitAsync(
         WindowsPseudoTerminalProcess process,
         CancellationToken cancellationToken)
     {
+        return await WaitForWindowsProcessExitAsync(
+            process.ProcessHandle,
+            cancellationToken);
+    }
+
+    private static async Task<int> WaitForWindowsProcessExitAsync(
+        IntPtr processHandle,
+        CancellationToken cancellationToken)
+    {
         while (true)
         {
-            uint waitResult = WaitForSingleObject(process.ProcessHandle, 50);
+            uint waitResult = WaitForSingleObject(processHandle, 50);
             if (waitResult == WaitObject0)
             {
-                return GetWindowsProcessExitCode(process.ProcessHandle);
+                return GetWindowsProcessExitCode(processHandle);
             }
 
             if (waitResult == WaitFailed)
@@ -441,6 +865,16 @@ internal sealed class ProcessRunner : IProcessRunner
 
             await Task.Delay(50, cancellationToken);
         }
+    }
+
+    private static void TryTerminateWindowsProcess(IntPtr processHandle)
+    {
+        if (processHandle == IntPtr.Zero)
+        {
+            return;
+        }
+
+        _ = TerminateProcess(processHandle, 1);
     }
 
     private static int GetWindowsProcessExitCode(IntPtr processHandle)
@@ -734,12 +1168,48 @@ internal sealed class ProcessRunner : IProcessRunner
         public int dwThreadId;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    {
+        public int nLength;
+
+        public IntPtr lpSecurityDescriptor;
+
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool bInheritHandle;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityCapabilities
+    {
+        public IntPtr AppContainerSid;
+
+        public IntPtr Capabilities;
+
+        public int CapabilityCount;
+
+        public int Reserved;
+    }
+
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CreatePipe(
         out SafeFileHandle hReadPipe,
         out SafeFileHandle hWritePipe,
         IntPtr lpPipeAttributes,
         int nSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool CreatePipe(
+        out SafeFileHandle hReadPipe,
+        out SafeFileHandle hWritePipe,
+        ref SecurityAttributes lpPipeAttributes,
+        int nSize);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetHandleInformation(
+        SafeFileHandle hObject,
+        uint dwMask,
+        uint dwFlags);
 
     [DllImport("kernel32.dll")]
     private static extern int CreatePseudoConsole(
@@ -794,6 +1264,36 @@ internal sealed class ProcessRunner : IProcessRunner
     private static extern bool GetExitCodeProcess(
         IntPtr hProcess,
         out uint lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool TerminateProcess(
+        IntPtr hProcess,
+        uint uExitCode);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode)]
+    private static extern int CreateAppContainerProfile(
+        string pszAppContainerName,
+        string pszDisplayName,
+        string pszDescription,
+        IntPtr pCapabilities,
+        int dwCapabilityCount,
+        out IntPtr ppSid);
+
+    [DllImport("userenv.dll", CharSet = CharSet.Unicode)]
+    private static extern int DeriveAppContainerSidFromAppContainerName(
+        string pszAppContainerName,
+        out IntPtr ppSid);
+
+    [DllImport("advapi32.dll")]
+    private static extern IntPtr FreeSid(IntPtr pSid);
+
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool ConvertSidToStringSidW(
+        IntPtr Sid,
+        out IntPtr StringSid);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr hMem);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern bool CloseHandle(IntPtr hObject);

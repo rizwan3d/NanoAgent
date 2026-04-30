@@ -231,11 +231,6 @@ public sealed class ShellCommandServiceTests : IDisposable
     [Fact]
     public async Task ExecuteAsync_Should_UseReadOnlySandbox_When_SandboxModeIsReadOnly()
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
         FakeProcessRunner processRunner = new();
         processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
         ShellCommandService sut = new(
@@ -273,10 +268,60 @@ public sealed class ShellCommandServiceTests : IDisposable
             request.Arguments[1].Should().NotContain("(allow file-write*");
             request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("sandbox-exec");
         }
+        else if (OperatingSystem.IsWindows())
+        {
+            request.FileName.Should().Be("powershell");
+            request.WindowsSandbox.Should().NotBeNull();
+            request.WindowsSandbox!.AllowWorkspaceWrite.Should().BeFalse();
+            request.WindowsSandbox.WorkspaceRoot.Should().Be(Path.GetFullPath(_workspaceRoot));
+            request.WindowsSandbox.ProfileName.Should().StartWith("NanoAgent.Shell.read.");
+            request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-appcontainer");
+            request.EnvironmentVariables["USERPROFILE"].Should().Be(Path.GetFullPath(_workspaceRoot));
+            request.EnvironmentVariables["TEMP"].Should().Be(request.WindowsSandbox.TempDirectory);
+            request.EnvironmentVariables.Should().NotContainKey("TMPDIR");
+        }
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_BlockCommand_When_OsSandboxIsUnsupported()
+    public async Task ExecuteAsync_Should_UseWindowsAppContainerSandbox_When_SandboxModeRequiresIsolation()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("dotnet --version", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.FileName.Should().Be("powershell");
+        request.WindowsSandbox.Should().NotBeNull();
+        request.WindowsSandbox!.AllowWorkspaceWrite.Should().BeTrue();
+        request.WindowsSandbox.WorkspaceRoot.Should().Be(Path.GetFullPath(_workspaceRoot));
+        request.WindowsSandbox.ProfileName.Should().StartWith("NanoAgent.Shell.write.");
+        request.WindowsSandbox.TempDirectory.Should().Contain("sandbox-temp");
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-appcontainer");
+        request.EnvironmentVariables["HOME"].Should().Be(Path.GetFullPath(_workspaceRoot));
+        request.EnvironmentVariables["USERPROFILE"].Should().Be(Path.GetFullPath(_workspaceRoot));
+        request.EnvironmentVariables["TEMP"].Should().Be(request.WindowsSandbox.TempDirectory);
+        request.EnvironmentVariables["TMP"].Should().Be(request.WindowsSandbox.TempDirectory);
+        request.EnvironmentVariables.Should().NotContainKey("TMPDIR");
+        result.ExitCode.Should().Be(0);
+        result.StandardOutput.Should().Be("ok");
+        result.SandboxMode.Should().Be("workspace-write");
+        result.SandboxEnforcement.Should().Be("windows-appcontainer");
+    }
+
+    [Fact]
+    public async Task StartBackgroundAsync_Should_BlockWindowsAppContainerSandbox()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -288,17 +333,17 @@ public sealed class ShellCommandServiceTests : IDisposable
             processRunner,
             new StubWorkspaceRootProvider(_workspaceRoot));
 
-        ShellCommandExecutionResult result = await sut.ExecuteAsync(
-            new ShellCommandExecutionRequest("dotnet --version", null),
+        ShellCommandExecutionResult result = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest("Start-Sleep -Seconds 30", null),
             CancellationToken.None);
 
         processRunner.Requests.Should().BeEmpty();
         result.ExitCode.Should().Be(126);
-        result.StandardOutput.Should().BeEmpty();
-        result.StandardError.Should().Contain("blocked");
-        result.StandardError.Should().Contain("require_escalated");
-        result.SandboxMode.Should().Be("workspace-write");
-        result.SandboxEnforcement.Should().Be("unsupported");
+        result.Background.Should().BeTrue();
+        result.TerminalAction.Should().Be("start");
+        result.TerminalStatus.Should().Be("failed");
+        result.StandardError.Should().Contain("Background terminals do not support Windows AppContainer");
+        result.SandboxEnforcement.Should().Be("windows-appcontainer");
     }
 
     [Fact]
