@@ -1,7 +1,6 @@
 using NanoAgent.Application.Abstractions;
-using NanoAgent.Infrastructure.Plugins;
 
-namespace NanoAgent.Plugin.GitHub;
+namespace NanoAgent.Infrastructure.Plugins.GitHub;
 
 internal sealed class GitHubPluginToolFactory : IPluginToolFactory
 {
@@ -20,10 +19,9 @@ internal sealed class GitHubPluginToolFactory : IPluginToolFactory
 
         return
         [
-            .. GitHubPluginToolKind.All.Select(kind => new GitHubPluginTool(
-                configuration,
-                _httpClientFactory,
-                kind))
+            new GitHubPluginTool(configuration, _httpClientFactory, GitHubPluginToolKind.Repository),
+            new GitHubPluginTool(configuration, _httpClientFactory, GitHubPluginToolKind.Issue),
+            new GitHubPluginTool(configuration, _httpClientFactory, GitHubPluginToolKind.PullRequest)
         ];
     }
 }
