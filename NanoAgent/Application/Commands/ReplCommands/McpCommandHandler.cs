@@ -19,7 +19,7 @@ internal sealed class McpCommandHandler : IReplCommandHandler
 
     public string CommandName => "mcp";
 
-    public string Description => "Show configured dynamic tool providers and discovered dynamic tools.";
+    public string Description => "Show configured MCP servers, custom tool providers, and discovered dynamic tools.";
 
     public string Usage => "/mcp";
 
@@ -38,8 +38,7 @@ internal sealed class McpCommandHandler : IReplCommandHandler
             .Select(static definition => definition.Name)
             .Where(static name =>
                 name.StartsWith(AgentToolNames.McpToolPrefix, StringComparison.Ordinal) ||
-                name.StartsWith(AgentToolNames.CustomToolPrefix, StringComparison.Ordinal) ||
-                name.StartsWith(AgentToolNames.PluginToolPrefix, StringComparison.Ordinal))
+                name.StartsWith(AgentToolNames.CustomToolPrefix, StringComparison.Ordinal))
             .OrderBy(static name => name, StringComparer.Ordinal)
             .ToArray();
 
