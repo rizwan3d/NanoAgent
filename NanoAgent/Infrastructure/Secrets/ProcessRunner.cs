@@ -936,6 +936,16 @@ internal sealed class ProcessRunner : IProcessRunner
                 appContainerSidText,
                 sandbox.TempDirectory,
                 allowWrite: true);
+            foreach (string readOnlyRoot in sandbox.ReadOnlyRoots)
+            {
+                GrantAppContainerFileAccess(
+                    appContainerSidText,
+                    readOnlyRoot,
+                    allowWrite: false,
+                    createDirectory: false,
+                    recursive: false,
+                    throwOnFailure: false);
+            }
 
             return appContainerSid;
         }
@@ -953,10 +963,21 @@ internal sealed class ProcessRunner : IProcessRunner
     private static void GrantAppContainerFileAccess(
         string appContainerSid,
         string path,
-        bool allowWrite)
+        bool allowWrite,
+        bool createDirectory = true,
+        bool recursive = true,
+        bool throwOnFailure = true)
     {
         string fullPath = Path.GetFullPath(path);
-        Directory.CreateDirectory(fullPath);
+        if (createDirectory)
+        {
+            Directory.CreateDirectory(fullPath);
+        }
+        else if (!Directory.Exists(fullPath))
+        {
+            return;
+        }
+
         string permission = allowWrite
             ? "(OI)(CI)M"
             : "(OI)(CI)RX";
@@ -972,7 +993,11 @@ internal sealed class ProcessRunner : IProcessRunner
         startInfo.ArgumentList.Add(fullPath);
         startInfo.ArgumentList.Add("/grant:r");
         startInfo.ArgumentList.Add($"*{appContainerSid}:{permission}");
-        startInfo.ArgumentList.Add("/T");
+        if (recursive)
+        {
+            startInfo.ArgumentList.Add("/T");
+        }
+
         startInfo.ArgumentList.Add("/C");
 
         using Process process = new()
@@ -984,7 +1009,7 @@ internal sealed class ProcessRunner : IProcessRunner
         string standardError = process.StandardError.ReadToEnd();
         process.WaitForExit();
 
-        if (process.ExitCode != 0)
+        if (process.ExitCode != 0 && throwOnFailure)
         {
             string output = string.IsNullOrWhiteSpace(standardError)
                 ? standardOutput
