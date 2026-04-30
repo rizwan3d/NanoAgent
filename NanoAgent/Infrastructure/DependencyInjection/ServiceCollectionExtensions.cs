@@ -6,6 +6,7 @@ using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.OpenAi;
+using NanoAgent.Infrastructure.Plugins;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Updates;
 using NanoAgent.Application.Abstractions;
@@ -52,6 +53,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<NanoAgentMcpConfigLoader>();
         services.AddSingleton<IDynamicToolProvider, CustomToolDynamicProvider>();
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();
+        services.AddSingleton<IDynamicToolProvider, PluginDynamicProvider>();
         services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreatePermissionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));

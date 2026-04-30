@@ -23,6 +23,8 @@ internal sealed class AgentProfileConfigurationDocument
 
     public Dictionary<string, McpServerProfileDocument>? McpServers { get; set; }
 
+    public Dictionary<string, PluginProfileDocument>? Plugins { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
@@ -118,6 +120,26 @@ internal sealed class CustomToolProfileDocument
 }
 
 internal sealed class McpToolProfileDocument
+{
+    public string? ApprovalMode { get; set; }
+}
+
+internal sealed class PluginProfileDocument
+{
+    public string? ApprovalMode { get; set; }
+
+    public bool? Enabled { get; set; }
+
+    public bool? Required { get; set; }
+
+    public Dictionary<string, string>? Settings { get; set; }
+
+    public Dictionary<string, PluginToolProfileDocument>? Tools { get; set; }
+
+    public Dictionary<string, string>? ToolApprovalModes { get; set; }
+}
+
+internal sealed class PluginToolProfileDocument
 {
     public string? ApprovalMode { get; set; }
 }

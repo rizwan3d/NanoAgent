@@ -4,6 +4,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Mcp;
+using NanoAgent.Infrastructure.Plugins;
 
 namespace NanoAgent.Infrastructure.Storage;
 
@@ -126,6 +127,42 @@ internal static class AgentProfileConfigurationReader
 
         return tools.Values
             .OrderBy(static tool => tool.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<PluginConfiguration> LoadPlugins(
+        IUserDataPathProvider userDataPathProvider,
+        IWorkspaceRootProvider workspaceRootProvider)
+    {
+        ArgumentNullException.ThrowIfNull(userDataPathProvider);
+        ArgumentNullException.ThrowIfNull(workspaceRootProvider);
+
+        Dictionary<string, PluginConfiguration> plugins = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string path, AgentProfileConfigurationDocument document) in LoadDocumentPairs(
+                     userDataPathProvider,
+                     workspaceRootProvider))
+        {
+            foreach (KeyValuePair<string, PluginProfileDocument> item in document.Plugins ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(item.Key) || item.Value is null)
+                {
+                    continue;
+                }
+
+                PluginConfiguration configuration = ConvertPlugin(item.Key, item.Value, path);
+                if (!plugins.TryGetValue(configuration.Name, out PluginConfiguration? existing))
+                {
+                    plugins[configuration.Name] = configuration;
+                    continue;
+                }
+
+                existing.Merge(configuration);
+            }
+        }
+
+        return plugins.Values
+            .OrderBy(static plugin => plugin.Name, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
@@ -446,6 +483,49 @@ internal static class AgentProfileConfigurationReader
         return tool;
     }
 
+    private static PluginConfiguration ConvertPlugin(
+        string name,
+        PluginProfileDocument document,
+        string sourcePath)
+    {
+        PluginConfiguration plugin = new(name)
+        {
+            SourcePath = sourcePath
+        };
+
+        if (document.ApprovalMode is not null)
+        {
+            plugin.ApprovalMode = NormalizeOptional(document.ApprovalMode);
+            plugin.Mark(nameof(PluginConfiguration.ApprovalMode));
+        }
+
+        if (document.Enabled is not null)
+        {
+            plugin.Enabled = document.Enabled.Value;
+            plugin.Mark(nameof(PluginConfiguration.Enabled));
+        }
+
+        if (document.Required is not null)
+        {
+            plugin.Required = document.Required.Value;
+            plugin.Mark(nameof(PluginConfiguration.Required));
+        }
+
+        if (document.Settings is not null)
+        {
+            plugin.Settings.Clear();
+            foreach (KeyValuePair<string, string> item in NormalizeDictionary(document.Settings))
+            {
+                plugin.Settings[item.Key] = item.Value;
+            }
+
+            plugin.Mark(nameof(PluginConfiguration.Settings));
+        }
+
+        MergePluginToolApprovalModes(plugin, document);
+        return plugin;
+    }
+
     private static void MergeToolApprovalModes(
         McpServerConfiguration server,
         McpServerProfileDocument document)
@@ -476,6 +556,39 @@ internal static class AgentProfileConfigurationReader
         if (assigned)
         {
             server.Mark(nameof(McpServerConfiguration.ToolApprovalModes));
+        }
+    }
+
+    private static void MergePluginToolApprovalModes(
+        PluginConfiguration plugin,
+        PluginProfileDocument document)
+    {
+        bool assigned = false;
+        if (document.ToolApprovalModes is not null)
+        {
+            foreach (KeyValuePair<string, string> item in NormalizeDictionary(document.ToolApprovalModes))
+            {
+                plugin.ToolApprovalModes[item.Key] = item.Value;
+                assigned = true;
+            }
+        }
+
+        foreach (KeyValuePair<string, PluginToolProfileDocument> item in document.Tools ?? [])
+        {
+            if (string.IsNullOrWhiteSpace(item.Key) ||
+                item.Value is null ||
+                string.IsNullOrWhiteSpace(item.Value.ApprovalMode))
+            {
+                continue;
+            }
+
+            plugin.ToolApprovalModes[item.Key.Trim()] = item.Value.ApprovalMode.Trim();
+            assigned = true;
+        }
+
+        if (assigned)
+        {
+            plugin.Mark(nameof(PluginConfiguration.ToolApprovalModes));
         }
     }
 
