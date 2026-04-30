@@ -251,11 +251,25 @@ public sealed class RegistryBackedToolInvokerTests
     }
 
     [Fact]
-    public async Task InvokeAsync_Should_ReturnPermissionDenied_When_ShellCommandIsNotAllowed()
+    public async Task InvokeAsync_Should_ReturnPermissionDenied_When_ShellCommandMatchesDenyRule()
     {
+        PermissionSettings settings = new()
+        {
+            DefaultMode = PermissionMode.Ask,
+            Rules =
+            [
+                new PermissionRule
+                {
+                    Tools = ["bash"],
+                    Mode = PermissionMode.Deny,
+                    Patterns = ["rm -rf*"]
+                }
+            ]
+        };
+
         RegistryBackedToolInvoker sut = new(
             new ToolRegistry([new ShellRestrictedTool()], new ToolPermissionParser()),
-            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), settings),
             new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
 
         ToolInvocationResult result = await sut.InvokeAsync(
@@ -266,7 +280,7 @@ public sealed class RegistryBackedToolInvokerTests
             CancellationToken.None);
 
         result.Result.Status.Should().Be(ToolResultStatus.PermissionDenied);
-        result.Result.Message.Should().Contain("Allowed commands");
+        result.Result.Message.Should().ContainEquivalentOf("denied");
     }
 
     [Fact]
@@ -399,9 +413,9 @@ public sealed class RegistryBackedToolInvokerTests
         public string PermissionRequirements => """
             {
               "approvalMode": "Automatic",
+              "toolTags": ["bash"],
               "shell": {
-                "commandArgumentName": "command",
-                "allowedCommands": ["git", "dotnet"]
+                "commandArgumentName": "command"
               }
             }
             """;
@@ -465,8 +479,7 @@ public sealed class RegistryBackedToolInvokerTests
               "approvalMode": "Automatic",
               "toolTags": ["bash"],
               "shell": {
-                "commandArgumentName": "command",
-                "allowedCommands": ["dotnet"]
+                "commandArgumentName": "command"
               }
             }
             """;

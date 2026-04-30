@@ -29,7 +29,7 @@ internal static class PermissionCommandSupport
             "Examples:\n" +
             "/allow edit src/**\n" +
             "/allow file_write src/App.js\n" +
-            "/deny bash git push*\n" +
+            "/deny bash <command-pattern>\n" +
             "/deny apply_patch docs/**";
     }
 

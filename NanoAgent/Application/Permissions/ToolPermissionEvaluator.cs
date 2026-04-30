@@ -587,7 +587,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         }
 
         if (context.ExecutionPhase == ConversationExecutionPhase.Planning &&
-            PlanningModePolicy.ShouldBypassShellAllowlistForPlanning(commandText!))
+            PlanningModePolicy.ShouldBypassShellPolicyForPlanningProbe(commandText!))
         {
             AddSubject(subjects, commandText!.Trim());
             AddSandboxEscalationSubjectIfNeeded(
@@ -617,23 +617,11 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 
         foreach (ShellCommandSegment segment in segments)
         {
-            if (!ShellCommandText.TryGetCommandName(segment.CommandText, out string commandName))
+            if (!ShellCommandText.TryGetCommandName(segment.CommandText, out _))
             {
                 return PermissionEvaluationResult.Denied(
                     "invalid_shell_command",
                     $"Tool '{context.ToolName}' did not receive a valid shell command.");
-            }
-
-            bool isAllowed = shellPolicy.AllowedCommands.Contains(
-                commandName,
-                StringComparer.OrdinalIgnoreCase);
-
-            if (!isAllowed)
-            {
-                string allowedCommands = string.Join(", ", shellPolicy.AllowedCommands);
-                return PermissionEvaluationResult.Denied(
-                    "shell_command_not_allowed",
-                    $"Tool '{context.ToolName}' cannot execute shell command '{commandName}'. Allowed commands: {allowedCommands}.");
             }
 
             AddSubject(subjects, segment.CommandText);
