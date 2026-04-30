@@ -1,9 +1,8 @@
-using System.Net;
-using System.Net.Http;
-using System.Text;
+using FluentAssertions;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Tools;
-using FluentAssertions;
+using System.Net;
+using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 

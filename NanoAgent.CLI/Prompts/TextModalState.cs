@@ -1,7 +1,7 @@
-﻿using System.Text;
-using NanoAgent.Application.Exceptions;
+﻿using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using Spectre.Console;
+using System.Text;
 
 namespace NanoAgent.CLI;
 

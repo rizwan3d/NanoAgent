@@ -1,8 +1,8 @@
-using System.Net;
-using System.Text;
-using NanoAgent.Infrastructure.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using NanoAgent.Infrastructure.Models;
+using System.Net;
+using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Models;
 

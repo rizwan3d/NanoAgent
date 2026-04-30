@@ -1,10 +1,10 @@
-using System.Text.Json;
 using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Domain.Models;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools;
 

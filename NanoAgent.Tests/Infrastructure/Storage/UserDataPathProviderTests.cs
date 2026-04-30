@@ -1,5 +1,5 @@
-using NanoAgent.Infrastructure.Storage;
 using FluentAssertions;
+using NanoAgent.Infrastructure.Storage;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
 

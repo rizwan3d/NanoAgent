@@ -1,11 +1,11 @@
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Tools.Services;
 using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Secrets;
-using Microsoft.Extensions.Logging.Abstractions;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.CustomTools;
 
