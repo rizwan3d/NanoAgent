@@ -130,7 +130,9 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
                 continue;
             }
 
-            normalizedModels.Add(new AvailableModel(normalizedId));
+            normalizedModels.Add(new AvailableModel(
+                normalizedId,
+                NormalizeContextWindowTokens(model.ContextWindowTokens)));
         }
 
         if (normalizedModels.Count == 0)
@@ -147,5 +149,12 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
         string rawKey = $"{providerProfile.ProviderKind}|{providerProfile.ResolveBaseUrl()}|{apiKey}";
         byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawKey));
         return Convert.ToHexString(hashBytes);
+    }
+
+    private static int? NormalizeContextWindowTokens(int? contextWindowTokens)
+    {
+        return contextWindowTokens is > 0
+            ? contextWindowTokens
+            : null;
     }
 }

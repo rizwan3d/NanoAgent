@@ -15,6 +15,8 @@ public sealed class AppState
 
     public string? ActiveModelId { get; set; }
 
+    public int? ActiveModelContextWindowTokens { get; set; }
+
     public Task? ActiveOperation { get; set; }
 
     public UiModalState? ActiveModal { get; set; }

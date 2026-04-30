@@ -24,6 +24,7 @@ public sealed class ReplSessionContext
     private readonly object _syncRoot = new();
     public const string DefaultSectionTitle = "Untitled section";
     private readonly HashSet<string> _availableModelIds;
+    private Dictionary<string, int> _modelContextWindowTokens;
     private List<WorkspaceFileEditTransaction>? _batchedFileEditTransactions;
     private readonly List<ConversationRequestMessage> _conversationHistory = [];
     private readonly List<ConversationSectionTurn> _conversationTurns = [];
@@ -42,7 +43,8 @@ public sealed class ReplSessionContext
         IReadOnlyList<string> availableModelIds,
         IAgentProfile? agentProfile = null,
         string? reasoningEffort = null,
-        string? workspacePath = null)
+        string? workspacePath = null,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
         : this(
             DefaultApplicationName,
             providerProfile,
@@ -50,7 +52,8 @@ public sealed class ReplSessionContext
             availableModelIds,
             agentProfile: agentProfile,
             reasoningEffort: reasoningEffort,
-            workspacePath: workspacePath)
+            workspacePath: workspacePath,
+            modelContextWindowTokens: modelContextWindowTokens)
     {
     }
 
@@ -70,7 +73,8 @@ public sealed class ReplSessionContext
         IAgentProfile? agentProfile = null,
         string? reasoningEffort = null,
         SessionStateSnapshot? sessionState = null,
-        string? workspacePath = null)
+        string? workspacePath = null,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -86,6 +90,9 @@ public sealed class ReplSessionContext
         AgentProfile = agentProfile ?? BuiltInAgentProfiles.Build;
         ProviderProfile = providerProfile;
         AvailableModelIds = NormalizeAvailableModelIds(availableModelIds);
+        _modelContextWindowTokens = NormalizeModelContextWindowTokens(
+            modelContextWindowTokens,
+            AvailableModelIds);
 
         if (AvailableModelIds.Count == 0)
         {
@@ -147,6 +154,14 @@ public sealed class ReplSessionContext
     public AgentProviderProfile ProviderProfile { get; private set; }
 
     public string ProviderName => ProviderProfile.ProviderKind.ToDisplayName();
+
+    public IReadOnlyDictionary<string, int> ModelContextWindowTokens => _modelContextWindowTokens;
+
+    public int? ActiveModelContextWindowTokens => _modelContextWindowTokens.TryGetValue(
+        ActiveModelId,
+        out int contextWindowTokens)
+            ? contextWindowTokens
+            : null;
 
     public string? ReasoningEffort { get; private set; }
 
@@ -299,7 +314,8 @@ public sealed class ReplSessionContext
     public void ReplaceProviderConfiguration(
         AgentProviderProfile providerProfile,
         string activeModelId,
-        IReadOnlyList<string> availableModelIds)
+        IReadOnlyList<string> availableModelIds,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
     {
         ArgumentNullException.ThrowIfNull(providerProfile);
         ArgumentException.ThrowIfNullOrWhiteSpace(activeModelId);
@@ -321,13 +337,18 @@ public sealed class ReplSessionContext
                 nameof(activeModelId));
         }
 
+        Dictionary<string, int> normalizedModelContextWindowTokens =
+            NormalizeModelContextWindowTokens(modelContextWindowTokens, normalizedAvailableModelIds);
+
         bool changed =
             !Equals(ProviderProfile, providerProfile) ||
             !string.Equals(ActiveModelId, normalizedActiveModelId, StringComparison.Ordinal) ||
-            !AvailableModelIds.SequenceEqual(normalizedAvailableModelIds, StringComparer.Ordinal);
+            !AvailableModelIds.SequenceEqual(normalizedAvailableModelIds, StringComparer.Ordinal) ||
+            !ModelContextWindowTokensEqual(_modelContextWindowTokens, normalizedModelContextWindowTokens);
 
         ProviderProfile = providerProfile;
         AvailableModelIds = normalizedAvailableModelIds;
+        _modelContextWindowTokens = normalizedModelContextWindowTokens;
         _availableModelIds.Clear();
         foreach (string modelId in normalizedAvailableModelIds)
         {
@@ -653,7 +674,8 @@ public sealed class ReplSessionContext
             AgentProfile.Name,
             ReasoningEffort,
             SessionState,
-            WorkspacePath);
+            WorkspacePath,
+            _modelContextWindowTokens);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)
@@ -788,6 +810,55 @@ public sealed class ReplSessionContext
             .Select(static modelId => modelId.Trim())
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+    }
+
+    private static Dictionary<string, int> NormalizeModelContextWindowTokens(
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        IReadOnlyList<string> availableModelIds)
+    {
+        Dictionary<string, int> normalized = new(StringComparer.Ordinal);
+        if (modelContextWindowTokens is null || modelContextWindowTokens.Count == 0)
+        {
+            return normalized;
+        }
+
+        HashSet<string> available = new(availableModelIds, StringComparer.Ordinal);
+        foreach ((string modelId, int contextWindowTokens) in modelContextWindowTokens)
+        {
+            if (string.IsNullOrWhiteSpace(modelId) || contextWindowTokens <= 0)
+            {
+                continue;
+            }
+
+            string normalizedModelId = modelId.Trim();
+            if (available.Contains(normalizedModelId))
+            {
+                normalized[normalizedModelId] = contextWindowTokens;
+            }
+        }
+
+        return normalized;
+    }
+
+    private static bool ModelContextWindowTokensEqual(
+        IReadOnlyDictionary<string, int> first,
+        IReadOnlyDictionary<string, int> second)
+    {
+        if (first.Count != second.Count)
+        {
+            return false;
+        }
+
+        foreach ((string modelId, int contextWindowTokens) in first)
+        {
+            if (!second.TryGetValue(modelId, out int otherContextWindowTokens) ||
+                otherContextWindowTokens != contextWindowTokens)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     public void RecordFileEditTransaction(WorkspaceFileEditTransaction transaction)

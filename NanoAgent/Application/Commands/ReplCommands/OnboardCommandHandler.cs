@@ -2,6 +2,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Commands;
+using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Commands;
 
@@ -72,7 +73,8 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
         context.Session.ReplaceProviderConfiguration(
             onboardingResult.Profile,
             modelResult.SelectedModelId,
-            availableModelIds);
+            availableModelIds,
+            CreateModelContextWindowMap(modelResult.AvailableModels));
 
         await _configurationStore.SaveAsync(
             new AgentConfiguration(
@@ -87,5 +89,23 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
             $"Active model: {context.Session.ActiveModelId}\n" +
             $"Available models: {context.Session.AvailableModelIds.Count}\n" +
             "Use the model picker to switch models.");
+    }
+
+    private static IReadOnlyDictionary<string, int> CreateModelContextWindowMap(
+        IEnumerable<AvailableModel> models)
+    {
+        Dictionary<string, int> contextWindowTokens = new(StringComparer.Ordinal);
+        foreach (AvailableModel model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Id) ||
+                model.ContextWindowTokens is not > 0)
+            {
+                continue;
+            }
+
+            contextWindowTokens[model.Id.Trim()] = model.ContextWindowTokens.Value;
+        }
+
+        return contextWindowTokens;
     }
 }
