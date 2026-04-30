@@ -52,6 +52,14 @@ internal sealed class ShellCommandService : IShellCommandService
         }
 
         PreparedShellCommand prepared = PrepareShellCommand(request);
+        if (prepared.SandboxPlan.IsUnsupported)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                prepared.SandboxPlan.UnsupportedReason!);
+        }
 
         ProcessExecutionResult result;
         try
@@ -123,6 +131,17 @@ internal sealed class ShellCommandService : IShellCommandService
         }
 
         PreparedShellCommand prepared = PrepareShellCommand(request);
+        if (prepared.SandboxPlan.IsUnsupported)
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                prepared.SandboxPlan.UnsupportedReason!,
+                background: true,
+                terminalAction: "start"));
+        }
+
         if (prepared.ProcessRequest.UsePseudoTerminal)
         {
             return Task.FromResult(CreateExecutionFailureResult(
@@ -458,6 +477,12 @@ internal sealed class ShellCommandService : IShellCommandService
         if (request.PseudoTerminal)
         {
             environment["NANOAGENT_SHELL_PTY"] = "1";
+        }
+
+        if (IsSandboxRunnerEnforcement(sandboxEnforcement))
+        {
+            environment["HOME"] = workspaceRoot;
+            environment["TMPDIR"] = "/tmp";
         }
 
         return environment;
