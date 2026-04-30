@@ -17,7 +17,7 @@ internal sealed class ShellCommandTool : ITool
         _shellCommandService = shellCommandService;
     }
 
-    public string Description => "Run an OS-native shell command in the current workspace to inspect files, probe toolchains, scaffold projects, install or restore dependencies, build, test, lint, or execute short multi-command chains, optionally attached to a pseudo-terminal, and capture stdout, stderr, and exit code.";
+    public string Description => "Run an OS-native shell command in the current workspace to inspect files, probe toolchains, scaffold projects, install or restore dependencies, build, test, lint, or execute short multi-command chains, optionally attached to a pseudo-terminal or run interactive commands, and capture stdout, stderr, and exit code.";
 
     public string Name => AgentToolNames.ShellCommand;
 
@@ -36,69 +36,7 @@ internal sealed class ShellCommandTool : ITool
             "commandArgumentName": "command",
             "sandboxPermissionsArgumentName": "sandbox_permissions",
             "justificationArgumentName": "justification",
-            "prefixRuleArgumentName": "prefix_rule",
-            "allowedCommands": [
-              "bun",
-              "cargo",
-              "cat",
-              "cd",
-              "clang",
-              "clang++",
-              "cmake",
-              "composer",
-              "csc",
-              "deno",
-              "dir",
-              "dotnet",
-              "find",
-              "findstr",
-              "gcc",
-              "g++",
-              "Get-ChildItem",
-              "Get-Command",
-              "Get-Content",
-              "Get-Item",
-              "Get-Location",
-              "git",
-              "go",
-              "gradle",
-              "grep",
-              "head",
-              "java",
-              "javac",
-              "kotlinc",
-              "ls",
-              "make",
-              "mkdir",
-              "msbuild",
-              "mvn",
-              "node",
-              "npm",
-              "npx",
-              "nuget",
-              "php",
-              "pip",
-              "pip3",
-              "pnpm",
-              "poetry",
-              "pwd",
-              "py",
-              "pytest",
-              "python",
-              "python3",
-              "rg",
-              "ruff",
-              "sed",
-              "Select-String",
-              "swift",
-              "tsc",
-              "type",
-              "uv",
-              "uvx",
-              "where",
-              "which",
-              "yarn"
-            ]
+            "prefixRuleArgumentName": "prefix_rule"
           }
         }
         """;

@@ -103,7 +103,7 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("Verified facts, Assumptions / open questions");
         requests[0].SystemPrompt.Should().Contain("compare approaches");
         requests[0].SystemPrompt.Should().Contain("Avoid low-quality plans such as");
-        requests[0].SystemPrompt.Should().Contain("npm create vite@latest");
+        requests[0].SystemPrompt.Should().Contain("For project scaffolding commands");
         requests[0].SystemPrompt.Should().Contain("fully specified, non-interactive commands");
         requests[0].SystemPrompt.Should().Contain("one task at a time");
         requests[0].SystemPrompt.Should().Contain("finish the requested implementation when practical");

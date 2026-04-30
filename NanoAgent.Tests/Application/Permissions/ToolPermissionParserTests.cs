@@ -27,8 +27,7 @@ public sealed class ToolPermissionParserTests
                 "commandArgumentName": " command ",
                 "sandboxPermissionsArgumentName": " sandbox_permissions ",
                 "justificationArgumentName": " justification ",
-                "prefixRuleArgumentName": " prefix_rule ",
-                "allowedCommands": [" git ", "git", "dotnet"]
+                "prefixRuleArgumentName": " prefix_rule "
               }
             }
             """);
@@ -41,7 +40,6 @@ public sealed class ToolPermissionParserTests
         result.Shell.SandboxPermissionsArgumentName.Should().Be("sandbox_permissions");
         result.Shell.JustificationArgumentName.Should().Be("justification");
         result.Shell.PrefixRuleArgumentName.Should().Be("prefix_rule");
-        result.Shell.AllowedCommands.Should().Equal("git", "dotnet");
     }
 
     [Fact]
@@ -93,23 +91,25 @@ public sealed class ToolPermissionParserTests
     }
 
     [Fact]
-    public void Parse_Should_Throw_When_ShellAllowlistIsEmpty()
+    public void Parse_Should_NormalizeShellPolicyWithoutCommandCatalog()
     {
         ToolPermissionParser sut = new();
 
-        Action action = () => sut.Parse(
+        ToolPermissionPolicy result = sut.Parse(
             "shell_command",
             """
             {
               "approvalMode": "Automatic",
               "shell": {
-                "commandArgumentName": "command",
-                "allowedCommands": []
+                "commandArgumentName": " command "
               }
             }
             """);
 
-        action.Should().Throw<InvalidOperationException>()
-            .WithMessage("*at least one allowed shell command*");
+        result.Shell.Should().NotBeNull();
+        result.Shell!.CommandArgumentName.Should().Be("command");
+        result.Shell.SandboxPermissionsArgumentName.Should().Be("sandbox_permissions");
+        result.Shell.JustificationArgumentName.Should().Be("justification");
+        result.Shell.PrefixRuleArgumentName.Should().Be("prefix_rule");
     }
 }

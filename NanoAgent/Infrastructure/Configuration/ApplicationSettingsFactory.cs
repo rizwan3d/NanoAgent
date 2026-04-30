@@ -5,15 +5,6 @@ namespace NanoAgent.Infrastructure.Configuration;
 
 internal static class ApplicationSettingsFactory
 {
-    private static readonly string[] BuiltInSafeShellCommandPatterns =
-    [
-        "cargo test*",
-        "dotnet build*",
-        "dotnet test*",
-        "npm test*",
-        "pnpm test*"
-    ];
-
     private static readonly string[] BuiltInDeniedShellCommandPatterns =
     [
         "chmod 777*",
@@ -178,7 +169,6 @@ internal static class ApplicationSettingsFactory
                 Mode = promptableMode,
                 Patterns = [ShellCommandSandboxArguments.SandboxEscalationSubject]
             },
-            .. CreateShellCommandRules(PermissionMode.Allow, BuiltInSafeShellCommandPatterns),
             .. CreateAutoApproveAllToolsRules(autoApproveAllTools),
             new PermissionRule
             {
@@ -232,16 +222,6 @@ internal static class ApplicationSettingsFactory
             yield return CreateToolRule(configured.ShellDefault.Value, "bash");
         }
 
-        if (configured.ShellSafe is not null)
-        {
-            foreach (PermissionRule rule in CreateShellCommandRules(
-                         configured.ShellSafe.Value,
-                         BuiltInSafeShellCommandPatterns))
-            {
-                yield return rule;
-            }
-        }
-
         if (configured.Network is not null)
         {
             yield return CreateToolRule(configured.Network.Value, "webfetch");
@@ -258,8 +238,9 @@ internal static class ApplicationSettingsFactory
         }
 
         ShellPermissionSettings shellSettings = configured.Shell ?? new ShellPermissionSettings();
+        PermissionMode configuredShellAllowMode = configured.ShellSafe ?? PermissionMode.Allow;
         foreach (PermissionRule rule in CreateShellCommandRules(
-                     PermissionMode.Allow,
+                     configuredShellAllowMode,
                      shellSettings.Allow?.Commands ?? []))
         {
             yield return rule;

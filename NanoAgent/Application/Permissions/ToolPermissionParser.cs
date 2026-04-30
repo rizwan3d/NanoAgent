@@ -174,25 +174,12 @@ internal sealed class ToolPermissionParser : IPermissionParser
                 $"Tool '{toolName}' must provide a non-empty shell prefix-rule argument name.");
         }
 
-        string[] allowedCommands = (shellPolicy.AllowedCommands ?? [])
-            .Where(static command => !string.IsNullOrWhiteSpace(command))
-            .Select(static command => command.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-
-        if (allowedCommands.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"Tool '{toolName}' must provide at least one allowed shell command.");
-        }
-
         return new ShellCommandPermissionPolicy
         {
             CommandArgumentName = shellPolicy.CommandArgumentName.Trim(),
             JustificationArgumentName = shellPolicy.JustificationArgumentName.Trim(),
             PrefixRuleArgumentName = shellPolicy.PrefixRuleArgumentName.Trim(),
-            SandboxPermissionsArgumentName = shellPolicy.SandboxPermissionsArgumentName.Trim(),
-            AllowedCommands = allowedCommands
+            SandboxPermissionsArgumentName = shellPolicy.SandboxPermissionsArgumentName.Trim()
         };
     }
 

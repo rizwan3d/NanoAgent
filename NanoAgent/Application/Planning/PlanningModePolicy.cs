@@ -27,89 +27,6 @@ internal static class PlanningModePolicy
         "yes"
     ];
 
-    private static readonly HashSet<string> SafeInspectionCommands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "cat",
-        "dir",
-        "find",
-        "findstr",
-        "Get-ChildItem",
-        "Get-Content",
-        "Get-Item",
-        "Get-Location",
-        "grep",
-        "head",
-        "ls",
-        "pwd",
-        "rg",
-        "Select-String",
-        "type",
-        "which"
-    };
-
-    private static readonly HashSet<string> SafeGitSubcommands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "branch",
-        "diff",
-        "log",
-        "ls-files",
-        "remote",
-        "rev-parse",
-        "show",
-        "status"
-    };
-
-    private static readonly HashSet<string> SafeEnvironmentProbeCommands = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "bash",
-        "bun",
-        "cargo",
-        "clang",
-        "clang++",
-        "cmake",
-        "composer",
-        "csc",
-        "deno",
-        "dotnet",
-        "gcc",
-        "g++",
-        "Get-Command",
-        "go",
-        "gradle",
-        "java",
-        "javac",
-        "kotlinc",
-        "make",
-        "msbuild",
-        "mvn",
-        "ninja",
-        "node",
-        "npm",
-        "npx",
-        "php",
-        "pip",
-        "pip3",
-        "pnpm",
-        "poetry",
-        "powershell",
-        "pwsh",
-        "py",
-        "pytest",
-        "python",
-        "python3",
-        "ruby",
-        "rustc",
-        "ruff",
-        "sh",
-        "swift",
-        "tsc",
-        "uv",
-        "uvx",
-        "where",
-        "which",
-        "yarn"
-    };
-
     private static readonly HashSet<string> SafeEnvironmentProbeArguments = new(StringComparer.OrdinalIgnoreCase)
     {
         "--help",
@@ -161,11 +78,11 @@ internal static class PlanningModePolicy
         - `update_plan` is available for live planning. Use it for meaningful multi-step work after you have enough evidence to define concrete steps.
         - An update_plan call must contain a concise ordered task list. Use statuses `completed`, `in_progress`, and `pending`; keep at most one step `in_progress`; keep completed steps first, then the active step, then pending steps.
         - Before planning, gather repo evidence with read-only tools instead of guessing.
-        - When relevant, use `shell_command` to inspect the environment and check installed build tools, SDKs, compilers, package managers, or runtimes with safe probe commands such as `dotnet --info`, `python --version`, `node --version`, `gcc --version`, `where.exe dotnet`, or `Get-Command cmake`.
+        - When relevant and permitted by policy, use `shell_command` to inspect the environment with simple help/version probes for installed build tools, SDKs, compilers, package managers, or runtimes.
         - When the correct usage of a build tool, framework, library, SDK, or API is unfamiliar or likely to have changed, use `web_run` to check the current official documentation or domain references before you rely on it.
         - During execution, use `shell_command` for real toolchain work when it materially advances the task: scaffold projects, restore or install dependencies, run code generation, build, test, lint, format, or inspect runtime behavior.
-        - For project scaffolding commands such as `npm create vite@latest`, include the project name, template or preset, and any supported confirmation flags in the initial command so the scaffold stays non-interactive.
-        - Prefer repo-native validation commands such as `dotnet build`, `dotnet test`, `npm test`, `npm run build`, `python -m pytest`, `cargo test`, `go test ./...`, `mvn test`, or `gradle test` when those toolchains are present.
+        - For project scaffolding commands, include the project name, template or preset, and any supported confirmation flags in the initial command so the scaffold stays non-interactive.
+        - Prefer repo-native validation commands for the detected project toolchain when those toolchains are present.
         - When you produce a plan, prefer sections such as: Objective, Verified facts, Assumptions / open questions, Relevant files / areas, Environment / toolchain, Candidate approaches, Recommended approach, Immediate next step, Plan, Validation, Risks / unknowns.
         - A plan should:
           - restate the objective clearly
@@ -208,7 +125,7 @@ internal static class PlanningModePolicy
         return MatchesIntent(userInput, ExecutionApprovalSignals);
     }
 
-    public static bool ShouldBypassShellAllowlistForPlanning(string commandText)
+    public static bool ShouldBypassShellPolicyForPlanningProbe(string commandText)
     {
         return TryGetPlanningShellCommandInfo(
             commandText,
@@ -386,33 +303,14 @@ internal static class PlanningModePolicy
             return false;
         }
 
-        if (SafeInspectionCommands.Contains(commandName))
-        {
-            denialReason = string.Empty;
-            return true;
-        }
-
         if (IsSafeEnvironmentProbeCommand(tokens, commandName))
         {
             denialReason = string.Empty;
             return true;
         }
 
-        if (string.Equals(commandName, "git", StringComparison.OrdinalIgnoreCase))
-        {
-            if (tokens.Length >= 2 && SafeGitSubcommands.Contains(tokens[1]))
-            {
-                denialReason = string.Empty;
-                return true;
-            }
-
-            denialReason =
-                $"The automatic planning phase only allows read-only git inspection commands. '{normalizedCommand}' is execution-only.";
-            return false;
-        }
-
         denialReason =
-            $"The automatic planning phase only allows safe inspection commands. '{normalizedCommand}' is execution-only.";
+            $"The automatic planning phase only allows simple shell help/version probes. '{normalizedCommand}' is execution-only unless permission policy explicitly allows it outside planning.";
         return false;
     }
 
@@ -451,19 +349,8 @@ internal static class PlanningModePolicy
         IReadOnlyList<string> tokens,
         string commandName)
     {
-        if (!SafeEnvironmentProbeCommands.Contains(commandName))
-        {
-            return false;
-        }
-
-        if (string.Equals(commandName, "where", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(commandName, "which", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(commandName, "Get-Command", StringComparison.OrdinalIgnoreCase))
-        {
-            return tokens.Count == 2 && IsSimpleCommandSubject(tokens[1]);
-        }
-
         return tokens.Count == 2 &&
+               IsSimpleCommandSubject(commandName) &&
                SafeEnvironmentProbeArguments.Contains(tokens[1]);
     }
 

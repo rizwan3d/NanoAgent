@@ -56,10 +56,6 @@ public sealed class ApplicationSettingsFactoryTests
             rule.Mode == PermissionMode.Ask &&
             rule.Tools.Contains("mcp", StringComparer.OrdinalIgnoreCase));
         settings.Rules.Should().Contain(rule =>
-            rule.Mode == PermissionMode.Allow &&
-            rule.Tools.Contains("bash", StringComparer.OrdinalIgnoreCase) &&
-            rule.Patterns.Contains("dotnet test*", StringComparer.OrdinalIgnoreCase));
-        settings.Rules.Should().Contain(rule =>
             rule.Mode == PermissionMode.Deny &&
             rule.Tools.Contains("bash", StringComparer.OrdinalIgnoreCase) &&
             rule.Patterns.Contains("rm -rf*", StringComparer.OrdinalIgnoreCase));
@@ -76,6 +72,7 @@ public sealed class ApplicationSettingsFactoryTests
                 McpTools = PermissionMode.Allow,
                 MemoryWrite = PermissionMode.Deny,
                 Network = PermissionMode.Deny,
+                ShellSafe = PermissionMode.Ask,
                 Shell = new ShellPermissionSettings
                 {
                     Allow = new ShellCommandPermissionSettings
@@ -103,7 +100,7 @@ public sealed class ApplicationSettingsFactoryTests
             rule.Mode == PermissionMode.Deny &&
             rule.Tools.SequenceEqual(new[] { "memory_write" })).Should().BeTrue();
         settings.Rules.Any(rule =>
-            rule.Mode == PermissionMode.Allow &&
+            rule.Mode == PermissionMode.Ask &&
             rule.Tools.SequenceEqual(new[] { "bash" }) &&
             rule.Patterns.SequenceEqual(new[] { "dotnet format*" })).Should().BeTrue();
         settings.Rules.Any(rule =>
