@@ -1,4 +1,4 @@
-using System.Text.Json;
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
@@ -6,7 +6,7 @@ using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Tools;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Configuration;
-using FluentAssertions;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Permissions;
 

@@ -1,4 +1,6 @@
-using System.Text.Json;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Services;
 using NanoAgent.Application.Exceptions;
@@ -9,9 +11,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Conversation.Services;
 

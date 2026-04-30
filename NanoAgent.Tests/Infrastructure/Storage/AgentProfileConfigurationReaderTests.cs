@@ -1,6 +1,6 @@
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.Storage;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
 

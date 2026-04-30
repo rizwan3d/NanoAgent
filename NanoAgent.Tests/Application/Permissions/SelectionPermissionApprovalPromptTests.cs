@@ -1,7 +1,7 @@
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Application.Permissions;
 

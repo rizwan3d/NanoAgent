@@ -1,9 +1,9 @@
-using System.Globalization;
+using FluentAssertions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Updates;
 using NanoAgent.Tests.Infrastructure.Secrets.TestDoubles;
-using FluentAssertions;
+using System.Globalization;
 
 namespace NanoAgent.Tests.Infrastructure.Updates;
 

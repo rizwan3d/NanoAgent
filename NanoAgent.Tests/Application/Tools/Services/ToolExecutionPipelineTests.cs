@@ -1,10 +1,10 @@
-using NanoAgent.Application.Abstractions;
-using NanoAgent.Application.Models;
-using NanoAgent.Application.Tools.Services;
-using NanoAgent.Application.Tools.Serialization;
-using NanoAgent.Domain.Models;
 using FluentAssertions;
 using Moq;
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Tools.Services;
+using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Tests.Application.Tools.Services;
 

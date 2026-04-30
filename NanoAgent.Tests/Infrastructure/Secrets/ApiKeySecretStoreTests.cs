@@ -1,5 +1,5 @@
-using NanoAgent.Infrastructure.Secrets;
 using FluentAssertions;
+using NanoAgent.Infrastructure.Secrets;
 
 namespace NanoAgent.Tests.Infrastructure.Secrets;
 

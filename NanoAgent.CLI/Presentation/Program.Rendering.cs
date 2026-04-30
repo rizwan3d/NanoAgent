@@ -1,6 +1,6 @@
 ﻿using Spectre.Console;
-using System.Text;
 using Spectre.Console.Rendering;
+using System.Text;
 
 namespace NanoAgent.CLI;
 
@@ -37,7 +37,7 @@ public static partial class Program
         string statusHeader =
             $"[bold cyan]NanoAgent[/]" +
             $" ── [grey]GitHub:[/] [deepskyblue1]{Markup.Escape(RepositoryUrl)} [/]";
-           
+
         return new Panel(new Markup(BuildHeaderMarkup(state)))
             .Header(statusHeader)
             .Border(BoxBorder.Rounded)
@@ -397,7 +397,7 @@ public static partial class Program
         string inputMarkup = BuildInputLineMarkup(
             input,
             cursorIndex,
-            isBusy, 
+            isBusy,
             state);
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
@@ -703,7 +703,7 @@ public static partial class Program
     private static bool TryBuildLargeInputPasteMarkup(
         string input,
         bool isBusy,
-        out string markup, 
+        out string markup,
         AppState state)
     {
         int lineCount = GetInputLogicalLineCount(input);

@@ -1,6 +1,6 @@
-using NanoAgent.Infrastructure.Configuration;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
+using NanoAgent.Infrastructure.Configuration;
 
 namespace NanoAgent.Tests.Infrastructure.Configuration;
 

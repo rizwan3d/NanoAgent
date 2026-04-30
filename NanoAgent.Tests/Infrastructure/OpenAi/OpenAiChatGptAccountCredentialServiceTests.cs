@@ -1,11 +1,11 @@
-using System.Net;
-using System.Text;
-using System.Text.Json;
-using NanoAgent.Application.Abstractions;
-using NanoAgent.Infrastructure.OpenAi;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Infrastructure.OpenAi;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Infrastructure.OpenAi;
 

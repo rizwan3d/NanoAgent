@@ -1,15 +1,14 @@
-using System.Text.Json;
-using System.Net;
-using System.Net.Http;
-using System.Text;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.OpenAi;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
+using System.Net;
+using System.Text;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Infrastructure.Conversation;
 

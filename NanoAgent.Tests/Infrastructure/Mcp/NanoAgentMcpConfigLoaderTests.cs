@@ -1,6 +1,6 @@
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.Mcp;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Mcp;
 

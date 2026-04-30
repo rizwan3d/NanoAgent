@@ -1,7 +1,7 @@
-using System.Collections.Concurrent;
 using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
+using System.Collections.Concurrent;
 
 namespace NanoAgent.CLI;
 

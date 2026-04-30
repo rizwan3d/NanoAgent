@@ -1,5 +1,3 @@
-using System;
-
 namespace NanoAgent.Desktop.Models;
 
 public sealed record AgentEvent(

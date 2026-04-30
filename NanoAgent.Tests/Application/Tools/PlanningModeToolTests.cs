@@ -1,7 +1,7 @@
-using System.Text.Json;
+using FluentAssertions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
-using FluentAssertions;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools;
 

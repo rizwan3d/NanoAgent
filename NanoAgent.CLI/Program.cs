@@ -1,8 +1,8 @@
-using System.Text;
 using NanoAgent.Application.Backend;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using Spectre.Console;
+using System.Text;
 
 namespace NanoAgent.CLI;
 
@@ -177,7 +177,7 @@ public static partial class Program
         }
 
         ConsoleBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs = [..args, "--no-update-check"];
+        string[] backendArgs = [.. args, "--no-update-check"];
         await using INanoAgentBackend backend = new NanoAgentBackend(backendArgs);
         using CancellationTokenSource cancellation = new();
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>

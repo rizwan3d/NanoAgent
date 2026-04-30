@@ -1,16 +1,12 @@
-using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.IO;
-using System.Linq;
-using System.Text.RegularExpressions;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Layout;
 using Avalonia.Media;
+using System.ComponentModel;
+using System.Diagnostics;
+using System.Text.RegularExpressions;
 
 namespace NanoAgent.Desktop.Controls;
 

@@ -1,3 +1,6 @@
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
@@ -6,9 +9,6 @@ using NanoAgent.Domain.Abstractions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Domain.Services;
 using NanoAgent.Infrastructure.Models;
-using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 
 namespace NanoAgent.Tests.Application.Services;
 

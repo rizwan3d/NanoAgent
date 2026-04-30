@@ -1,5 +1,5 @@
-using NanoAgent.Application.Utilities;
 using FluentAssertions;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Tests.Application.Utilities;
 

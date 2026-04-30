@@ -1,8 +1,8 @@
-using System.Text.Json;
+using FluentAssertions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Secrets;
-using FluentAssertions;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Infrastructure.CustomTools;
 

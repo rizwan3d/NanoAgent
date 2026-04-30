@@ -1,8 +1,8 @@
+using FluentAssertions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Conversation;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Conversation;
 

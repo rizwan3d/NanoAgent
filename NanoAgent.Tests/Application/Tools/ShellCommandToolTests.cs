@@ -1,12 +1,12 @@
-using System.Text.Json;
+using FluentAssertions;
+using Moq;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Services;
-using FluentAssertions;
-using Moq;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools;
 

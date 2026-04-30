@@ -1,8 +1,8 @@
+using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Storage;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
 

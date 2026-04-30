@@ -1,11 +1,7 @@
-using System;
-using System.Collections.ObjectModel;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using NanoAgent.Desktop.Models;
 using NanoAgent.Desktop.Services;
+using System.Collections.ObjectModel;
 
 namespace NanoAgent.Desktop.ViewModels;
 

@@ -1,9 +1,9 @@
+using FluentAssertions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Tools;
 using NanoAgent.Tests.Infrastructure.Secrets.TestDoubles;
-using FluentAssertions;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 
