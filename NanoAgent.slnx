@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="NanoAgent/NanoAgent.csproj" />
+  <Project Path="NanoAgent.Plugin.GitHub/NanoAgent.Plugin.GitHub.csproj" />
   <Project Path="NanoAgent.CLI/NanoAgent.CLI.csproj" Id="197f173d-eab2-4c5a-b1b9-fca9a46d426c" />
   <Project Path="NanoAgent.Desktop/NanoAgent.Desktop.csproj" />
   <Project Path="NanoAgent.Tests/NanoAgent.Tests.csproj" />

@@ -9,6 +9,7 @@ using NanoAgent.Application.Backend;
 using NanoAgent.Application.Models;
 using NanoAgent.Desktop.Models;
 using NanoAgent.Domain.Models;
+using NanoAgent.Plugin.GitHub;
 using DesktopChatMessage = NanoAgent.Desktop.Models.ChatMessage;
 
 namespace NanoAgent.Desktop.Services;
@@ -42,7 +43,10 @@ public sealed class ProviderSetupRunner : IAsyncDisposable
             IHost? host = null;
             try
             {
-                host = NanoAgentHostFactory.Create(bridge, []);
+                host = NanoAgentHostFactory.Create(
+                    bridge,
+                    [],
+                    static services => services.AddGitHubPlugin());
                 IProviderSetupService setupService = host.Services.GetRequiredService<IProviderSetupService>();
                 ProviderSetupResult setupResult = await setupService.EnsureConfiguredAsync(cancellationToken);
 
