@@ -193,6 +193,22 @@ public static partial class Program
         StartModelSelection(state);
     }
 
+    private static void TogglePlanPanel(AppState state)
+    {
+        if (state.ActiveModal is not null)
+        {
+            return;
+        }
+
+        if (!state.IsPlanPinned && string.IsNullOrWhiteSpace(state.LatestPlanText))
+        {
+            state.AddSystemMessage("No plan is available yet.");
+            return;
+        }
+
+        state.IsPlanPinned = !state.IsPlanPinned;
+    }
+
     private static void RequestReadPermission(AppState state, string path)
     {
         state.ActiveModal = SelectionModalState<ReadPermissionChoice>.Create(

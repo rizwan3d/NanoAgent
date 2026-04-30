@@ -40,6 +40,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/use <model> - Switch the active model directly.\n" +
             "\nKeyboard shortcuts:\n" +
             "F2 - Choose the active model with the arrow-key picker.\n" +
+            "F3 - Pin or hide the latest plan in the terminal view.\n" +
             "/ - Open command suggestions in the terminal input.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --section <section-guid> to resume a saved section.\n" +
