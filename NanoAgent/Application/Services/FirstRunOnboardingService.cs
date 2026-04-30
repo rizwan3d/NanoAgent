@@ -1,10 +1,10 @@
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Logging;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Abstractions;
 using NanoAgent.Domain.Models;
-using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Application.Services;
 

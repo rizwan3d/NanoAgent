@@ -1,8 +1,8 @@
-using System.Text;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
+using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
 

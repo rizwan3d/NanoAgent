@@ -1,5 +1,4 @@
-using System.Security.Cryptography;
-using System.Text;
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Logging;
@@ -7,7 +6,8 @@ using NanoAgent.Application.Models;
 using NanoAgent.Domain.Abstractions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Domain.Services;
-using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace NanoAgent.Application.Services;
 

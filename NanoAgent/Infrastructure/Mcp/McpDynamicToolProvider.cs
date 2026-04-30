@@ -1,6 +1,6 @@
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.Mcp;
 

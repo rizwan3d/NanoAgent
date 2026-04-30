@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Conversation.Services;
 using NanoAgent.Application.Formatting;
@@ -8,7 +9,6 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Services;
 using NanoAgent.Domain.Abstractions;
 using NanoAgent.Domain.Services;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace NanoAgent.Application.DependencyInjection;
 

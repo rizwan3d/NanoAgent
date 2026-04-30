@@ -1,9 +1,9 @@
-using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using Microsoft.Extensions.Logging;
 using NanoAgent.Domain.Models;
+using System.Collections.Concurrent;
 
 namespace NanoAgent.Application.Services;
 

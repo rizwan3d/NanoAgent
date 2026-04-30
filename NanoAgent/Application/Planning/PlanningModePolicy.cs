@@ -1,6 +1,6 @@
-using System.Text.RegularExpressions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
+using System.Text.RegularExpressions;
 
 namespace NanoAgent.Application.Planning;
 

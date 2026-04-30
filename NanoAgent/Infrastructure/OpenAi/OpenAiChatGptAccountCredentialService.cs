@@ -1,11 +1,11 @@
+using Microsoft.Extensions.Logging;
+using NanoAgent.Application.Abstractions;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using NanoAgent.Application.Abstractions;
-using Microsoft.Extensions.Logging;
 
 namespace NanoAgent.Infrastructure.OpenAi;
 

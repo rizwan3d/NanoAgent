@@ -1,6 +1,6 @@
-using System.Collections.Concurrent;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Domain.Models;
+using System.Collections.Concurrent;
 
 namespace NanoAgent.Infrastructure.Models;
 

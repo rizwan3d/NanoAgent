@@ -1,21 +1,21 @@
-using NanoAgent.Infrastructure.Configuration;
-using NanoAgent.Infrastructure.Conversation;
-using NanoAgent.Infrastructure.CodeIntelligence;
-using NanoAgent.Infrastructure.CustomTools;
-using NanoAgent.Infrastructure.Hooks;
-using NanoAgent.Infrastructure.Logging;
-using NanoAgent.Infrastructure.Mcp;
-using NanoAgent.Infrastructure.OpenAi;
-using NanoAgent.Infrastructure.Secrets;
-using NanoAgent.Infrastructure.Updates;
-using NanoAgent.Application.Abstractions;
-using NanoAgent.Infrastructure.Models;
-using NanoAgent.Infrastructure.Storage;
-using NanoAgent.Infrastructure.Tools;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Infrastructure.CodeIntelligence;
+using NanoAgent.Infrastructure.Configuration;
+using NanoAgent.Infrastructure.Conversation;
+using NanoAgent.Infrastructure.CustomTools;
+using NanoAgent.Infrastructure.Hooks;
+using NanoAgent.Infrastructure.Logging;
+using NanoAgent.Infrastructure.Mcp;
+using NanoAgent.Infrastructure.Models;
+using NanoAgent.Infrastructure.OpenAi;
+using NanoAgent.Infrastructure.Secrets;
+using NanoAgent.Infrastructure.Storage;
+using NanoAgent.Infrastructure.Tools;
+using NanoAgent.Infrastructure.Updates;
 
 namespace NanoAgent.Infrastructure.DependencyInjection;
 

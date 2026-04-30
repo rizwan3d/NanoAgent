@@ -1,6 +1,6 @@
-using System.Text;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
+using System.Text;
 
 namespace NanoAgent.Application.Commands;
 

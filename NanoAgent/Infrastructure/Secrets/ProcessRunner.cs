@@ -1,9 +1,9 @@
+using Microsoft.Win32.SafeHandles;
 using System.Collections;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using Microsoft.Win32.SafeHandles;
 
 namespace NanoAgent.Infrastructure.Secrets;
 

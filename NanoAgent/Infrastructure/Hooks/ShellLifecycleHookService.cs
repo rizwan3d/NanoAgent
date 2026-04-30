@@ -1,5 +1,3 @@
-using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
@@ -7,6 +5,8 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Secrets;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace NanoAgent.Infrastructure.Hooks;
 
