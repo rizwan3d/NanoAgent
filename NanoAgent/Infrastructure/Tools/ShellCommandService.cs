@@ -479,12 +479,91 @@ internal sealed class ShellCommandService : IShellCommandService
             string tempDirectory = sandboxPlan.Request.WindowsSandbox?.TempDirectory ??
                 Path.Combine(workspaceRoot, ".nanoagent", "sandbox-temp");
             environment["HOME"] = workspaceRoot;
+            environment["PWD"] = workspaceRoot;
             environment["USERPROFILE"] = workspaceRoot;
             environment["TEMP"] = tempDirectory;
             environment["TMP"] = tempDirectory;
+            string? sandboxPath = BuildWindowsSandboxPath();
+            if (!string.IsNullOrWhiteSpace(sandboxPath))
+            {
+                environment["PATH"] = sandboxPath;
+            }
         }
 
         return environment;
+    }
+
+    private static string? BuildWindowsSandboxPath()
+    {
+        string? path = Environment.GetEnvironmentVariable("PATH");
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        List<string> entries = [];
+        HashSet<string> seen = new(StringComparer.OrdinalIgnoreCase);
+        foreach (string segment in path.Split(
+                     Path.PathSeparator,
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TryNormalizeWindowsPathEntry(segment, out string? normalizedPath))
+            {
+                continue;
+            }
+
+            if (seen.Add(normalizedPath))
+            {
+                entries.Add(normalizedPath);
+            }
+        }
+
+        return entries.Count == 0
+            ? null
+            : string.Join(Path.PathSeparator, entries);
+    }
+
+    private static bool TryNormalizeWindowsPathEntry(
+        string candidate,
+        out string normalizedPath)
+    {
+        normalizedPath = string.Empty;
+        string trimmedCandidate = candidate.Trim().Trim('"');
+        if (string.IsNullOrWhiteSpace(trimmedCandidate) ||
+            trimmedCandidate.Contains("::", StringComparison.Ordinal) ||
+            trimmedCandidate.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            string fullPath = Path.GetFullPath(
+                Environment.ExpandEnvironmentVariables(trimmedCandidate));
+            if (!Directory.Exists(fullPath))
+            {
+                return false;
+            }
+
+            normalizedPath = fullPath;
+            return true;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (NotSupportedException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static string ToWireValue(ToolSandboxMode sandboxMode)

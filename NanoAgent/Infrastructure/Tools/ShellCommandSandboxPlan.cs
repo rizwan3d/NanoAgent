@@ -336,6 +336,7 @@ internal static class ShellCommandSandboxPlanner
         normalizedPath = string.Empty;
         string trimmedCandidate = candidate.Trim().Trim('"');
         if (string.IsNullOrWhiteSpace(trimmedCandidate) ||
+            trimmedCandidate.Contains("::", StringComparison.Ordinal) ||
             trimmedCandidate.IndexOfAny(Path.GetInvalidPathChars()) >= 0)
         {
             return false;
