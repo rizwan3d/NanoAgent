@@ -34,17 +34,10 @@ public static partial class Program
 
     private static IRenderable BuildHeader(AppState state)
     {
-        string spinner = state.IsBusy || state.IsStreaming
-            ? Spinner[state.SpinnerFrame / 4 % Spinner.Length]
-            : " ";
-
-        string model = Markup.Escape(state.ActiveModelId ?? "n/a");
         string statusHeader =
-            $"[bold cyan]NanoAgent[/] " +
-            $"[grey]model:[/] [aqua]{model}[/] " +
-            $"[grey]GitHub:[/] [deepskyblue1]{Markup.Escape(RepositoryUrl)}[/] " +
-            $"[yellow]{spinner}[/]";
-
+            $"[bold cyan]NanoAgent[/]" +
+            $" ── [grey]GitHub:[/] [deepskyblue1]{Markup.Escape(RepositoryUrl)} [/]";
+           
         return new Panel(new Markup(BuildHeaderMarkup(state)))
             .Header(statusHeader)
             .Border(BoxBorder.Rounded)
@@ -54,7 +47,7 @@ public static partial class Program
     private static IRenderable BuildMessagesPanel(AppState state)
     {
         return new Panel(new Markup(BuildMessagesMarkup(state)))
-            .Header("[bold]Conversation[/]")
+            .Header($"[bold]Conversation[/] ──[grey] Working: {state.RootDirectory} [/]")
             .Border(BoxBorder.Rounded)
             .Expand();
     }
@@ -94,8 +87,9 @@ public static partial class Program
 
     private static IRenderable BuildInputPanel(AppState state)
     {
+        string model = Markup.Escape(state.ActiveModelId ?? "n/a");
         return new Panel(new Markup(BuildInputMarkup(state)))
-            .Header("[bold green]Input[/]")
+            .Header($"[bold green]Input[/] ── [grey]Model:[/] [aqua]{model} [/]")
             .Border(BoxBorder.Rounded)
             .Expand();
     }
@@ -381,7 +375,8 @@ public static partial class Program
         if (TryBuildLargeInputPasteMarkup(
             input,
             isBusy,
-            out string largePasteMarkup))
+            out string largePasteMarkup,
+            state))
         {
             return largePasteMarkup;
         }
@@ -402,7 +397,8 @@ public static partial class Program
         string inputMarkup = BuildInputLineMarkup(
             input,
             cursorIndex,
-            isBusy);
+            isBusy, 
+            state);
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -484,12 +480,10 @@ public static partial class Program
                 $"[grey]  [/][{accentColor}]   [/][white]{Markup.Escape(wordmark[index].Nano)}[/][fuchsia]{Markup.Escape(wordmark[index].Agent)}[/]");
         }
 
-        lines.Add(string.Empty);
         lines.Add(
             $"[grey]  Sponsor:[/] [yellow]{Markup.Escape(SponsorName)}[/] [grey]([/][italic]{Markup.Escape(SponsorUrl)}[/][grey])[/]");
-        lines.Add($"[grey]  {new string('-', HeaderDividerWidth)}[/]");
-        lines.Add("[grey]  Chat in the terminal. Press F2 to choose a model, F3 to pin the latest plan, Ctrl+C or /exit to quit.[/]");
-        lines.Add("[grey]  Press Esc while a response is running to interrupt the current request.[/]");
+        lines.Add("[grey]  Chat in the terminal. Press F2 to choose a model, F3 to pin the latest plan, Ctrl+C or /exit to quit. [/]");
+        lines.Add("[grey]  [/]");
 
         return string.Join('\n', lines);
     }
@@ -497,12 +491,15 @@ public static partial class Program
     private static string BuildInputLineMarkup(
         string input,
         int cursorIndex,
-        bool isBusy)
+        bool isBusy, AppState state)
     {
+        string spinner = state.IsBusy || state.IsStreaming
+            ? Spinner[state.SpinnerFrame / 4 % Spinner.Length]
+            : " ";
         string normalizedInput = input ?? string.Empty;
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
-        string busySuffixPlain = isBusy ? " (busy)" : string.Empty;
-        string busySuffixMarkup = isBusy ? " [grey](busy)[/]" : string.Empty;
+        string busySuffixPlain = isBusy ? $"[yellow]{spinner}[/]" + " Press Esc to interrupt the current request." : string.Empty;
+        string busySuffixMarkup = isBusy ? $"[yellow]{spinner}[/]" + " [grey]Press Esc to interrupt the current request.[/]" : string.Empty;
         const string promptPlain = "> ";
         const string promptMarkup = "[bold green]>[/] ";
         int contentWidth = Math.Max(20, Console.WindowWidth - 10);
@@ -706,7 +703,8 @@ public static partial class Program
     private static bool TryBuildLargeInputPasteMarkup(
         string input,
         bool isBusy,
-        out string markup)
+        out string markup, 
+        AppState state)
     {
         int lineCount = GetInputLogicalLineCount(input);
         if (lineCount <= MultilinePastePreviewLineThreshold)
@@ -719,7 +717,8 @@ public static partial class Program
         markup = BuildInputLineMarkup(
             summary,
             summary.Length,
-            isBusy);
+            isBusy,
+            state);
         return true;
     }
 
@@ -754,7 +753,7 @@ public static partial class Program
     private static int GetInputFirstLineTextWidth(bool isBusy)
     {
         const string promptPlain = "> ";
-        string busySuffixPlain = isBusy ? " (busy)" : string.Empty;
+        string busySuffixPlain = isBusy ? " Press Esc to interrupt the current request." : string.Empty;
         int contentWidth = Math.Max(20, Console.WindowWidth - 10);
 
         return Math.Max(
@@ -956,8 +955,8 @@ public static partial class Program
     {
         string baseNote = $"{FormatMetricElapsed(elapsed)} · {FormatMetricTokens(estimatedTokens)} tokens";
         return contextWindowTokens is > 0
-            ? $"({baseNote} · {FormatContextWindowUsage(contextWindowUsedTokens ?? 0, contextWindowTokens.Value)} · {FormatContextWindowTokens(contextWindowTokens.Value)} context)"
-            : $"({baseNote})";
+            ? $"[{baseNote} · {FormatContextWindowUsage(contextWindowUsedTokens ?? 0, contextWindowTokens.Value)} · {FormatContextWindowTokens(contextWindowTokens.Value)} context]"
+            : $"[{baseNote}]";
     }
 
     private static string FormatMetricElapsed(TimeSpan elapsed)
