@@ -678,12 +678,14 @@ internal sealed class ShellCommandService : IShellCommandService
 
         public void StartReaders()
         {
-            _standardOutputTask = ReadStreamAsync(
-                Process.StandardOutput,
-                AppendStandardOutput);
-            _standardErrorTask = ReadStreamAsync(
-                Process.StandardError,
-                AppendStandardError);
+            _standardOutputTask = Task.Run(
+                async () => await ReadStreamAsync(
+                    Process.StandardOutput,
+                    AppendStandardOutput));
+            _standardErrorTask = Task.Run(
+                async () => await ReadStreamAsync(
+                    Process.StandardError,
+                    AppendStandardError));
         }
 
         public (string StandardOutput, string StandardError) ReadNewOutput()
