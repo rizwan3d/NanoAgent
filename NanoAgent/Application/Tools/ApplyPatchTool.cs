@@ -5,15 +5,8 @@ using NanoAgent.Application.Tools.Serialization;
 
 namespace NanoAgent.Application.Tools;
 
-internal sealed class ApplyPatchTool : ITool
+internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService) : ITool
 {
-    private readonly IWorkspaceFileService _workspaceFileService;
-
-    public ApplyPatchTool(IWorkspaceFileService workspaceFileService)
-    {
-        _workspaceFileService = workspaceFileService;
-    }
-
     public string Description => "Apply a focused multi-file patch from the current session working directory within the workspace. Patch text must start with *** Begin Patch and end with *** End Patch.";
 
     public string Name => AgentToolNames.ApplyPatch;
@@ -79,7 +72,7 @@ internal sealed class ApplyPatchTool : ITool
         WorkspaceApplyPatchExecutionResult executionResult;
         try
         {
-            executionResult = await _workspaceFileService.ApplyPatchWithTrackingAsync(
+            executionResult = await workspaceFileService.ApplyPatchWithTrackingAsync(
                 safePatch,
                 cancellationToken);
         }
