@@ -10,9 +10,24 @@ internal sealed class CodeIntelligenceTool : ITool
 {
     private const int DefaultTimeoutSeconds = 10;
     private const int MaxTimeoutSeconds = 30;
+    private const string SupportedActionsText =
+        "document_symbols, symbols_list, definition, definition_find, references, references_find, implementation_find, hover, call_hierarchy, rename_symbol, diagnostics_list, test_discover, dependency_graph";
 
     private static readonly IReadOnlySet<string> PositionActions = new HashSet<string>(
-        ["definition", "references", "hover"],
+        [
+            "definition",
+            "definition_find",
+            "references",
+            "references_find",
+            "implementation_find",
+            "hover",
+            "call_hierarchy",
+            "rename_symbol"
+        ],
+        StringComparer.Ordinal);
+
+    private static readonly IReadOnlySet<string> NewNameActions = new HashSet<string>(
+        ["rename_symbol"],
         StringComparer.Ordinal);
 
     private readonly ICodeIntelligenceService _codeIntelligenceService;
@@ -22,7 +37,7 @@ internal sealed class CodeIntelligenceTool : ITool
         _codeIntelligenceService = codeIntelligenceService;
     }
 
-    public string Description => "Query installed language servers for read-only code intelligence such as document symbols, definitions, references, and hover text.";
+    public string Description => "Query installed language servers for read-only code intelligence such as symbols, definitions, implementations, references, call hierarchy, diagnostics, rename previews, tests, dependencies, and hover text.";
 
     public string Name => AgentToolNames.CodeIntelligence;
 
@@ -46,7 +61,7 @@ internal sealed class CodeIntelligenceTool : ITool
           "properties": {
             "action": {
               "type": "string",
-              "enum": ["document_symbols", "definition", "references", "hover"],
+              "enum": ["document_symbols", "symbols_list", "definition", "definition_find", "references", "references_find", "implementation_find", "hover", "call_hierarchy", "rename_symbol", "diagnostics_list", "test_discover", "dependency_graph"],
               "description": "The code intelligence query to run."
             },
             "path": {
@@ -56,16 +71,29 @@ internal sealed class CodeIntelligenceTool : ITool
             "line": {
               "type": "integer",
               "minimum": 1,
-              "description": "One-based line number. Required for definition, references, and hover."
+              "description": "One-based line number. Required for definition, definition_find, references, references_find, implementation_find, hover, call_hierarchy, and rename_symbol."
             },
             "character": {
               "type": "integer",
               "minimum": 1,
-              "description": "One-based character position. Required for definition, references, and hover."
+              "description": "One-based character position. Required for definition, definition_find, references, references_find, implementation_find, hover, call_hierarchy, and rename_symbol."
             },
             "includeDeclaration": {
               "type": "boolean",
-              "description": "When action is references, include the symbol declaration in the result."
+              "description": "When action is references or references_find, include the symbol declaration in the result."
+            },
+            "query": {
+              "type": "string",
+              "description": "Workspace symbol query for symbols_list. Defaults to an empty query."
+            },
+            "newName": {
+              "type": "string",
+              "description": "Replacement symbol name for rename_symbol. The tool previews edits and does not modify files."
+            },
+            "callDirection": {
+              "type": "string",
+              "enum": ["incoming", "outgoing", "both", "prepare"],
+              "description": "Call hierarchy direction for call_hierarchy. Defaults to both."
             },
             "timeoutSeconds": {
               "type": "integer",
@@ -91,7 +119,7 @@ internal sealed class CodeIntelligenceTool : ITool
         {
             return ToolResultFactory.InvalidArguments(
                 "invalid_action",
-                "Tool 'code_intelligence' requires action to be one of: document_symbols, definition, references, hover.",
+                $"Tool 'code_intelligence' requires action to be one of: {SupportedActionsText}.",
                 new ToolRenderPayload(
                     "Invalid code_intelligence arguments",
                     "Provide a supported action."));
@@ -110,6 +138,16 @@ internal sealed class CodeIntelligenceTool : ITool
         if (!TryReadPosition(context, normalizedAction!, out int? line, out int? character, out ToolResult? invalidPosition))
         {
             return invalidPosition!;
+        }
+
+        if (!TryReadNewName(context, normalizedAction!, out string? newName, out ToolResult? invalidNewName))
+        {
+            return invalidNewName!;
+        }
+
+        if (!TryReadCallDirection(context, normalizedAction!, out string? callDirection, out ToolResult? invalidCallDirection))
+        {
+            return invalidCallDirection!;
         }
 
         if (!TryReadTimeout(context, out int timeoutSeconds, out ToolResult? invalidTimeout))
@@ -141,7 +179,10 @@ internal sealed class CodeIntelligenceTool : ITool
                     line,
                     character,
                     ToolArguments.GetBoolean(context.Arguments, "includeDeclaration"),
-                    timeoutSeconds),
+                    timeoutSeconds,
+                    ToolArguments.GetOptionalString(context.Arguments, "query"),
+                    newName,
+                    callDirection),
                 cancellationToken);
 
             SessionStateToolRecorder.RecordCodeIntelligence(context.Session, result);
@@ -199,7 +240,19 @@ internal sealed class CodeIntelligenceTool : ITool
         action = value.Trim().ToLowerInvariant().Replace('-', '_');
         return action switch
         {
-            "document_symbols" or "definition" or "references" or "hover" => true,
+            "document_symbols" or
+            "symbols_list" or
+            "definition" or
+            "definition_find" or
+            "references" or
+            "references_find" or
+            "implementation_find" or
+            "hover" or
+            "call_hierarchy" or
+            "rename_symbol" or
+            "diagnostics_list" or
+            "test_discover" or
+            "dependency_graph" => true,
             _ => false
         };
     }
@@ -237,6 +290,70 @@ internal sealed class CodeIntelligenceTool : ITool
         line = requestedLine;
         character = requestedCharacter;
         return true;
+    }
+
+    private static bool TryReadNewName(
+        ToolExecutionContext context,
+        string action,
+        out string? newName,
+        out ToolResult? invalidResult)
+    {
+        newName = null;
+        invalidResult = null;
+
+        if (!NewNameActions.Contains(action))
+        {
+            return true;
+        }
+
+        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "newName", out newName))
+        {
+            invalidResult = ToolResultFactory.InvalidArguments(
+                "new_name_required",
+                $"Tool 'code_intelligence' requires a non-empty 'newName' value for action '{action}'.",
+                new ToolRenderPayload(
+                    "Invalid code_intelligence arguments",
+                    "Provide the replacement symbol name."));
+            return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryReadCallDirection(
+        ToolExecutionContext context,
+        string action,
+        out string? callDirection,
+        out ToolResult? invalidResult)
+    {
+        callDirection = null;
+        invalidResult = null;
+
+        if (!string.Equals(action, "call_hierarchy", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        string? requestedDirection = ToolArguments.GetOptionalString(context.Arguments, "callDirection");
+        if (string.IsNullOrWhiteSpace(requestedDirection))
+        {
+            callDirection = "both";
+            return true;
+        }
+
+        callDirection = requestedDirection.Trim().ToLowerInvariant().Replace('-', '_');
+        if (callDirection is "incoming" or "outgoing" or "both" or "prepare")
+        {
+            return true;
+        }
+
+        invalidResult = ToolResultFactory.InvalidArguments(
+            "invalid_call_direction",
+            "Tool 'code_intelligence' requires callDirection to be one of: incoming, outgoing, both, prepare.",
+            new ToolRenderPayload(
+                "Invalid code_intelligence arguments",
+                "Provide a supported call hierarchy direction."));
+        return false;
     }
 
     private static bool TryReadTimeout(
