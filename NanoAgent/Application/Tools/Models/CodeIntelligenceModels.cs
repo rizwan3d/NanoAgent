@@ -6,7 +6,10 @@ public sealed record CodeIntelligenceRequest(
     int? Line,
     int? Character,
     bool IncludeDeclaration,
-    int TimeoutSeconds);
+    int TimeoutSeconds,
+    string? Query = null,
+    string? NewName = null,
+    string? CallDirection = null);
 
 public sealed record CodeIntelligenceResult(
     string Action,
