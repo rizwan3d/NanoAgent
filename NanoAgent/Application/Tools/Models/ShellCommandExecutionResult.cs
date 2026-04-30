@@ -10,4 +10,8 @@ public sealed record ShellCommandExecutionResult(
     string? Justification = null,
     string SandboxMode = "workspace-write",
     string SandboxEnforcement = "none",
-    bool PseudoTerminal = false);
+    bool PseudoTerminal = false,
+    bool Background = false,
+    string? TerminalId = null,
+    string TerminalStatus = "completed",
+    string TerminalAction = "run");

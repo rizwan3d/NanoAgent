@@ -228,6 +228,106 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_StartBackgroundTerminal_When_Requested()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.StartBackgroundAsync(
+                It.Is<ShellCommandExecutionRequest>(request =>
+                    request.Command == "npm run dev" &&
+                    request.WorkingDirectory == "." &&
+                    !request.PseudoTerminal),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "npm run dev",
+                ".",
+                0,
+                string.Empty,
+                string.Empty,
+                Background: true,
+                TerminalId: "terminal-1",
+                TerminalStatus: "running",
+                TerminalAction: "start"));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+        ReplSessionContext session = TestSessionFactory.Create();
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "command": "npm run dev", "terminal_action": "start", "pty": true }""", session),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.Message.Should().Contain("Started background terminal 'terminal-1'");
+        result.RenderPayload!.Text.Should().Contain("Terminal status: running");
+        session.SessionState.TerminalHistory.Should().ContainSingle(command =>
+            command.Background &&
+            command.TerminalId == "terminal-1" &&
+            command.TerminalStatus == "running");
+        shellCommandService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReadBackgroundTerminal_When_IdIsProvided()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ReadBackgroundAsync(
+                "terminal-1",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "npm run dev",
+                ".",
+                0,
+                "ready",
+                string.Empty,
+                Background: true,
+                TerminalId: "terminal-1",
+                TerminalStatus: "running",
+                TerminalAction: "read"));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "terminal_action": "read", "terminal_id": "terminal-1" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.RenderPayload!.Text.Should().Contain("ready");
+        result.RenderPayload.Text.Should().Contain("Background terminal: terminal-1");
+        shellCommandService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReturnNotFound_When_BackgroundTerminalIsMissing()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ReadBackgroundAsync(
+                "terminal-missing",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                string.Empty,
+                ".",
+                127,
+                string.Empty,
+                "not found",
+                Background: true,
+                TerminalId: "terminal-missing",
+                TerminalStatus: "not_found",
+                TerminalAction: "read"));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "terminal_action": "read", "terminal_id": "terminal-missing" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.NotFound);
+        result.Message.Should().Contain("terminal-missing");
+        shellCommandService.VerifyAll();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ExplainUnsupportedSandboxFallback()
     {
         Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);

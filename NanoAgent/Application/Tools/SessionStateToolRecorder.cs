@@ -207,7 +207,10 @@ internal static class SessionStateToolRecorder
             result.WorkingDirectory,
             result.ExitCode,
             NormalizeOptionalForState(result.StandardOutput, MaxTerminalOutputCharacters),
-            NormalizeOptionalForState(result.StandardError, MaxTerminalOutputCharacters)));
+            NormalizeOptionalForState(result.StandardError, MaxTerminalOutputCharacters),
+            result.Background,
+            result.TerminalId,
+            result.TerminalStatus));
     }
 
     private static string FormatPreview(

@@ -4,7 +4,9 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
+using System.Collections.Concurrent;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
@@ -12,10 +14,18 @@ namespace NanoAgent.Infrastructure.Tools;
 internal sealed class ShellCommandService : IShellCommandService
 {
     private const int MaxOutputCharacters = 8_000;
+    private const int MaxBackgroundOutputCharacters = 16_000;
+    private const string RunningStatus = "running";
+    private const string ExitedStatus = "exited";
+    private const string FailedStatus = "failed";
+    private const string NotFoundStatus = "not_found";
+    private const string StoppedStatus = "stopped";
 
+    private readonly ConcurrentDictionary<string, BackgroundTerminal> _backgroundTerminals = new(StringComparer.OrdinalIgnoreCase);
     private readonly IProcessRunner _processRunner;
     private readonly PermissionSettings _permissionSettings;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
+    private int _backgroundTerminalSequence;
 
     public ShellCommandService(
         IProcessRunner processRunner,
@@ -41,6 +51,191 @@ internal sealed class ShellCommandService : IShellCommandService
                 nameof(request));
         }
 
+        PreparedShellCommand prepared = PrepareShellCommand(request);
+
+        ProcessExecutionResult result;
+        try
+        {
+            result = await _processRunner.RunAsync(
+                prepared.ProcessRequest,
+                cancellationToken);
+        }
+        catch (PlatformNotSupportedException exception) when (prepared.ProcessRequest.UsePseudoTerminal)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start PTY shell execution: {exception.Message}");
+        }
+        catch (Win32Exception exception) when (prepared.ProcessRequest.UsePseudoTerminal)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start PTY shell execution: {exception.Message}");
+        }
+        catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}");
+        }
+        catch (Win32Exception exception)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}");
+        }
+
+        return new ShellCommandExecutionResult(
+            request.Command,
+            ToWorkspaceRelativePath(prepared.WorkingDirectory),
+            result.ExitCode,
+            TrimOutput(result.StandardOutput),
+            TrimOutput(result.StandardError),
+            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
+            string.IsNullOrWhiteSpace(request.Justification)
+                ? null
+                : request.Justification.Trim(),
+            ToWireValue(prepared.EffectiveSandboxMode),
+            prepared.SandboxPlan.Enforcement,
+            request.PseudoTerminal);
+    }
+
+    public Task<ShellCommandExecutionResult> StartBackgroundAsync(
+        ShellCommandExecutionRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (string.IsNullOrWhiteSpace(request.Command))
+        {
+            throw new ArgumentException(
+                "Shell command must be provided.",
+                nameof(request));
+        }
+
+        PreparedShellCommand prepared = PrepareShellCommand(request);
+        if (prepared.ProcessRequest.UsePseudoTerminal)
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                "Background terminals do not support pseudo-terminal mode.",
+                background: true,
+                terminalAction: "start"));
+        }
+
+        try
+        {
+            BackgroundTerminal terminal = StartBackgroundTerminal(
+                request,
+                prepared);
+            _backgroundTerminals[terminal.Id] = terminal;
+
+            return Task.FromResult(CreateBackgroundResult(
+                terminal,
+                terminalAction: "start",
+                terminalStatus: terminal.Status,
+                exitCode: 0,
+                standardOutput: string.Empty,
+                standardError: string.Empty));
+        }
+        catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}",
+                background: true,
+                terminalAction: "start"));
+        }
+        catch (Win32Exception exception)
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}",
+                background: true,
+                terminalAction: "start"));
+        }
+    }
+
+    public async Task<ShellCommandExecutionResult> ReadBackgroundAsync(
+        string terminalId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!TryGetBackgroundTerminal(terminalId, out BackgroundTerminal? terminal))
+        {
+            return CreateBackgroundNotFoundResult(terminalId, "read");
+        }
+
+        BackgroundTerminal activeTerminal = terminal!;
+        if (!activeTerminal.IsRunning)
+        {
+            await activeTerminal.CompleteReadersAsync(cancellationToken);
+        }
+
+        (string standardOutput, string standardError) = activeTerminal.ReadNewOutput();
+        string status = activeTerminal.Status;
+        int exitCode = string.Equals(status, ExitedStatus, StringComparison.Ordinal)
+            ? activeTerminal.ExitCodeOrDefault()
+            : 0;
+        ShellCommandExecutionResult result = CreateBackgroundResult(
+            activeTerminal,
+            terminalAction: "read",
+            terminalStatus: status,
+            exitCode,
+            standardOutput,
+            standardError);
+
+        if (string.Equals(status, ExitedStatus, StringComparison.Ordinal) &&
+            _backgroundTerminals.TryRemove(activeTerminal.Id, out BackgroundTerminal? removedTerminal))
+        {
+            removedTerminal.Dispose();
+        }
+
+        return result;
+    }
+
+    public async Task<ShellCommandExecutionResult> StopBackgroundAsync(
+        string terminalId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!_backgroundTerminals.TryRemove(NormalizeTerminalId(terminalId), out BackgroundTerminal? terminal))
+        {
+            return CreateBackgroundNotFoundResult(terminalId, "stop");
+        }
+
+        await terminal.StopAsync(cancellationToken);
+        (string standardOutput, string standardError) = terminal.ReadNewOutput();
+        ShellCommandExecutionResult result = CreateBackgroundResult(
+            terminal,
+            terminalAction: "stop",
+            terminalStatus: StoppedStatus,
+            exitCode: 0,
+            standardOutput,
+            standardError);
+        terminal.Dispose();
+        return result;
+    }
+
+    private PreparedShellCommand PrepareShellCommand(ShellCommandExecutionRequest request)
+    {
         string workingDirectory = ResolveWorkspacePath(request.WorkingDirectory, directoryRequired: true);
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         ToolSandboxMode effectiveSandboxMode = GetEffectiveSandboxMode(request);
@@ -76,59 +271,11 @@ internal sealed class ShellCommandService : IShellCommandService
             EnvironmentVariables = sandboxEnvironment
         };
 
-        ProcessExecutionResult result;
-        try
-        {
-            result = await _processRunner.RunAsync(
-                processRequest,
-                cancellationToken);
-        }
-        catch (PlatformNotSupportedException exception) when (processRequest.UsePseudoTerminal)
-        {
-            return CreateExecutionFailureResult(
-                request,
-                workingDirectory,
-                sandboxPlan.Enforcement,
-                $"Unable to start PTY shell execution: {exception.Message}");
-        }
-        catch (Win32Exception exception) when (processRequest.UsePseudoTerminal)
-        {
-            return CreateExecutionFailureResult(
-                request,
-                workingDirectory,
-                sandboxPlan.Enforcement,
-                $"Unable to start PTY shell execution: {exception.Message}");
-        }
-        catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(sandboxPlan.Enforcement))
-        {
-            return CreateExecutionFailureResult(
-                request,
-                workingDirectory,
-                sandboxPlan.Enforcement,
-                $"Unable to start OS-level shell sandbox runner '{processRequest.FileName}': {exception.Message}");
-        }
-        catch (Win32Exception exception)
-        {
-            return CreateExecutionFailureResult(
-                request,
-                workingDirectory,
-                sandboxPlan.Enforcement,
-                $"Unable to start shell '{processRequest.FileName}': {exception.Message}");
-        }
-
-        return new ShellCommandExecutionResult(
-            request.Command,
-            ToWorkspaceRelativePath(workingDirectory),
-            result.ExitCode,
-            TrimOutput(result.StandardOutput),
-            TrimOutput(result.StandardError),
-            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
-            string.IsNullOrWhiteSpace(request.Justification)
-                ? null
-                : request.Justification.Trim(),
-            ToWireValue(effectiveSandboxMode),
-            sandboxPlan.Enforcement,
-            request.PseudoTerminal);
+        return new PreparedShellCommand(
+            workingDirectory,
+            effectiveSandboxMode,
+            sandboxPlan,
+            processRequest);
     }
 
     private ToolSandboxMode GetEffectiveSandboxMode(ShellCommandExecutionRequest request)
@@ -145,7 +292,9 @@ internal sealed class ShellCommandService : IShellCommandService
         ShellCommandExecutionRequest request,
         string workingDirectory,
         string sandboxEnforcement,
-        string standardError)
+        string standardError,
+        bool background = false,
+        string terminalAction = "run")
     {
         return new ShellCommandExecutionResult(
             request.Command,
@@ -159,7 +308,126 @@ internal sealed class ShellCommandService : IShellCommandService
                 : request.Justification.Trim(),
             ToWireValue(GetEffectiveSandboxMode(request)),
             sandboxEnforcement,
-            request.PseudoTerminal);
+            request.PseudoTerminal,
+            background,
+            null,
+            FailedStatus,
+            terminalAction);
+    }
+
+    private BackgroundTerminal StartBackgroundTerminal(
+        ShellCommandExecutionRequest request,
+        PreparedShellCommand prepared)
+    {
+        ProcessStartInfo startInfo = CreateBackgroundStartInfo(prepared.ProcessRequest);
+        Process process = new()
+        {
+            StartInfo = startInfo,
+            EnableRaisingEvents = true
+        };
+
+        process.Start();
+
+        string terminalId = "terminal-" + Interlocked.Increment(ref _backgroundTerminalSequence).ToString("D", System.Globalization.CultureInfo.InvariantCulture);
+        BackgroundTerminal terminal = new(
+            terminalId,
+            request.Command,
+            ToWorkspaceRelativePath(prepared.WorkingDirectory),
+            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
+            string.IsNullOrWhiteSpace(request.Justification)
+                ? null
+                : request.Justification.Trim(),
+            ToWireValue(prepared.EffectiveSandboxMode),
+            prepared.SandboxPlan.Enforcement,
+            process);
+        terminal.StartReaders();
+        return terminal;
+    }
+
+    private static ProcessStartInfo CreateBackgroundStartInfo(ProcessExecutionRequest request)
+    {
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = request.FileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.WorkingDirectory))
+        {
+            startInfo.WorkingDirectory = request.WorkingDirectory;
+        }
+
+        foreach (string argument in request.Arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        if (request.EnvironmentVariables is not null)
+        {
+            foreach (KeyValuePair<string, string> environmentVariable in request.EnvironmentVariables)
+            {
+                if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
+                {
+                    startInfo.Environment[environmentVariable.Key] = environmentVariable.Value;
+                }
+            }
+        }
+
+        return startInfo;
+    }
+
+    private static ShellCommandExecutionResult CreateBackgroundResult(
+        BackgroundTerminal terminal,
+        string terminalAction,
+        string terminalStatus,
+        int exitCode,
+        string standardOutput,
+        string standardError)
+    {
+        return new ShellCommandExecutionResult(
+            terminal.Command,
+            terminal.WorkingDirectory,
+            exitCode,
+            TrimOutput(standardOutput),
+            TrimOutput(standardError),
+            terminal.SandboxPermissions,
+            terminal.Justification,
+            terminal.SandboxMode,
+            terminal.SandboxEnforcement,
+            PseudoTerminal: false,
+            Background: true,
+            TerminalId: terminal.Id,
+            TerminalStatus: terminalStatus,
+            TerminalAction: terminalAction);
+    }
+
+    private static ShellCommandExecutionResult CreateBackgroundNotFoundResult(
+        string terminalId,
+        string terminalAction)
+    {
+        string normalizedTerminalId = NormalizeTerminalId(terminalId);
+        return new ShellCommandExecutionResult(
+            string.Empty,
+            ".",
+            127,
+            string.Empty,
+            $"Background terminal '{normalizedTerminalId}' was not found.",
+            Background: true,
+            TerminalId: normalizedTerminalId,
+            TerminalStatus: NotFoundStatus,
+            TerminalAction: terminalAction);
+    }
+
+    private bool TryGetBackgroundTerminal(
+        string terminalId,
+        out BackgroundTerminal? terminal)
+    {
+        return _backgroundTerminals.TryGetValue(
+            NormalizeTerminalId(terminalId),
+            out terminal);
     }
 
     private IReadOnlyDictionary<string, string> BuildSandboxEnvironment(
@@ -291,6 +559,13 @@ internal sealed class ShellCommandService : IShellCommandService
         return normalizedValue[..MaxOutputCharacters] + "...";
     }
 
+    private static string NormalizeTerminalId(string? terminalId)
+    {
+        return string.IsNullOrWhiteSpace(terminalId)
+            ? string.Empty
+            : terminalId.Trim();
+    }
+
     private static bool IsSandboxRunnerEnforcement(string enforcement)
     {
         return string.Equals(
@@ -301,5 +576,223 @@ internal sealed class ShellCommandService : IShellCommandService
                    enforcement,
                    ShellCommandSandboxPlanner.SandboxExecEnforcement,
                    StringComparison.Ordinal);
+    }
+
+    private sealed record PreparedShellCommand(
+        string WorkingDirectory,
+        ToolSandboxMode EffectiveSandboxMode,
+        ShellCommandSandboxPlan SandboxPlan,
+        ProcessExecutionRequest ProcessRequest);
+
+    private sealed class BackgroundTerminal : IDisposable
+    {
+        private readonly StringBuilder _standardError = new();
+        private readonly StringBuilder _standardOutput = new();
+        private readonly object _syncRoot = new();
+        private bool _stopped;
+        private Task _standardErrorTask = Task.CompletedTask;
+        private int _standardErrorCursor;
+        private Task _standardOutputTask = Task.CompletedTask;
+        private int _standardOutputCursor;
+
+        public BackgroundTerminal(
+            string id,
+            string command,
+            string workingDirectory,
+            string sandboxPermissions,
+            string? justification,
+            string sandboxMode,
+            string sandboxEnforcement,
+            Process process)
+        {
+            Id = id;
+            Command = command;
+            WorkingDirectory = workingDirectory;
+            SandboxPermissions = sandboxPermissions;
+            Justification = justification;
+            SandboxMode = sandboxMode;
+            SandboxEnforcement = sandboxEnforcement;
+            Process = process;
+        }
+
+        public string Command { get; }
+
+        public string Id { get; }
+
+        public bool IsRunning => !_stopped && !Process.HasExited;
+
+        public string? Justification { get; }
+
+        public Process Process { get; }
+
+        public string SandboxEnforcement { get; }
+
+        public string SandboxMode { get; }
+
+        public string SandboxPermissions { get; }
+
+        public string Status
+        {
+            get
+            {
+                if (_stopped)
+                {
+                    return StoppedStatus;
+                }
+
+                return Process.HasExited
+                    ? ExitedStatus
+                    : RunningStatus;
+            }
+        }
+
+        public string WorkingDirectory { get; }
+
+        public void StartReaders()
+        {
+            _standardOutputTask = ReadStreamAsync(
+                Process.StandardOutput,
+                AppendStandardOutput);
+            _standardErrorTask = ReadStreamAsync(
+                Process.StandardError,
+                AppendStandardError);
+        }
+
+        public (string StandardOutput, string StandardError) ReadNewOutput()
+        {
+            lock (_syncRoot)
+            {
+                string standardOutput = _standardOutputCursor >= _standardOutput.Length
+                    ? string.Empty
+                    : _standardOutput.ToString(_standardOutputCursor, _standardOutput.Length - _standardOutputCursor);
+                string standardError = _standardErrorCursor >= _standardError.Length
+                    ? string.Empty
+                    : _standardError.ToString(_standardErrorCursor, _standardError.Length - _standardErrorCursor);
+                _standardOutputCursor = _standardOutput.Length;
+                _standardErrorCursor = _standardError.Length;
+                return (standardOutput, standardError);
+            }
+        }
+
+        public int ExitCodeOrDefault()
+        {
+            try
+            {
+                return Process.HasExited
+                    ? Process.ExitCode
+                    : 0;
+            }
+            catch (InvalidOperationException)
+            {
+                return 0;
+            }
+        }
+
+        public async Task StopAsync(CancellationToken cancellationToken)
+        {
+            _stopped = true;
+            try
+            {
+                if (!Process.HasExited)
+                {
+                    Process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Win32Exception)
+            {
+            }
+
+            await WaitForExitAsync(cancellationToken);
+            await CompleteReadersAsync(cancellationToken);
+        }
+
+        public async Task CompleteReadersAsync(CancellationToken cancellationToken)
+        {
+            await Task.WhenAll(_standardOutputTask, _standardErrorTask).WaitAsync(cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            Process.Dispose();
+        }
+
+        private async Task WaitForExitAsync(CancellationToken cancellationToken)
+        {
+            try
+            {
+                await Process.WaitForExitAsync(cancellationToken);
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        private void AppendStandardOutput(string value)
+        {
+            Append(_standardOutput, ref _standardOutputCursor, value);
+        }
+
+        private void AppendStandardError(string value)
+        {
+            Append(_standardError, ref _standardErrorCursor, value);
+        }
+
+        private void Append(
+            StringBuilder builder,
+            ref int cursor,
+            string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return;
+            }
+
+            lock (_syncRoot)
+            {
+                builder.Append(value);
+                if (builder.Length <= MaxBackgroundOutputCharacters)
+                {
+                    return;
+                }
+
+                int overflow = builder.Length - MaxBackgroundOutputCharacters;
+                builder.Remove(0, overflow);
+                cursor = Math.Max(0, cursor - overflow);
+            }
+        }
+
+        private static async Task ReadStreamAsync(
+            TextReader reader,
+            Action<string> append)
+        {
+            char[] buffer = new char[4096];
+            while (true)
+            {
+                int read;
+                try
+                {
+                    read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length));
+                }
+                catch (IOException exception)
+                {
+                    append($"{Environment.NewLine}Output capture stopped: {exception.Message}");
+                    return;
+                }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+
+                if (read == 0)
+                {
+                    return;
+                }
+
+                append(new string(buffer, 0, read));
+            }
+        }
     }
 }
