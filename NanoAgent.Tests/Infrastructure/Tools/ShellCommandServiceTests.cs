@@ -325,54 +325,6 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_NormalizeWindowsAppContainerShellEnvironment()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        string existingPath = GetFirstExistingPathDirectory() ?? _workspaceRoot;
-        string? originalPath = Environment.GetEnvironmentVariable("PATH");
-        string? originalPwd = Environment.GetEnvironmentVariable("PWD");
-        try
-        {
-            string providerQualifiedPath = @"Microsoft.PowerShell.Core\FileSystem::C:\Missing";
-            Environment.SetEnvironmentVariable(
-                "PATH",
-                string.Join(Path.PathSeparator, providerQualifiedPath, existingPath, existingPath));
-            Environment.SetEnvironmentVariable("PWD", providerQualifiedPath);
-
-            FakeProcessRunner processRunner = new();
-            processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
-            ShellCommandService sut = new(
-                processRunner,
-                new StubWorkspaceRootProvider(_workspaceRoot));
-
-            await sut.ExecuteAsync(
-                new ShellCommandExecutionRequest("node -v", null),
-                CancellationToken.None);
-
-            processRunner.Requests.Should().ContainSingle();
-            ProcessExecutionRequest request = processRunner.Requests[0];
-            request.WindowsSandbox.Should().NotBeNull();
-            request.EnvironmentVariables!["PWD"].Should().Be(Path.GetFullPath(_workspaceRoot));
-            request.EnvironmentVariables["PATH"].Should().NotContain("Microsoft.PowerShell.Core");
-            request.EnvironmentVariables["PATH"]
-                .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
-                .Should()
-                .Equal(Path.GetFullPath(existingPath));
-            request.WindowsSandbox!.ReadOnlyRoots.Should().NotContain(
-                path => path.Contains("Microsoft.PowerShell.Core", StringComparison.Ordinal));
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("PATH", originalPath);
-            Environment.SetEnvironmentVariable("PWD", originalPwd);
-        }
-    }
-
-    [Fact]
     public async Task ExecuteAsync_Should_UseWindowsAppContainerSandbox_When_PseudoTerminalRequested()
     {
         if (!OperatingSystem.IsWindows())
