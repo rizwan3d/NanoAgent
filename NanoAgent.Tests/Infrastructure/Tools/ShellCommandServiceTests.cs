@@ -321,7 +321,7 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_UseWindowsAppContainerSandbox_When_PseudoTerminalRequested()
+    public async Task StartBackgroundAsync_Should_BlockWindowsAppContainerSandbox()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -329,40 +329,6 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         FakeProcessRunner processRunner = new();
-        processRunner.EnqueueResult(new ProcessExecutionResult(0, "terminal", string.Empty));
-        ShellCommandService sut = new(
-            processRunner,
-            new StubWorkspaceRootProvider(_workspaceRoot));
-
-        ShellCommandExecutionResult result = await sut.ExecuteAsync(
-            new ShellCommandExecutionRequest(
-                "dotnet test",
-                null,
-                PseudoTerminal: true),
-            CancellationToken.None);
-
-        processRunner.Requests.Should().ContainSingle();
-        ProcessExecutionRequest request = processRunner.Requests[0];
-        request.UsePseudoTerminal.Should().BeTrue();
-        request.WindowsSandbox.Should().NotBeNull();
-        request.WindowsSandbox!.AllowWorkspaceWrite.Should().BeTrue();
-        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-appcontainer");
-        request.EnvironmentVariables["NANOAGENT_SHELL_PTY"].Should().Be("1");
-        result.ExitCode.Should().Be(0);
-        result.PseudoTerminal.Should().BeTrue();
-        result.SandboxEnforcement.Should().Be("windows-appcontainer");
-    }
-
-    [Fact]
-    public async Task StartBackgroundAsync_Should_UseWindowsAppContainerSandbox()
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            return;
-        }
-
-        FakeProcessRunner processRunner = new();
-        processRunner.EnqueueBackgroundProcess(new FakeBackgroundProcess("ready"));
         ShellCommandService sut = new(
             processRunner,
             new StubWorkspaceRootProvider(_workspaceRoot));
@@ -371,16 +337,12 @@ public sealed class ShellCommandServiceTests : IDisposable
             new ShellCommandExecutionRequest("Start-Sleep -Seconds 30", null),
             CancellationToken.None);
 
-        processRunner.BackgroundRequests.Should().ContainSingle();
-        ProcessExecutionRequest request = processRunner.BackgroundRequests[0];
-        request.WindowsSandbox.Should().NotBeNull();
-        request.WindowsSandbox!.AllowWorkspaceWrite.Should().BeTrue();
-        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-appcontainer");
-        request.EnvironmentVariables["TEMP"].Should().Be(request.WindowsSandbox.TempDirectory);
-        result.ExitCode.Should().Be(0);
+        processRunner.Requests.Should().BeEmpty();
+        result.ExitCode.Should().Be(126);
         result.Background.Should().BeTrue();
         result.TerminalAction.Should().Be("start");
-        result.TerminalStatus.Should().Be("running");
+        result.TerminalStatus.Should().Be("failed");
+        result.StandardError.Should().Contain("Background terminals do not support Windows AppContainer");
         result.SandboxEnforcement.Should().Be("windows-appcontainer");
     }
 

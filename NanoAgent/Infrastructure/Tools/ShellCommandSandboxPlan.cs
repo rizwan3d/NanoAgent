@@ -241,6 +241,14 @@ internal static class ShellCommandSandboxPlanner
         ToolSandboxMode effectiveSandboxMode,
         string workspaceRoot)
     {
+        if (shellRequest.UsePseudoTerminal)
+        {
+            return Unsupported(
+                shellRequest,
+                effectiveSandboxMode,
+                "Windows AppContainer shell sandboxing does not support pseudo-terminal execution.");
+        }
+
         string modeSegment = effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite
             ? "write"
             : "read";

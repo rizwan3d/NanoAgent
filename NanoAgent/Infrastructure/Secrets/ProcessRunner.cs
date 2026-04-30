@@ -25,13 +25,6 @@ internal sealed class ProcessRunner : IProcessRunner
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (request.WindowsSandbox is not null)
-        {
-            return await RunWithWindowsAppContainerAsync(
-                request,
-                cancellationToken);
-        }
-
         if (request.UsePseudoTerminal)
         {
             return await RunWithPseudoTerminalAsync(
@@ -39,30 +32,16 @@ internal sealed class ProcessRunner : IProcessRunner
                 cancellationToken);
         }
 
+        if (request.WindowsSandbox is not null)
+        {
+            return await RunWithWindowsAppContainerAsync(
+                request,
+                cancellationToken);
+        }
+
         return await RunDirectAsync(
             request,
             cancellationToken);
-    }
-
-    public IBackgroundProcess StartBackground(
-        ProcessExecutionRequest request,
-        CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        if (request.UsePseudoTerminal)
-        {
-            throw new PlatformNotSupportedException(
-                "Background process execution does not support pseudo terminals.");
-        }
-
-        if (request.WindowsSandbox is not null)
-        {
-            return StartWindowsAppContainerBackground(request);
-        }
-
-        return StartDirectBackground(request);
     }
 
     private async Task<ProcessExecutionResult> RunDirectAsync(
@@ -139,60 +118,16 @@ internal sealed class ProcessRunner : IProcessRunner
             await standardErrorTask);
     }
 
-    private static IBackgroundProcess StartDirectBackground(ProcessExecutionRequest request)
-    {
-        ProcessStartInfo startInfo = new()
-        {
-            FileName = request.FileName,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-            CreateNoWindow = true
-        };
-
-        if (!string.IsNullOrWhiteSpace(request.WorkingDirectory))
-        {
-            startInfo.WorkingDirectory = request.WorkingDirectory;
-        }
-
-        foreach (string argument in request.Arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
-        }
-
-        if (request.EnvironmentVariables is not null)
-        {
-            foreach (KeyValuePair<string, string> environmentVariable in request.EnvironmentVariables)
-            {
-                if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
-                {
-                    startInfo.Environment[environmentVariable.Key] = environmentVariable.Value;
-                }
-            }
-        }
-
-        Process process = new()
-        {
-            StartInfo = startInfo,
-            EnableRaisingEvents = true
-        };
-
-        try
-        {
-            process.Start();
-            return new SystemBackgroundProcess(process);
-        }
-        catch
-        {
-            process.Dispose();
-            throw;
-        }
-    }
-
     private async Task<ProcessExecutionResult> RunWithPseudoTerminalAsync(
         ProcessExecutionRequest request,
         CancellationToken cancellationToken)
     {
+        if (request.WindowsSandbox is not null)
+        {
+            throw new PlatformNotSupportedException(
+                "Windows AppContainer sandbox execution does not support pseudo terminals.");
+        }
+
         if (OperatingSystem.IsWindows())
         {
             try
@@ -230,18 +165,22 @@ internal sealed class ProcessRunner : IProcessRunner
                 "Windows AppContainer sandbox execution is only supported on Windows.");
         }
 
-        IntPtr appContainerSid = PrepareWindowsAppContainer(
-            request.WindowsSandbox
-                ?? throw new InvalidOperationException("Windows sandbox configuration is missing."));
+        WindowsSandboxConfiguration sandbox = request.WindowsSandbox
+            ?? throw new InvalidOperationException("Windows sandbox configuration is missing.");
+        Directory.CreateDirectory(sandbox.TempDirectory);
+
+        IntPtr appContainerSid = EnsureAppContainerProfile(sandbox);
         try
         {
-            if (request.UsePseudoTerminal)
-            {
-                return await RunWithWindowsPseudoTerminalAsync(
-                    request,
-                    cancellationToken,
-                    appContainerSid);
-            }
+            string appContainerSidText = ConvertSidToString(appContainerSid);
+            GrantAppContainerFileAccess(
+                appContainerSidText,
+                sandbox.WorkspaceRoot,
+                sandbox.AllowWorkspaceWrite);
+            GrantAppContainerFileAccess(
+                appContainerSidText,
+                sandbox.TempDirectory,
+                allowWrite: true);
 
             return await RunWindowsAppContainerDirectAsync(
                 request,
@@ -273,10 +212,13 @@ internal sealed class ProcessRunner : IProcessRunner
 
         try
         {
-            securityCapabilitiesBuffer = CreateSecurityCapabilitiesBuffer(appContainerSid);
-            attributeList = CreateWindowsStartupAttributeList(
-                IntPtr.Zero,
-                securityCapabilitiesBuffer);
+            SecurityCapabilities securityCapabilities = new()
+            {
+                AppContainerSid = appContainerSid
+            };
+            securityCapabilitiesBuffer = Marshal.AllocHGlobal(Marshal.SizeOf<SecurityCapabilities>());
+            Marshal.StructureToPtr(securityCapabilities, securityCapabilitiesBuffer, fDeleteOld: false);
+            attributeList = CreateSecurityCapabilitiesAttributeList(securityCapabilitiesBuffer);
             environmentBlock = CreateWindowsEnvironmentBlock(request.EnvironmentVariables);
 
             StartupInfoEx startupInfo = new()
@@ -414,143 +356,6 @@ internal sealed class ProcessRunner : IProcessRunner
         }
     }
 
-    private static IBackgroundProcess StartWindowsAppContainerBackground(
-        ProcessExecutionRequest request)
-    {
-        if (!OperatingSystem.IsWindows())
-        {
-            throw new PlatformNotSupportedException(
-                "Windows AppContainer sandbox execution is only supported on Windows.");
-        }
-
-        IntPtr appContainerSid = PrepareWindowsAppContainer(
-            request.WindowsSandbox
-                ?? throw new InvalidOperationException("Windows sandbox configuration is missing."));
-        try
-        {
-            return StartWindowsAppContainerBackgroundProcess(
-                request,
-                appContainerSid);
-        }
-        finally
-        {
-            if (appContainerSid != IntPtr.Zero)
-            {
-                FreeSid(appContainerSid);
-            }
-        }
-    }
-
-    private static IBackgroundProcess StartWindowsAppContainerBackgroundProcess(
-        ProcessExecutionRequest request,
-        IntPtr appContainerSid)
-    {
-        CreateInputPipe(out SafeFileHandle stdinRead, out SafeFileHandle stdinWrite);
-        CreateOutputPipe(out SafeFileHandle stdoutRead, out SafeFileHandle stdoutWrite);
-        CreateOutputPipe(out SafeFileHandle stderrRead, out SafeFileHandle stderrWrite);
-
-        IntPtr attributeList = IntPtr.Zero;
-        IntPtr securityCapabilitiesBuffer = IntPtr.Zero;
-        IntPtr environmentBlock = IntPtr.Zero;
-        ProcessInformation processInformation = default;
-
-        try
-        {
-            securityCapabilitiesBuffer = CreateSecurityCapabilitiesBuffer(appContainerSid);
-            attributeList = CreateWindowsStartupAttributeList(
-                IntPtr.Zero,
-                securityCapabilitiesBuffer);
-            environmentBlock = CreateWindowsEnvironmentBlock(request.EnvironmentVariables);
-
-            StartupInfoEx startupInfo = new()
-            {
-                StartupInfo =
-                {
-                    cb = Marshal.SizeOf<StartupInfoEx>(),
-                    dwFlags = (int)StartFUseStdHandles,
-                    hStdInput = stdinRead.DangerousGetHandle(),
-                    hStdOutput = stdoutWrite.DangerousGetHandle(),
-                    hStdError = stderrWrite.DangerousGetHandle()
-                },
-                lpAttributeList = attributeList
-            };
-            string commandLineText = BuildWindowsCommandLine(request);
-            StringBuilder commandLine = new(commandLineText, commandLineText.Length + 1);
-
-            bool created = CreateProcessW(
-                null,
-                commandLine,
-                IntPtr.Zero,
-                IntPtr.Zero,
-                true,
-                ExtendedStartupInfoPresent | CreateUnicodeEnvironment,
-                environmentBlock,
-                string.IsNullOrWhiteSpace(request.WorkingDirectory) ? null : request.WorkingDirectory,
-                ref startupInfo,
-                out processInformation);
-            if (!created)
-            {
-                throw new Win32Exception(Marshal.GetLastWin32Error());
-            }
-
-            stdinRead.Dispose();
-            stdoutWrite.Dispose();
-            stderrWrite.Dispose();
-            stdinWrite.Dispose();
-
-            IBackgroundProcess process = new WindowsBackgroundProcess(
-                stdoutRead,
-                stderrRead,
-                processInformation.hProcess,
-                processInformation.hThread,
-                processInformation.dwProcessId);
-            processInformation = default;
-            return process;
-        }
-        catch
-        {
-            if (processInformation.hProcess != IntPtr.Zero)
-            {
-                TryKillWindowsProcessTree(
-                    processInformation.dwProcessId,
-                    processInformation.hProcess);
-            }
-
-            stdinRead.Dispose();
-            stdinWrite.Dispose();
-            stdoutRead.Dispose();
-            stdoutWrite.Dispose();
-            stderrRead.Dispose();
-            stderrWrite.Dispose();
-
-            if (processInformation.hThread != IntPtr.Zero)
-            {
-                CloseHandle(processInformation.hThread);
-            }
-
-            if (processInformation.hProcess != IntPtr.Zero)
-            {
-                CloseHandle(processInformation.hProcess);
-            }
-
-            throw;
-        }
-        finally
-        {
-            FreePseudoConsoleAttributeList(attributeList);
-
-            if (securityCapabilitiesBuffer != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(securityCapabilitiesBuffer);
-            }
-
-            if (environmentBlock != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(environmentBlock);
-            }
-        }
-    }
-
     private Task<ProcessExecutionResult> RunWithLinuxPseudoTerminalAsync(
         ProcessExecutionRequest request,
         CancellationToken cancellationToken)
@@ -570,12 +375,9 @@ internal sealed class ProcessRunner : IProcessRunner
 
     private async Task<ProcessExecutionResult> RunWithWindowsPseudoTerminalAsync(
         ProcessExecutionRequest request,
-        CancellationToken cancellationToken,
-        IntPtr appContainerSid = default)
+        CancellationToken cancellationToken)
     {
-        using WindowsPseudoTerminalProcess process = StartWindowsPseudoTerminal(
-            request,
-            appContainerSid);
+        using WindowsPseudoTerminalProcess process = StartWindowsPseudoTerminal(request);
         await using FileStream outputStream = new(
             process.OutputReader,
             FileAccess.Read,
@@ -630,8 +432,7 @@ internal sealed class ProcessRunner : IProcessRunner
     }
 
     private static WindowsPseudoTerminalProcess StartWindowsPseudoTerminal(
-        ProcessExecutionRequest request,
-        IntPtr appContainerSid)
+        ProcessExecutionRequest request)
     {
         if (!CreatePipe(out SafeFileHandle inputRead, out SafeFileHandle inputWrite, IntPtr.Zero, 0))
         {
@@ -647,7 +448,6 @@ internal sealed class ProcessRunner : IProcessRunner
 
         IntPtr pseudoConsole = IntPtr.Zero;
         IntPtr attributeList = IntPtr.Zero;
-        IntPtr securityCapabilitiesBuffer = IntPtr.Zero;
         IntPtr environmentBlock = IntPtr.Zero;
         ProcessInformation processInformation = default;
 
@@ -668,14 +468,7 @@ internal sealed class ProcessRunner : IProcessRunner
             inputRead.Dispose();
             outputWrite.Dispose();
 
-            if (appContainerSid != IntPtr.Zero)
-            {
-                securityCapabilitiesBuffer = CreateSecurityCapabilitiesBuffer(appContainerSid);
-            }
-
-            attributeList = CreateWindowsStartupAttributeList(
-                pseudoConsole,
-                securityCapabilitiesBuffer);
+            attributeList = CreatePseudoConsoleAttributeList(pseudoConsole);
             environmentBlock = CreateWindowsEnvironmentBlock(request.EnvironmentVariables);
 
             StartupInfoEx startupInfo = new()
@@ -744,59 +537,13 @@ internal sealed class ProcessRunner : IProcessRunner
             {
                 Marshal.FreeHGlobal(environmentBlock);
             }
-
-            if (securityCapabilitiesBuffer != IntPtr.Zero)
-            {
-                Marshal.FreeHGlobal(securityCapabilitiesBuffer);
-            }
         }
     }
 
-    private static IntPtr CreateSecurityCapabilitiesBuffer(IntPtr appContainerSid)
+    private static IntPtr CreatePseudoConsoleAttributeList(IntPtr pseudoConsole)
     {
-        SecurityCapabilities securityCapabilities = new()
-        {
-            AppContainerSid = appContainerSid
-        };
-        IntPtr buffer = Marshal.AllocHGlobal(Marshal.SizeOf<SecurityCapabilities>());
-        Marshal.StructureToPtr(securityCapabilities, buffer, fDeleteOld: false);
-        return buffer;
-    }
-
-    private static IntPtr CreateWindowsStartupAttributeList(
-        IntPtr pseudoConsole,
-        IntPtr securityCapabilitiesBuffer)
-    {
-        List<ProcThreadAttributeUpdate> attributes = [];
-        if (pseudoConsole != IntPtr.Zero)
-        {
-            attributes.Add(new ProcThreadAttributeUpdate(
-                ProcThreadAttributePseudoConsole,
-                pseudoConsole,
-                (IntPtr)IntPtr.Size));
-        }
-
-        if (securityCapabilitiesBuffer != IntPtr.Zero)
-        {
-            attributes.Add(new ProcThreadAttributeUpdate(
-                ProcThreadAttributeSecurityCapabilities,
-                securityCapabilitiesBuffer,
-                (IntPtr)Marshal.SizeOf<SecurityCapabilities>()));
-        }
-
-        return CreateProcThreadAttributeList(attributes);
-    }
-
-    private static IntPtr CreateProcThreadAttributeList(
-        IReadOnlyList<ProcThreadAttributeUpdate> attributes)
-    {
-        if (attributes.Count == 0)
-        {
-            return IntPtr.Zero;
-        }
-
         IntPtr size = IntPtr.Zero;
-        _ = InitializeProcThreadAttributeList(IntPtr.Zero, attributes.Count, 0, ref size);
+        _ = InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
         if (size == IntPtr.Zero)
         {
             throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -807,25 +554,68 @@ internal sealed class ProcessRunner : IProcessRunner
 
         try
         {
-            if (!InitializeProcThreadAttributeList(attributeList, attributes.Count, 0, ref size))
+            if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref size))
             {
                 throw new Win32Exception(Marshal.GetLastWin32Error());
             }
 
             initialized = true;
-            foreach (ProcThreadAttributeUpdate attribute in attributes)
+            if (!UpdateProcThreadAttribute(
+                    attributeList,
+                    0,
+                    ProcThreadAttributePseudoConsole,
+                    pseudoConsole,
+                    (IntPtr)IntPtr.Size,
+                    IntPtr.Zero,
+                    IntPtr.Zero))
             {
-                if (!UpdateProcThreadAttribute(
-                        attributeList,
-                        0,
-                        attribute.Attribute,
-                        attribute.Value,
-                        attribute.Size,
-                        IntPtr.Zero,
-                        IntPtr.Zero))
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                }
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            return attributeList;
+        }
+        catch
+        {
+            if (initialized)
+            {
+                DeleteProcThreadAttributeList(attributeList);
+            }
+
+            Marshal.FreeHGlobal(attributeList);
+            throw;
+        }
+    }
+
+    private static IntPtr CreateSecurityCapabilitiesAttributeList(IntPtr securityCapabilitiesBuffer)
+    {
+        IntPtr size = IntPtr.Zero;
+        _ = InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
+        if (size == IntPtr.Zero)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        IntPtr attributeList = Marshal.AllocHGlobal(size);
+        bool initialized = false;
+
+        try
+        {
+            if (!InitializeProcThreadAttributeList(attributeList, 1, 0, ref size))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            }
+
+            initialized = true;
+            if (!UpdateProcThreadAttribute(
+                    attributeList,
+                    0,
+                    ProcThreadAttributeSecurityCapabilities,
+                    securityCapabilitiesBuffer,
+                    (IntPtr)Marshal.SizeOf<SecurityCapabilities>(),
+                    IntPtr.Zero,
+                    IntPtr.Zero))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             }
 
             return attributeList;
@@ -918,36 +708,6 @@ internal sealed class ProcessRunner : IProcessRunner
         }
 
         return appContainerSid;
-    }
-
-    private static IntPtr PrepareWindowsAppContainer(WindowsSandboxConfiguration sandbox)
-    {
-        Directory.CreateDirectory(sandbox.TempDirectory);
-
-        IntPtr appContainerSid = EnsureAppContainerProfile(sandbox);
-        try
-        {
-            string appContainerSidText = ConvertSidToString(appContainerSid);
-            GrantAppContainerFileAccess(
-                appContainerSidText,
-                sandbox.WorkspaceRoot,
-                sandbox.AllowWorkspaceWrite);
-            GrantAppContainerFileAccess(
-                appContainerSidText,
-                sandbox.TempDirectory,
-                allowWrite: true);
-
-            return appContainerSid;
-        }
-        catch
-        {
-            if (appContainerSid != IntPtr.Zero)
-            {
-                FreeSid(appContainerSid);
-            }
-
-            throw;
-        }
     }
 
     private static void GrantAppContainerFileAccess(
@@ -1117,31 +877,6 @@ internal sealed class ProcessRunner : IProcessRunner
         _ = TerminateProcess(processHandle, 1);
     }
 
-    private static void TryKillWindowsProcessTree(
-        int processId,
-        IntPtr processHandle)
-    {
-        try
-        {
-            if (processId > 0)
-            {
-                Process.GetProcessById(processId).Kill(entireProcessTree: true);
-                return;
-            }
-        }
-        catch (ArgumentException)
-        {
-        }
-        catch (InvalidOperationException)
-        {
-        }
-        catch (Win32Exception)
-        {
-        }
-
-        TryTerminateWindowsProcess(processHandle);
-    }
-
     private static int GetWindowsProcessExitCode(IntPtr processHandle)
     {
         if (!GetExitCodeProcess(processHandle, out uint exitCode))
@@ -1231,9 +966,6 @@ internal sealed class ProcessRunner : IProcessRunner
         catch (InvalidOperationException)
         {
         }
-        catch (Win32Exception)
-        {
-        }
     }
 
     private static async Task<string> ReadToEndCappedAsync(
@@ -1302,162 +1034,6 @@ internal sealed class ProcessRunner : IProcessRunner
         }
     }
 
-    private sealed class SystemBackgroundProcess : IBackgroundProcess
-    {
-        private readonly Process _process;
-
-        public SystemBackgroundProcess(Process process)
-        {
-            _process = process;
-        }
-
-        public TextReader StandardOutput => _process.StandardOutput;
-
-        public TextReader StandardError => _process.StandardError;
-
-        public bool HasExited => _process.HasExited;
-
-        public int ExitCode => _process.ExitCode;
-
-        public async Task StopAsync(CancellationToken cancellationToken)
-        {
-            TryKillProcess(_process);
-            await WaitForExitAsync(cancellationToken);
-        }
-
-        public async Task WaitForExitAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                await _process.WaitForExitAsync(cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-            }
-        }
-
-        public void Dispose()
-        {
-            _process.Dispose();
-        }
-    }
-
-    private sealed class WindowsBackgroundProcess : IBackgroundProcess
-    {
-        private readonly int _processId;
-        private readonly StreamReader _standardError;
-        private readonly StreamReader _standardOutput;
-        private IntPtr _processHandle;
-        private IntPtr _threadHandle;
-
-        public WindowsBackgroundProcess(
-            SafeFileHandle stdoutRead,
-            SafeFileHandle stderrRead,
-            IntPtr processHandle,
-            IntPtr threadHandle,
-            int processId)
-        {
-            _standardOutput = CreateReader(stdoutRead);
-            _standardError = CreateReader(stderrRead);
-            _processHandle = processHandle;
-            _threadHandle = threadHandle;
-            _processId = processId;
-        }
-
-        public TextReader StandardOutput => _standardOutput;
-
-        public TextReader StandardError => _standardError;
-
-        public bool HasExited
-        {
-            get
-            {
-                if (_processHandle == IntPtr.Zero)
-                {
-                    return true;
-                }
-
-                uint waitResult = WaitForSingleObject(_processHandle, 0);
-                if (waitResult == WaitObject0)
-                {
-                    return true;
-                }
-
-                if (waitResult == WaitTimeout)
-                {
-                    return false;
-                }
-
-                if (waitResult == WaitFailed)
-                {
-                    throw new Win32Exception(Marshal.GetLastWin32Error());
-                }
-
-                throw new InvalidOperationException(
-                    $"Unexpected WaitForSingleObject result '{waitResult}'.");
-            }
-        }
-
-        public int ExitCode => _processHandle == IntPtr.Zero
-            ? 0
-            : GetWindowsProcessExitCode(_processHandle);
-
-        public async Task StopAsync(CancellationToken cancellationToken)
-        {
-            if (_processHandle != IntPtr.Zero)
-            {
-                TryKillWindowsProcessTree(
-                    _processId,
-                    _processHandle);
-            }
-
-            await WaitForExitAsync(cancellationToken);
-        }
-
-        public async Task WaitForExitAsync(CancellationToken cancellationToken)
-        {
-            if (_processHandle == IntPtr.Zero)
-            {
-                return;
-            }
-
-            await WaitForWindowsProcessExitAsync(
-                _processHandle,
-                cancellationToken);
-        }
-
-        public void Dispose()
-        {
-            _standardOutput.Dispose();
-            _standardError.Dispose();
-
-            if (_threadHandle != IntPtr.Zero)
-            {
-                CloseHandle(_threadHandle);
-                _threadHandle = IntPtr.Zero;
-            }
-
-            if (_processHandle != IntPtr.Zero)
-            {
-                CloseHandle(_processHandle);
-                _processHandle = IntPtr.Zero;
-            }
-        }
-
-        private static StreamReader CreateReader(SafeFileHandle handle)
-        {
-            FileStream stream = new(
-                handle,
-                FileAccess.Read,
-                bufferSize: 4096,
-                isAsync: true);
-            return new StreamReader(
-                stream,
-                Encoding.UTF8,
-                detectEncodingFromByteOrderMarks: false);
-        }
-    }
-
     private sealed class WindowsPseudoTerminalProcess : IDisposable
     {
         private IntPtr _pseudoConsole;
@@ -1500,9 +1076,19 @@ internal sealed class ProcessRunner : IProcessRunner
 
         public void TryKill()
         {
-            TryKillWindowsProcessTree(
-                ProcessId,
-                ProcessHandle);
+            try
+            {
+                Process.GetProcessById(ProcessId).Kill(entireProcessTree: true);
+            }
+            catch (ArgumentException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Win32Exception)
+            {
+            }
         }
 
         public void Dispose()
@@ -1603,25 +1189,6 @@ internal sealed class ProcessRunner : IProcessRunner
         public int CapabilityCount;
 
         public int Reserved;
-    }
-
-    private readonly struct ProcThreadAttributeUpdate
-    {
-        public ProcThreadAttributeUpdate(
-            IntPtr attribute,
-            IntPtr value,
-            IntPtr size)
-        {
-            Attribute = attribute;
-            Value = value;
-            Size = size;
-        }
-
-        public IntPtr Attribute { get; }
-
-        public IntPtr Value { get; }
-
-        public IntPtr Size { get; }
     }
 
     [DllImport("kernel32.dll", SetLastError = true)]
