@@ -19,6 +19,7 @@ internal static class ShellCommandSandboxPlanner
     public const string UnsupportedEnforcement = "unsupported";
     public const string BubblewrapEnforcement = "bubblewrap";
     public const string SandboxExecEnforcement = "sandbox-exec";
+    public const string WindowsAppContainerEnforcement = "windows-appcontainer";
     private static readonly string[] LinuxReadOnlySystemPaths =
     [
         "/usr",
@@ -69,6 +70,14 @@ internal static class ShellCommandSandboxPlanner
                 effectiveSandboxMode,
                 normalizedWorkspaceRoot,
                 normalizedWorkingDirectory);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return CreateWindowsPlan(
+                shellRequest,
+                effectiveSandboxMode,
+                normalizedWorkspaceRoot);
         }
 
         return Unsupported(
@@ -227,6 +236,43 @@ internal static class ShellCommandSandboxPlanner
             SandboxExecEnforcement);
     }
 
+    private static ShellCommandSandboxPlan CreateWindowsPlan(
+        ProcessExecutionRequest shellRequest,
+        ToolSandboxMode effectiveSandboxMode,
+        string workspaceRoot)
+    {
+        if (shellRequest.UsePseudoTerminal)
+        {
+            return Unsupported(
+                shellRequest,
+                effectiveSandboxMode,
+                "Windows AppContainer shell sandboxing does not support pseudo-terminal execution.");
+        }
+
+        string modeSegment = effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite
+            ? "write"
+            : "read";
+        string workspaceHash = CreateShortHash(workspaceRoot);
+        string profileName = $"NanoAgent.Shell.{modeSegment}.{workspaceHash}";
+        string tempDirectory = Path.Combine(
+            Path.GetTempPath(),
+            "NanoAgent",
+            "sandbox-temp",
+            workspaceHash,
+            modeSegment);
+
+        return new ShellCommandSandboxPlan(
+            shellRequest with
+            {
+                WindowsSandbox = new WindowsSandboxConfiguration(
+                    profileName,
+                    workspaceRoot,
+                    tempDirectory,
+                    effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite)
+            },
+            WindowsAppContainerEnforcement);
+    }
+
     private static string BuildMacOsSandboxProfile(
         ToolSandboxMode effectiveSandboxMode,
         string workspaceRoot)
@@ -282,6 +328,12 @@ internal static class ShellCommandSandboxPlanner
                    .Replace("\\", "\\\\", StringComparison.Ordinal)
                    .Replace("\"", "\\\"", StringComparison.Ordinal) +
                "\"";
+    }
+
+    private static string CreateShortHash(string value)
+    {
+        byte[] hash = System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(hash, 0, 8).ToLowerInvariant();
     }
 
     private static string ToWireValue(ToolSandboxMode sandboxMode)

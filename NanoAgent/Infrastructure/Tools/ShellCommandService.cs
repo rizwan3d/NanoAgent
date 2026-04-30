@@ -92,6 +92,16 @@ internal sealed class ShellCommandService : IShellCommandService
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}");
         }
+        catch (Exception exception) when (
+            IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement) &&
+            exception is not OperationCanceledException)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}");
+        }
         catch (Win32Exception exception)
         {
             return CreateExecutionFailureResult(
@@ -138,6 +148,20 @@ internal sealed class ShellCommandService : IShellCommandService
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 prepared.SandboxPlan.UnsupportedReason!,
+                background: true,
+                terminalAction: "start"));
+        }
+
+        if (string.Equals(
+                prepared.SandboxPlan.Enforcement,
+                ShellCommandSandboxPlanner.WindowsAppContainerEnforcement,
+                StringComparison.Ordinal))
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                "Background terminals do not support Windows AppContainer sandbox enforcement.",
                 background: true,
                 terminalAction: "start"));
         }
@@ -284,7 +308,7 @@ internal sealed class ShellCommandService : IShellCommandService
             request,
             workspaceRoot,
             effectiveSandboxMode,
-            sandboxPlan.Enforcement);
+            sandboxPlan);
         ProcessExecutionRequest processRequest = sandboxPlan.Request with
         {
             EnvironmentVariables = sandboxEnvironment
@@ -453,8 +477,9 @@ internal sealed class ShellCommandService : IShellCommandService
         ShellCommandExecutionRequest request,
         string workspaceRoot,
         ToolSandboxMode effectiveSandboxMode,
-        string sandboxEnforcement)
+        ShellCommandSandboxPlan sandboxPlan)
     {
+        string sandboxEnforcement = sandboxPlan.Enforcement;
         Dictionary<string, string> environment = new(StringComparer.Ordinal)
         {
             ["NANOAGENT_SANDBOX_MODE"] = ToWireValue(_permissionSettings.SandboxMode),
@@ -479,10 +504,25 @@ internal sealed class ShellCommandService : IShellCommandService
             environment["NANOAGENT_SHELL_PTY"] = "1";
         }
 
-        if (IsSandboxRunnerEnforcement(sandboxEnforcement))
+        bool usesWindowsAppContainer = string.Equals(
+            sandboxEnforcement,
+            ShellCommandSandboxPlanner.WindowsAppContainerEnforcement,
+            StringComparison.Ordinal);
+
+        if (IsSandboxRunnerEnforcement(sandboxEnforcement) && !usesWindowsAppContainer)
         {
             environment["HOME"] = workspaceRoot;
             environment["TMPDIR"] = "/tmp";
+        }
+
+        if (usesWindowsAppContainer)
+        {
+            string tempDirectory = sandboxPlan.Request.WindowsSandbox?.TempDirectory ??
+                Path.Combine(workspaceRoot, ".nanoagent", "sandbox-temp");
+            environment["HOME"] = workspaceRoot;
+            environment["USERPROFILE"] = workspaceRoot;
+            environment["TEMP"] = tempDirectory;
+            environment["TMP"] = tempDirectory;
         }
 
         return environment;
@@ -600,6 +640,10 @@ internal sealed class ShellCommandService : IShellCommandService
                string.Equals(
                    enforcement,
                    ShellCommandSandboxPlanner.SandboxExecEnforcement,
+                   StringComparison.Ordinal) ||
+               string.Equals(
+                   enforcement,
+                   ShellCommandSandboxPlanner.WindowsAppContainerEnforcement,
                    StringComparison.Ordinal);
     }
 
