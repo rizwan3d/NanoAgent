@@ -4,6 +4,7 @@ internal static class AgentToolNames
 {
     public const string CustomToolPrefix = "custom__";
     public const string McpToolPrefix = "mcp__";
+    public const string PluginToolPrefix = "plugin__";
 
     public const string AgentDelegate = "agent_delegate";
     public const string AgentOrchestrate = "agent_orchestrate";
