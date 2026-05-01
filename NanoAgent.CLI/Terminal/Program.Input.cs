@@ -64,6 +64,12 @@ public static partial class Program
                 return;
             }
 
+            if (key.Key == ConsoleKey.F4)
+            {
+                RemovePendingInputItem(state);
+                return;
+            }
+
             if (TryHandleSlashCommandSuggestionInput(state, key))
             {
                 return;
@@ -459,6 +465,11 @@ public static partial class Program
                 TogglePlanPanel(state);
                 return;
 
+            case "S":
+            case "14~":
+                RemovePendingInputItem(state);
+                return;
+
             case "5~":
                 ScrollConversation(state, Math.Max(1, GetMessageViewportLineCount(state) - 1));
                 return;
@@ -632,7 +643,7 @@ public static partial class Program
         {
             if (state.Input.Length == 0 && state.InputAttachments.Count > 0)
             {
-                state.InputAttachments.RemoveAt(state.InputAttachments.Count - 1);
+                TryRemoveLastInputAttachment(state);
             }
 
             state.SkipNextInputLineFeed = false;
@@ -640,6 +651,11 @@ public static partial class Program
         }
 
         int deleteIndex = cursorIndex - 1;
+        if (TryRemoveCollapsedPasteContainingIndex(state, deleteIndex))
+        {
+            return;
+        }
+
         AdjustCollapsedInputPastesForDeletion(state, deleteIndex, length: 1);
         state.Input.Remove(deleteIndex, 1);
         state.InputCursorIndex = cursorIndex - 1;
@@ -656,6 +672,11 @@ public static partial class Program
             return;
         }
 
+        if (TryRemoveCollapsedPasteContainingIndex(state, cursorIndex))
+        {
+            return;
+        }
+
         AdjustCollapsedInputPastesForDeletion(state, cursorIndex, length: 1);
         state.Input.Remove(cursorIndex, 1);
         state.SkipNextInputLineFeed = false;
@@ -665,11 +686,63 @@ public static partial class Program
     private static void MoveInputCursor(AppState state, int delta)
     {
         int cursorIndex = ClampInputCursor(state);
-        state.InputCursorIndex = Math.Clamp(
+        int nextIndex = Math.Clamp(
             cursorIndex + delta,
             0,
             state.Input.Length);
+
+        state.InputCursorIndex = MoveInputCursorAroundCollapsedPastes(
+            state,
+            cursorIndex,
+            nextIndex,
+            delta);
         state.SkipNextInputLineFeed = false;
+    }
+
+    private static int MoveInputCursorAroundCollapsedPastes(
+        AppState state,
+        int cursorIndex,
+        int nextIndex,
+        int delta)
+    {
+        if (delta < 0)
+        {
+            foreach (CollapsedInputPaste paste in state.CollapsedInputPastes
+                .OrderByDescending(static paste => paste.StartIndex))
+            {
+                int startIndex = Math.Clamp(paste.StartIndex, 0, state.Input.Length);
+                int endIndex = Math.Clamp(paste.EndIndex, startIndex, state.Input.Length);
+                if (startIndex >= endIndex)
+                {
+                    continue;
+                }
+
+                if (cursorIndex > startIndex && cursorIndex <= endIndex)
+                {
+                    return startIndex;
+                }
+            }
+        }
+        else if (delta > 0)
+        {
+            foreach (CollapsedInputPaste paste in state.CollapsedInputPastes
+                .OrderBy(static paste => paste.StartIndex))
+            {
+                int startIndex = Math.Clamp(paste.StartIndex, 0, state.Input.Length);
+                int endIndex = Math.Clamp(paste.EndIndex, startIndex, state.Input.Length);
+                if (startIndex >= endIndex)
+                {
+                    continue;
+                }
+
+                if (cursorIndex >= startIndex && cursorIndex < endIndex)
+                {
+                    return endIndex;
+                }
+            }
+        }
+
+        return nextIndex;
     }
 
     private static void MoveInputCursorToStart(AppState state)
@@ -753,6 +826,155 @@ public static partial class Program
             startIndex,
             length,
             lineCount));
+        return true;
+    }
+
+    private static void RemovePendingInputItem(AppState state)
+    {
+        if (TryRequestInputAttachmentRemoval(state))
+        {
+            return;
+        }
+
+        if (TryRemoveCollapsedPasteNearCursor(state) ||
+            TryClearLargePastedInput(state))
+        {
+            state.SkipNextInputLineFeed = false;
+        }
+    }
+
+    private static bool TryRequestInputAttachmentRemoval(AppState state)
+    {
+        if (state.ActiveModal is not null ||
+            state.InputAttachments.Count == 0)
+        {
+            return false;
+        }
+
+        NanoAgent.Application.Models.SelectionPromptOption<int>[] options = state.InputAttachments
+            .Select((attachment, index) => new NanoAgent.Application.Models.SelectionPromptOption<int>(
+                attachment.Name,
+                index,
+                attachment.MediaType))
+            .ToArray();
+
+        state.ActiveModal = SelectionModalState<int>.Create(
+            new NanoAgent.Application.Models.SelectionPromptRequest<int>(
+                "Remove attached file",
+                options,
+                "Choose an attached file to remove from this input.",
+                DefaultIndex: Math.Max(0, options.Length - 1),
+                AllowCancellation: true),
+            completionToken: new object(),
+            onSelected: index =>
+            {
+                if (index < 0 || index >= state.InputAttachments.Count)
+                {
+                    return;
+                }
+
+                string name = state.InputAttachments[index].Name;
+                state.InputAttachments.RemoveAt(index);
+                state.SkipNextInputLineFeed = false;
+                ResetSlashCommandSuggestions(state);
+                state.AddSystemMessage($"Removed attached file: {name}");
+            });
+
+        state.SkipNextInputLineFeed = false;
+        return true;
+    }
+
+    private static bool TryRemoveCollapsedPasteContainingIndex(
+        AppState state,
+        int inputIndex)
+    {
+        CollapsedInputPaste? paste = state.CollapsedInputPastes
+            .Where(paste => paste.Length > 0 &&
+                inputIndex >= paste.StartIndex &&
+                inputIndex < paste.EndIndex)
+            .OrderByDescending(paste => paste.StartIndex)
+            .FirstOrDefault();
+
+        return TryRemoveCollapsedPaste(state, paste);
+    }
+
+    private static bool TryRemoveCollapsedPasteNearCursor(AppState state)
+    {
+        int cursorIndex = ClampInputCursor(state);
+        CollapsedInputPaste? paste = state.CollapsedInputPastes
+            .Where(paste => paste.Length > 0 &&
+                cursorIndex >= paste.StartIndex &&
+                cursorIndex <= paste.EndIndex)
+            .OrderByDescending(paste => paste.StartIndex)
+            .FirstOrDefault();
+
+        paste ??= state.CollapsedInputPastes
+            .Where(paste => paste.Length > 0 &&
+                paste.EndIndex <= cursorIndex)
+            .OrderByDescending(paste => paste.EndIndex)
+            .FirstOrDefault();
+
+        paste ??= state.CollapsedInputPastes
+            .Where(paste => paste.Length > 0)
+            .OrderBy(paste => paste.StartIndex)
+            .FirstOrDefault();
+
+        return TryRemoveCollapsedPaste(state, paste);
+    }
+
+    private static bool TryRemoveCollapsedPaste(
+        AppState state,
+        CollapsedInputPaste? paste)
+    {
+        if (paste is null)
+        {
+            return false;
+        }
+
+        int startIndex = Math.Clamp(paste.StartIndex, 0, state.Input.Length);
+        int endIndex = Math.Clamp(paste.EndIndex, startIndex, state.Input.Length);
+        int length = endIndex - startIndex;
+        state.CollapsedInputPastes.Remove(paste);
+
+        if (length <= 0)
+        {
+            return false;
+        }
+
+        state.Input.Remove(startIndex, length);
+        state.InputCursorIndex = startIndex;
+        state.SkipNextInputLineFeed = false;
+        AdjustCollapsedInputPastesForDeletion(state, startIndex, length);
+        ResetSlashCommandSuggestions(state);
+        return true;
+    }
+
+    private static bool TryClearLargePastedInput(AppState state)
+    {
+        if (state.Input.Length == 0 ||
+            state.CollapsedInputPastes.Count > 0 ||
+            !TryGetLargePasteLineCount(state.Input.ToString(), out _))
+        {
+            return false;
+        }
+
+        state.Input.Clear();
+        state.InputCursorIndex = 0;
+        state.SkipNextInputLineFeed = false;
+        ResetSlashCommandSuggestions(state);
+        return true;
+    }
+
+    private static bool TryRemoveLastInputAttachment(AppState state)
+    {
+        if (state.InputAttachments.Count == 0)
+        {
+            return false;
+        }
+
+        state.InputAttachments.RemoveAt(state.InputAttachments.Count - 1);
+        state.SkipNextInputLineFeed = false;
+        ResetSlashCommandSuggestions(state);
         return true;
     }
 

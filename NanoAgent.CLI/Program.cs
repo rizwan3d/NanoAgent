@@ -8,7 +8,6 @@ namespace NanoAgent.CLI;
 
 public static partial class Program
 {
-    private const string DefaultCompletionNote = "(0s \u00b7 0 tokens)";
     private const double EstimatedLiveTokensPerSecond = 4d;
     private const int HeaderDividerWidth = 53;
     private const int HeaderPanelSize = 10;
