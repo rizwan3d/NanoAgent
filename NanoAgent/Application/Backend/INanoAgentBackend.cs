@@ -20,4 +20,10 @@ public interface INanoAgentBackend : IAsyncDisposable
         string input,
         IUiBridge uiBridge,
         CancellationToken cancellationToken);
+
+    Task<ConversationTurnResult> RunTurnAsync(
+        string input,
+        IReadOnlyList<ConversationAttachment> attachments,
+        IUiBridge uiBridge,
+        CancellationToken cancellationToken);
 }

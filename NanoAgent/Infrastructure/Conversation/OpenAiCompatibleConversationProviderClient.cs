@@ -245,7 +245,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         {
             messages.Add(new OpenAiChatCompletionRequestMessage(
                 "system",
-                request.SystemPrompt.Trim()));
+                CreateStringContentElement(request.SystemPrompt.Trim())));
         }
 
         foreach (ConversationRequestMessage message in request.Messages)
@@ -331,10 +331,13 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         {
             items.Add(new OpenAiResponsesInputItem(
                 Role: message.Role,
-                Content:
-                [
-                    new OpenAiResponsesContentPart(contentType, message.Content)
-                ]));
+                Content: CreateResponsesContentParts(contentType, message)));
+        }
+        else if (message.Attachments.Count > 0)
+        {
+            items.Add(new OpenAiResponsesInputItem(
+                Role: message.Role,
+                Content: CreateResponsesContentParts(contentType, message)));
         }
 
         foreach (ConversationToolCall toolCall in message.ToolCalls)
@@ -434,15 +437,104 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
 
             return new OpenAiChatCompletionRequestMessage(
                 message.Role,
-                message.Content,
+                CreateChatCompletionContentElement(message),
                 null,
                 toolCalls);
         }
 
         return new OpenAiChatCompletionRequestMessage(
             message.Role,
-            message.Content,
+            CreateChatCompletionContentElement(message),
             message.ToolCallId);
+    }
+
+    private static JsonElement? CreateChatCompletionContentElement(ConversationRequestMessage message)
+    {
+        if (message.Attachments.Count == 0)
+        {
+            return string.IsNullOrWhiteSpace(message.Content)
+                ? null
+                : CreateStringContentElement(message.Content);
+        }
+
+        List<OpenAiChatCompletionContentPart> parts = [];
+        if (!string.IsNullOrWhiteSpace(message.Content))
+        {
+            parts.Add(new OpenAiChatCompletionContentPart("text", message.Content));
+        }
+
+        foreach (ConversationAttachment attachment in message.Attachments)
+        {
+            if (attachment.IsImage)
+            {
+                parts.Add(new OpenAiChatCompletionContentPart(
+                    "image_url",
+                    ImageUrl: new OpenAiChatCompletionImageUrl(attachment.ToDataUri())));
+                continue;
+            }
+
+            parts.Add(new OpenAiChatCompletionContentPart(
+                "text",
+                FormatAttachmentText(attachment)));
+        }
+
+        return JsonSerializer.SerializeToElement(
+            parts,
+            OpenAiConversationJsonContext.Default.IReadOnlyListOpenAiChatCompletionContentPart);
+    }
+
+    private static JsonElement CreateStringContentElement(string? value)
+    {
+        return JsonSerializer.SerializeToElement(
+            value ?? string.Empty,
+            OpenAiConversationJsonContext.Default.String);
+    }
+
+    private static IReadOnlyList<OpenAiResponsesContentPart> CreateResponsesContentParts(
+        string contentType,
+        ConversationRequestMessage message)
+    {
+        List<OpenAiResponsesContentPart> parts = [];
+
+        if (!string.IsNullOrWhiteSpace(message.Content))
+        {
+            parts.Add(new OpenAiResponsesContentPart(contentType, Text: message.Content));
+        }
+
+        foreach (ConversationAttachment attachment in message.Attachments)
+        {
+            if (attachment.IsImage)
+            {
+                parts.Add(new OpenAiResponsesContentPart(
+                    "input_image",
+                    ImageUrl: attachment.ToDataUri()));
+                continue;
+            }
+
+            parts.Add(new OpenAiResponsesContentPart(
+                contentType,
+                Text: FormatAttachmentText(attachment)));
+        }
+
+        return parts;
+    }
+
+    private static string FormatAttachmentText(ConversationAttachment attachment)
+    {
+        string content = attachment.IsText
+            ? attachment.TextContent!
+            : attachment.ContentBase64;
+        string encoding = attachment.IsText
+            ? "text"
+            : "base64";
+
+        return $"""
+            Attached file: {attachment.Name}
+            Content-Type: {attachment.MediaType}
+            Encoding: {encoding}
+
+            {content}
+            """;
     }
 
     private static string? TryGetResponseId(HttpResponseMessage response)

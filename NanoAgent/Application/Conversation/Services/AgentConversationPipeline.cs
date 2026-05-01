@@ -101,12 +101,31 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IConversationProgressSink progressSink,
         CancellationToken cancellationToken)
     {
+        return await ProcessAsync(
+            input,
+            session,
+            progressSink,
+            [],
+            cancellationToken);
+    }
+
+    public async Task<ConversationTurnResult> ProcessAsync(
+        string input,
+        ReplSessionContext session,
+        IConversationProgressSink progressSink,
+        IReadOnlyList<ConversationAttachment> attachments,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(input);
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(progressSink);
+        ArgumentNullException.ThrowIfNull(attachments);
         cancellationToken.ThrowIfCancellationRequested();
 
         string normalizedInput = input.Trim();
+        IReadOnlyList<ConversationAttachment> normalizedAttachments = attachments
+            .Where(static attachment => attachment is not null)
+            .ToArray();
         await RunBeforeTaskStartHookAsync(normalizedInput, session, cancellationToken);
 
         try
@@ -142,6 +161,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     availableToolNames,
                     timeoutSource,
                     startedAt,
+                    normalizedAttachments,
                     cancellationToken);
 
                 await RunAfterTaskCompleteHookAsync(normalizedInput, session, approvedResult, cancellationToken);
@@ -151,7 +171,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             List<ConversationRequestMessage> messages =
             [
                 .. session.GetConversationHistory(settings.MaxHistoryTurns),
-                ConversationRequestMessage.User(normalizedInput)
+                ConversationRequestMessage.User(normalizedInput, normalizedAttachments)
             ];
 
             ApplicationLogMessages.ConversationRequestStarted(
@@ -217,6 +237,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IReadOnlySet<string> executionToolNames,
         CancellationTokenSource timeoutSource,
         DateTimeOffset startedAt,
+        IReadOnlyList<ConversationAttachment> attachments,
         CancellationToken cancellationToken)
     {
         PendingExecutionPlan pendingPlan = session.PendingExecutionPlan
@@ -234,7 +255,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         List<ConversationRequestMessage> executionMessages =
         [
             .. session.GetConversationHistory(settings.MaxHistoryTurns),
-            ConversationRequestMessage.User(normalizedInput)
+            ConversationRequestMessage.User(normalizedInput, attachments)
         ];
 
         PhaseExecutionResult executionResult = await RunPhaseAsync(
@@ -922,6 +943,22 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             AddEstimate(message.Role);
             AddEstimate(message.Content);
             AddEstimate(message.ToolCallId);
+
+            foreach (ConversationAttachment attachment in message.Attachments)
+            {
+                AddEstimate(attachment.Name);
+                AddEstimate(attachment.MediaType);
+                AddEstimate(attachment.TextContent);
+
+                if (attachment.IsImage)
+                {
+                    total += 1_000;
+                }
+                else if (!attachment.IsText)
+                {
+                    AddEstimate(attachment.ContentBase64);
+                }
+            }
 
             foreach (ConversationToolCall toolCall in message.ToolCalls)
             {

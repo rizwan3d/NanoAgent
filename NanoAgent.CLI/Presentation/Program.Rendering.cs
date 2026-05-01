@@ -402,10 +402,28 @@ public static partial class Program
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
-            return inputMarkup + "\n" + BuildSlashCommandSuggestionsMarkup(state, suggestions);
+            return AppendInputAttachmentSummary(inputMarkup, state) +
+                "\n" +
+                BuildSlashCommandSuggestionsMarkup(state, suggestions);
         }
 
-        return inputMarkup;
+        return AppendInputAttachmentSummary(inputMarkup, state);
+    }
+
+    private static string AppendInputAttachmentSummary(
+        string inputMarkup,
+        AppState state)
+    {
+        if (state.InputAttachments.Count == 0)
+        {
+            return inputMarkup;
+        }
+
+        int count = state.InputAttachments.Count;
+        string label = count == 1
+            ? "1 file pasted/attached"
+            : $"{count} files pasted/attached";
+        return inputMarkup + "\n" + $"[grey]{Markup.Escape(label)}[/]";
     }
 
     private static string BuildFooterMarkup(AppState state)
@@ -436,8 +454,8 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "Enter: send  |  Shift+Enter: newline  |  F2: model  |  Wheel/PgUp/PgDn: scroll  |  Ctrl+C: quit  |  /help",
-            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]F2: model[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
+            "Enter: send  |  Shift+Enter: newline  |  F2: model  |  Paste/drop files to attach  |  Wheel/PgUp/PgDn: scroll  |  Ctrl+C: quit  |  /help",
+            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]F2: model[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
             BuildCompletionNote(state));
     }
 
@@ -567,6 +585,11 @@ public static partial class Program
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
             bodyLineCount += GetSlashCommandSuggestionLineCount(suggestions);
+        }
+
+        if (state.InputAttachments.Count > 0)
+        {
+            bodyLineCount++;
         }
 
         return Math.Max(3, bodyLineCount + 2);

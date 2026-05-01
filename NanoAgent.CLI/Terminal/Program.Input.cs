@@ -585,6 +585,12 @@ public static partial class Program
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
 
+        if (TryAttachFilesFromDroppedOrPastedText(state, normalized))
+        {
+            state.SkipNextInputLineFeed = false;
+            return;
+        }
+
         InsertInputText(
             state,
             normalized,
@@ -624,6 +630,11 @@ public static partial class Program
         int cursorIndex = ClampInputCursor(state);
         if (cursorIndex <= 0)
         {
+            if (state.Input.Length == 0 && state.InputAttachments.Count > 0)
+            {
+                state.InputAttachments.RemoveAt(state.InputAttachments.Count - 1);
+            }
+
             state.SkipNextInputLineFeed = false;
             return;
         }

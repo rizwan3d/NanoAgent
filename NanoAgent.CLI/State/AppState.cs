@@ -1,4 +1,5 @@
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Models;
 using System.Text;
 
 namespace NanoAgent.CLI;
@@ -34,6 +35,8 @@ public sealed class AppState
     public StringBuilder Input { get; } = new();
 
     public List<CollapsedInputPaste> CollapsedInputPastes { get; } = [];
+
+    public List<ConversationAttachment> InputAttachments { get; } = [];
 
     public int InputCursorIndex { get; set; }
 

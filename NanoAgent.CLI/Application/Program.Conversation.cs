@@ -13,21 +13,27 @@ public static partial class Program
     private static void SubmitInput(AppState state)
     {
         string text = state.Input.ToString().Trim();
+        ConversationAttachment[] attachments = state.InputAttachments.ToArray();
         state.Input.Clear();
+        state.InputAttachments.Clear();
         state.CollapsedInputPastes.Clear();
         state.InputCursorIndex = 0;
         ResetSlashCommandSuggestions(state);
 
-        if (string.IsNullOrWhiteSpace(text))
+        if (string.IsNullOrWhiteSpace(text) && attachments.Length == 0)
         {
             return;
         }
 
-        if (text.StartsWith('/'))
+        if (attachments.Length == 0 && text.StartsWith('/'))
         {
             HandleCommand(state, text);
             return;
         }
+
+        string prompt = string.IsNullOrWhiteSpace(text)
+            ? $"Please inspect the {FormatAttachmentCount(attachments.Length)} I attached."
+            : text;
 
         if (!state.IsReady)
         {
@@ -45,11 +51,14 @@ public static partial class Program
         }
 
         state.ConversationScrollOffset = 0;
-        state.AddMessage(Role.User, text);
-        StartConversation(state, text);
+        state.AddMessage(Role.User, FormatUserInputForDisplay(prompt, attachments));
+        StartConversation(state, prompt, attachments);
     }
 
-    private static void StartConversation(AppState state, string prompt)
+    private static void StartConversation(
+        AppState state,
+        string prompt,
+        IReadOnlyList<ConversationAttachment>? attachments = null)
     {
         state.IsBusy = true;
         state.ClearBusyWhenStreamCompletes = false;
@@ -63,6 +72,7 @@ public static partial class Program
             {
                 ConversationTurnResult result = await state.Backend.RunTurnAsync(
                     prompt,
+                    attachments ?? [],
                     state.UiBridge,
                     state.LifetimeCancellation.Token);
 
@@ -109,6 +119,37 @@ public static partial class Program
                 });
             }
         });
+    }
+
+    private static string FormatUserInputForDisplay(
+        string prompt,
+        IReadOnlyList<ConversationAttachment> attachments)
+    {
+        if (attachments.Count == 0)
+        {
+            return prompt;
+        }
+
+        return $"{prompt}{Environment.NewLine}{Environment.NewLine}[{FormatAttachmentCount(attachments.Count)} pasted/attached: {FormatAttachmentNames(attachments)}]";
+    }
+
+    private static string FormatAttachmentCount(int count)
+    {
+        return count == 1
+            ? "1 file"
+            : $"{count} files";
+    }
+
+    private static string FormatAttachmentNames(IReadOnlyList<ConversationAttachment> attachments)
+    {
+        string[] names = attachments
+            .Take(4)
+            .Select(static attachment => attachment.Name)
+            .ToArray();
+        string suffix = attachments.Count > names.Length
+            ? $", +{attachments.Count - names.Length} more"
+            : string.Empty;
+        return string.Join(", ", names) + suffix;
     }
 
     private static void HandleCommand(AppState state, string command)
