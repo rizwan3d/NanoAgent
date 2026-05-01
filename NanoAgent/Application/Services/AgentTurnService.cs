@@ -27,10 +27,9 @@ internal sealed class AgentTurnService : IAgentTurnService
                 out string? agentName,
                 out string? delegatedInput))
         {
-            return await _conversationPipeline.ProcessAsync(
+            return await ProcessWithOptionalAttachmentsAsync(
                 request.UserInput,
-                request.Session,
-                request.ProgressSink,
+                request,
                 cancellationToken);
         }
 
@@ -62,16 +61,34 @@ internal sealed class AgentTurnService : IAgentTurnService
 
         try
         {
-            return await _conversationPipeline.ProcessAsync(
+            return await ProcessWithOptionalAttachmentsAsync(
                 delegatedInput,
-                request.Session,
-                request.ProgressSink,
+                request,
                 cancellationToken);
         }
         finally
         {
             request.Session.SetAgentProfile(originalProfile);
         }
+    }
+
+    private Task<ConversationTurnResult> ProcessWithOptionalAttachmentsAsync(
+        string input,
+        AgentTurnRequest request,
+        CancellationToken cancellationToken)
+    {
+        return request.Attachments.Count == 0
+            ? _conversationPipeline.ProcessAsync(
+                input,
+                request.Session,
+                request.ProgressSink,
+                cancellationToken)
+            : _conversationPipeline.ProcessAsync(
+                input,
+                request.Session,
+                request.ProgressSink,
+                request.Attachments,
+                cancellationToken);
     }
 
     private static bool TryParseLeadingAgentMention(

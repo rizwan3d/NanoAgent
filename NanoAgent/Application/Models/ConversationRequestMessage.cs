@@ -12,11 +12,17 @@ public sealed class ConversationRequestMessage
         string role,
         string? content,
         string? toolCallId,
-        IReadOnlyList<ConversationToolCall>? toolCalls)
+        IReadOnlyList<ConversationToolCall>? toolCalls,
+        IReadOnlyList<ConversationAttachment>? attachments)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(role);
 
         string normalizedRole = role.Trim();
+        IReadOnlyList<ConversationAttachment> normalizedAttachments = attachments is null
+            ? []
+            : attachments
+                .Where(static attachment => attachment is not null)
+                .ToArray();
         IReadOnlyList<ConversationToolCall> normalizedToolCalls = toolCalls is null
             ? []
             : toolCalls
@@ -30,7 +36,13 @@ public sealed class ConversationRequestMessage
         switch (normalizedRole)
         {
             case UserRole:
-                ArgumentException.ThrowIfNullOrWhiteSpace(content);
+                if (string.IsNullOrWhiteSpace(content) && normalizedAttachments.Count == 0)
+                {
+                    throw new ArgumentException(
+                        "User messages must include content or at least one attachment.",
+                        nameof(content));
+                }
+
                 EnsureNoToolMetadata(toolCallId, normalizedToolCalls, normalizedRole);
                 break;
 
@@ -49,6 +61,7 @@ public sealed class ConversationRequestMessage
                         nameof(toolCallId));
                 }
 
+                EnsureNoAttachments(normalizedAttachments, normalizedRole);
                 break;
 
             case ToolRole:
@@ -61,6 +74,7 @@ public sealed class ConversationRequestMessage
                         nameof(toolCalls));
                 }
 
+                EnsureNoAttachments(normalizedAttachments, normalizedRole);
                 break;
 
             default:
@@ -77,8 +91,11 @@ public sealed class ConversationRequestMessage
         ToolCallId = string.IsNullOrWhiteSpace(toolCallId)
             ? null
             : toolCallId.Trim();
+        Attachments = normalizedAttachments;
         ToolCalls = normalizedToolCalls;
     }
+
+    public IReadOnlyList<ConversationAttachment> Attachments { get; }
 
     public string? Content { get; }
 
@@ -90,7 +107,7 @@ public sealed class ConversationRequestMessage
 
     public static ConversationRequestMessage AssistantMessage(string content)
     {
-        return new ConversationRequestMessage(AssistantRole, content, null, null);
+        return new ConversationRequestMessage(AssistantRole, content, null, null, null);
     }
 
     public static ConversationRequestMessage AssistantToolCalls(
@@ -99,19 +116,21 @@ public sealed class ConversationRequestMessage
     {
         ArgumentNullException.ThrowIfNull(toolCalls);
 
-        return new ConversationRequestMessage(AssistantRole, content, null, toolCalls);
+        return new ConversationRequestMessage(AssistantRole, content, null, toolCalls, null);
     }
 
     public static ConversationRequestMessage ToolResult(
         string toolCallId,
         string content)
     {
-        return new ConversationRequestMessage(ToolRole, content, toolCallId, null);
+        return new ConversationRequestMessage(ToolRole, content, toolCallId, null, null);
     }
 
-    public static ConversationRequestMessage User(string content)
+    public static ConversationRequestMessage User(
+        string content,
+        IReadOnlyList<ConversationAttachment>? attachments = null)
     {
-        return new ConversationRequestMessage(UserRole, content, null, null);
+        return new ConversationRequestMessage(UserRole, content, null, null, attachments);
     }
 
     private static void EnsureNoToolMetadata(
@@ -131,6 +150,18 @@ public sealed class ConversationRequestMessage
             throw new ArgumentException(
                 $"{role} messages cannot include assistant tool call definitions.",
                 nameof(toolCalls));
+        }
+    }
+
+    private static void EnsureNoAttachments(
+        IReadOnlyList<ConversationAttachment> attachments,
+        string role)
+    {
+        if (attachments.Count > 0)
+        {
+            throw new ArgumentException(
+                $"{role} messages cannot include attachments.",
+                nameof(attachments));
         }
     }
 }

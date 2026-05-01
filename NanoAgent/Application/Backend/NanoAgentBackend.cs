@@ -140,7 +140,21 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         IUiBridge uiBridge,
         CancellationToken cancellationToken)
     {
+        return await RunTurnAsync(
+            input,
+            [],
+            uiBridge,
+            cancellationToken);
+    }
+
+    public async Task<ConversationTurnResult> RunTurnAsync(
+        string input,
+        IReadOnlyList<ConversationAttachment> attachments,
+        IUiBridge uiBridge,
+        CancellationToken cancellationToken)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(input);
+        ArgumentNullException.ThrowIfNull(attachments);
         ArgumentNullException.ThrowIfNull(uiBridge);
 
         if (_session is null ||
@@ -156,7 +170,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             new AgentTurnRequest(
                 _session,
                 input,
-                new UiConversationProgressSink(uiBridge)),
+                new UiConversationProgressSink(uiBridge),
+                attachments),
             cancellationToken);
 
         ConversationTurnMetrics? metrics = result.Metrics;

@@ -36,7 +36,10 @@ internal sealed record OpenAiResponsesInputItem(
 
 internal sealed record OpenAiResponsesContentPart(
     [property: JsonPropertyName("type")] string Type,
-    [property: JsonPropertyName("text")] string Text);
+    [property: JsonPropertyName("text")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Text = null,
+    [property: JsonPropertyName("image_url")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ImageUrl = null);
 
 internal sealed record OpenAiResponsesToolDefinition(
     [property: JsonPropertyName("type")] string Type,
