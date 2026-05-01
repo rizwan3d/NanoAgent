@@ -39,6 +39,40 @@ public sealed class AgentTurnServiceTests
     }
 
     [Fact]
+    public async Task RunTurnAsync_Should_ForwardAttachmentsToConversationPipeline()
+    {
+        ReplSessionContext session = CreateSession();
+        RecordingProgressSink progressSink = new();
+        ConversationAttachment[] attachments =
+        [
+            new ConversationAttachment("notes.txt", "text/plain", "bm90ZXM=", "notes")
+        ];
+
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        conversationPipeline
+            .Setup(pipeline => pipeline.ProcessAsync(
+                "inspect this",
+                session,
+                progressSink,
+                It.Is<IReadOnlyList<ConversationAttachment>>(items =>
+                    items.Count == 1 &&
+                    items[0].Name == "notes.txt"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ConversationTurnResult.AssistantMessage("Done."));
+
+        AgentTurnService sut = new(
+            conversationPipeline.Object,
+            new BuiltInAgentProfileResolver());
+
+        ConversationTurnResult result = await sut.RunTurnAsync(
+            new AgentTurnRequest(session, "inspect this", progressSink, attachments),
+            CancellationToken.None);
+
+        result.ResponseText.Should().Be("Done.");
+        conversationPipeline.VerifyAll();
+    }
+
+    [Fact]
     public async Task RunTurnAsync_Should_InvokeMentionedSubagentForOneTurnAndRestoreProfile()
     {
         ReplSessionContext session = CreateSession();

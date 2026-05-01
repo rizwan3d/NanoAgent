@@ -7,7 +7,8 @@ public sealed class AgentTurnRequest
     public AgentTurnRequest(
         ReplSessionContext session,
         string userInput,
-        IConversationProgressSink progressSink)
+        IConversationProgressSink progressSink,
+        IReadOnlyList<ConversationAttachment>? attachments = null)
     {
         ArgumentNullException.ThrowIfNull(session);
         ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
@@ -16,7 +17,12 @@ public sealed class AgentTurnRequest
         Session = session;
         UserInput = userInput.Trim();
         ProgressSink = progressSink;
+        Attachments = attachments is null
+            ? []
+            : attachments.Where(static attachment => attachment is not null).ToArray();
     }
+
+    public IReadOnlyList<ConversationAttachment> Attachments { get; }
 
     public string ProfileName => Session.AgentProfileName;
 

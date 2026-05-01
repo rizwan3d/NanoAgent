@@ -245,6 +245,58 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_SerializeChatCompletionUserAttachments_AsContentParts()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_attachments",
+              "choices": [
+                {
+                  "message": {
+                    "content": "I can see them."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234/v1"),
+                "test-key",
+                "gpt-4.1",
+                [
+                    ConversationRequestMessage.User(
+                        "Review these.",
+                        [
+                            new ConversationAttachment("screenshot.png", "image/png", "aW1hZ2U="),
+                            new ConversationAttachment("notes.txt", "text/plain", "bm90ZXM=", "hello notes")
+                        ])
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        using JsonDocument requestDocument = JsonDocument.Parse(handler.RequestBody!);
+        JsonElement content = requestDocument.RootElement
+            .GetProperty("messages")[1]
+            .GetProperty("content");
+
+        content.ValueKind.Should().Be(JsonValueKind.Array);
+        content[0].GetProperty("type").GetString().Should().Be("text");
+        content[0].GetProperty("text").GetString().Should().Be("Review these.");
+        content[1].GetProperty("type").GetString().Should().Be("image_url");
+        content[1].GetProperty("image_url").GetProperty("url").GetString()
+            .Should()
+            .StartWith("data:image/png;base64,");
+        content[2].GetProperty("type").GetString().Should().Be("text");
+        content[2].GetProperty("text").GetString().Should().Contain("Attached file: notes.txt");
+        content[2].GetProperty("text").GetString().Should().Contain("hello notes");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostResponsesRequestWithAccountHeaders_When_OpenAiChatGptAccountProviderIsSelected()
     {
         RecordingHandler handler = new("""
@@ -306,6 +358,60 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         root.GetProperty("input")[1].GetProperty("type").GetString().Should().Be("function_call");
         root.GetProperty("input")[2].GetProperty("type").GetString().Should().Be("function_call_output");
         root.GetProperty("tools")[0].GetProperty("strict").GetBoolean().Should().BeTrue();
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_SerializeResponsesUserAttachments_AsInputParts()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_account_attachments",
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    { "type": "output_text", "text": "Done." }
+                  ]
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("access-token", null));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, null),
+                "stored-credentials",
+                "gpt-5.3-codex",
+                [
+                    ConversationRequestMessage.User(
+                        "Inspect this image.",
+                        [new ConversationAttachment("clipboard.png", "image/png", "aW1hZ2U=")])
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        using JsonDocument requestDocument = JsonDocument.Parse(handler.RequestBody!);
+        JsonElement content = requestDocument.RootElement
+            .GetProperty("input")[0]
+            .GetProperty("content");
+
+        content[0].GetProperty("type").GetString().Should().Be("input_text");
+        content[0].GetProperty("text").GetString().Should().Be("Inspect this image.");
+        content[1].GetProperty("type").GetString().Should().Be("input_image");
+        content[1].GetProperty("image_url").GetString()
+            .Should()
+            .StartWith("data:image/png;base64,");
         credentialService.VerifyAll();
     }
 
