@@ -87,11 +87,42 @@ public static partial class Program
 
     private static IRenderable BuildInputPanel(AppState state)
     {
-        string model = Markup.Escape(state.ActiveModelId ?? "n/a");
         return new Panel(new Markup(BuildInputMarkup(state)))
-            .Header($"[bold green]Input[/] ── [grey]Model:[/] [aqua]{model} [/]")
+            .Header(BuildInputPanelHeaderMarkup(state))
             .Border(BoxBorder.Rounded)
             .Expand();
+    }
+
+    private static string BuildInputPanelHeaderMarkup(AppState state)
+    {
+        string model = state.ActiveModelId ?? "n/a";
+        string completionNote = BuildHeaderCompletionNote(state);
+        const string plainPrefix = "Input -- Model: ";
+        const int minimumNoteLength = 16;
+        const int minimumSeparatorLength = 3;
+        int headerBudget = Math.Max(24, Console.WindowWidth - 8);
+        int modelBudget = Math.Max(
+            3,
+            headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
+
+        string displayModel = TruncateFromRight(model, modelBudget);
+        int noteBudget = headerBudget -
+            plainPrefix.Length -
+            displayModel.Length -
+            minimumSeparatorLength -
+            2;
+        string displayCompletionNote = noteBudget >= minimumNoteLength
+            ? TruncateFromRight(completionNote, noteBudget)
+            : string.Empty;
+        string noteMarkup = string.IsNullOrWhiteSpace(displayCompletionNote)
+            ? string.Empty
+            : " " +
+                $"{new string('─', Math.Max(
+                    minimumSeparatorLength,
+                    headerBudget - plainPrefix.Length - displayModel.Length - displayCompletionNote.Length - 2))}" +
+                $" [grey]{Markup.Escape(displayCompletionNote)}[/]";
+
+        return $"[bold green]Input[/] ── [grey]Model:[/] [aqua]{Markup.Escape(displayModel)}[/]{noteMarkup}";
     }
 
     private static string BuildMessagesMarkup(AppState state)
@@ -402,28 +433,95 @@ public static partial class Program
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
-            return AppendInputAttachmentSummary(inputMarkup, state) +
+            return AppendInputPendingSummaries(inputMarkup, state) +
                 "\n" +
                 BuildSlashCommandSuggestionsMarkup(state, suggestions);
         }
 
-        return AppendInputAttachmentSummary(inputMarkup, state);
+        return AppendInputPendingSummaries(inputMarkup, state);
     }
 
-    private static string AppendInputAttachmentSummary(
+    private static string AppendInputPendingSummaries(
         string inputMarkup,
         AppState state)
     {
+        List<string> lines = [inputMarkup];
+
+        if (TryBuildPastedTextSummary(state, out string pastedTextSummary))
+        {
+            lines.Add($"[grey]{Markup.Escape(pastedTextSummary)}[/]");
+        }
+
+        if (TryBuildInputAttachmentSummary(state, out string attachmentSummary))
+        {
+            lines.Add($"[grey]{Markup.Escape(attachmentSummary)}[/]");
+        }
+
+        return string.Join('\n', lines);
+    }
+
+    private static bool TryBuildPastedTextSummary(
+        AppState state,
+        out string summary)
+    {
+        List<CollapsedInputPaste> validPastes = state.CollapsedInputPastes
+            .Where(paste => paste.Length > 0 &&
+                paste.LineCount > MultilinePastePreviewLineThreshold &&
+                paste.StartIndex >= 0 &&
+                paste.StartIndex < state.Input.Length)
+            .ToList();
+
+        if (validPastes.Count > 0)
+        {
+            int totalLineCount = validPastes.Sum(static paste => paste.LineCount);
+            string blockLabel = validPastes.Count == 1
+                ? "1 pasted block"
+                : $"{validPastes.Count} pasted blocks";
+            string lineLabel = totalLineCount == 1
+                ? "1 line"
+                : $"{totalLineCount} lines";
+            string hint = state.InputAttachments.Count > 0
+                ? "Left/Right jumps block; Backspace/Delete removes at cursor"
+                : "Left/Right jumps block; F4 removes nearest";
+            summary = $"{blockLabel} ({lineLabel}) - {hint}";
+            return true;
+        }
+
+        if (state.Input.Length > 0 &&
+            TryGetLargePasteLineCount(state.Input.ToString(), out int lineCount))
+        {
+            string lineLabel = lineCount == 1
+                ? "1 line"
+                : $"{lineCount} lines";
+            string hint = state.InputAttachments.Count > 0
+                ? "remove by editing input"
+                : "F4 removes it";
+            summary = $"Pasted text ({lineLabel}) - {hint}";
+            return true;
+        }
+
+        summary = string.Empty;
+        return false;
+    }
+
+    private static bool TryBuildInputAttachmentSummary(
+        AppState state,
+        out string summary)
+    {
         if (state.InputAttachments.Count == 0)
         {
-            return inputMarkup;
+            summary = string.Empty;
+            return false;
         }
 
         int count = state.InputAttachments.Count;
         string label = count == 1
-            ? "1 file pasted/attached"
-            : $"{count} files pasted/attached";
-        return inputMarkup + "\n" + $"[grey]{Markup.Escape(label)}[/]";
+            ? $"1 file pasted/attached: {FormatAttachmentNames(state.InputAttachments)}"
+            : $"{count} files pasted/attached: {FormatAttachmentNames(state.InputAttachments)}";
+        string hint = " - F4 choose file";
+        int contentWidth = Math.Max(20, Console.WindowWidth - 10);
+        summary = TruncateFromRight(label, Math.Max(1, contentWidth - hint.Length)) + hint;
+        return true;
     }
 
     private static string BuildFooterMarkup(AppState state)
@@ -431,32 +529,23 @@ public static partial class Program
         if (state.ActiveModal is not null)
         {
             string modalFooter = state.ActiveModal.BuildFooterMarkup();
-            return BuildFooterLineMarkup(
-                StripMarkup(modalFooter),
-                modalFooter,
-                BuildCompletionNote(state));
+            return BuildFooterLineMarkup(modalFooter);
         }
 
         if (state.HasFatalError)
         {
             return BuildFooterLineMarkup(
-                "Wheel/PgUp/PgDn: scroll  |  Ctrl+C: quit  |  /help",
-                "[grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
-                BuildCompletionNote(state));
+                "[grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
         }
 
         if (TryGetSlashCommandSuggestions(state, out _))
         {
             return BuildFooterLineMarkup(
-                "Up/Down: select command  |  Enter: choose  |  Tab: complete  |  Esc: close",
-                "[grey]Up/Down: select command[/]  [grey]|[/]  [grey]Enter: choose[/]  [grey]|[/]  [grey]Tab: complete[/]  [grey]|[/]  [grey]Esc: close[/]",
-                BuildCompletionNote(state));
+                "[grey]Up/Down: select command[/]  [grey]|[/]  [grey]Enter: choose[/]  [grey]|[/]  [grey]Tab: complete[/]  [grey]|[/]  [grey]Esc: close[/]");
         }
 
         return BuildFooterLineMarkup(
-            "Enter: send  |  Shift+Enter: newline  |  F2: model  |  Paste/drop files to attach  |  Wheel/PgUp/PgDn: scroll  |  Ctrl+C: quit  |  /help",
-            "[grey]Enter: send[/]  [grey]|[/]  [grey]Shift+Enter: newline[/]  [grey]|[/]  [grey]F2: model[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]",
-            BuildCompletionNote(state));
+            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: Scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
 
     private static string BuildHeaderMarkup(AppState state)
@@ -587,12 +676,26 @@ public static partial class Program
             bodyLineCount += GetSlashCommandSuggestionLineCount(suggestions);
         }
 
-        if (state.InputAttachments.Count > 0)
-        {
-            bodyLineCount++;
-        }
+        bodyLineCount += GetPendingInputSummaryLineCount(state);
 
         return Math.Max(3, bodyLineCount + 2);
+    }
+
+    private static int GetPendingInputSummaryLineCount(AppState state)
+    {
+        int lineCount = 0;
+
+        if (TryBuildPastedTextSummary(state, out _))
+        {
+            lineCount++;
+        }
+
+        if (state.InputAttachments.Count > 0)
+        {
+            lineCount++;
+        }
+
+        return lineCount;
     }
 
     private static InputDisplayText BuildInputDisplayText(
@@ -737,11 +840,11 @@ public static partial class Program
         }
 
         string summary = BuildCollapsedPasteSummary(lineCount);
-        markup = BuildInputLineMarkup(
+        markup = BuildInputMarkupWithSuggestions(
+            state,
             summary,
             summary.Length,
-            isBusy,
-            state);
+            isBusy);
         return true;
     }
 
@@ -936,38 +1039,28 @@ public static partial class Program
         }
 
         TimeSpan elapsed = DateTimeOffset.UtcNow - state.CurrentTurnStartedAt.Value;
-        int estimatedTokens = (int)Math.Floor(Math.Max(0d, elapsed.TotalSeconds) * EstimatedLiveTokensPerSecond);
+        int elapsedSeconds = Math.Max(0, (int)Math.Floor(elapsed.TotalSeconds));
+        TimeSpan displayElapsed = TimeSpan.FromSeconds(elapsedSeconds);
+        int estimatedTokens = (int)Math.Floor(elapsedSeconds * EstimatedLiveTokensPerSecond);
         return FormatCompletionNote(
-            elapsed,
+            displayElapsed,
             estimatedTokens,
             state.ActiveModelContextWindowTokens,
             estimatedTokens);
     }
 
-    private static string BuildFooterLineMarkup(
-        string leftPlain,
-        string leftMarkup,
-        string? completionNote)
+    private static string BuildHeaderCompletionNote(AppState state)
     {
-        string plainCompletionNote = string.IsNullOrWhiteSpace(completionNote)
-            ? DefaultCompletionNote
-            : completionNote.Trim();
+        return BuildCompletionNote(state)
+            .Trim()
+            .Trim('[', ']')
+            .Replace(" Used", " used", StringComparison.Ordinal)
+            .Replace(" context", " ctx", StringComparison.Ordinal);
+    }
 
-        const int minimumGap = 2;
-        int contentWidth = Math.Max(20, Console.WindowWidth - 1);
-        int maxCompletionNoteLength = contentWidth - leftPlain.Length - minimumGap;
-
-        if (maxCompletionNoteLength <= 0)
-        {
-            return leftMarkup;
-        }
-
-        string displayCompletionNote = TruncateFromLeft(plainCompletionNote, maxCompletionNoteLength);
-        int spacerWidth = Math.Max(
-            minimumGap,
-            contentWidth - leftPlain.Length - displayCompletionNote.Length);
-
-        return $"{leftMarkup}{new string(' ', spacerWidth)}[grey]{Markup.Escape(displayCompletionNote)}[/]";
+    private static string BuildFooterLineMarkup(string markup)
+    {
+        return markup;
     }
 
     private static string FormatCompletionNote(
@@ -1058,16 +1151,6 @@ public static partial class Program
         return $"{rounded.ToString(format, System.Globalization.CultureInfo.InvariantCulture)}{suffix}";
     }
 
-    private static string StripMarkup(string markup)
-    {
-        return markup
-            .Replace("[/]", string.Empty, StringComparison.Ordinal)
-            .Replace("[grey]", string.Empty, StringComparison.Ordinal)
-            .Replace("[bold]", string.Empty, StringComparison.Ordinal)
-            .Replace("[yellow]", string.Empty, StringComparison.Ordinal)
-            .Replace("[red]", string.Empty, StringComparison.Ordinal);
-    }
-
     private static IReadOnlyList<string> WrapText(string value, int maxLineLength)
     {
         if (string.IsNullOrEmpty(value))
@@ -1085,20 +1168,5 @@ public static partial class Program
         }
 
         return lines;
-    }
-
-    private static string TruncateFromLeft(string value, int maxLength)
-    {
-        if (maxLength <= 0)
-        {
-            return string.Empty;
-        }
-
-        if (value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        return value[^maxLength..];
     }
 }
