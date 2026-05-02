@@ -2,6 +2,7 @@ namespace NanoAgent.CLI;
 
 internal enum CliMode
 {
+    Acp,
     Interactive,
     SingleTurn
 }
@@ -39,6 +40,7 @@ internal sealed record CliInvocation(
         List<string> backendArgs = [];
         List<string> promptParts = [];
         string? providerAuthKey = null;
+        bool forceAcp = false;
         bool forceInteractive = false;
         bool readPromptFromStandardInput = false;
 
@@ -55,6 +57,12 @@ internal sealed record CliInvocation(
             if (IsHelpOption(arg))
             {
                 return Help;
+            }
+
+            if (IsAcpOption(arg))
+            {
+                forceAcp = true;
+                continue;
             }
 
             if (IsInteractiveOption(arg))
@@ -91,6 +99,26 @@ internal sealed record CliInvocation(
             }
 
             promptParts.Add(arg);
+        }
+
+        if (forceAcp)
+        {
+            if (forceInteractive)
+            {
+                throw new ArgumentException("--acp cannot be combined with --interactive.");
+            }
+
+            if (readPromptFromStandardInput || promptParts.Count > 0)
+            {
+                throw new ArgumentException("--acp uses stdin for Agent Client Protocol messages and cannot accept a one-shot prompt.");
+            }
+
+            return new CliInvocation(
+                CliMode.Acp,
+                backendArgs.ToArray(),
+                providerAuthKey,
+                Prompt: null,
+                ShowHelp: false);
         }
 
         if (forceInteractive)
@@ -150,6 +178,11 @@ internal sealed record CliInvocation(
     {
         return string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsAcpOption(string arg)
+    {
+        return string.Equals(arg, "--acp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsInteractiveOption(string arg)
