@@ -97,10 +97,58 @@ public static partial class Program
                 invocation.Prompt ?? string.Empty);
         }
 
+        if (invocation.Mode == CliMode.Acp)
+        {
+            return await RunAcpAsync(
+                invocation.BackendArgs,
+                invocation.ProviderAuthKey);
+        }
+
         await RunInteractiveAsync(
             invocation.BackendArgs,
             invocation.ProviderAuthKey);
         return 0;
+    }
+
+    private static async Task<int> RunAcpAsync(
+        string[] args,
+        string? providerAuthKey)
+    {
+        AcpServer server = new(
+            Console.In,
+            Console.Out,
+            Console.Error,
+            args,
+            providerAuthKey);
+
+        using CancellationTokenSource cancellation = new();
+        ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
+        {
+            eventArgs.Cancel = true;
+            cancellation.Cancel();
+        };
+
+        Console.CancelKeyPress += cancelKeyPressHandler;
+
+        try
+        {
+            await server.RunAsync(cancellation.Token);
+            return 0;
+        }
+        catch (OperationCanceledException)
+        {
+            return 130;
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine($"NanoAgent ACP error: {exception.Message}");
+            return 1;
+        }
+        finally
+        {
+            Console.CancelKeyPress -= cancelKeyPressHandler;
+            await server.DisposeAsync();
+        }
     }
 
     private static async Task RunInteractiveAsync(
@@ -263,8 +311,10 @@ public static partial class Program
               nanoai [options] "<prompt>"         Run one prompt and print the response
               nanoai [options] --prompt "<text>"  Run one prompt and print the response
               echo "<prompt>" | nanoai [options]  Run one prompt from standard input
+              nanoai --acp [options]              Run an Agent Client Protocol server
 
             Options:
+              --acp                Speak ACP over stdin/stdout for compatible editors
               --interactive        Start the terminal UI explicitly
               --stdin              Read the one-shot prompt from standard input
               -p, --prompt <text>  One-shot prompt text
