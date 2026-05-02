@@ -10,6 +10,7 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 - [First Run](#first-run)
 - [Desktop Workflow](#desktop-workflow)
 - [Terminal Workflow](#terminal-workflow)
+- [ACP Editor Integration](#acp-editor-integration)
 - [Review Automation](#review-automation)
 - [Providers and Models](#providers-and-models)
 - [Profiles and Subagents](#profiles-and-subagents)
@@ -171,6 +172,7 @@ nanoai --section <section-guid>
 
 | Option | Description |
 | --- | --- |
+| `--acp` | Run an Agent Client Protocol server over stdin/stdout for compatible editors and tools. |
 | `--interactive` | Start the terminal UI explicitly. |
 | `--stdin` | Read one-shot prompt text from standard input. |
 | `-p, --prompt <text>` | Run one prompt and print the response. |
@@ -207,6 +209,31 @@ Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
+
+## ACP Editor Integration
+
+NanoAgent can run as an Agent Client Protocol server:
+
+```bash
+nanoai --acp
+```
+
+ACP mode speaks line-delimited JSON-RPC on stdin/stdout, so compatible editors and tools can create NanoAgent sessions, send prompts, cancel active turns, and receive assistant message, plan, and tool progress updates.
+
+Example editor server configuration:
+
+```json
+{
+  "agent_servers": {
+    "NanoAgent": {
+      "command": "nanoai",
+      "args": ["--acp"]
+    }
+  }
+}
+```
+
+Run `nanoai` once before ACP use so provider onboarding, credentials, and the default model are already configured. ACP mode currently supports one active NanoAgent session per process. It uses NanoAgent's user and workspace MCP configuration; `mcpServers` sent by an ACP client are logged and ignored for now.
 
 ## Review Automation
 

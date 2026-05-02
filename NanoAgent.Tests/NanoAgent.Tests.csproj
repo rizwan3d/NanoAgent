@@ -18,6 +18,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\NanoAgent.CLI\NanoAgent.CLI.csproj" />
     <ProjectReference Include="..\NanoAgent\NanoAgent.csproj" />
   </ItemGroup>
 

@@ -33,6 +33,7 @@ It is designed for developers who want useful automation without giving up contr
 ## Why NanoAgent
 
 - Work from a desktop app or the `nanoai` terminal command.
+- Connect ACP-compatible editors and tools to NanoAgent with `nanoai --acp`.
 - Ask for feature work, bug fixes, planning, code review, and build/test loops.
 - Run NanoAI review automation from GitHub, GitLab, or Bitbucket PR/MR workflows.
 - Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
@@ -56,6 +57,31 @@ nanoai
 nanoai "Summarize this repository"
 echo "Review the latest changes for regressions" | nanoai --profile review
 ```
+
+### Agent Client Protocol
+
+Use `nanoai --acp` when you want an ACP-compatible editor or tool to drive NanoAgent over JSON-RPC stdio.
+
+```bash
+nanoai --acp
+```
+
+Example Zed-style server configuration:
+
+```json
+{
+  "agent_servers": {
+    "NanoAgent": {
+      "command": "nanoai",
+      "args": ["--acp"]
+    }
+  }
+}
+```
+
+ACP mode is useful because it lets NanoAgent plug into editor and workflow clients without each integration needing a custom NanoAgent API. It supports initialization, session creation/loading, prompt turns, cancellation, session close, and session updates for assistant messages, plans, and tool progress.
+
+Run `nanoai` once first to finish provider onboarding. ACP mode uses NanoAgent's configured MCP servers; client-supplied `mcpServers` are not imported yet.
 
 ### CI Review Automation
 
