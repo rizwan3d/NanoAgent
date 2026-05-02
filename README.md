@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/nano.jpg" alt="NanoAgent" width="800">
+  <img src=".github/nano.gif" alt="NanoAgent" width="800">
 </p>
 
 <h1 align="center">NanoAgent</h1>
