@@ -27,40 +27,67 @@ internal sealed class WorkspaceIgnoreMatcher
 
     public static WorkspaceIgnoreMatcher Load(string workspaceRoot)
     {
+        return Load(
+            workspaceRoot,
+            [Path.Combine(IgnoreFileDirectoryName, IgnoreFileName)]);
+    }
+
+    public static WorkspaceIgnoreMatcher Load(
+        string workspaceRoot,
+        IReadOnlyList<string> ignoreFilePaths)
+    {
         if (string.IsNullOrWhiteSpace(workspaceRoot))
         {
             return EmptyMatcher;
         }
 
         string fullWorkspaceRoot = Path.GetFullPath(workspaceRoot);
-        string ignoreFilePath = Path.Combine(
-            fullWorkspaceRoot,
-            IgnoreFileDirectoryName,
-            IgnoreFileName);
-        if (!File.Exists(ignoreFilePath))
+        if (ignoreFilePaths.Count == 0)
         {
             return EmptyMatcher;
         }
 
-        string[] lines;
-        try
+        List<IgnoreRule> rules = [];
+        foreach (string ignoreFilePath in ignoreFilePaths)
         {
-            lines = File.ReadAllLines(ignoreFilePath);
-        }
-        catch (Exception exception) when (IsFileSystemAccessException(exception))
-        {
-            return EmptyMatcher;
+            if (string.IsNullOrWhiteSpace(ignoreFilePath))
+            {
+                continue;
+            }
+
+            string fullIgnoreFilePath = Path.GetFullPath(
+                Path.IsPathRooted(ignoreFilePath)
+                    ? ignoreFilePath
+                    : Path.Combine(fullWorkspaceRoot, ignoreFilePath.Trim()));
+
+            if (!WorkspacePath.IsSamePathOrDescendant(fullWorkspaceRoot, fullIgnoreFilePath) ||
+                !File.Exists(fullIgnoreFilePath))
+            {
+                continue;
+            }
+
+            string[] lines;
+            try
+            {
+                lines = File.ReadAllLines(fullIgnoreFilePath);
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
+            {
+                continue;
+            }
+
+            rules.AddRange(lines
+                .Select(ParseRule)
+                .Where(static rule => rule is not null)
+                .Select(static rule => rule!));
         }
 
-        IgnoreRule[] rules = lines
-            .Select(ParseRule)
-            .Where(static rule => rule is not null)
-            .Select(static rule => rule!)
+        IgnoreRule[] normalizedRules = rules
             .ToArray();
 
-        return rules.Length == 0
+        return normalizedRules.Length == 0
             ? EmptyMatcher
-            : new WorkspaceIgnoreMatcher(fullWorkspaceRoot, rules);
+            : new WorkspaceIgnoreMatcher(fullWorkspaceRoot, normalizedRules);
     }
 
     public bool IsIgnored(

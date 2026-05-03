@@ -8,6 +8,7 @@ internal static class AgentToolNames
     public const string AgentDelegate = "agent_delegate";
     public const string AgentOrchestrate = "agent_orchestrate";
     public const string ApplyPatch = "apply_patch";
+    public const string CodebaseIndex = "codebase_index";
     public const string CodeIntelligence = "code_intelligence";
     public const string DirectoryList = "directory_list";
     public const string FileDelete = "file_delete";

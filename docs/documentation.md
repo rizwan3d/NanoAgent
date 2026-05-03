@@ -12,6 +12,7 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 - [Terminal Workflow](#terminal-workflow)
 - [ACP Editor Integration](#acp-editor-integration)
 - [Review Automation](#review-automation)
+- [Codebase Indexing](#codebase-indexing)
 - [Providers and Models](#providers-and-models)
 - [Profiles and Subagents](#profiles-and-subagents)
 - [Permissions and Sandboxing](#permissions-and-sandboxing)
@@ -272,6 +273,27 @@ Optional repository variables:
 
 The GitHub workflow uses `pull_request_target` so it can comment with the repository token. It checks out the trusted base branch version of NanoAgent, fetches the PR head only to compute a diff, and runs the CLI from trusted code. GitLab and Bitbucket examples run in their native merge request or pull request pipeline contexts and post comments through their REST APIs.
 
+## Codebase Indexing
+
+NanoAgent includes a local codebase index for repository-wide discovery. The `codebase_index` tool can:
+
+- `status`: show whether the index exists, when it was built, and whether files are new, changed, or deleted.
+- `build`: refresh the index, reusing unchanged files and updating changed files incrementally.
+- `search`: rank likely relevant files for a natural-language, symbol, path, or behavior query.
+- `list`: show indexed file paths.
+
+NanoAgent implements codebase indexing by computing embeddings for files, starts indexing automatically when a project opens, synchronizes new files incrementally, and respects ignore files such as `.gitignore`.
+
+```text
+.nanoagent/cache/codebase-index.json
+```
+
+The cache does not store full file contents. Search snippets are read from current workspace files when results are returned.
+
+Indexing respects `.gitignore`, `.nanoagent/.nanoignore`, and built-in exclusions for generated or local runtime directories such as `.git/`, `node_modules/`, `bin/`, `obj/`, `.nanoagent/cache/`, `.nanoagent/logs/`, and `.nanoagent/sessions/`.
+
+Use `codebase_index` for broad discovery first, then use `file_read`, `text_search`, or `code_intelligence` to verify exact behavior before editing.
+
 ## Providers and Models
 
 NanoAgent stores a provider profile locally and discovers models from that provider when possible.
@@ -425,6 +447,7 @@ NanoAgent creates:
   .nanoignore
   agents/
   skills/
+  cache/
   memory/
     architecture.md
     conventions.md
@@ -453,6 +476,7 @@ secrets.*
 [Oo]bj/
 node_modules/
 .git/
+.nanoagent/cache/
 .nanoagent/logs/
 .nanoagent/memory/*.jsonl
 ```
@@ -723,6 +747,7 @@ Local:
 - Workspace files stay on your machine.
 - Configuration is local.
 - Sections are stored locally.
+- Codebase index cache is stored locally.
 - Team memory and lesson memory are stored locally.
 - Optional audit logs are stored locally.
 - Secrets are stored through platform credential storage where supported.

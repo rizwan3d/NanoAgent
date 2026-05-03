@@ -293,6 +293,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
 
             case AgentToolNames.SearchFiles:
             case AgentToolNames.TextSearch:
+            case AgentToolNames.CodebaseIndex:
                 events.Add(before ? LifecycleHookEvents.BeforeFileSearch : LifecycleHookEvents.AfterFileSearch);
                 break;
 

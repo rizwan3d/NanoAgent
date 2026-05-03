@@ -39,6 +39,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
             EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "agents"), summary);
             EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "skills"), summary);
             EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "skills", "dotnet"), summary);
+            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "cache"), summary);
             EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "memory"), summary);
             EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "logs"), summary);
 
@@ -247,6 +248,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
+        - `cache/codebase-index.json`: local codebase index cache created by the `codebase_index` tool.
         - `memory/*.md`: repo-scoped team memory that can be inspected, diffed, and version-controlled.
         - `memory/lessons.jsonl`: reusable local lessons about mistakes, failures, and fixes.
         - `logs/tool-audit.jsonl`: optional tool audit log when enabled in `agent-profile.json`.
@@ -259,6 +261,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
     private const string GitIgnoreTemplate =
         """
         logs/*.jsonl
+        cache/
         memory/*.jsonl
         *.local.json
         """;

@@ -37,6 +37,7 @@ It is designed for developers who want useful automation without giving up contr
 - Keep control of the work with clear profiles for hands-on changes, read-only planning, and read-only review.
 - Bring NanoAgent into team workflows with GitHub, GitLab, and Bitbucket PR/MR review automation.
 - Use the model provider that fits your budget, policy, and performance needs, including OpenAI, ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, and OpenAI-compatible providers.
+- Search across the repository with a local codebase index that refreshes incrementally and respects ignore rules.
 - Give your team reviewable repo memory in `.nanoagent/memory/*.md` instead of relying on hidden agent notes.
 - Adapt the agent to your project with custom instructions, skills, agents, process tools, MCP tools, and reusable lessons.
 - Reduce repetitive work by delegating focused tasks to built-in or project-defined subagents.
@@ -90,6 +91,12 @@ The included GitHub Actions, GitLab CI, and Bitbucket Pipelines examples install
 Copy `.nanoagent/agents/pr-reviewer.md` plus the matching CI files for your platform: `.github/workflows/nanoai-review.yml` and `.github/nanoai-github-review.sh`, `.gitlab-ci.yml` and `.gitlab/nanoai-gitlab-review.sh`, or `bitbucket-pipelines.yml` and `.bitbucket/nanoai-bitbucket-review.sh`.
 
 Configure `NANOAGENT_API_KEY`. GitLab posting needs `GITLAB_TOKEN` or `NANOAI_GITLAB_TOKEN`; Bitbucket posting needs `BITBUCKET_ACCESS_TOKEN` or `BITBUCKET_USERNAME` plus `BITBUCKET_APP_PASSWORD`. Optional variables are `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_BASE_URL`, and `NANOAGENT_THINKING`.
+
+### Codebase Indexing
+
+NanoAgent can build a local codebase index in `.nanoagent/cache/codebase-index.json` and use it to find relevant files by concept, symbol, path, or behavior before narrowing with file reads, text search, and code intelligence.
+
+The index refreshes incrementally, respects `.gitignore` and `.nanoagent/.nanoignore`, and exposes status plus included files through the `codebase_index` tool.
 
 ### Team Memory
 
@@ -202,7 +209,7 @@ Your code stays on your machine. Prompts, relevant snippets, tool output, and co
 
 ## Learn More
 
-The detailed user guide lives in [docs/documentation.md](docs/documentation.md). It covers onboarding, desktop and terminal workflows, providers, models, permissions, MCP, memory, hooks, custom agents, troubleshooting, and source builds.
+The detailed user guide lives in [docs/documentation.md](docs/documentation.md). It covers onboarding, desktop and terminal workflows, codebase indexing, providers, models, permissions, MCP, memory, hooks, custom agents, troubleshooting, and source builds.
 
 ## License
 
