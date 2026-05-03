@@ -12,7 +12,7 @@ namespace NanoAgent.Application.Permissions;
 internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 {
     private static readonly HashSet<string> MemoryWriteActions = new(
-        ["save", "edit", "delete"],
+        ["save", "edit", "delete", "write", "update", "append"],
         StringComparer.OrdinalIgnoreCase);
 
     private readonly MemorySettings _memorySettings;
@@ -117,6 +117,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         AddMemoryWriteTagIfNeeded(
             permissionPolicy,
             context.ToolExecutionContext,
+            subjects,
             dynamicToolTags);
 
         PermissionRequestDescriptor request = CreateRequestDescriptor(
@@ -663,7 +664,10 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         PermissionEvaluationContext context,
         PermissionRequestDescriptor request)
     {
-        if (!IsMemoryTool(permissionPolicy, context.ToolExecutionContext))
+        bool isMemoryTool = IsMemoryTool(permissionPolicy, context.ToolExecutionContext);
+        bool isMemoryWrite = request.ToolTags.Any(static tag =>
+            string.Equals(tag, "memory_write", StringComparison.OrdinalIgnoreCase));
+        if (!isMemoryTool && !isMemoryWrite)
         {
             return null;
         }
@@ -672,18 +676,23 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         {
             return PermissionEvaluationResult.Denied(
                 "memory_disabled",
-                "Lesson memory is disabled by configuration.",
+                "Memory is disabled by configuration.",
                 PermissionMode.Deny,
                 request);
         }
 
-        if (!ToolArguments.TryGetNonEmptyString(
-                context.ToolExecutionContext.Arguments,
-                "action",
-                out string? action) ||
-            !MemoryWriteActions.Contains(action!))
+        if (!isMemoryWrite)
         {
             return null;
+        }
+
+        string action = GetMemoryWriteAction(context.ToolExecutionContext);
+        PermissionEvaluationResult? repoMemoryRestriction = EvaluateRepoMemoryWriteRestriction(
+            context.ToolExecutionContext,
+            request);
+        if (repoMemoryRestriction is not null)
+        {
+            return repoMemoryRestriction;
         }
 
         if (_settings.MemoryWrite is not null)
@@ -692,7 +701,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                 _settings.MemoryWrite.Value,
                 context,
                 request,
-                action!);
+                action);
         }
 
         bool requiresApproval =
@@ -705,9 +714,48 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 
         return PermissionEvaluationResult.RequiresApproval(
             "memory_write_approval_required",
-            $"Tool '{context.ToolExecutionContext.ToolName}' requires approval before it can {action} lesson memory.",
+            $"Tool '{context.ToolExecutionContext.ToolName}' requires approval before it can {action} memory.",
             PermissionMode.Ask,
             request);
+    }
+
+    private PermissionEvaluationResult? EvaluateRepoMemoryWriteRestriction(
+        ToolExecutionContext context,
+        PermissionRequestDescriptor request)
+    {
+        if (!string.Equals(context.ToolName, AgentToolNames.RepoMemory, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (context.ExecutionPhase == ConversationExecutionPhase.Planning)
+        {
+            return PermissionEvaluationResult.Denied(
+                "planning_phase_memory_write_blocked",
+                "The automatic planning phase cannot write repo memory. Use repo_memory writes only during execution.",
+                PermissionMode.Deny,
+                request);
+        }
+
+        if (context.Session.AgentProfile.PermissionIntent.EditMode == AgentProfileEditMode.ReadOnly)
+        {
+            return PermissionEvaluationResult.Denied(
+                "profile_readonly_memory_write_blocked",
+                $"Agent profile '{context.Session.AgentProfile.Name}' is read-only and cannot write repo memory.",
+                PermissionMode.Deny,
+                request);
+        }
+
+        if (_settings.SandboxMode == ToolSandboxMode.ReadOnly)
+        {
+            return PermissionEvaluationResult.Denied(
+                "sandbox_readonly_memory_write_blocked",
+                "The configured sandbox mode is read-only. Tool 'repo_memory' cannot write repo memory unless the sandbox mode is changed.",
+                PermissionMode.Deny,
+                request);
+        }
+
+        return null;
     }
 
     private static PermissionEvaluationResult? EvaluateConfiguredMemoryWritePolicy(
@@ -721,12 +769,12 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             PermissionMode.Allow => null,
             PermissionMode.Deny => PermissionEvaluationResult.Denied(
                 "memory_write_denied",
-                $"Tool '{context.ToolExecutionContext.ToolName}' is denied permission to {action} lesson memory.",
+                $"Tool '{context.ToolExecutionContext.ToolName}' is denied permission to {action} memory.",
                 PermissionMode.Deny,
                 request),
             PermissionMode.Ask when !context.ApprovalGranted => PermissionEvaluationResult.RequiresApproval(
                 "memory_write_approval_required",
-                $"Tool '{context.ToolExecutionContext.ToolName}' requires approval before it can {action} lesson memory.",
+                $"Tool '{context.ToolExecutionContext.ToolName}' requires approval before it can {action} memory.",
                 PermissionMode.Ask,
                 request),
             _ => null
@@ -745,11 +793,15 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
     private static void AddMemoryWriteTagIfNeeded(
         ToolPermissionPolicy permissionPolicy,
         ToolExecutionContext context,
+        IReadOnlyList<string> subjects,
         List<string> dynamicToolTags)
     {
-        if (!IsMemoryTool(permissionPolicy, context) ||
-            !ToolArguments.TryGetNonEmptyString(context.Arguments, "action", out string? action) ||
-            !MemoryWriteActions.Contains(action!))
+        bool memoryToolWrite = IsMemoryTool(permissionPolicy, context) &&
+            IsMemoryWriteAction(context);
+        bool repoMemoryFileWrite = PlanningModePolicy.IsWriteLikeTool(permissionPolicy) &&
+            subjects.Any(RepoMemoryDocuments.IsMemoryPath);
+
+        if (!memoryToolWrite && !repoMemoryFileWrite)
         {
             return;
         }
@@ -758,6 +810,20 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         {
             dynamicToolTags.Add("memory_write");
         }
+    }
+
+    private static bool IsMemoryWriteAction(ToolExecutionContext context)
+    {
+        return ToolArguments.TryGetNonEmptyString(context.Arguments, "action", out string? action) &&
+            MemoryWriteActions.Contains(action!);
+    }
+
+    private static string GetMemoryWriteAction(ToolExecutionContext context)
+    {
+        return ToolArguments.TryGetNonEmptyString(context.Arguments, "action", out string? action) &&
+               MemoryWriteActions.Contains(action!)
+            ? action!.Trim().ToLowerInvariant()
+            : "write";
     }
 
     private static void AddSubject(

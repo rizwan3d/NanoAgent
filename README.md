@@ -37,6 +37,7 @@ It is designed for developers who want useful automation without giving up contr
 - Keep control of the work with clear profiles for hands-on changes, read-only planning, and read-only review.
 - Bring NanoAgent into team workflows with GitHub, GitLab, and Bitbucket PR/MR review automation.
 - Use the model provider that fits your budget, policy, and performance needs, including OpenAI, ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, and OpenAI-compatible providers.
+- Give your team reviewable repo memory in `.nanoagent/memory/*.md` instead of relying on hidden agent notes.
 - Adapt the agent to your project with custom instructions, skills, agents, process tools, MCP tools, and reusable lessons.
 - Reduce repetitive work by delegating focused tasks to built-in or project-defined subagents.
 - Protect your codebase with permission prompts, policy rules, secret redaction, and undo/redo for tracked file edits.
@@ -89,6 +90,12 @@ The included GitHub Actions, GitLab CI, and Bitbucket Pipelines examples install
 Copy `.nanoagent/agents/pr-reviewer.md` plus the matching CI files for your platform: `.github/workflows/nanoai-review.yml` and `.github/nanoai-github-review.sh`, `.gitlab-ci.yml` and `.gitlab/nanoai-gitlab-review.sh`, or `bitbucket-pipelines.yml` and `.bitbucket/nanoai-bitbucket-review.sh`.
 
 Configure `NANOAGENT_API_KEY`. GitLab posting needs `GITLAB_TOKEN` or `NANOAI_GITLAB_TOKEN`; Bitbucket posting needs `BITBUCKET_ACCESS_TOKEN` or `BITBUCKET_USERNAME` plus `BITBUCKET_APP_PASSWORD`. Optional variables are `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_BASE_URL`, and `NANOAGENT_THINKING`.
+
+### Team Memory
+
+NanoAgent keeps durable project knowledge in structured markdown files: `.nanoagent/memory/architecture.md`, `conventions.md`, `decisions.md`, `known-issues.md`, and `test-strategy.md`.
+
+This is repo-scoped memory that your team can inspect, diff, and version-control. That is much safer than hidden memory, and memory writes require approval by default.
 
 ### Profiles
 

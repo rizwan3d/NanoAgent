@@ -14,6 +14,7 @@ internal static class AgentToolNames
     public const string FileRead = "file_read";
     public const string HeadlessBrowser = "headless_browser";
     public const string PlanningMode = "planning_mode";
+    public const string RepoMemory = "repo_memory";
     public const string LessonMemory = "lesson_memory";
     public const string SearchFiles = "search_files";
     public const string FileWrite = "file_write";

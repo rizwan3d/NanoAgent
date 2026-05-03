@@ -78,6 +78,16 @@ internal sealed class InitCommandHandler : IReplCommandHandler
                 SkillTemplate,
                 summary,
                 cancellationToken);
+            foreach (RepoMemoryDocumentDefinition document in RepoMemoryDocuments.All)
+            {
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, "memory", document.FileName),
+                    RepoMemoryDocuments.CreateTemplate(document),
+                    summary,
+                    cancellationToken);
+            }
+
             await EnsureFileAsync(
                 workspaceRoot,
                 Path.Combine(workspaceDirectory, "memory", "lessons.jsonl"),
@@ -177,6 +187,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
             builder.AppendLine();
             builder.AppendLine("Next steps:");
             builder.AppendLine("- Edit .nanoagent/agent-profile.json for workspace memory, audit, MCP, and custom tool settings.");
+            builder.AppendLine("- Review .nanoagent/memory/*.md for repo-scoped team memory your team can inspect, diff, and version-control.");
             builder.AppendLine("- Rename .nanoagent/agents/code-reviewer.md.template to .md when you want to enable that custom agent.");
             builder.AppendLine("- Rename .nanoagent/skills/dotnet/SKILL.md.template to SKILL.md when you want to enable that workspace skill.");
             builder.AppendLine("- Add a root AGENTS.md file for persistent workspace instructions.");
@@ -236,8 +247,11 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
+        - `memory/*.md`: repo-scoped team memory that can be inspected, diffed, and version-controlled.
         - `memory/lessons.jsonl`: reusable local lessons about mistakes, failures, and fixes.
         - `logs/tool-audit.jsonl`: optional tool audit log when enabled in `agent-profile.json`.
+
+        Memory writes require approval by default. Keep team memory focused on durable architecture, convention, decision, known-issue, and test-strategy notes.
 
         Root-level `AGENTS.md` files are loaded as persistent workspace instructions.
         """;
@@ -326,7 +340,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         .nanoagent/cache/
         .nanoagent/tmp/
         .nanoagent/temp/
-        .nanoagent/memory/
+        .nanoagent/memory/*.jsonl
 
         # VCS and OS metadata
         .git/
@@ -364,4 +378,5 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         Inspect the relevant `.csproj` before changing package references.
         Keep package and target framework changes narrowly scoped.
         """;
+
 }
