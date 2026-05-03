@@ -245,6 +245,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         This directory stores workspace-local NanoAgent configuration.
 
         - `agent-profile.json`: workspace memory, audit, custom tools, and MCP server settings.
+        - `SystemPrompt.md`: optional custom base system prompt. NanoAgent prepends its identity header automatically when this file exists.
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
@@ -255,7 +256,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
         Memory writes require approval by default. Keep team memory focused on durable architecture, convention, decision, known-issue, and test-strategy notes.
 
-        Root-level `AGENTS.md` files are loaded as persistent workspace instructions.
+        Root-level `AGENTS.md` files are loaded as persistent workspace instructions. Use `.nanoagent/SystemPrompt.md` only when you want to replace NanoAgent's base system prompt for this workspace.
         """;
 
     private const string GitIgnoreTemplate =

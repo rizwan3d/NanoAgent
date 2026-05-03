@@ -9,6 +9,21 @@ namespace NanoAgent.Tests.Infrastructure.Configuration;
 public sealed class ApplicationSettingsFactoryTests
 {
     [Fact]
+    public void CreateConversationSettings_Should_PrefixConfiguredSystemPromptWithIdentity()
+    {
+        ConversationSettings settings = ApplicationSettingsFactory.CreateConversationSettings(new ApplicationOptions
+        {
+            Conversation = new ConversationOptions
+            {
+                SystemPrompt = "  Custom behavior.  "
+            }
+        });
+
+        settings.SystemPrompt.Should().StartWith(ConversationOptions.IdentityDescription);
+        settings.SystemPrompt.Should().EndWith("Custom behavior.");
+    }
+
+    [Fact]
     public void PermissionShortcuts_Should_BindFromSnakeCaseConfigurationKeys()
     {
         IConfigurationRoot configuration = new ConfigurationBuilder()

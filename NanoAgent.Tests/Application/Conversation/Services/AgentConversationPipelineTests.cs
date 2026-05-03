@@ -307,7 +307,7 @@ public sealed class AgentConversationPipelineTests
             Mock.Of<IToolExecutionPipeline>(),
             toolRegistry.Object,
             configurationAccessor.Object,
-            new FixedWorkspaceInstructionsProvider("Workspace instructions:\nFrom AGENTS.md:\nFollow repo rules."));
+            workspaceInstructionsProvider: new FixedWorkspaceInstructionsProvider("Workspace instructions:\nFrom AGENTS.md:\nFollow repo rules."));
 
         await ProcessAsync(
             sut,
@@ -319,6 +319,70 @@ public sealed class AgentConversationPipelineTests
         requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
         requests[0].SystemPrompt.Should().Contain("Workspace instructions:");
         requests[0].SystemPrompt.Should().Contain("Follow repo rules.");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_UseWorkspaceSystemPromptWhenAvailable()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_workspace_prompt"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_workspace_prompt"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            workspaceSystemPromptProvider: new FixedWorkspaceSystemPromptProvider("Workspace custom system prompt."));
+
+        await ProcessAsync(
+            sut,
+            "Do the thing.",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Workspace custom system prompt.");
+        requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
+        requests[0].SystemPrompt.Should().NotContain("Base prompt");
     }
 
     [Fact]
@@ -2195,6 +2259,7 @@ public sealed class AgentConversationPipelineTests
         IToolExecutionPipeline toolExecutionPipeline,
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
+        IWorkspaceSystemPromptProvider? workspaceSystemPromptProvider = null,
         IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null,
         ILessonMemoryService? lessonMemoryService = null,
         ILifecycleHookService? lifecycleHookService = null,
@@ -2209,6 +2274,7 @@ public sealed class AgentConversationPipelineTests
             toolExecutionPipeline,
             toolRegistry,
             configurationAccessor,
+            workspaceSystemPromptProvider ?? new EmptyWorkspaceSystemPromptProvider(),
             workspaceInstructionsProvider ?? new EmptyWorkspaceInstructionsProvider(),
             lessonMemoryService ?? new EmptyLessonMemoryService(),
             NullLogger<AgentConversationPipeline>.Instance,
@@ -2304,6 +2370,35 @@ public sealed class AgentConversationPipelineTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<string?>(null);
+        }
+    }
+
+    private sealed class EmptyWorkspaceSystemPromptProvider : IWorkspaceSystemPromptProvider
+    {
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+    }
+
+    private sealed class FixedWorkspaceSystemPromptProvider : IWorkspaceSystemPromptProvider
+    {
+        private readonly string? _systemPrompt;
+
+        public FixedWorkspaceSystemPromptProvider(string? systemPrompt)
+        {
+            _systemPrompt = systemPrompt;
+        }
+
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_systemPrompt);
         }
     }
 

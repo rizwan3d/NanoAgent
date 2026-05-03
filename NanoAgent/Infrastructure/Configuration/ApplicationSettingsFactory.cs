@@ -41,9 +41,7 @@ internal static class ApplicationSettingsFactory
         ArgumentNullException.ThrowIfNull(options);
 
         ConversationOptions conversation = options.Conversation ?? new ConversationOptions();
-        string? systemPrompt = string.IsNullOrWhiteSpace(conversation.SystemPrompt)
-            ? null
-            : conversation.SystemPrompt.Trim();
+        string systemPrompt = ConversationOptions.CreateSystemPrompt(conversation.SystemPrompt);
         TimeSpan requestTimeout = conversation.RequestTimeoutSeconds <= 0
             ? Timeout.InfiniteTimeSpan
             : TimeSpan.FromSeconds(conversation.RequestTimeoutSeconds);

@@ -28,12 +28,21 @@ public sealed class ConversationOptions
         }
     }
 
-    private static string  IdentityDescription => $"You are NanoAgent Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D running on oprating system {OperatingSystemDescription} with default shell {DefaultShellName}, an autonomous AI coding agent running on the user's machine.";
+    public static string IdentityDescription => $"You are NanoAgent Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D running on operating system {OperatingSystemDescription} with default shell {DefaultShellName}, an autonomous AI coding agent running on the user's machine.";
+
+    public static string CreateSystemPrompt(string? systemPrompt)
+    {
+        string? trimmedSystemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
+            ? null
+            : systemPrompt.Trim();
+
+        return trimmedSystemPrompt is null
+            ? IdentityDescription
+            : $"{IdentityDescription}{Environment.NewLine}{Environment.NewLine}{trimmedSystemPrompt}";
+    }
 
     public string? SystemPrompt { get; set; } =
-$$"""
-{{IdentityDescription}}
-
+"""
 Your job is to help the user understand, modify, debug, test, review, and improve software projects. Act like a careful senior engineer: practical, direct, persistent, and safety-aware.
 
 # Core Mission

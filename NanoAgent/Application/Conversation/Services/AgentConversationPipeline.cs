@@ -58,6 +58,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IToolRegistry _toolRegistry;
     private readonly IConversationConfigurationAccessor _configurationAccessor;
     private readonly IBudgetControlsUsageService _budgetControlsUsageService;
+    private readonly IWorkspaceSystemPromptProvider _workspaceSystemPromptProvider;
     private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
     private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ISkillService _skillService;
@@ -73,6 +74,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IToolExecutionPipeline toolExecutionPipeline,
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
+        IWorkspaceSystemPromptProvider workspaceSystemPromptProvider,
         IWorkspaceInstructionsProvider workspaceInstructionsProvider,
         ILessonMemoryService lessonMemoryService,
         ILogger<AgentConversationPipeline> logger,
@@ -91,6 +93,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _toolRegistry = toolRegistry;
         _configurationAccessor = configurationAccessor;
         _budgetControlsUsageService = budgetControlsUsageService ?? DisabledBudgetControlsUsageService.Instance;
+        _workspaceSystemPromptProvider = workspaceSystemPromptProvider;
         _workspaceInstructionsProvider = workspaceInstructionsProvider;
         _lessonMemoryService = lessonMemoryService;
         _skillService = skillService ?? DisabledSkillService.Instance;
@@ -138,8 +141,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     "Conversation cannot start because the API key is missing.");
 
             ConversationSettings settings = _configurationAccessor.GetSettings();
-            string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
+            string? baseSystemPrompt = await CreateBaseSystemPromptAsync(
                 settings.SystemPrompt,
+                session,
+                cancellationToken);
+            string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
+                baseSystemPrompt,
                 session,
                 CreateLessonQuery(normalizedInput),
                 cancellationToken);
@@ -159,6 +166,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     session,
                     progressSink,
                     settings,
+                    baseSystemPrompt,
                     apiKey,
                     availableToolDefinitions,
                     availableToolNames,
@@ -235,6 +243,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ReplSessionContext session,
         IConversationProgressSink progressSink,
         ConversationSettings settings,
+        string? baseSystemPrompt,
         string apiKey,
         IReadOnlyList<ToolDefinition> allToolDefinitions,
         IReadOnlySet<string> executionToolNames,
@@ -267,7 +276,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             executionMessages,
             PlanningModePolicy.CreateExecutionSystemPrompt(
                 await CreateProfileSystemPromptAsync(
-                    settings.SystemPrompt,
+                    baseSystemPrompt,
                     session,
                     CreateLessonQuery(normalizedInput, pendingPlan),
                     cancellationToken),
@@ -509,6 +518,20 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             : string.Join(
                 $"{Environment.NewLine}{Environment.NewLine}",
                 normalizedSections);
+    }
+
+    private async Task<string?> CreateBaseSystemPromptAsync(
+        string? configuredSystemPrompt,
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        string? workspaceSystemPrompt = await _workspaceSystemPromptProvider.LoadAsync(
+            session,
+            cancellationToken);
+
+        return string.IsNullOrWhiteSpace(workspaceSystemPrompt)
+            ? configuredSystemPrompt
+            : workspaceSystemPrompt;
     }
 
     private async Task<string?> CreateLessonMemoryPromptAsync(

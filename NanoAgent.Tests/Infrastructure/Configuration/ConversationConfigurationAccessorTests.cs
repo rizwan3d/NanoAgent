@@ -23,7 +23,8 @@ public sealed class ConversationConfigurationAccessorTests
 
         ConversationSettings result = sut.GetSettings();
 
-        result.SystemPrompt.Should().Be("test prompt");
+        result.SystemPrompt.Should().StartWith(ConversationOptions.IdentityDescription);
+        result.SystemPrompt.Should().EndWith("test prompt");
         result.RequestTimeout.Should().Be(Timeout.InfiniteTimeSpan);
         result.MaxToolRoundsPerTurn.Should().Be(0);
     }

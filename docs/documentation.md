@@ -539,6 +539,12 @@ NanoAgent creates:
 
 Place `AGENTS.md` or `.agent/AGENTS.md` in the workspace for persistent project instructions. NanoAgent adds them to the model context after secret redaction.
 
+### `.nanoagent/SystemPrompt.md`
+
+Create `.nanoagent/SystemPrompt.md` to replace NanoAgent's base system prompt for that workspace. NanoAgent always prepends its identity header before the custom file content, then appends the active profile prompt, workspace instructions, skills, memory, and session state as usual.
+
+Use `AGENTS.md` for ordinary repository instructions. Use `SystemPrompt.md` only when the workspace needs a different base behavior.
+
 ### `.nanoagent/.nanoignore`
 
 Use `.nanoignore` to exclude paths from NanoAgent file tools. It supports gitignore-style patterns including comments, negation, directory rules, `*`, `?`, `**`, and character classes.
