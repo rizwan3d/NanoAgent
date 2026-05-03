@@ -50,6 +50,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"subagent: {agent}",
             "agent_orchestrate" when TryGetArgumentArrayCount(toolCall.ArgumentsJson, "tasks", out int taskCount) =>
                 $"subagent orchestration: {taskCount} {(taskCount == 1 ? "task" : "tasks")}",
+            "repo_memory" when TryGetArgumentString(toolCall.ArgumentsJson, "document", out string memoryDocument) =>
+                $"repo memory: {memoryDocument}",
             "web_run" => DescribeWebRunCall(toolCall.ArgumentsJson),
             _ => name
         };
@@ -212,6 +214,12 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
 
                 case "agent_orchestrate":
                     AddArrayArgumentSummary(root, lines, "tasks");
+                    break;
+
+                case "repo_memory":
+                    AddNamedArgumentLine(root, lines, "action");
+                    AddNamedArgumentLine(root, lines, "document");
+                    AddContentArgumentPreview(root, lines, "content", "content");
                     break;
 
                 default:

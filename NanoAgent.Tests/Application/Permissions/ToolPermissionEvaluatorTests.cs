@@ -719,6 +719,120 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void Evaluate_Should_RequireApprovalForRepoMemoryWrites()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                Rules = []
+            }),
+            new MemorySettings
+            {
+                RequireApprovalForWrites = true,
+                AllowAutoManualLessons = false
+            });
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["memory"]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """
+                {
+                  "action": "write",
+                  "document": "architecture",
+                  "content": "# Architecture\n\nUse layered architecture."
+                }
+                """,
+                toolName: AgentToolNames.RepoMemory)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
+        result.ReasonCode.Should().Be("memory_write_approval_required");
+        result.Request!.ToolTags.Should().Contain("memory_write");
+    }
+
+    [Fact]
+    public void Evaluate_Should_DenyRepoMemoryWrites_When_ProfileIsReadOnly()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(),
+            new MemorySettings
+            {
+                RequireApprovalForWrites = true,
+                AllowAutoManualLessons = false
+            });
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ToolTags = ["memory"]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """
+                {
+                  "action": "write",
+                  "document": "architecture",
+                  "content": "# Architecture"
+                }
+                """,
+                session: CreateSession(BuiltInAgentProfiles.Plan, _workspaceRoot),
+                toolName: AgentToolNames.RepoMemory)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("profile_readonly_memory_write_blocked");
+    }
+
+    [Fact]
+    public void Evaluate_Should_RequireMemoryApprovalForFileWritesUnderRepoMemory()
+    {
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow,
+                Rules = []
+            }),
+            new MemorySettings
+            {
+                RequireApprovalForWrites = true,
+                AllowAutoManualLessons = false
+            });
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ApprovalMode = ToolApprovalMode.Automatic,
+                ToolTags = ["edit"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Write,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """
+                {
+                  "path": ".nanoagent/memory/architecture.md",
+                  "content": "# Architecture"
+                }
+                """,
+                toolName: AgentToolNames.FileWrite)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
+        result.ReasonCode.Should().Be("memory_write_approval_required");
+        result.Request!.Subjects.Should().Contain(".nanoagent/memory/architecture.md");
+        result.Request.ToolTags.Should().Contain("memory_write");
+    }
+
+    [Fact]
     public void Evaluate_Should_UseConfiguredMemoryWritePermissionMode()
     {
         ToolPermissionEvaluator sut = new(
