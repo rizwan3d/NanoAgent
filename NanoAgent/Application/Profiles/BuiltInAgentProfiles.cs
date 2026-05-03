@@ -17,6 +17,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.AgentDelegate,
             AgentToolNames.AgentOrchestrate,
             AgentToolNames.ApplyPatch,
+            AgentToolNames.CodebaseIndex,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileDelete,
@@ -38,6 +39,7 @@ internal static class BuiltInAgentProfiles
     private static readonly IReadOnlySet<string> GeneralTools = new HashSet<string>(
         [
             AgentToolNames.ApplyPatch,
+            AgentToolNames.CodebaseIndex,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileDelete,
@@ -59,6 +61,7 @@ internal static class BuiltInAgentProfiles
         [
             AgentToolNames.AgentDelegate,
             AgentToolNames.AgentOrchestrate,
+            AgentToolNames.CodebaseIndex,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,
@@ -78,6 +81,7 @@ internal static class BuiltInAgentProfiles
     private static readonly IReadOnlySet<string> ExploreTools = new HashSet<string>(
         [
             AgentToolNames.DirectoryList,
+            AgentToolNames.CodebaseIndex,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.FileRead,
             AgentToolNames.HeadlessBrowser,
@@ -100,6 +104,7 @@ internal static class BuiltInAgentProfiles
         Operate as a hands-on coding agent: inspect before changing, edit confidently when the evidence is clear, and finish the requested implementation when practical.
         Use the repo and tool output as the source of truth. When work is non-trivial, keep a live plan synchronized and work one concrete step at a time.
         Use code_intelligence for semantic navigation, such as symbols, definitions, implementations, references, call hierarchy, diagnostics, rename previews, tests, dependencies, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
+        Use codebase_index for repository-wide questions, broad discovery, or finding likely relevant files by concept, symbol, or behavior before narrowing with file_read, text_search, or code_intelligence.
         Repo memory from .nanoagent/memory/*.md is retrieved as reviewable team context when present. Use repo_memory for durable architecture, convention, decision, known-issue, and test-strategy notes; writes require approval and should stay inspectable, diffable, and version-controlled.
         Relevant lesson memory is retrieved automatically. Use lesson_memory when a mistake teaches a reusable future rule, when you need to search/list memory manually, or when a bad lesson should be edited or deleted.
         When you want a plan-first pass, call `planning_mode` instead of writing a freeform plan in assistant text.

@@ -44,6 +44,10 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"text search: \"{query}\"",
             "file_write" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file write: {path}",
+            "codebase_index" when TryGetArgumentString(toolCall.ArgumentsJson, "query", out string indexQuery) =>
+                $"codebase index: \"{indexQuery}\"",
+            "codebase_index" when TryGetArgumentString(toolCall.ArgumentsJson, "action", out string indexAction) =>
+                $"codebase index: {indexAction}",
             "headless_browser" when TryGetArgumentString(toolCall.ArgumentsJson, "url", out string browserUrl) =>
                 $"headless browser: {browserUrl}",
             "agent_delegate" when TryGetArgumentString(toolCall.ArgumentsJson, "agent", out string agent) =>
@@ -204,6 +208,14 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
 
                 case "apply_patch":
                     AddContentArgumentPreview(root, lines, "patch", "patch");
+                    break;
+
+                case "codebase_index":
+                    AddNamedArgumentLine(root, lines, "action");
+                    AddNamedArgumentLine(root, lines, "query");
+                    AddNamedArgumentLine(root, lines, "limit");
+                    AddNamedArgumentLine(root, lines, "includeSnippets");
+                    AddNamedArgumentLine(root, lines, "force");
                     break;
 
                 case "agent_delegate":
