@@ -278,7 +278,7 @@ nanoai --section <section-guid>
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
-| `/init` | Initialize workspace-local NanoAgent files. |
+| `/init [recommended\|minimal\|custom]` | Choose and initialize workspace-local NanoAgent files. |
 | `/update [now]` | Check for updates. Use `/update now` to install without another prompt. |
 | `/undo` | Roll back the most recent tracked edit transaction. |
 | `/redo` | Re-apply the most recently undone edit transaction. |
@@ -514,7 +514,15 @@ Run:
 /init
 ```
 
-NanoAgent creates:
+NanoAgent asks which starter files to add:
+
+- `Recommended`: core config, ignores, repo memory templates, runtime folders, and inactive agent/skill templates.
+- `Minimal`: core config, README, and ignore files only.
+- `Custom`: asks for each optional group, including the advanced inactive `SystemPrompt.md.template`.
+
+You can skip the picker with `/init recommended`, `/init minimal`, or `/init custom`.
+
+The recommended preset creates:
 
 ```text
 .nanoagent/
@@ -544,6 +552,8 @@ Place `AGENTS.md` or `.agent/AGENTS.md` in the workspace for persistent project 
 Create `.nanoagent/SystemPrompt.md` to replace NanoAgent's base system prompt for that workspace. NanoAgent always prepends its identity header before the custom file content, then appends the active profile prompt, workspace instructions, skills, memory, and session state as usual.
 
 Use `AGENTS.md` for ordinary repository instructions. Use `SystemPrompt.md` only when the workspace needs a different base behavior.
+
+`/init custom` can create `.nanoagent/SystemPrompt.md.template` as an inactive starter. Edit and rename it to `SystemPrompt.md` only when you intentionally want the override.
 
 ### `.nanoagent/.nanoignore`
 
