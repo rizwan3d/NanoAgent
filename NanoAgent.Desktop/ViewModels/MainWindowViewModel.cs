@@ -13,7 +13,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var sectionHistoryService = new SectionHistoryService();
 
         Project = new ProjectViewModel(settingsService, sectionHistoryService);
-        Chat = new ChatViewModel(new AgentRunner());
+        Chat = new ChatViewModel(new AgentRunner(), settingsService);
         Chat.ActiveProject = Project.SelectedProject;
         StartNewSectionCommand = new AsyncRelayCommand(StartNewSectionAsync, CanStartNewSection);
         Chat.RunCompleted += async (_, _) => await RefreshProjectSectionsAsync(loadSelectedSection: false);

@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Infrastructure.BudgetControls;
 using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
@@ -66,6 +67,11 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(20);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
+        services.AddHttpClient<IBudgetControlsUsageService, BudgetControlsUsageService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(20);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
         services.AddHttpClient<IOpenAiCodexClientVersionProvider, GitHubOpenAiCodexClientVersionProvider>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(10);
@@ -87,6 +93,8 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<IAgentConfigurationStore, JsonAgentConfigurationStore>();
         services.AddSingleton<IApiKeySecretStore, ApiKeySecretStore>();
+        services.AddSingleton<IBudgetControlsConfigurationStore, JsonBudgetControlsConfigurationStore>();
+        services.AddSingleton<IBudgetControlsSecretStore, BudgetControlsSecretStore>();
         services.AddSingleton<IModelCache, InMemoryModelCache>();
         services.AddSingleton<IConversationConfigurationAccessor, ConversationConfigurationAccessor>();
         services.AddSingleton<IConversationResponseMapper, OpenAiConversationResponseMapper>();

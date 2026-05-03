@@ -1,3 +1,4 @@
+using NanoAgent.Application.Models;
 using NanoAgent.Desktop.Models;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -9,6 +10,7 @@ public class SettingsService
     private const string ApplicationDirectoryName = "NanoAgent";
     private const string ProfileFileName = "agent-profile.json";
     private const string DesktopPropertyName = "desktop";
+    private const string BudgetControlsPropertyName = "budgetControls";
     private const string WorkspacesPropertyName = "workspaces";
     private const string LegacySettingsDirectoryName = "NanoAgent.Desktop";
     private const string LegacySettingsFileName = "settings.json";
@@ -49,6 +51,29 @@ public class SettingsService
         return LoadLegacyRecentProjects();
     }
 
+    public BudgetControlsSettings LoadBudgetControls()
+    {
+        if (!File.Exists(_profilePath))
+        {
+            return BudgetControlsSettings.Default;
+        }
+
+        try
+        {
+            JsonNode? root = JsonNode.Parse(File.ReadAllText(_profilePath));
+            JsonNode? budgetControls =
+                root?[BudgetControlsPropertyName] ??
+                root?[DesktopPropertyName]?[BudgetControlsPropertyName];
+            BudgetControlsSettings? settings = budgetControls?.Deserialize<BudgetControlsSettings>(SerializerOptions);
+
+            return BudgetControlsSettings.NormalizeOrDefault(settings);
+        }
+        catch
+        {
+            return BudgetControlsSettings.Default;
+        }
+    }
+
     public async Task SaveRecentProjectsAsync(IEnumerable<ProjectInfo> projects)
     {
         var projectList = projects.ToList();
@@ -61,6 +86,20 @@ public class SettingsService
         }
 
         desktop[WorkspacesPropertyName] = JsonSerializer.SerializeToNode(projectList, SerializerOptions);
+
+        var json = root.ToJsonString(SerializerOptions);
+        await File.WriteAllTextAsync(_profilePath, json);
+    }
+
+    public async Task SaveBudgetControlsAsync(BudgetControlsSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        JsonObject root = await LoadProfileRootForWriteAsync();
+
+        root[BudgetControlsPropertyName] = JsonSerializer.SerializeToNode(
+            BudgetControlsSettings.NormalizeOrDefault(settings),
+            SerializerOptions);
 
         var json = root.ToJsonString(SerializerOptions);
         await File.WriteAllTextAsync(_profilePath, json);
