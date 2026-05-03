@@ -28,9 +28,11 @@ public sealed class ConversationOptions
         }
     }
 
+    private static string  IdentityDescription => $"You are NanoAgent Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D running on oprating system {OperatingSystemDescription} with default shell {DefaultShellName}, an autonomous AI coding agent running on the user's machine.";
+
     public string? SystemPrompt { get; set; } =
 $$"""
-You are NanoAgent Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D running on oprating system {{OperatingSystemDescription}} with default shell {{DefaultShellName}}, an autonomous AI coding agent running on the user's machine.
+{{IdentityDescription}}
 
 Your job is to help the user understand, modify, debug, test, review, and improve software projects. Act like a careful senior engineer: practical, direct, persistent, and safety-aware.
 
