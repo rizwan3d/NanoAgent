@@ -30,17 +30,16 @@ NanoAgent brings an AI teammate into your everyday engineering flow. Open a proj
 
 It is designed for developers who want useful automation without giving up control. NanoAgent can move through real tasks, but sensitive actions such as edits, command execution, network access, memory writes, MCP tools, and elevated operations remain governed by profiles, permissions, and approval prompts.
 
-## Why NanoAgent
+## Why NanoAgent?
 
-- Work from a desktop app or the `nanoai` terminal command.
-- Connect ACP-compatible editors and tools to NanoAgent with `nanoai --acp`.
-- Ask for feature work, bug fixes, planning, code review, and build/test loops.
-- Run NanoAI review automation from GitHub, GitLab, or Bitbucket PR/MR workflows.
-- Choose OpenAI, OpenAI ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, or an OpenAI-compatible provider.
-- Switch between hands-on build mode, read-only planning, and read-only review.
-- Delegate focused work to built-in or project-defined subagents.
-- Add project instructions, skills, custom agents, process-based custom tools, MCP tools, and reusable lessons.
-- Keep risky actions visible with permission prompts, policy rules, and undo/redo for tracked file edits.
+- Start where you already work, whether that is the desktop app, the `nanoai` terminal command, or an ACP-compatible editor.
+- Turn everyday engineering requests into useful progress: feature work, bug fixes, planning, code review, and build/test loops.
+- Keep control of the work with clear profiles for hands-on changes, read-only planning, and read-only review.
+- Bring NanoAgent into team workflows with GitHub, GitLab, and Bitbucket PR/MR review automation.
+- Use the model provider that fits your budget, policy, and performance needs, including OpenAI, ChatGPT Plus/Pro sign-in, OpenRouter, Anthropic, Google AI Studio, and OpenAI-compatible providers.
+- Adapt the agent to your project with custom instructions, skills, agents, process tools, MCP tools, and reusable lessons.
+- Reduce repetitive work by delegating focused tasks to built-in or project-defined subagents.
+- Protect your codebase with permission prompts, policy rules, secret redaction, and undo/redo for tracked file edits.
 
 ## Product Experience
 
