@@ -25,7 +25,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/deny <tool-or-tag> [pattern] - Add a session-scoped deny override.\n" +
             "/exit - Exit the interactive shell.\n" +
             "/help - List the available shell commands and their usage.\n" +
-            "/init - Initialize workspace-local NanoAgent configuration files.\n" +
+            "/init [recommended|minimal|custom] - Choose and initialize workspace-local NanoAgent files.\n" +
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Choose the active model with the picker.\n" +
             "/onboard - Re-run provider onboarding and switch the active session to the new provider.\n" +

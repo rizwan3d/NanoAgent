@@ -48,7 +48,7 @@ public static partial class Program
         new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
         new("/exit", "/exit", "Exit the interactive shell.", false),
         new("/help", "/help", "List available commands and usage.", false),
-        new("/init", "/init", "Initialize workspace-local NanoAgent configuration files.", false),
+        new("/init", "/init [recommended|minimal|custom]", "Choose workspace-local NanoAgent files.", false),
         new("/ls", "/ls", "List files in the current workspace.", false),
         new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
         new("/models", "/models", "Choose the active model with the picker.", false),

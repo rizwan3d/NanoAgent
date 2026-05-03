@@ -1,3 +1,5 @@
+using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
 using System.Text;
@@ -8,12 +10,22 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 {
     private const string WorkspaceDirectoryName = ".nanoagent";
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private readonly ISelectionPrompt _selectionPrompt;
+    private readonly IConfirmationPrompt _confirmationPrompt;
+
+    public InitCommandHandler(
+        ISelectionPrompt selectionPrompt,
+        IConfirmationPrompt confirmationPrompt)
+    {
+        _selectionPrompt = selectionPrompt;
+        _confirmationPrompt = confirmationPrompt;
+    }
 
     public string CommandName => "init";
 
-    public string Description => "Initialize workspace-local NanoAgent configuration files.";
+    public string Description => "Choose and initialize workspace-local NanoAgent files.";
 
-    public string Usage => "/init";
+    public string Usage => "/init [recommended|minimal|custom]";
 
     public async Task<ReplCommandResult> ExecuteAsync(
         ReplCommandContext context,
@@ -22,26 +34,39 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (!string.IsNullOrWhiteSpace(context.ArgumentText))
+        InitScaffoldOptions options;
+        try
+        {
+            if (!TryResolveOptions(context, out options))
+            {
+                return ReplCommandResult.Continue(
+                    "Usage: /init [recommended|minimal|custom]",
+                    ReplFeedbackKind.Error);
+            }
+
+            if (options.Preset == InitPreset.Prompt)
+            {
+                options = await PromptForOptionsAsync(cancellationToken);
+            }
+            else if (options.Preset == InitPreset.Custom)
+            {
+                options = await PromptForCustomOptionsAsync(cancellationToken);
+            }
+        }
+        catch (PromptCancelledException)
         {
             return ReplCommandResult.Continue(
-                "Usage: /init",
-                ReplFeedbackKind.Error);
+                "Workspace initialization cancelled.",
+                ReplFeedbackKind.Warning);
         }
 
         string workspaceRoot = Path.GetFullPath(context.Session.WorkspacePath);
         string workspaceDirectory = Path.Combine(workspaceRoot, WorkspaceDirectoryName);
-        InitSummary summary = new(workspaceRoot);
+        InitSummary summary = new(workspaceRoot, options);
 
         try
         {
             EnsureDirectory(workspaceRoot, workspaceDirectory, summary);
-            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "agents"), summary);
-            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "skills"), summary);
-            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "skills", "dotnet"), summary);
-            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "cache"), summary);
-            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "memory"), summary);
-            EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "logs"), summary);
 
             await EnsureFileAsync(
                 workspaceRoot,
@@ -49,58 +74,146 @@ internal sealed class InitCommandHandler : IReplCommandHandler
                 AgentProfileTemplate,
                 summary,
                 cancellationToken);
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, "README.md"),
-                ReadmeTemplate,
-                summary,
-                cancellationToken);
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, ".gitignore"),
-                GitIgnoreTemplate,
-                summary,
-                cancellationToken);
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, ".nanoignore"),
-                NanoIgnoreTemplate,
-                summary,
-                cancellationToken);
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, "agents", "code-reviewer.md.template"),
-                AgentTemplate,
-                summary,
-                cancellationToken);
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, "skills", "dotnet", "SKILL.md.template"),
-                SkillTemplate,
-                summary,
-                cancellationToken);
-            foreach (RepoMemoryDocumentDefinition document in RepoMemoryDocuments.All)
+
+            if (options.IncludeReadme)
             {
                 await EnsureFileAsync(
                     workspaceRoot,
-                    Path.Combine(workspaceDirectory, "memory", document.FileName),
-                    RepoMemoryDocuments.CreateTemplate(document),
+                    Path.Combine(workspaceDirectory, "README.md"),
+                    ReadmeTemplate,
                     summary,
                     cancellationToken);
             }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/README.md");
+            }
 
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, "memory", "lessons.jsonl"),
-                string.Empty,
-                summary,
-                cancellationToken);
-            await EnsureFileAsync(
-                workspaceRoot,
-                Path.Combine(workspaceDirectory, "logs", ".gitkeep"),
-                string.Empty,
-                summary,
-                cancellationToken);
+            if (options.IncludeGitIgnore)
+            {
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, ".gitignore"),
+                    GitIgnoreTemplate,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/.gitignore");
+            }
+
+            if (options.IncludeNanoIgnore)
+            {
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, ".nanoignore"),
+                    NanoIgnoreTemplate,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/.nanoignore");
+            }
+
+            if (options.IncludeRuntimeDirectories)
+            {
+                EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "cache"), summary);
+                EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "logs"), summary);
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, "logs", ".gitkeep"),
+                    string.Empty,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/cache/");
+                summary.Skipped.Add(".nanoagent/logs/");
+            }
+
+            if (options.IncludeAgentTemplate)
+            {
+                EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "agents"), summary);
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, "agents", "code-reviewer.md.template"),
+                    AgentTemplate,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/agents/code-reviewer.md.template");
+            }
+
+            if (options.IncludeSkillTemplate)
+            {
+                EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "skills"), summary);
+                EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "skills", "dotnet"), summary);
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, "skills", "dotnet", "SKILL.md.template"),
+                    SkillTemplate,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/skills/dotnet/SKILL.md.template");
+            }
+
+            if (options.IncludeRepoMemory || options.IncludeLessonsJournal)
+            {
+                EnsureDirectory(workspaceRoot, Path.Combine(workspaceDirectory, "memory"), summary);
+            }
+
+            if (options.IncludeRepoMemory)
+            {
+                foreach (RepoMemoryDocumentDefinition document in RepoMemoryDocuments.All)
+                {
+                    await EnsureFileAsync(
+                        workspaceRoot,
+                        Path.Combine(workspaceDirectory, "memory", document.FileName),
+                        RepoMemoryDocuments.CreateTemplate(document),
+                        summary,
+                        cancellationToken);
+                }
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/memory/*.md");
+            }
+
+            if (options.IncludeLessonsJournal)
+            {
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, "memory", "lessons.jsonl"),
+                    string.Empty,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/memory/lessons.jsonl");
+            }
+
+            if (options.IncludeSystemPromptTemplate)
+            {
+                await EnsureFileAsync(
+                    workspaceRoot,
+                    Path.Combine(workspaceDirectory, "SystemPrompt.md.template"),
+                    SystemPromptTemplate,
+                    summary,
+                    cancellationToken);
+            }
+            else
+            {
+                summary.Skipped.Add(".nanoagent/SystemPrompt.md.template");
+            }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
@@ -112,6 +225,142 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         return ReplCommandResult.Continue(
             summary.Format(),
             ReplFeedbackKind.Info);
+    }
+
+    private static bool TryResolveOptions(
+        ReplCommandContext context,
+        out InitScaffoldOptions options)
+    {
+        options = InitScaffoldOptions.Prompt;
+        if (context.Arguments.Count == 0)
+        {
+            return true;
+        }
+
+        if (context.Arguments.Count > 1)
+        {
+            return false;
+        }
+
+        string normalizedArgument = context.Arguments[0]
+            .Trim()
+            .TrimStart('-', '/');
+        options = normalizedArgument.ToLowerInvariant() switch
+        {
+            "recommended" or "default" or "standard" => InitScaffoldOptions.Recommended,
+            "minimal" or "core" => InitScaffoldOptions.Minimal,
+            "custom" => InitScaffoldOptions.Custom,
+            "help" or "h" or "?" => InitScaffoldOptions.Help,
+            _ => InitScaffoldOptions.Invalid
+        };
+
+        return options.Preset is not InitPreset.Invalid and not InitPreset.Help;
+    }
+
+    private async Task<InitScaffoldOptions> PromptForOptionsAsync(CancellationToken cancellationToken)
+    {
+        InitPreset preset = await _selectionPrompt.PromptAsync(
+            new SelectionPromptRequest<InitPreset>(
+                "Choose workspace files to add",
+                [
+                    new SelectionPromptOption<InitPreset>(
+                        "Recommended",
+                        InitPreset.Recommended,
+                        "Core config, ignores, repo memory, runtime folders, and inactive agent/skill templates. No SystemPrompt override."),
+                    new SelectionPromptOption<InitPreset>(
+                        "Minimal",
+                        InitPreset.Minimal,
+                        "Only core config, README, and ignore files."),
+                    new SelectionPromptOption<InitPreset>(
+                        "Custom",
+                        InitPreset.Custom,
+                        "Choose each optional file group, including the advanced SystemPrompt template.")
+                ],
+                "Most projects should use AGENTS.md or memory docs for instructions. SystemPrompt is an advanced base-prompt override and is skipped unless you choose it.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            cancellationToken);
+
+        return preset == InitPreset.Custom
+            ? await PromptForCustomOptionsAsync(cancellationToken)
+            : InitScaffoldOptions.FromPreset(preset);
+    }
+
+    private async Task<InitScaffoldOptions> PromptForCustomOptionsAsync(CancellationToken cancellationToken)
+    {
+        bool includeReadme = await ConfirmAsync(
+            "Add workspace README?",
+            "Creates .nanoagent/README.md with concise notes about workspace-local NanoAgent files.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeGitIgnore = await ConfirmAsync(
+            "Add .nanoagent/.gitignore?",
+            "Keeps cache, logs, and local JSONL files out of source control.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeNanoIgnore = await ConfirmAsync(
+            "Add .nanoagent/.nanoignore?",
+            "Excludes common secrets, build output, and local runtime files from NanoAgent file tools.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeRepoMemory = await ConfirmAsync(
+            "Add repo memory markdown files?",
+            "Creates architecture, conventions, decisions, known-issues, and test-strategy templates.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeLessonsJournal = await ConfirmAsync(
+            "Add local lessons journal?",
+            "Creates .nanoagent/memory/lessons.jsonl for reusable local lessons. It is gitignored by default.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeAgentTemplate = await ConfirmAsync(
+            "Add sample custom agent template?",
+            "Creates an inactive code-reviewer template under .nanoagent/agents/.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeSkillTemplate = await ConfirmAsync(
+            "Add sample workspace skill template?",
+            "Creates an inactive .NET skill template under .nanoagent/skills/.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeRuntimeDirectories = await ConfirmAsync(
+            "Add cache and log folders?",
+            "Creates .nanoagent/cache/ and .nanoagent/logs/ for local runtime data.",
+            defaultValue: true,
+            cancellationToken);
+        bool includeSystemPromptTemplate = await ConfirmAsync(
+            "Add inactive SystemPrompt template?",
+            "Creates .nanoagent/SystemPrompt.md.template. Edit and rename it to SystemPrompt.md only when this workspace needs a custom base prompt.",
+            defaultValue: false,
+            cancellationToken);
+
+        return new InitScaffoldOptions(
+            InitPreset.Custom,
+            "Custom",
+            includeReadme,
+            includeGitIgnore,
+            includeNanoIgnore,
+            includeRuntimeDirectories,
+            includeAgentTemplate,
+            includeSkillTemplate,
+            includeRepoMemory,
+            includeLessonsJournal,
+            includeSystemPromptTemplate);
+    }
+
+    private Task<bool> ConfirmAsync(
+        string title,
+        string description,
+        bool defaultValue,
+        CancellationToken cancellationToken)
+    {
+        return _confirmationPrompt.PromptAsync(
+            new ConfirmationPromptRequest(
+                title,
+                description,
+                defaultValue,
+                AllowCancellation: true),
+            cancellationToken);
     }
 
     private static void EnsureDirectory(
@@ -165,14 +414,21 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
     private sealed class InitSummary
     {
-        public InitSummary(string workspaceRoot)
+        private readonly InitScaffoldOptions _options;
+
+        public InitSummary(
+            string workspaceRoot,
+            InitScaffoldOptions options)
         {
             WorkspaceRoot = workspaceRoot;
+            _options = options;
         }
 
         public List<string> Created { get; } = [];
 
         public List<string> Existing { get; } = [];
+
+        public List<string> Skipped { get; } = [];
 
         public string WorkspaceRoot { get; }
 
@@ -181,17 +437,37 @@ internal sealed class InitCommandHandler : IReplCommandHandler
             StringBuilder builder = new();
             builder.AppendLine($"Initialized NanoAgent workspace files in {WorkspaceDirectoryName}.");
             builder.AppendLine($"Workspace: {WorkspaceRoot}");
+            builder.AppendLine($"Preset: {_options.DisplayName}");
 
             AppendSection(builder, "Created", Created);
             AppendSection(builder, "Already existed", Existing);
+            AppendSection(builder, "Skipped", Skipped);
 
             builder.AppendLine();
             builder.AppendLine("Next steps:");
             builder.AppendLine("- Edit .nanoagent/agent-profile.json for workspace memory, audit, MCP, and custom tool settings.");
-            builder.AppendLine("- Review .nanoagent/memory/*.md for repo-scoped team memory your team can inspect, diff, and version-control.");
-            builder.AppendLine("- Rename .nanoagent/agents/code-reviewer.md.template to .md when you want to enable that custom agent.");
-            builder.AppendLine("- Rename .nanoagent/skills/dotnet/SKILL.md.template to SKILL.md when you want to enable that workspace skill.");
+            if (_options.IncludeRepoMemory)
+            {
+                builder.AppendLine("- Review .nanoagent/memory/*.md for repo-scoped team memory your team can inspect, diff, and version-control.");
+            }
+
+            if (_options.IncludeAgentTemplate)
+            {
+                builder.AppendLine("- Rename .nanoagent/agents/code-reviewer.md.template to .md when you want to enable that custom agent.");
+            }
+
+            if (_options.IncludeSkillTemplate)
+            {
+                builder.AppendLine("- Rename .nanoagent/skills/dotnet/SKILL.md.template to SKILL.md when you want to enable that workspace skill.");
+            }
+
+            if (_options.IncludeSystemPromptTemplate)
+            {
+                builder.AppendLine("- Edit and rename .nanoagent/SystemPrompt.md.template to SystemPrompt.md only when you need a custom base system prompt.");
+            }
+
             builder.AppendLine("- Add a root AGENTS.md file for persistent workspace instructions.");
+            builder.AppendLine("- Use SystemPrompt.md only for advanced base-prompt overrides; it is not needed for ordinary project instructions.");
 
             return builder.ToString().Trim();
         }
@@ -212,6 +488,97 @@ internal sealed class InitCommandHandler : IReplCommandHandler
             {
                 builder.AppendLine("- " + item);
             }
+        }
+    }
+
+    private enum InitPreset
+    {
+        Invalid,
+        Help,
+        Prompt,
+        Recommended,
+        Minimal,
+        Custom
+    }
+
+    private sealed record InitScaffoldOptions(
+        InitPreset Preset,
+        string DisplayName,
+        bool IncludeReadme,
+        bool IncludeGitIgnore,
+        bool IncludeNanoIgnore,
+        bool IncludeRuntimeDirectories,
+        bool IncludeAgentTemplate,
+        bool IncludeSkillTemplate,
+        bool IncludeRepoMemory,
+        bool IncludeLessonsJournal,
+        bool IncludeSystemPromptTemplate)
+    {
+        public static InitScaffoldOptions Invalid { get; } = new(
+            InitPreset.Invalid,
+            "Invalid",
+            IncludeReadme: false,
+            IncludeGitIgnore: false,
+            IncludeNanoIgnore: false,
+            IncludeRuntimeDirectories: false,
+            IncludeAgentTemplate: false,
+            IncludeSkillTemplate: false,
+            IncludeRepoMemory: false,
+            IncludeLessonsJournal: false,
+            IncludeSystemPromptTemplate: false);
+
+        public static InitScaffoldOptions Help { get; } = Invalid with
+        {
+            Preset = InitPreset.Help,
+            DisplayName = "Help"
+        };
+
+        public static InitScaffoldOptions Prompt { get; } = Invalid with
+        {
+            Preset = InitPreset.Prompt,
+            DisplayName = "Prompt"
+        };
+
+        public static InitScaffoldOptions Custom { get; } = Invalid with
+        {
+            Preset = InitPreset.Custom,
+            DisplayName = "Custom"
+        };
+
+        public static InitScaffoldOptions Recommended { get; } = new(
+            InitPreset.Recommended,
+            "Recommended",
+            IncludeReadme: true,
+            IncludeGitIgnore: true,
+            IncludeNanoIgnore: true,
+            IncludeRuntimeDirectories: true,
+            IncludeAgentTemplate: true,
+            IncludeSkillTemplate: true,
+            IncludeRepoMemory: true,
+            IncludeLessonsJournal: true,
+            IncludeSystemPromptTemplate: false);
+
+        public static InitScaffoldOptions Minimal { get; } = new(
+            InitPreset.Minimal,
+            "Minimal",
+            IncludeReadme: true,
+            IncludeGitIgnore: true,
+            IncludeNanoIgnore: true,
+            IncludeRuntimeDirectories: false,
+            IncludeAgentTemplate: false,
+            IncludeSkillTemplate: false,
+            IncludeRepoMemory: false,
+            IncludeLessonsJournal: false,
+            IncludeSystemPromptTemplate: false);
+
+        public static InitScaffoldOptions FromPreset(InitPreset preset)
+        {
+            return preset switch
+            {
+                InitPreset.Recommended => Recommended,
+                InitPreset.Minimal => Minimal,
+                _ => throw new ArgumentOutOfRangeException(nameof(preset), preset, "Unsupported init preset.")
+            };
         }
     }
 
@@ -245,7 +612,8 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         This directory stores workspace-local NanoAgent configuration.
 
         - `agent-profile.json`: workspace memory, audit, custom tools, and MCP server settings.
-        - `SystemPrompt.md`: optional custom base system prompt. NanoAgent prepends its identity header automatically when this file exists.
+        - `SystemPrompt.md`: optional custom base system prompt. NanoAgent prepends its identity header automatically when this file has content.
+        - `SystemPrompt.md.template`: inactive starter for the advanced SystemPrompt override, when selected during `/init custom`.
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
@@ -257,6 +625,15 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         Memory writes require approval by default. Keep team memory focused on durable architecture, convention, decision, known-issue, and test-strategy notes.
 
         Root-level `AGENTS.md` files are loaded as persistent workspace instructions. Use `.nanoagent/SystemPrompt.md` only when you want to replace NanoAgent's base system prompt for this workspace.
+        """;
+
+    private const string SystemPromptTemplate =
+        """
+        # Workspace System Prompt
+
+        Replace this template, then rename it to `SystemPrompt.md` only when this workspace needs a custom base system prompt.
+
+        Use a root `AGENTS.md` file for ordinary repository instructions.
         """;
 
     private const string GitIgnoreTemplate =

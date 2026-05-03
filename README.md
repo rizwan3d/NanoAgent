@@ -186,7 +186,7 @@ nanoai --provider-auth-key <key>
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
-| `/init` | Create `.nanoagent` starter files for a project. |
+| `/init [recommended\|minimal\|custom]` | Choose and create `.nanoagent` starter files for a project. |
 | `/update [now]` | Check for updates, or install immediately with `/update now`. |
 | `/undo` | Roll back the most recent tracked file edit transaction. |
 | `/redo` | Re-apply the most recently undone edit transaction. |

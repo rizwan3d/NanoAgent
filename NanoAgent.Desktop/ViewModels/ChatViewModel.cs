@@ -24,7 +24,7 @@ public partial class ChatViewModel : ViewModelBase
         new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
         new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
         new("/help", "/help", "List available commands and usage.", false),
-        new("/init", "/init", "Initialize workspace-local NanoAgent configuration files.", false),
+        new("/init", "/init [recommended|minimal|custom]", "Choose workspace-local NanoAgent files.", false),
         new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
         new("/onboard", "/onboard", "Re-run provider onboarding.", false),
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
