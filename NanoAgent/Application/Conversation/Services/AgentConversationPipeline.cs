@@ -57,6 +57,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IToolExecutionPipeline _toolExecutionPipeline;
     private readonly IToolRegistry _toolRegistry;
     private readonly IConversationConfigurationAccessor _configurationAccessor;
+    private readonly IBudgetControlsUsageService _budgetControlsUsageService;
     private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
     private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ISkillService _skillService;
@@ -77,7 +78,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ILogger<AgentConversationPipeline> logger,
         ILifecycleHookService? lifecycleHookService = null,
         ISkillService? skillService = null,
-        IToolOutputFormatter? toolOutputFormatter = null)
+        IToolOutputFormatter? toolOutputFormatter = null,
+        IBudgetControlsUsageService? budgetControlsUsageService = null)
     {
         _timeProvider = timeProvider;
         _tokenEstimator = tokenEstimator;
@@ -88,6 +90,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _toolExecutionPipeline = toolExecutionPipeline;
         _toolRegistry = toolRegistry;
         _configurationAccessor = configurationAccessor;
+        _budgetControlsUsageService = budgetControlsUsageService ?? DisabledBudgetControlsUsageService.Instance;
         _workspaceInstructionsProvider = workspaceInstructionsProvider;
         _lessonMemoryService = lessonMemoryService;
         _skillService = skillService ?? DisabledSkillService.Instance;
@@ -314,6 +317,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             elapsed,
             estimatedOutputTokens,
             estimatedInputTokens: phaseResult.EstimatedInputTokens,
+            cachedInputTokens: phaseResult.CachedInputTokens,
             providerRetryCount: phaseResult.ProviderRetryCount,
             toolRoundCount: phaseResult.ToolRoundCount);
 
@@ -553,6 +557,18 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             : null;
     }
 
+    private static int AddClamped(int current, int delta)
+    {
+        if (delta <= 0)
+        {
+            return current;
+        }
+
+        return current > int.MaxValue - delta
+            ? int.MaxValue
+            : current + delta;
+    }
+
     private static string CreateToolFeedbackContent(
         ToolInvocationResult invocationResult,
         int consecutiveFailureCount)
@@ -594,6 +610,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         int consecutiveToolFailureCount = 0;
         int incompletePlanFinalResponseRetryCount = 0;
         int totalCompletionTokens = 0;
+        int totalCachedInputTokens = 0;
         bool hasReportedCompletionTokens = false;
         ConversationTelemetryAccumulator telemetry = new();
         ExecutionPlanProgress? latestPlanProgress = null;
@@ -617,6 +634,18 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 totalCompletionTokens += response.CompletionTokens.Value;
                 hasReportedCompletionTokens = true;
             }
+
+            if (response.CachedPromptTokens is > 0)
+            {
+                totalCachedInputTokens = AddClamped(
+                    totalCachedInputTokens,
+                    response.CachedPromptTokens.Value);
+            }
+
+            await RecordBudgetUsageAsync(
+                session,
+                response,
+                cancellationToken);
 
             if (response.HasToolCalls)
             {
@@ -740,6 +769,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 totalCompletionTokens,
                 hasReportedCompletionTokens,
                 telemetry.EstimatedInputTokens,
+                totalCachedInputTokens,
                 telemetry.ProviderRetryCount,
                 telemetry.ToolRoundCount);
         }
@@ -933,6 +963,68 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return null;
     }
 
+    private async Task RecordBudgetUsageAsync(
+        ReplSessionContext session,
+        ConversationResponse response,
+        CancellationToken cancellationToken)
+    {
+        int inputTokens = Math.Max(0, GetReportedInputTokens(response) ?? 0);
+        int cachedInputTokens = Math.Clamp(
+            response.CachedPromptTokens ?? 0,
+            0,
+            inputTokens);
+        int outputTokens = response.CompletionTokens is > 0
+            ? response.CompletionTokens.Value
+            : EstimateResponseOutputTokens(response);
+
+        BudgetControlsUsageDelta usage = new(
+            inputTokens,
+            cachedInputTokens,
+            Math.Max(0, outputTokens));
+
+        if (!usage.HasUsage)
+        {
+            return;
+        }
+
+        try
+        {
+            await _budgetControlsUsageService.RecordUsageAsync(
+                session,
+                usage,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Budget reporting is advisory; failed reporting should not turn a valid model response into a failed turn.
+        }
+    }
+
+    private int EstimateResponseOutputTokens(ConversationResponse response)
+    {
+        int total = 0;
+        AddEstimate(response.AssistantMessage);
+        foreach (ConversationToolCall toolCall in response.ToolCalls)
+        {
+            AddEstimate(toolCall.Name);
+            AddEstimate(toolCall.ArgumentsJson);
+        }
+
+        return total;
+
+        void AddEstimate(string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                total += _tokenEstimator.Estimate(value);
+            }
+        }
+    }
+
     private int EstimateInputTokens(ConversationProviderRequest request)
     {
         int total = 0;
@@ -1109,6 +1201,45 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
     }
 
+    private sealed class DisabledBudgetControlsUsageService : IBudgetControlsUsageService
+    {
+        public static DisabledBudgetControlsUsageService Instance { get; } = new();
+
+        public Task ConfigureLocalAsync(
+            ReplSessionContext session,
+            string? localPath,
+            BudgetControlsLocalOptions options,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
+        public Task<BudgetControlsStatus> GetStatusAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new BudgetControlsStatus(
+                BudgetControlsSettings.LocalSource,
+                MonthlyBudgetUsd: null,
+                SpentUsd: 0m,
+                AlertThresholdPercent: 80,
+                BudgetControlsSettings.DefaultLocalPath,
+                CloudApiUrl: null,
+                HasCloudAuthKey: false));
+        }
+
+        public Task RecordUsageAsync(
+            ReplSessionContext session,
+            BudgetControlsUsageDelta usage,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class ConversationTelemetryAccumulator
     {
         public int EstimatedInputTokens { get; private set; }
@@ -1211,6 +1342,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             int totalCompletionTokens,
             bool hasReportedCompletionTokens,
             int estimatedInputTokens,
+            int cachedInputTokens,
             int providerRetryCount,
             int toolRoundCount)
         {
@@ -1224,6 +1356,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             TotalCompletionTokens = totalCompletionTokens;
             HasReportedCompletionTokens = hasReportedCompletionTokens;
             EstimatedInputTokens = Math.Max(0, estimatedInputTokens);
+            CachedInputTokens = Math.Max(0, cachedInputTokens);
             ProviderRetryCount = Math.Max(0, providerRetryCount);
             ToolRoundCount = Math.Max(0, toolRoundCount);
         }
@@ -1231,6 +1364,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         public string AssistantMessage { get; }
 
         public IReadOnlyList<ToolInvocationResult> ExecutedToolResults { get; }
+
+        public int CachedInputTokens { get; }
 
         public int EstimatedInputTokens { get; }
 

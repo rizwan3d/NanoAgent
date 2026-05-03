@@ -118,7 +118,7 @@
                 Background="#0B0D10"
                 BorderBrush="#20242A"
                 BorderThickness="0,0,1,0">
-            <Grid RowDefinitions="Auto,Auto,*"
+            <Grid RowDefinitions="Auto,Auto,Auto,*"
                   Margin="14"
                   RowSpacing="12">
                 <Grid ColumnDefinitions="*,Auto">
@@ -141,7 +141,59 @@
                         Click="OpenProject_Click"
                         HorizontalAlignment="Stretch"/>
 
-                <Grid Grid.Row="2"
+                <Border Grid.Row="2"
+                        Background="#101318"
+                        BorderBrush="#20242A"
+                        BorderThickness="1"
+                        CornerRadius="8"
+                        Padding="10">
+                    <Grid RowDefinitions="Auto,Auto,Auto"
+                          RowSpacing="8">
+                        <Grid ColumnDefinitions="*,Auto"
+                              ColumnSpacing="8">
+                            <TextBlock Text="Budget controls"
+                                       Foreground="#8B949E"
+                                       FontSize="11"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock Grid.Column="1"
+                                       Text="{Binding Chat.BudgetControlStatusText}"
+                                       Foreground="#6B7280"
+                                       FontSize="10"
+                                       TextTrimming="CharacterEllipsis"
+                                       MaxWidth="118"
+                                       VerticalAlignment="Center"/>
+                        </Grid>
+
+                        <Grid Grid.Row="1"
+                              ColumnDefinitions="*,Auto"
+                              ColumnSpacing="8">
+                            <ComboBox ItemsSource="{Binding Chat.BudgetControlSources}"
+                                      SelectedItem="{Binding Chat.SelectedBudgetControlSource, Mode=TwoWay}"
+                                      IsEnabled="{Binding Chat.BudgetControlsEnabled}"
+                                      HorizontalAlignment="Stretch"
+                                      MinHeight="30"/>
+                            <Button Grid.Column="1"
+                                    Classes="ghost"
+                                    Content="{Binding Chat.BudgetControlActionText}"
+                                    Command="{Binding Chat.ConfigureBudgetControlsCommand}"
+                                    CommandParameter="{Binding Project.SelectedProject}"
+                                    Padding="8,4"
+                                    MinHeight="30"
+                                    MinWidth="74"/>
+                        </Grid>
+
+                        <TextBlock Grid.Row="2"
+                                   Text="{Binding Chat.BudgetControlDetailText}"
+                                   IsVisible="{Binding Chat.HasBudgetControlDetail}"
+                                   ToolTip.Tip="{Binding Chat.BudgetControlDetailText}"
+                                   Foreground="#8B949E"
+                                   FontSize="11"
+                                   TextTrimming="CharacterEllipsis"/>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="3"
                       RowDefinitions="Auto,*"
                       RowSpacing="8">
                     <Grid ColumnDefinitions="*,Auto,Auto">

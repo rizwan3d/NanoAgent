@@ -1,4 +1,5 @@
 using NanoAgent.Domain.Models;
+using NanoAgent.Application.Models;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -11,6 +12,8 @@ internal sealed class AgentProfileConfigurationDocument
     public string? PreferredModelId { get; set; }
 
     public string? ReasoningEffort { get; set; }
+
+    public BudgetControlsSettings? BudgetControls { get; set; }
 
     public MemoryProfileDocument? Memory { get; set; }
 

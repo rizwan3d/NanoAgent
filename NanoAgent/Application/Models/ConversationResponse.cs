@@ -6,7 +6,8 @@ public sealed record ConversationResponse(
     string? ResponseId,
     int? CompletionTokens = null,
     int? PromptTokens = null,
-    int? TotalTokens = null)
+    int? TotalTokens = null,
+    int? CachedPromptTokens = null)
 {
     public bool HasToolCalls => ToolCalls.Count > 0;
 }

@@ -20,6 +20,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
         const string HelpText =
             "Available commands:\n" +
             "/allow <tool-or-tag> [pattern] - Add a session-scoped allow override.\n" +
+            "/budget [status|local|cloud] - Show or configure budget controls.\n" +
             "/config - Show the current provider, session, config path, active profile, thinking, and active model.\n" +
             "/deny <tool-or-tag> [pattern] - Add a session-scoped deny override.\n" +
             "/exit - Exit the interactive shell.\n" +

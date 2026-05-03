@@ -11,6 +11,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandParser, ReplCommandParser>();
         services.AddSingleton<IReplCommandDispatcher, ReplCommandDispatcher>();
         services.AddSingleton<IReplCommandHandler, AllowCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, BudgetCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ConfigCommandHandler>();
         services.AddSingleton<IReplCommandHandler, DenyCommandHandler>();
         services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
