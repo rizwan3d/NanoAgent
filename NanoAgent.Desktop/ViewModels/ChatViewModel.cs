@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Models;
 using NanoAgent.Desktop.Models;
 using NanoAgent.Desktop.Services;
 using System.Collections.ObjectModel;
@@ -12,12 +13,14 @@ namespace NanoAgent.Desktop.ViewModels;
 
 public partial class ChatViewModel : ViewModelBase
 {
+    private const string BudgetControlsLocalPath = BudgetControlsSettings.DefaultLocalPath;
     private const double EstimatedLiveTokensPerSecond = 4d;
     private const int MaxPromptCommandSuggestionCount = 8;
 
     private static readonly DesktopCommandSuggestionDescriptor[] PromptCommandSuggestionDescriptors =
     [
         new("/allow", "/allow <tool-or-tag> [pattern]", "Add a session-scoped allow override.", true),
+        new("/budget", "/budget [status|local|cloud]", "Show or configure budget controls.", false),
         new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
         new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
         new("/help", "/help", "List available commands and usage.", false),
@@ -36,8 +39,10 @@ public partial class ChatViewModel : ViewModelBase
 
     private readonly AgentRunner _agentRunner;
     private readonly ProviderSetupRunner _providerSetupRunner;
+    private readonly SettingsService _settingsService;
     private readonly DispatcherTimer _progressTimer;
     private readonly DispatcherTimer _selectionPromptTimer;
+    private BudgetControlsSettings _budgetControlsSettings = BudgetControlsSettings.Default;
     private DateTimeOffset? _currentRunStartedAt;
     private int? _activeModelContextWindowTokens;
     private bool _isApplyingSessionInfo;
@@ -93,9 +98,21 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty]
     private string _permissionSubjectPattern = string.Empty;
 
-    public ChatViewModel(AgentRunner agentRunner)
+    [ObservableProperty]
+    private string? _selectedBudgetControlSource;
+
+    [ObservableProperty]
+    private string _budgetControlStatusText = "Local budget controls";
+
+    [ObservableProperty]
+    private string _budgetControlDetailText = BudgetControlsLocalPath;
+
+    public ChatViewModel(
+        AgentRunner agentRunner,
+        SettingsService settingsService)
     {
-        _agentRunner = agentRunner;
+        _agentRunner = agentRunner ?? throw new ArgumentNullException(nameof(agentRunner));
+        _settingsService = settingsService ?? throw new ArgumentNullException(nameof(settingsService));
         _providerSetupRunner = new ProviderSetupRunner();
         _agentRunner.ConversationMessageReceived += OnConversationMessageReceived;
         _agentRunner.SelectionPromptChanged += OnSelectionPromptChanged;
@@ -116,6 +133,7 @@ public partial class ChatViewModel : ViewModelBase
         RedoCommand = new AsyncRelayCommand<ProjectInfo?>(RedoAsync, CanRunWorkspaceCommand);
         AllowPermissionCommand = new AsyncRelayCommand<ProjectInfo?>(AllowPermissionAsync, CanApplyPermissionOverride);
         DenyPermissionCommand = new AsyncRelayCommand<ProjectInfo?>(DenyPermissionAsync, CanApplyPermissionOverride);
+        ConfigureBudgetControlsCommand = new AsyncRelayCommand<ProjectInfo?>(ConfigureBudgetControlsAsync, CanConfigureBudgetControls);
         _progressTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
@@ -127,6 +145,7 @@ public partial class ChatViewModel : ViewModelBase
         };
         _selectionPromptTimer.Tick += (_, _) => ActiveSelectionPrompt?.Tick();
 
+        ApplyBudgetControlsSettings(_settingsService.LoadBudgetControls());
         Messages.Add(new ChatMessage("NanoAgent", "Ready."));
         Activity.Add(new AgentEvent("idle", "Idle"));
     }
@@ -142,6 +161,12 @@ public partial class ChatViewModel : ViewModelBase
     public ObservableCollection<string> ThinkingModes { get; } = new(["off", "on"]);
 
     public ObservableCollection<string> ProfileOptions { get; } = new(["build", "plan", "review"]);
+
+    public ObservableCollection<string> BudgetControlSources { get; } = new(
+    [
+        BudgetControlsSettings.LocalSource,
+        BudgetControlsSettings.CloudSource
+    ]);
 
     public IAsyncRelayCommand<ProjectInfo?> RunPromptCommand { get; }
 
@@ -169,6 +194,8 @@ public partial class ChatViewModel : ViewModelBase
 
     public IAsyncRelayCommand<ProjectInfo?> DenyPermissionCommand { get; }
 
+    public IAsyncRelayCommand<ProjectInfo?> ConfigureBudgetControlsCommand { get; }
+
     public event EventHandler? RunCompleted;
 
     public bool HasActiveSelectionPrompt => ActiveSelectionPrompt is not null;
@@ -186,6 +213,17 @@ public partial class ChatViewModel : ViewModelBase
     public bool HasOnboardingTextPrompt => IsProviderSetupActive && ActiveTextPrompt is not null;
 
     public bool HasOnboardingCountdown => ActiveSelectionPrompt?.HasCountdown == true;
+
+    public bool BudgetControlsEnabled => !IsRunning;
+
+    public bool HasBudgetControlDetail => !string.IsNullOrWhiteSpace(BudgetControlDetailText);
+
+    public string BudgetControlActionText => string.Equals(
+        SelectedBudgetControlSource,
+        BudgetControlsSettings.CloudSource,
+        StringComparison.OrdinalIgnoreCase)
+            ? "Connect"
+            : "Use local";
 
     public bool CanCancelOnboardingSelectionPrompt => ActiveSelectionPrompt?.AllowCancellation == true;
 
@@ -254,6 +292,7 @@ public partial class ChatViewModel : ViewModelBase
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(OnboardingStatusText));
         OnPropertyChanged(nameof(SessionOptionsEnabled));
+        OnPropertyChanged(nameof(BudgetControlsEnabled));
         NotifyOnboardingStateChanged();
         RefreshPromptCommandSuggestions();
     }
@@ -347,6 +386,17 @@ public partial class ChatViewModel : ViewModelBase
         DenyPermissionCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnSelectedBudgetControlSourceChanged(string? value)
+    {
+        OnPropertyChanged(nameof(BudgetControlActionText));
+        ConfigureBudgetControlsCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnBudgetControlDetailTextChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasBudgetControlDetail));
+    }
+
     private bool CanRunPrompt(ProjectInfo? project)
     {
         return !IsRunning && project is not null && !string.IsNullOrWhiteSpace(Prompt);
@@ -380,6 +430,11 @@ public partial class ChatViewModel : ViewModelBase
     private bool CanApplyPermissionOverride(ProjectInfo? project)
     {
         return CanRunWorkspaceCommand(project) && !string.IsNullOrWhiteSpace(PermissionToolPattern);
+    }
+
+    private bool CanConfigureBudgetControls(ProjectInfo? project)
+    {
+        return !IsRunning && project is not null;
     }
 
     public async Task<bool> HandlePromptKeyAsync(
@@ -684,6 +739,28 @@ public partial class ChatViewModel : ViewModelBase
     private Task DenyPermissionAsync(ProjectInfo? project)
     {
         return RunPermissionOverrideAsync(project, "/deny", "Adding deny rule");
+    }
+
+    private async Task ConfigureBudgetControlsAsync(ProjectInfo? project)
+    {
+        if (project is null)
+        {
+            return;
+        }
+
+        string source = string.IsNullOrWhiteSpace(SelectedBudgetControlSource)
+            ? BudgetControlsSettings.LocalSource
+            : SelectedBudgetControlSource.Trim();
+
+        string command = string.Equals(source, BudgetControlsSettings.CloudSource, StringComparison.OrdinalIgnoreCase)
+            ? "/budget cloud"
+            : "/budget local";
+
+        await RunSessionCommandAsync(
+            project,
+            command,
+            "Configuring budget controls");
+        ApplyBudgetControlsSettings(_settingsService.LoadBudgetControls());
     }
 
     private async Task RunPromptAsync(ProjectInfo? project)
@@ -1124,6 +1201,7 @@ public partial class ChatViewModel : ViewModelBase
         RedoCommand.NotifyCanExecuteChanged();
         AllowPermissionCommand.NotifyCanExecuteChanged();
         DenyPermissionCommand.NotifyCanExecuteChanged();
+        ConfigureBudgetControlsCommand.NotifyCanExecuteChanged();
     }
 
     private void NotifyOnboardingStateChanged()
@@ -1140,6 +1218,31 @@ public partial class ChatViewModel : ViewModelBase
         OnPropertyChanged(nameof(OnboardingTitle));
         OnPropertyChanged(nameof(OnboardingDescription));
         OnPropertyChanged(nameof(OnboardingInputKind));
+    }
+
+    private void ApplyBudgetControlsSettings(BudgetControlsSettings settings)
+    {
+        _budgetControlsSettings = settings;
+        SelectedBudgetControlSource = settings.Source;
+
+        if (string.Equals(settings.Source, BudgetControlsSettings.CloudSource, StringComparison.OrdinalIgnoreCase))
+        {
+            BudgetControlStatusText = settings.HasCloudAuthKey
+                ? "Cloud budget controls"
+                : "Cloud budget controls need an auth key";
+            BudgetControlDetailText = string.IsNullOrWhiteSpace(settings.CloudApiUrl)
+                ? "Cloud API URL not set"
+                : settings.CloudApiUrl;
+        }
+        else
+        {
+            BudgetControlStatusText = "Local budget controls";
+            BudgetControlDetailText = string.IsNullOrWhiteSpace(settings.LocalPath)
+                ? BudgetControlsLocalPath
+                : settings.LocalPath;
+        }
+
+        OnPropertyChanged(nameof(BudgetControlActionText));
     }
 
     private void AddToolOutputMessages(AgentRunResult result, string? workspacePath)

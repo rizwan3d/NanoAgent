@@ -7,6 +7,7 @@ public sealed class ConversationTurnMetrics
         int estimatedOutputTokens,
         int? sessionEstimatedOutputTokens = null,
         int estimatedInputTokens = 0,
+        int cachedInputTokens = 0,
         int providerRetryCount = 0,
         int toolRoundCount = 0)
     {
@@ -35,6 +36,11 @@ public sealed class ConversationTurnMetrics
             throw new ArgumentOutOfRangeException(nameof(providerRetryCount));
         }
 
+        if (cachedInputTokens < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(cachedInputTokens));
+        }
+
         if (toolRoundCount < 0)
         {
             throw new ArgumentOutOfRangeException(nameof(toolRoundCount));
@@ -44,9 +50,12 @@ public sealed class ConversationTurnMetrics
         EstimatedOutputTokens = estimatedOutputTokens;
         SessionEstimatedOutputTokens = sessionEstimatedOutputTokens;
         EstimatedInputTokens = estimatedInputTokens;
+        CachedInputTokens = cachedInputTokens;
         ProviderRetryCount = providerRetryCount;
         ToolRoundCount = toolRoundCount;
     }
+
+    public int CachedInputTokens { get; }
 
     public TimeSpan Elapsed { get; }
 
@@ -78,6 +87,7 @@ public sealed class ConversationTurnMetrics
             EstimatedOutputTokens,
             sessionEstimatedOutputTokens,
             EstimatedInputTokens,
+            CachedInputTokens,
             ProviderRetryCount,
             ToolRoundCount);
     }

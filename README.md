@@ -47,7 +47,7 @@ It is designed for developers who want useful automation without giving up contr
 
 ### Desktop
 
-Use the desktop app when you want a visual workspace with sections, model controls, slash-command suggestions, permission prompts, activity output, and undo/redo close at hand.
+Use the desktop app when you want a visual workspace with sections, model controls, budget controls, slash-command suggestions, permission prompts, activity output, and undo/redo close at hand.
 
 ### Terminal
 
@@ -174,6 +174,7 @@ nanoai --provider-auth-key <key>
 | Command | Purpose |
 | --- | --- |
 | `/help` | Show available commands. |
+| `/budget [status\|local\|cloud]` | Show or configure budget controls. |
 | `/config` | Show provider, model, section, profile, thinking mode, and config path. |
 | `/models` | Choose the active model with the arrow-key picker. |
 | `/use <model>` | Switch directly to a model id. |
@@ -193,6 +194,8 @@ nanoai --provider-auth-key <key>
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
+
+`/budget local` asks for monthly budget USD, alert threshold percent, and input, cached-input, and output prices per 1M tokens, then tracks usage in `.nanoagent/budget-controls.local.json`. `/budget cloud` asks for an API URL and auth key, fetches budget status with GET, and posts the token delta from each LLM call.
 
 ## Safety and Control
 

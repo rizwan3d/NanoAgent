@@ -134,11 +134,87 @@ The desktop controls expose common actions:
 
 - Refresh session state.
 - Switch model.
+- Configure budget controls from a local workspace file or a cloud API.
 - Toggle thinking mode.
 - Switch profile.
 - View help, model picker, permissions, and rules.
 - Add permission overrides.
 - Undo or redo tracked file edits.
+
+Budget controls can run in local mode or cloud mode. Local mode asks for the monthly budget USD, alert threshold percent, and input, cached-input, and output prices per 1M tokens, then creates and updates `.nanoagent/budget-controls.local.json` in the active workspace. Cloud mode asks for the budget API URL and auth key; the URL is saved with user settings and the key is stored through the platform credential store. In the terminal, use `/budget`, `/budget local`, `/budget cloud`, or `/budget status`.
+
+Cloud budget APIs use `Authorization: Bearer <auth-key>`.
+
+GET returns the current budget state:
+
+```json
+{
+  "monthlyBudgetUsd": 100,
+  "spentUsd": 25.5,
+  "alertThresholdPercent": 80
+}
+```
+
+GET response JSON Schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["monthlyBudgetUsd", "spentUsd", "alertThresholdPercent"],
+  "properties": {
+    "monthlyBudgetUsd": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "spentUsd": {
+      "type": "number",
+      "minimum": 0
+    },
+    "alertThresholdPercent": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100
+    }
+  }
+}
+```
+
+POST receives only the tokens consumed by the last LLM call:
+
+```json
+{
+  "inputTokens": 1234,
+  "cachedInputTokens": 250,
+  "outputTokens": 600
+}
+```
+
+POST request JSON Schema:
+
+```json
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["inputTokens", "cachedInputTokens", "outputTokens"],
+  "properties": {
+    "inputTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "cachedInputTokens": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "outputTokens": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}
+```
+
+POST should add that delta to the backend usage database and return the updated budget state with the same JSON shape as GET.
 
 ## Terminal Workflow
 
@@ -190,6 +266,7 @@ nanoai --section <section-guid>
 | Command | Description |
 | --- | --- |
 | `/help` | List commands and usage. |
+| `/budget [status\|local\|cloud]` | Show or configure budget controls. |
 | `/config` | Show provider, session, config path, profile, thinking mode, and model. |
 | `/models` | Choose the active model with the arrow-key picker. |
 | `/use <model>` | Switch directly to a model id. |

@@ -28,7 +28,10 @@ public sealed class OpenAiConversationResponseMapperTests
               "usage": {
                 "prompt_tokens": 11,
                 "completion_tokens": 7,
-                "total_tokens": 18
+                "total_tokens": 18,
+                "prompt_tokens_details": {
+                  "cached_tokens": 3
+                }
               }
             }
             """,
@@ -40,6 +43,7 @@ public sealed class OpenAiConversationResponseMapperTests
         response.PromptTokens.Should().Be(11);
         response.CompletionTokens.Should().Be(7);
         response.TotalTokens.Should().Be(18);
+        response.CachedPromptTokens.Should().Be(3);
     }
 
     [Fact]
@@ -204,7 +208,10 @@ public sealed class OpenAiConversationResponseMapperTests
               "usage": {
                 "input_tokens": 22,
                 "output_tokens": 9,
-                "total_tokens": 31
+                "total_tokens": 31,
+                "input_tokens_details": {
+                  "cached_tokens": 4
+                }
               }
             }
             """,
@@ -219,6 +226,7 @@ public sealed class OpenAiConversationResponseMapperTests
         response.PromptTokens.Should().Be(22);
         response.CompletionTokens.Should().Be(9);
         response.TotalTokens.Should().Be(31);
+        response.CachedPromptTokens.Should().Be(4);
     }
 
     [Fact]

@@ -42,6 +42,7 @@ public static partial class Program
     private static readonly SlashCommandSuggestion[] SlashCommandSuggestions =
     [
         new("/allow", "/allow <tool-or-tag> [pattern]", "Add a session-scoped allow override.", true),
+        new("/budget", "/budget [status|local|cloud]", "Show or configure budget controls.", false),
         new("/clear", "/clear", "Clear the terminal conversation view.", false),
         new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
         new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),

@@ -97,7 +97,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             responseId,
             response?.Usage?.CompletionTokens,
             response?.Usage?.PromptTokens,
-            response?.Usage?.TotalTokens);
+            response?.Usage?.TotalTokens,
+            response?.Usage?.PromptTokensDetails?.CachedTokens);
     }
 
     private static ConversationResponse MapResponsesPayload(ConversationProviderPayload payload)
@@ -154,7 +155,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             root,
             out int? completionTokens,
             out int? promptTokens,
-            out int? totalTokens);
+            out int? totalTokens,
+            out int? cachedPromptTokens);
 
         return new ConversationResponse(
             assistantMessage,
@@ -162,7 +164,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             responseId,
             completionTokens,
             promptTokens,
-            totalTokens);
+            totalTokens,
+            cachedPromptTokens);
     }
 
     private static void ExtractResponsesOutputItem(
@@ -250,11 +253,13 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         JsonElement root,
         out int? completionTokens,
         out int? promptTokens,
-        out int? totalTokens)
+        out int? totalTokens,
+        out int? cachedPromptTokens)
     {
         completionTokens = null;
         promptTokens = null;
         totalTokens = null;
+        cachedPromptTokens = null;
 
         if (!root.TryGetProperty("usage", out JsonElement usage) ||
             usage.ValueKind != JsonValueKind.Object)
@@ -267,6 +272,11 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         promptTokens = TryGetInt32(usage, "input_tokens") ??
             TryGetInt32(usage, "prompt_tokens");
         totalTokens = TryGetInt32(usage, "total_tokens");
+        cachedPromptTokens =
+            TryGetNestedInt32(usage, "input_tokens_details", "cached_tokens") ??
+            TryGetNestedInt32(usage, "prompt_tokens_details", "cached_tokens") ??
+            TryGetInt32(usage, "cached_tokens") ??
+            TryGetInt32(usage, "cache_read_input_tokens");
     }
 
     private static string ExtractResponsesError(JsonElement error)
@@ -413,6 +423,20 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         }
 
         return null;
+    }
+
+    private static int? TryGetNestedInt32(
+        JsonElement element,
+        string objectPropertyName,
+        string valuePropertyName)
+    {
+        if (!element.TryGetProperty(objectPropertyName, out JsonElement nestedObject) ||
+            nestedObject.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        return TryGetInt32(nestedObject, valuePropertyName);
     }
 
     private static string Truncate(string value, int maxLength)
