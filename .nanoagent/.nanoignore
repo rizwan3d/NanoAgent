@@ -75,7 +75,7 @@ packages/
 .nanoagent/cache/
 .nanoagent/tmp/
 .nanoagent/temp/
-.nanoagent/memory/
+.nanoagent/memory/*.jsonl
 
 # VCS and OS metadata
 .git/

@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, HeadlessBrowserTool>();
         services.AddSingleton<ITool, LessonMemoryTool>();
         services.AddSingleton<ITool, PlanningModeTool>();
+        services.AddSingleton<ITool, RepoMemoryTool>();
         services.AddSingleton<ITool, SearchFilesTool>();
         services.AddSingleton<ITool, FileWriteTool>();
         services.AddSingleton<ITool, SkillLoadTool>();

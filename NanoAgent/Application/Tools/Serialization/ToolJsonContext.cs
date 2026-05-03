@@ -17,6 +17,8 @@ namespace NanoAgent.Application.Tools.Serialization;
 [JsonSerializable(typeof(PlanUpdateItem))]
 [JsonSerializable(typeof(PlanUpdateResult))]
 [JsonSerializable(typeof(PlanningModeResult))]
+[JsonSerializable(typeof(RepoMemoryDocumentResult))]
+[JsonSerializable(typeof(RepoMemoryToolResult))]
 [JsonSerializable(typeof(WorkspaceApplyPatchFileResult))]
 [JsonSerializable(typeof(WorkspaceApplyPatchResult))]
 [JsonSerializable(typeof(WorkspaceFileDeleteResult))]

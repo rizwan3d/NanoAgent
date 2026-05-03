@@ -313,6 +313,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                 break;
 
             case AgentToolNames.LessonMemory:
+            case AgentToolNames.RepoMemory:
                 AddMemoryHookEvents(context, events, before);
                 break;
 
@@ -341,7 +342,10 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
         }
 
         if (string.Equals(action, "edit", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(action, "delete", StringComparison.OrdinalIgnoreCase))
+            string.Equals(action, "delete", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(action, "write", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(action, "update", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(action, "append", StringComparison.OrdinalIgnoreCase))
         {
             events.Add(before ? LifecycleHookEvents.BeforeMemoryWrite : LifecycleHookEvents.AfterMemoryWrite);
         }
@@ -405,11 +409,16 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
             }
         }
 
-        if (string.Equals(executionContext.ToolName, AgentToolNames.LessonMemory, StringComparison.Ordinal))
+        if (string.Equals(executionContext.ToolName, AgentToolNames.LessonMemory, StringComparison.Ordinal) ||
+            string.Equals(executionContext.ToolName, AgentToolNames.RepoMemory, StringComparison.Ordinal))
         {
             context.MemoryAction = ToolArguments.GetOptionalString(executionContext.Arguments, "action");
             context.MemoryTrigger = ToolArguments.GetOptionalString(executionContext.Arguments, "trigger");
             context.MemoryProblem = ToolArguments.GetOptionalString(executionContext.Arguments, "problem");
+            if (ToolArguments.TryGetNonEmptyString(executionContext.Arguments, "document", out string? document))
+            {
+                context.Metadata["memoryDocument"] = document!;
+            }
         }
 
         if (string.Equals(executionContext.ToolName, AgentToolNames.AgentDelegate, StringComparison.Ordinal) &&

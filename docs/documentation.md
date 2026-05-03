@@ -16,6 +16,7 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 - [Profiles and Subagents](#profiles-and-subagents)
 - [Permissions and Sandboxing](#permissions-and-sandboxing)
 - [Workspace Files](#workspace-files)
+- [Team Memory](#team-memory)
 - [Skills and Custom Agents](#skills-and-custom-agents)
 - [MCP Servers](#mcp-servers)
 - [Memory, Audit, and Hooks](#memory-audit-and-hooks)
@@ -404,6 +405,8 @@ For trusted workspaces, you can disable approval prompts for all tools:
 
 This keeps workspace path checks, profile restrictions, sandbox-mode restrictions, and built-in deny rules active. Use explicit `rules` or shortcut settings when you need to override a specific deny policy.
 
+Memory writes still require approval by default through the memory policy, even in workspaces that auto-approve general tools.
+
 ## Workspace Files
 
 Run:
@@ -423,6 +426,12 @@ NanoAgent creates:
   agents/
   skills/
   memory/
+    architecture.md
+    conventions.md
+    decisions.md
+    known-issues.md
+    test-strategy.md
+    lessons.jsonl
   logs/
 ```
 
@@ -445,8 +454,27 @@ secrets.*
 node_modules/
 .git/
 .nanoagent/logs/
-.nanoagent/memory/
+.nanoagent/memory/*.jsonl
 ```
+
+## Team Memory
+
+NanoAgent stores structured team memory as ordinary markdown files:
+
+```text
+.nanoagent/memory/
+  architecture.md
+  conventions.md
+  decisions.md
+  known-issues.md
+  test-strategy.md
+```
+
+These files are repo-scoped memory that your team can inspect, diff, and version-control. That is much safer than hidden memory because every durable note can go through normal code review and repository history.
+
+NanoAgent loads non-empty team memory files into the model context as durable project context, skipping untouched scaffold templates. Treat them as starting context, then verify against current files and fresh tool output when correctness matters.
+
+Use the `repo_memory` tool to list, read, or update these documents. Writes require memory approval by default and are blocked in read-only profiles, planning phase, and read-only sandbox mode. Direct writes to `.nanoagent/memory/*` through file editing tools also receive the `memory_write` permission tag so they cannot silently bypass memory approval.
 
 ## Skills and Custom Agents
 
@@ -600,6 +628,18 @@ Use `status: "error"` for execution errors or `status: "invalid_arguments"` for 
 
 ## Memory, Audit, and Hooks
 
+### Team Memory Files
+
+Team memory is stored in reviewable markdown files under `.nanoagent/memory/`:
+
+- `architecture.md`: major components, boundaries, data flow, and integration points.
+- `conventions.md`: coding, naming, formatting, review, and workflow conventions.
+- `decisions.md`: durable technical decisions, context, and consequences.
+- `known-issues.md`: known bugs, limitations, risky areas, and workarounds.
+- `test-strategy.md`: expected test layers, important commands, and validation guidance.
+
+These files are intended to be committed with the repository when the team wants shared agent context. Memory writes require approval by default.
+
 ### Lesson Memory
 
 NanoAgent stores reusable workspace lessons in:
@@ -683,7 +723,7 @@ Local:
 - Workspace files stay on your machine.
 - Configuration is local.
 - Sections are stored locally.
-- Lesson memory is stored locally.
+- Team memory and lesson memory are stored locally.
 - Optional audit logs are stored locally.
 - Secrets are stored through platform credential storage where supported.
 

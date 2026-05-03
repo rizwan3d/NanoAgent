@@ -55,6 +55,33 @@ public sealed class WorkspaceInstructionsProviderTests : IDisposable
         result.Should().Contain("Prefer focused changes.");
     }
 
+    [Fact]
+    public async Task LoadAsync_Should_LoadRepoMemoryFiles()
+    {
+        string memoryDirectory = Path.Combine(_workspaceRoot, ".nanoagent", "memory");
+        Directory.CreateDirectory(memoryDirectory);
+        File.WriteAllText(
+            Path.Combine(memoryDirectory, "architecture.md"),
+            "# Architecture\n\nUse application and infrastructure layers.");
+        File.WriteAllText(
+            Path.Combine(memoryDirectory, "conventions.md"),
+            "# Conventions\n\nKeep changes focused.");
+
+        WorkspaceInstructionsProvider sut = new();
+
+        string? result = await sut.LoadAsync(
+            CreateSession(),
+            CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result.Should().Contain("Repo memory:");
+        result.Should().Contain("repo-scoped team memory");
+        result.Should().Contain("<repo_memory path=\".nanoagent/memory/architecture.md\" name=\"architecture\" title=\"Architecture\">");
+        result.Should().Contain("Use application and infrastructure layers.");
+        result.Should().Contain("<repo_memory path=\".nanoagent/memory/conventions.md\" name=\"conventions\" title=\"Conventions\">");
+        result.Should().Contain("Keep changes focused.");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
