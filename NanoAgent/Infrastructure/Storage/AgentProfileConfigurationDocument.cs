@@ -7,9 +7,13 @@ namespace NanoAgent.Infrastructure.Storage;
 
 internal sealed class AgentProfileConfigurationDocument
 {
+    public string? ActiveProviderName { get; set; }
+
     public AgentProviderProfile? ProviderProfile { get; set; }
 
     public string? PreferredModelId { get; set; }
+
+    public Dictionary<string, ProviderProfileConfigurationDocument>? Providers { get; set; }
 
     public string? ReasoningEffort { get; set; }
 
@@ -27,6 +31,13 @@ internal sealed class AgentProfileConfigurationDocument
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class ProviderProfileConfigurationDocument
+{
+    public AgentProviderProfile? ProviderProfile { get; set; }
+
+    public string? PreferredModelId { get; set; }
 }
 
 internal sealed class MemoryProfileDocument

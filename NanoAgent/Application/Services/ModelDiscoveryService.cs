@@ -46,7 +46,7 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
                 "Model discovery cannot start because provider configuration is missing.");
         AgentProviderProfile providerProfile = configuration.ProviderProfile;
 
-        string apiKey = await _secretStore.LoadAsync(cancellationToken)
+        string apiKey = await LoadProviderSecretAsync(configuration, cancellationToken)
             ?? throw new ModelDiscoveryException(
                 "Model discovery cannot start because the API key is missing.");
 
@@ -98,6 +98,24 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
             selection.ConfiguredDefaultStatus,
             selection.ConfiguredDefaultModel,
             hadDuplicates);
+    }
+
+    private async Task<string?> LoadProviderSecretAsync(
+        AgentConfiguration configuration,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(configuration.ActiveProviderName))
+        {
+            string? providerSecret = await _secretStore.LoadAsync(
+                configuration.ActiveProviderName,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(providerSecret))
+            {
+                return providerSecret;
+            }
+        }
+
+        return await _secretStore.LoadAsync(cancellationToken);
     }
 
     private async Task<(IReadOnlyList<AvailableModel> Models, bool HadDuplicates)> LoadAvailableModelsAsync(

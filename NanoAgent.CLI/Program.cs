@@ -61,6 +61,7 @@ public static partial class Program
         new("/new", "/new", "Start a new session.", false),
         new("/onboard", "/onboard", "Open provider onboarding menus.", false),
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
+        new("/provider", "/provider [list|name]", "List or switch saved providers.", false),
         new("/profile", "/profile <name>", "Switch the active agent profile.", true),
         new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
         new("/reload", "/reload", "Reload local resources.", false),

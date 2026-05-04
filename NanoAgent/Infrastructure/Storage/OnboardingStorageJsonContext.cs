@@ -12,6 +12,7 @@ namespace NanoAgent.Infrastructure.Storage;
 [JsonSerializable(typeof(AgentConfiguration))]
 [JsonSerializable(typeof(AgentProviderProfile))]
 [JsonSerializable(typeof(AgentProfileConfigurationDocument))]
+[JsonSerializable(typeof(ProviderProfileConfigurationDocument))]
 [JsonSerializable(typeof(BudgetControlsSettings))]
 [JsonSerializable(typeof(MemoryProfileDocument))]
 [JsonSerializable(typeof(ToolAuditProfileDocument))]

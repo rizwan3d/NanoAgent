@@ -35,8 +35,9 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Choose the active model with the picker.\n" +
             "/new - Start a new session.\n" +
-            "/onboard - Re-run provider onboarding and switch the active session to the new provider.\n" +
+            "/onboard - Add a provider through onboarding and switch the active session to it.\n" +
             "/permissions - Show the current permission summary and override guidance.\n" +
+            "/provider [list|name] - List saved providers or switch to another saved provider.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/reload - Reload keybindings, extensions, skills, prompts, and themes.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +

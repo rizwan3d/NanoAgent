@@ -110,7 +110,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     {
         AgentConfiguration? existingConfiguration = await _configurationStore.LoadAsync(cancellationToken);
         AgentProviderProfile? existingProfile = existingConfiguration?.ProviderProfile;
-        string? existingApiKey = await _secretStore.LoadAsync(cancellationToken);
+        string? existingApiKey = await LoadProviderSecretAsync(existingConfiguration, cancellationToken);
 
         if (existingProfile is not null && !string.IsNullOrWhiteSpace(existingApiKey))
         {
@@ -209,9 +209,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     cancellationToken)
         };
 
+        string providerName = await CreateProviderNameAsync(profile, cancellationToken);
         await _configurationStore.SaveAsync(
             new AgentConfiguration(profile, PreferredModelId: null),
             cancellationToken);
+        await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
         await _secretStore.SaveAsync(providerSecret, cancellationToken);
 
         await _statusMessageWriter.ShowSuccessAsync(
@@ -220,7 +222,49 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 
         ApplicationLogMessages.OnboardingCompleted(_logger, profile.ProviderKind.ToDisplayName());
 
-        return new OnboardingResult(profile, WasOnboardedDuringCurrentRun: true);
+        return new OnboardingResult(
+            profile,
+            WasOnboardedDuringCurrentRun: true,
+            ActiveProviderName: providerName);
+    }
+
+    private async Task<string?> LoadProviderSecretAsync(
+        AgentConfiguration? configuration,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(configuration?.ActiveProviderName))
+        {
+            string? providerSecret = await _secretStore.LoadAsync(
+                configuration.ActiveProviderName,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(providerSecret))
+            {
+                return providerSecret;
+            }
+        }
+
+        return await _secretStore.LoadAsync(cancellationToken);
+    }
+
+    private async Task<string> CreateProviderNameAsync(
+        AgentProviderProfile profile,
+        CancellationToken cancellationToken)
+    {
+        await Task.CompletedTask;
+        return CreateProviderName(profile);
+    }
+
+    private static string CreateProviderName(AgentProviderProfile profile)
+    {
+        string providerName = profile.ProviderKind.ToDisplayName();
+        if (profile.ProviderKind == ProviderKind.OpenAiCompatible &&
+            Uri.TryCreate(profile.ResolveBaseUrl(), UriKind.Absolute, out Uri? uri) &&
+            !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return $"{providerName} ({uri.Host})";
+        }
+
+        return providerName;
     }
 
     private async Task<OnboardingProviderChoice> PromptForProviderChoiceAsync(

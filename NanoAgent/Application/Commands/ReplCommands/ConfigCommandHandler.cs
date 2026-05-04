@@ -6,10 +6,14 @@ namespace NanoAgent.Application.Commands;
 
 internal sealed class ConfigCommandHandler : IReplCommandHandler
 {
+    private readonly IAgentConfigurationStore _configurationStore;
     private readonly IUserDataPathProvider _userDataPathProvider;
 
-    public ConfigCommandHandler(IUserDataPathProvider userDataPathProvider)
+    public ConfigCommandHandler(
+        IAgentConfigurationStore configurationStore,
+        IUserDataPathProvider userDataPathProvider)
     {
+        _configurationStore = configurationStore;
         _userDataPathProvider = userDataPathProvider;
     }
 
@@ -19,7 +23,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
 
     public string Usage => "/config";
 
-    public Task<ReplCommandResult> ExecuteAsync(
+    public async Task<ReplCommandResult> ExecuteAsync(
         ReplCommandContext context,
         CancellationToken cancellationToken)
     {
@@ -29,11 +33,16 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
         string baseUrl = context.Session.ProviderProfile.ProviderKind.GetManagedBaseUrl()
             ?? context.Session.ProviderProfile.BaseUrl
             ?? "(not configured)";
+        AgentConfiguration? configuration = await _configurationStore.LoadAsync(cancellationToken);
+        string savedProvider = string.IsNullOrWhiteSpace(configuration?.ActiveProviderName)
+            ? "(legacy/default)"
+            : configuration.ActiveProviderName;
 
         string message =
             "Current configuration:\n" +
             $"Session: {context.Session.SessionId}\n" +
             $"Resume command: {context.Session.SectionResumeCommand}\n" +
+            $"Saved provider: {savedProvider}\n" +
             $"Provider: {context.Session.ProviderName}\n" +
             $"Base URL: {baseUrl}\n" +
             $"Configuration file: {_userDataPathProvider.GetConfigurationFilePath()}\n" +
@@ -42,6 +51,6 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
             $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
             $"Active model: {context.Session.ActiveModelId}";
 
-        return Task.FromResult(ReplCommandResult.Continue(message));
+        return ReplCommandResult.Continue(message);
     }
 }

@@ -104,6 +104,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("sk-openai", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "sk-openai", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateOpenAi()).Returns(openAiProfile);
@@ -121,7 +122,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(openAiProfile, true));
+        result.Should().Be(new OnboardingResult(
+            openAiProfile,
+            true,
+            ActiveProviderName: "OpenAI"));
         profileFactory.Verify(factory => factory.CreateOpenAi(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
@@ -204,6 +208,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("sk-openai", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "sk-openai", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateOpenAi()).Returns(openAiProfile);
@@ -221,7 +226,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(openAiProfile, true));
+        result.Should().Be(new OnboardingResult(
+            openAiProfile,
+            true,
+            ActiveProviderName: "OpenAI"));
     }
 
     [Fact]
@@ -261,6 +269,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateOpenAiChatGptAccount()).Returns(profile);
@@ -284,7 +293,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(profile, true));
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "GitHub Copilot"));
         profileFactory.Verify(factory => factory.CreateOpenAiChatGptAccount(), Times.Once);
         authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
@@ -332,6 +344,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("anthropic-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "anthropic-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateAnthropicClaudeAccount()).Returns(profile);
@@ -355,7 +368,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(profile, true));
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "OpenAI ChatGPT Plus/Pro"));
         profileFactory.Verify(factory => factory.CreateAnthropicClaudeAccount(), Times.Once);
         authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
@@ -403,6 +419,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("github-copilot-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "github-copilot-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateGitHubCopilot()).Returns(profile);
@@ -426,7 +443,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(profile, true));
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "Anthropic Claude Pro/Max"));
         profileFactory.Verify(factory => factory.CreateGitHubCopilot(), Times.Once);
         authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
@@ -483,6 +503,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("sk-or-v1-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "sk-or-v1-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateOpenRouter()).Returns(openRouterProfile);
@@ -500,7 +521,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(openRouterProfile, true));
+        result.Should().Be(new OnboardingResult(
+            openRouterProfile,
+            true,
+            ActiveProviderName: "OpenRouter"));
         profileFactory.Verify(factory => factory.CreateOpenRouter(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
@@ -553,6 +577,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("gemini-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "gemini-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateGoogleAiStudio()).Returns(googleAiStudioProfile);
@@ -570,7 +595,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(googleAiStudioProfile, true));
+        result.Should().Be(new OnboardingResult(
+            googleAiStudioProfile,
+            true,
+            ActiveProviderName: "Google AI Studio"));
         profileFactory.Verify(factory => factory.CreateGoogleAiStudio(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
@@ -623,6 +651,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("anthropic-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "anthropic-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateAnthropic()).Returns(anthropicProfile);
@@ -640,7 +669,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(anthropicProfile, true));
+        result.Should().Be(new OnboardingResult(
+            anthropicProfile,
+            true,
+            ActiveProviderName: "Anthropic"));
         profileFactory.Verify(factory => factory.CreateAnthropic(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
@@ -706,6 +738,7 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
         secretStore.Setup(store => store.SaveAsync("compatible-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "compatible-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory
@@ -725,7 +758,10 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(compatibleProfile, true));
+        result.Should().Be(new OnboardingResult(
+            compatibleProfile,
+            true,
+            ActiveProviderName: "OpenAI-compatible provider (compatible.example.com)"));
         profileFactory.Verify(factory => factory.CreateCompatible("https://compatible.example.com/v1"), Times.Once);
         statusMessageWriter.VerifyAll();
     }
