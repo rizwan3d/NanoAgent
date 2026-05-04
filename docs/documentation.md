@@ -290,7 +290,7 @@ nanoai --section <section-guid>
 
 Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
-`/setting` is a keyboard-friendly settings hub. Use it with no arguments to pick a settings area, or jump directly with commands such as `/setting model`, `/setting profile`, `/setting thinking`, `/setting budget status`, `/setting workspace custom`, `/setting permissions`, `/setting tools`, and `/setting summary`. Setting submenus use picker-style rows; Esc returns to the settings menu. Direct commands like `/permissions` and `/rules` still keep their original text output.
+`/setting` is a keyboard-friendly settings hub. Use it with no arguments to pick a settings area, or jump directly with commands such as `/setting model`, `/setting profile`, `/setting thinking`, `/setting budget status`, `/setting workspace custom`, `/setting permissions`, `/setting tools`, and `/setting summary`. Setting submenus use picker-style rows; Esc returns to the settings menu. `/setting permissions` writes default and sandbox changes to `.nanoagent/agent-profile.json`; direct commands like `/permissions` and `/rules` still keep their original text output.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.

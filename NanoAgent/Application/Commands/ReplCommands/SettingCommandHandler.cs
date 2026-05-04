@@ -17,6 +17,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
     private readonly IServiceProvider _serviceProvider;
     private readonly ITextPrompt _textPrompt;
     private readonly IToolRegistry _toolRegistry;
+    private readonly IWorkspaceSettingsWriter _workspaceSettingsWriter;
 
     public SettingCommandHandler(
         ISelectionPrompt selectionPrompt,
@@ -27,7 +28,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
         IServiceProvider serviceProvider,
         ITextPrompt textPrompt,
         IEnumerable<IDynamicToolProvider> dynamicToolProviders,
-        IToolRegistry toolRegistry)
+        IToolRegistry toolRegistry,
+        IWorkspaceSettingsWriter workspaceSettingsWriter)
     {
         _selectionPrompt = selectionPrompt;
         _profileResolver = profileResolver;
@@ -38,6 +40,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
         _textPrompt = textPrompt;
         _dynamicToolProviders = dynamicToolProviders;
         _toolRegistry = toolRegistry;
+        _workspaceSettingsWriter = workspaceSettingsWriter;
     }
 
     public string CommandName => "setting";
@@ -468,7 +471,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                                 SettingPermissionAction.Back,
                                 "Return to NanoAgent settings.")
                         ],
-                        "Changes here affect the running session. Esc returns to NanoAgent settings.",
+                        "Default and sandbox changes are saved to .nanoagent/agent-profile.json. Rule changes here are session-scoped. Esc returns to NanoAgent settings.",
                         DefaultIndex: 0,
                         AllowCancellation: true),
                     cancellationToken);
@@ -509,6 +512,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     _permissionSettings.DefaultMode = defaultMode.Value;
                     _permissionSettings.AutoApproveAllTools = defaultMode.Value == PermissionMode.Allow &&
                         _permissionSettings.AutoApproveAllTools;
+                    await SaveWorkspacePermissionSettingsAsync(context, cancellationToken);
                 }
 
                 return;
@@ -518,6 +522,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                 if (sandboxMode is not null)
                 {
                     _permissionSettings.SandboxMode = sandboxMode.Value;
+                    await SaveWorkspacePermissionSettingsAsync(context, cancellationToken);
                 }
 
                 return;
@@ -1126,6 +1131,16 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                 session.ProviderProfile,
                 session.ActiveModelId,
                 session.ReasoningEffort),
+            cancellationToken);
+    }
+
+    private Task SaveWorkspacePermissionSettingsAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
+        return _workspaceSettingsWriter.SavePermissionSettingsAsync(
+            context.Session.WorkspacePath,
+            _permissionSettings,
             cancellationToken);
     }
 

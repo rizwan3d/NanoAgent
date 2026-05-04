@@ -87,7 +87,8 @@ public sealed class SettingCommandHandlerTests
             serviceProvider,
             new ThrowingTextPrompt(),
             [],
-            new EmptyToolRegistry());
+            new EmptyToolRegistry(),
+            new NoOpWorkspaceSettingsWriter());
         serviceProvider.Handlers = [sut];
 
         ReplCommandResult result = await sut.ExecuteAsync(
@@ -133,6 +134,48 @@ public sealed class SettingCommandHandlerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_SavePermissionSettingsToWorkspaceProfile()
+    {
+        QueueSelectionPrompt selectionPrompt = new("Sandbox mode", "Read only", "Back");
+        HandlerServiceProvider serviceProvider = new();
+        CapturingWorkspaceSettingsWriter settingsWriter = new();
+        PermissionSettings permissionSettings = new()
+        {
+            SandboxMode = ToolSandboxMode.WorkspaceWrite
+        };
+        SettingCommandHandler sut = CreateHandler(
+            selectionPrompt,
+            serviceProvider,
+            permissionSettings: permissionSettings,
+            workspaceSettingsWriter: settingsWriter);
+        serviceProvider.Handlers = [sut];
+        string workspacePath = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-setting-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspacePath);
+        ReplSessionContext session = CreateSession(workspacePath);
+
+        try
+        {
+            ReplCommandResult result = await sut.ExecuteAsync(
+                CreateContext(session, "permissions"),
+                CancellationToken.None);
+
+            result.Message.Should().BeNull();
+            settingsWriter.WorkspacePath.Should().Be(workspacePath);
+            settingsWriter.SavedSettings.Should().NotBeNull();
+            settingsWriter.SavedSettings!.SandboxMode.Should().Be(ToolSandboxMode.ReadOnly);
+        }
+        finally
+        {
+            if (Directory.Exists(workspacePath))
+            {
+                Directory.Delete(workspacePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_DelegateBudgetAreaWithRemainingArguments()
     {
         QueueSelectionPrompt selectionPrompt = new();
@@ -158,7 +201,8 @@ public sealed class SettingCommandHandlerTests
         QueueSelectionPrompt selectionPrompt,
         HandlerServiceProvider serviceProvider,
         IAgentConfigurationStore? configurationStore = null,
-        PermissionSettings? permissionSettings = null)
+        PermissionSettings? permissionSettings = null,
+        IWorkspaceSettingsWriter? workspaceSettingsWriter = null)
     {
         return new SettingCommandHandler(
             selectionPrompt,
@@ -169,7 +213,8 @@ public sealed class SettingCommandHandlerTests
             serviceProvider,
             new ThrowingTextPrompt(),
             [],
-            new EmptyToolRegistry());
+            new EmptyToolRegistry(),
+            workspaceSettingsWriter ?? new NoOpWorkspaceSettingsWriter());
     }
 
     private static ReplCommandContext CreateContext(
@@ -188,12 +233,13 @@ public sealed class SettingCommandHandlerTests
             session);
     }
 
-    private static ReplSessionContext CreateSession()
+    private static ReplSessionContext CreateSession(string? workspacePath = null)
     {
         return new ReplSessionContext(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "model-a",
-            ["model-a", "model-b"]);
+            ["model-a", "model-b"],
+            workspacePath: workspacePath);
     }
 
     private sealed class QueueSelectionPrompt : ISelectionPrompt
@@ -267,6 +313,47 @@ public sealed class SettingCommandHandlerTests
         {
             tool = null;
             return false;
+        }
+    }
+
+    private sealed class NoOpWorkspaceSettingsWriter : IWorkspaceSettingsWriter
+    {
+        public Task SavePermissionSettingsAsync(
+            string workspacePath,
+            PermissionSettings settings,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingWorkspaceSettingsWriter : IWorkspaceSettingsWriter
+    {
+        public PermissionSettings? SavedSettings { get; private set; }
+
+        public string? WorkspacePath { get; private set; }
+
+        public Task SavePermissionSettingsAsync(
+            string workspacePath,
+            PermissionSettings settings,
+            CancellationToken cancellationToken)
+        {
+            WorkspacePath = workspacePath;
+            SavedSettings = new PermissionSettings
+            {
+                AutoApproveAllTools = settings.AutoApproveAllTools,
+                DefaultMode = settings.DefaultMode,
+                FileDelete = settings.FileDelete,
+                FileRead = settings.FileRead,
+                FileWrite = settings.FileWrite,
+                McpTools = settings.McpTools,
+                MemoryWrite = settings.MemoryWrite,
+                Network = settings.Network,
+                SandboxMode = settings.SandboxMode,
+                ShellDefault = settings.ShellDefault,
+                ShellSafe = settings.ShellSafe
+            };
+            return Task.CompletedTask;
         }
     }
 
