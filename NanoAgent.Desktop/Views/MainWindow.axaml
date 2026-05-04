@@ -880,41 +880,49 @@
                                               ItemsSource="{Binding Chat.ActiveSelectionPrompt.Options}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="models:DesktopSelectionPromptOption">
-                                            <Button Classes="secondary"
-                                                    Command="{Binding SelectCommand}"
-                                                    HorizontalAlignment="Stretch"
-                                                    Margin="0,0,0,10"
-                                                    Padding="13,11">
-                                                <Grid ColumnDefinitions="*,Auto"
-                                                      ColumnSpacing="12">
-                                                    <StackPanel Spacing="4">
-                                                        <TextBlock Text="{Binding Label}"
-                                                                   Foreground="#F4F4F5"
-                                                                   FontSize="13"
-                                                                   FontWeight="SemiBold"
-                                                                   TextWrapping="Wrap"/>
-                                                        <TextBlock Text="{Binding Description}"
-                                                                   IsVisible="{Binding HasDescription}"
-                                                                   Foreground="#9CA3AF"
-                                                                   FontSize="11"
-                                                                   LineHeight="16"
-                                                                   TextWrapping="Wrap"/>
-                                                    </StackPanel>
-                                                    <Border Grid.Column="1"
-                                                            IsVisible="{Binding IsDefault}"
-                                                            Background="#142016"
-                                                            BorderBrush="#2F6B3A"
-                                                            BorderThickness="1"
-                                                            CornerRadius="6"
-                                                            Padding="7,3"
-                                                            VerticalAlignment="Center">
-                                                        <TextBlock Text="Default"
-                                                                   Foreground="#86EFAC"
-                                                                   FontSize="10"
-                                                                   FontWeight="SemiBold"/>
-                                                    </Border>
-                                                </Grid>
-                                            </Button>
+                                            <StackPanel Spacing="8"
+                                                        Margin="0,0,0,10">
+                                                <TextBlock Text="{Binding Section}"
+                                                           IsVisible="{Binding HasSection}"
+                                                           Foreground="#E5E7EB"
+                                                           FontSize="11"
+                                                           FontWeight="Bold"
+                                                           TextWrapping="Wrap"/>
+                                                <Button Classes="secondary"
+                                                        Command="{Binding SelectCommand}"
+                                                        HorizontalAlignment="Stretch"
+                                                        Padding="13,11">
+                                                    <Grid ColumnDefinitions="*,Auto"
+                                                          ColumnSpacing="12">
+                                                        <StackPanel Spacing="4">
+                                                            <TextBlock Text="{Binding Label}"
+                                                                       Foreground="#F4F4F5"
+                                                                       FontSize="13"
+                                                                       FontWeight="SemiBold"
+                                                                       TextWrapping="Wrap"/>
+                                                            <TextBlock Text="{Binding Description}"
+                                                                       IsVisible="{Binding HasDescription}"
+                                                                       Foreground="#9CA3AF"
+                                                                       FontSize="11"
+                                                                       LineHeight="16"
+                                                                       TextWrapping="Wrap"/>
+                                                        </StackPanel>
+                                                        <Border Grid.Column="1"
+                                                                IsVisible="{Binding IsDefault}"
+                                                                Background="#142016"
+                                                                BorderBrush="#2F6B3A"
+                                                                BorderThickness="1"
+                                                                CornerRadius="6"
+                                                                Padding="7,3"
+                                                                VerticalAlignment="Center">
+                                                            <TextBlock Text="Default"
+                                                                       Foreground="#86EFAC"
+                                                                       FontSize="10"
+                                                                       FontWeight="SemiBold"/>
+                                                        </Border>
+                                                    </Grid>
+                                                </Button>
+                                            </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>

@@ -190,9 +190,22 @@ public sealed class ConsoleBridge : IUiBridge
             _error.WriteLine();
         }
 
+        string? previousSection = null;
         for (int index = 0; index < request.Options.Count; index++)
         {
             SelectionPromptOption<T> option = request.Options[index];
+            if (!string.IsNullOrWhiteSpace(option.Section) &&
+                !string.Equals(option.Section, previousSection, StringComparison.Ordinal))
+            {
+                if (index > 0)
+                {
+                    _error.WriteLine();
+                }
+
+                _error.WriteLine(option.Section.Trim() + ":");
+                previousSection = option.Section;
+            }
+
             string defaultSuffix = index == defaultIndex ? " (default)" : string.Empty;
             _error.WriteLine($"{index + 1}. {option.Label}{defaultSuffix}");
 

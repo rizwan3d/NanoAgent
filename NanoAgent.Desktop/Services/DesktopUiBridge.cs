@@ -51,7 +51,8 @@ internal sealed class DesktopUiBridge : IUiBridge
             request.Options
                 .Select(static option => new DesktopSelectionPromptOptionDescriptor(
                     option.Label,
-                    option.Description))
+                    option.Description,
+                    option.Section))
                 .ToArray(),
             request.DefaultIndex,
             request.AllowCancellation,
