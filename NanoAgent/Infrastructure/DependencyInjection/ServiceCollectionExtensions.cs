@@ -45,6 +45,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICodeIntelligenceService, LspCodeIntelligenceService>();
         services.AddSingleton<IHeadlessBrowserService, HeadlessBrowserService>();
         services.AddSingleton<IWorkspaceSystemPromptProvider, WorkspaceSystemPromptProvider>();
+        services.AddSingleton<IWorkspaceAgentProfilePromptProvider, WorkspaceAgentProfilePromptProvider>();
         services.AddSingleton<IWorkspaceInstructionsProvider, WorkspaceInstructionsProvider>();
         services.AddSingleton<ISkillService, WorkspaceSkillService>();
         services.AddSingleton<ILifecycleHookService, ShellLifecycleHookService>();

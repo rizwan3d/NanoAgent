@@ -23,7 +23,9 @@ internal sealed class BuiltInAgentProfileResolver : IAgentProfileResolver
             return BuiltInAgentProfiles.All;
         }
 
-        List<IAgentProfile> profiles = [.. BuiltInAgentProfiles.All];
+        List<IAgentProfile> profiles = BuiltInAgentProfiles.All
+            .Select(profile => ApplyWorkspacePromptOverride(profile, workspaceProfiles))
+            .ToList();
         HashSet<string> existingNames = new(
             profiles.Select(static profile => profile.Name),
             StringComparer.OrdinalIgnoreCase);
@@ -41,12 +43,9 @@ internal sealed class BuiltInAgentProfileResolver : IAgentProfileResolver
 
     public IAgentProfile Resolve(string? profileName)
     {
-        if (string.IsNullOrWhiteSpace(profileName))
-        {
-            return BuiltInAgentProfiles.Build;
-        }
-
-        string normalizedProfileName = profileName.Trim();
+        string normalizedProfileName = string.IsNullOrWhiteSpace(profileName)
+            ? BuiltInAgentProfiles.BuildName
+            : profileName.Trim();
         IReadOnlyList<IAgentProfile> profiles = List();
         return profiles.FirstOrDefault(profile =>
             string.Equals(profile.Name, normalizedProfileName, StringComparison.OrdinalIgnoreCase))
@@ -73,5 +72,27 @@ internal sealed class BuiltInAgentProfileResolver : IAgentProfileResolver
         }
 
         return WorkspaceAgentProfileLoader.Load(workspaceRoot);
+    }
+
+    private static IAgentProfile ApplyWorkspacePromptOverride(
+        IAgentProfile builtInProfile,
+        IReadOnlyList<IAgentProfile> workspaceProfiles)
+    {
+        IAgentProfile? overrideProfile = workspaceProfiles.FirstOrDefault(profile =>
+            string.Equals(profile.Name, builtInProfile.Name, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(profile.SystemPrompt));
+
+        if (overrideProfile is null)
+        {
+            return builtInProfile;
+        }
+
+        return new BuiltInAgentProfile(
+            builtInProfile.Name,
+            builtInProfile.Mode,
+            builtInProfile.Description,
+            overrideProfile.SystemPrompt,
+            builtInProfile.EnabledTools,
+            builtInProfile.PermissionIntent);
     }
 }
