@@ -6,6 +6,8 @@ namespace NanoAgent.CLI;
 
 public static partial class Program
 {
+    private const string MessagesPanelScrollHint = "[ Scroll: ↑/↓ | PgUp/PgDn | Wheel ]";
+
     private static IRenderable BuildUi(AppState state)
     {
         Layout root = new Layout("root")
@@ -47,9 +49,31 @@ public static partial class Program
     private static IRenderable BuildMessagesPanel(AppState state)
     {
         return new Panel(new Markup(BuildMessagesMarkup(state)))
-            .Header($"[bold]Session[/] ──[grey] Working: {state.RootDirectory} [/]")
+            .Header(BuildMessagesPanelHeaderMarkup(state))
             .Border(BoxBorder.Square)
             .Expand();
+    }
+
+    private static string BuildMessagesPanelHeaderMarkup(AppState state)
+    {
+        const string leftPrefix = "Session ── Working: ";
+        int headerWidth = Math.Max(20, Console.WindowWidth - 6);
+        int leftBudget = Math.Max(0, headerWidth - MessagesPanelScrollHint.Length - 1);
+        string rootDirectory = state.RootDirectory ?? string.Empty;
+        string displayRootDirectory = rootDirectory;
+
+        if (leftPrefix.Length + displayRootDirectory.Length > leftBudget)
+        {
+            int rootBudget = Math.Max(0, leftBudget - leftPrefix.Length);
+            displayRootDirectory = TruncateFromLeft(rootDirectory, rootBudget);
+        }
+
+        string leftPlain = leftPrefix + displayRootDirectory;
+        int spacerLength = Math.Max(1, headerWidth - leftPlain.Length - MessagesPanelScrollHint.Length);
+
+        return $"[bold]Session[/] ──[grey] Working: {Markup.Escape(displayRootDirectory)}[/]" +
+            $"{new string('─', spacerLength)}" +
+            $"[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]";
     }
 
     private static IRenderable BuildBodyPanel(AppState state)
@@ -535,7 +559,7 @@ public static partial class Program
         if (state.HasFatalError)
         {
             return BuildFooterLineMarkup(
-                "[grey]Wheel/PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+                "[grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
         }
 
         if (TryGetSlashCommandSuggestions(state, out _))
@@ -545,7 +569,7 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Wheel/PgUp/PgDn: Scroll[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
 
     private static string BuildHeaderMarkup(AppState state)
@@ -589,7 +613,6 @@ public static partial class Program
 
         lines.Add(
             $"[grey]  Sponsor:[/] [yellow]{Markup.Escape(SponsorName)}[/] [grey]([/][italic]{Markup.Escape(SponsorUrl)}[/][grey])[/]");
-        lines.Add("[grey]  Chat in the terminal. Press F2 to choose a model, F3 to pin the latest plan, Ctrl+C or /exit to quit. [/]");
         lines.Add("[grey]  [/]");
 
         return string.Join('\n', lines);
@@ -1052,10 +1075,7 @@ public static partial class Program
     private static string BuildHeaderCompletionNote(AppState state)
     {
         return BuildCompletionNote(state)
-            .Trim()
-            .Trim('[', ']')
-            .Replace(" Used", " used", StringComparison.Ordinal)
-            .Replace(" context", " ctx", StringComparison.Ordinal);
+            .Trim();
     }
 
     private static string BuildFooterLineMarkup(string markup)
@@ -1168,5 +1188,22 @@ public static partial class Program
         }
 
         return lines;
+    }
+
+    private static string TruncateFromLeft(string value, int maxLength)
+    {
+        if (maxLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (value.Length <= maxLength)
+        {
+            return value;
+        }
+
+        return maxLength <= 3
+            ? value[^maxLength..]
+            : "..." + value[^(maxLength - 3)..];
     }
 }
