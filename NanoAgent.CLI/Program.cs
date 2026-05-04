@@ -58,6 +58,7 @@ public static partial class Program
         new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
         new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
         new("/rules", "/rules", "List effective permission rules.", false),
+        new("/setting", "/setting [area]", "Open the NanoAgent settings picker.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
         new("/update", "/update [now]", "Check for updates.", false),

@@ -33,6 +33,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/rules - List the effective permission rules in evaluation order.\n" +
+            "/setting [model|profile|thinking|provider|budget|workspace|permissions|tools|summary] - Open the settings picker or jump to a settings area.\n" +
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +

@@ -244,6 +244,20 @@ public sealed class ReplSessionContext
         }
     }
 
+    public void ClearPermissionOverrides()
+    {
+        lock (_syncRoot)
+        {
+            if (_permissionOverrides.Count == 0)
+            {
+                return;
+            }
+
+            _permissionOverrides.Clear();
+            IsPersistedStateDirty = true;
+        }
+    }
+
     public void RegisterTemporaryArtifact(
         string path,
         TemporaryArtifactRetention retention)

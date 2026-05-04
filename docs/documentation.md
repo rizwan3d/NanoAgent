@@ -87,7 +87,7 @@ In terminal runs, `--provider-auth-key <key>` can supply the provider API key wh
 
 If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved. If provider validation fails after setup, NanoAgent offers to run onboarding again.
 
-Use `/onboard` in an active desktop or terminal session to re-run provider setup later. The command supports every provider listed below and switches the active session to the validated provider and selected default model.
+Use `/onboard` in an active desktop or terminal session to re-run provider setup later. You can also use `/setting provider` or the `/setting` picker. The command supports every provider listed below and switches the active session to the validated provider and selected default model.
 
 When a newer NanoAgent release is available, startup can ask whether to update now or skip. One-shot prompt runs do not show the startup update prompt.
 
@@ -278,6 +278,7 @@ nanoai --section <section-guid>
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
 | `/permissions` | Show permission summary and override guidance. |
 | `/rules` | Show effective permission rules in evaluation order. |
+| `/setting [model\|profile\|thinking\|provider\|budget\|workspace\|permissions\|tools\|summary]` | Open the settings picker or jump directly to a settings area. |
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
@@ -288,6 +289,8 @@ nanoai --section <section-guid>
 | `/exit` | Exit the interactive shell. |
 
 Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
+
+`/setting` is a keyboard-friendly settings hub. Use it with no arguments to pick a settings area, or jump directly with commands such as `/setting model`, `/setting profile`, `/setting thinking`, `/setting budget status`, `/setting workspace custom`, `/setting permissions`, `/setting tools`, and `/setting summary`. Setting submenus use picker-style rows; Esc returns to the settings menu. Direct commands like `/permissions` and `/rules` still keep their original text output.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.

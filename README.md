@@ -165,7 +165,7 @@ Start NanoAgent:
 nanoai
 ```
 
-NanoAgent will guide you through provider setup, model discovery, and the first section. After setup, you can switch models with the terminal F2 or `/models` picker, or switch profiles and thinking mode from the desktop controls or terminal commands.
+NanoAgent will guide you through provider setup, model discovery, and the first section. After setup, you can switch models with the terminal F2 or `/models` picker, open the settings hub with `/setting`, or switch profiles and thinking mode from the desktop controls or terminal commands.
 
 For terminal onboarding, you can pass an API key up front:
 
@@ -187,6 +187,7 @@ nanoai --provider-auth-key <key>
 | `/thinking [on\|off]` | Show or set thinking mode. |
 | `/permissions` | Show permission policy summary. |
 | `/rules` | Show effective rules. |
+| `/setting [area]` | Open the settings picker for model, profile, thinking, provider, budget, workspace files, permissions, tools, or summary. |
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
@@ -197,6 +198,7 @@ nanoai --provider-auth-key <key>
 | `/exit` | Exit the terminal UI. |
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
+Use `/setting` for picker-style settings rows; Esc from a settings area returns to the settings menu.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 Start input with `!` to run a local shell command directly, for example `!dotnet test`.
 
