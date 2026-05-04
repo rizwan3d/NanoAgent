@@ -78,7 +78,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
                     options.ProfileName,
                     reasoningEffort,
-                    CreateModelContextWindowMap(modelResult.AvailableModels)),
+                    CreateModelContextWindowMap(modelResult.AvailableModels),
+                    onboardingResult.ActiveProviderName),
                 cancellationToken);
         }
 

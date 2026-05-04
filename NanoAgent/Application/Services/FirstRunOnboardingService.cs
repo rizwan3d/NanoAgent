@@ -125,7 +125,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             return new OnboardingResult(
                 existingProfile,
                 WasOnboardedDuringCurrentRun: false,
-                ReasoningEffortOptions.NormalizeOrNull(existingConfiguration?.ReasoningEffort));
+                ReasoningEffortOptions.NormalizeOrNull(existingConfiguration?.ReasoningEffort),
+                existingConfiguration?.ActiveProviderName);
         }
 
         if (existingProfile is not null || !string.IsNullOrWhiteSpace(existingApiKey))
@@ -210,10 +211,13 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         };
 
         string providerName = await CreateProviderNameAsync(profile, cancellationToken);
-        await _configurationStore.SaveAsync(
-            new AgentConfiguration(profile, PreferredModelId: null),
-            cancellationToken);
         await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
+        await _configurationStore.SaveAsync(
+            new AgentConfiguration(
+                profile,
+                PreferredModelId: null,
+                ActiveProviderName: providerName),
+            cancellationToken);
         await _secretStore.SaveAsync(providerSecret, cancellationToken);
 
         await _statusMessageWriter.ShowSuccessAsync(

@@ -60,6 +60,7 @@ internal sealed class ReplSectionService : IReplSectionService
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        string? activeProviderName,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
@@ -77,7 +78,8 @@ internal sealed class ReplSectionService : IReplSectionService
             sectionCreatedAtUtc: now,
             sectionUpdatedAtUtc: now,
             agentProfile: agentProfile,
-            modelContextWindowTokens: modelContextWindowTokens);
+            modelContextWindowTokens: modelContextWindowTokens,
+            activeProviderName: activeProviderName);
 
         await _sectionStore.SaveAsync(
             session.CreateSectionSnapshot(now),
@@ -149,7 +151,8 @@ internal sealed class ReplSectionService : IReplSectionService
             reasoningEffort: snapshot.ReasoningEffort,
             sessionState: snapshot.SessionState,
             workspacePath: snapshot.WorkspacePath,
-            modelContextWindowTokens: snapshot.ModelContextWindowTokens);
+            modelContextWindowTokens: snapshot.ModelContextWindowTokens,
+            activeProviderName: snapshot.ActiveProviderName);
 
         if (!session.HasGeneratedSectionTitle &&
             session.TryGetFirstUserPrompt(out string? firstUserPrompt) &&
@@ -294,7 +297,7 @@ internal sealed class ReplSectionService : IReplSectionService
         string firstUserPrompt,
         CancellationToken cancellationToken)
     {
-        string? apiKey = await _secretStore.LoadAsync(cancellationToken);
+        string? apiKey = await LoadProviderSecretAsync(session, cancellationToken);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             return null;
@@ -320,6 +323,24 @@ internal sealed class ReplSectionService : IReplSectionService
         }
 
         return NormalizeGeneratedTitle(response.AssistantMessage);
+    }
+
+    private async Task<string?> LoadProviderSecretAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(session.ActiveProviderName))
+        {
+            string? providerSecret = await _secretStore.LoadAsync(
+                session.ActiveProviderName,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(providerSecret))
+            {
+                return providerSecret;
+            }
+        }
+
+        return await _secretStore.LoadAsync(cancellationToken);
     }
 
     private SemaphoreSlim GetSectionLock(string sectionId)

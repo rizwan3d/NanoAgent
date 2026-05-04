@@ -60,6 +60,53 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
+    public async Task EnsureOnboardedAsync_Should_UseProviderScopedSecret_When_ActiveProviderNameExists()
+    {
+        AgentProviderProfile existingProfile = new(ProviderKind.OpenAi, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Using existing provider configuration: OpenAI.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentConfiguration(existingProfile, null, "on", "OpenAI"));
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync("OpenAI", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("existing-key");
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(existingProfile, false, "on", "OpenAI"));
+        secretStore.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Never);
+        selectionPrompt.VerifyNoOtherCalls();
+        textPrompt.VerifyNoOtherCalls();
+        secretPrompt.VerifyNoOtherCalls();
+        confirmationPrompt.VerifyNoOtherCalls();
+        configurationStore.Verify(store => store.SaveAsync(It.IsAny<AgentConfiguration>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveOpenAiConfiguration_When_OpenAiIsSelected()
     {
         AgentProviderProfile openAiProfile = new(ProviderKind.OpenAi, null);
@@ -97,7 +144,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(openAiProfile, null),
+                new AgentConfiguration(openAiProfile, null, null, "OpenAI"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -201,7 +248,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(openAiProfile, null),
+                new AgentConfiguration(openAiProfile, null, null, "OpenAI"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -262,7 +309,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(profile, null),
+                new AgentConfiguration(profile, null, null, "OpenAI ChatGPT Plus/Pro"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -296,7 +343,7 @@ public sealed class FirstRunOnboardingServiceTests
         result.Should().Be(new OnboardingResult(
             profile,
             true,
-            ActiveProviderName: "GitHub Copilot"));
+            ActiveProviderName: "OpenAI ChatGPT Plus/Pro"));
         profileFactory.Verify(factory => factory.CreateOpenAiChatGptAccount(), Times.Once);
         authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
@@ -337,7 +384,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(profile, null),
+                new AgentConfiguration(profile, null, null, "Anthropic Claude Pro/Max"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -371,7 +418,7 @@ public sealed class FirstRunOnboardingServiceTests
         result.Should().Be(new OnboardingResult(
             profile,
             true,
-            ActiveProviderName: "OpenAI ChatGPT Plus/Pro"));
+            ActiveProviderName: "Anthropic Claude Pro/Max"));
         profileFactory.Verify(factory => factory.CreateAnthropicClaudeAccount(), Times.Once);
         authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
@@ -412,7 +459,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(profile, null),
+                new AgentConfiguration(profile, null, null, "GitHub Copilot"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -446,7 +493,7 @@ public sealed class FirstRunOnboardingServiceTests
         result.Should().Be(new OnboardingResult(
             profile,
             true,
-            ActiveProviderName: "Anthropic Claude Pro/Max"));
+            ActiveProviderName: "GitHub Copilot"));
         profileFactory.Verify(factory => factory.CreateGitHubCopilot(), Times.Once);
         authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
@@ -496,7 +543,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(openRouterProfile, null),
+                new AgentConfiguration(openRouterProfile, null, null, "OpenRouter"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -570,7 +617,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(googleAiStudioProfile, null),
+                new AgentConfiguration(googleAiStudioProfile, null, null, "Google AI Studio"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -644,7 +691,7 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(anthropicProfile, null),
+                new AgentConfiguration(anthropicProfile, null, null, "Anthropic"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -731,7 +778,11 @@ public sealed class FirstRunOnboardingServiceTests
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(compatibleProfile, null),
+                new AgentConfiguration(
+                    compatibleProfile,
+                    null,
+                    null,
+                    "OpenAI-compatible provider (compatible.example.com)"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 

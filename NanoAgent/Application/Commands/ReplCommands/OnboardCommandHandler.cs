@@ -73,7 +73,8 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
             onboardingResult.Profile,
             modelResult.SelectedModelId,
             availableModelIds,
-            CreateModelContextWindowMap(modelResult.AvailableModels));
+            CreateModelContextWindowMap(modelResult.AvailableModels),
+            onboardingResult.ActiveProviderName);
 
         await _configurationStore.SaveAsync(
             new AgentConfiguration(

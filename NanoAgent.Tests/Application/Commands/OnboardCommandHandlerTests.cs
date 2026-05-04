@@ -17,7 +17,10 @@ public sealed class OnboardCommandHandlerTests
         Mock<IFirstRunOnboardingService> onboardingService = new(MockBehavior.Strict);
         onboardingService
             .Setup(service => service.ReconfigureAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new OnboardingResult(providerProfile, WasOnboardedDuringCurrentRun: true));
+            .ReturnsAsync(new OnboardingResult(
+                providerProfile,
+                WasOnboardedDuringCurrentRun: true,
+                ActiveProviderName: "OpenRouter"));
 
         Mock<IModelDiscoveryService> modelDiscoveryService = new(MockBehavior.Strict);
         modelDiscoveryService
@@ -36,7 +39,7 @@ public sealed class OnboardCommandHandlerTests
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(providerProfile, "openai/gpt-5.4", "on"),
+                new AgentConfiguration(providerProfile, "openai/gpt-5.4", "on", "OpenRouter"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 

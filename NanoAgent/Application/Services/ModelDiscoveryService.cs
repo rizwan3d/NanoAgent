@@ -87,7 +87,8 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
                 new AgentConfiguration(
                     providerProfile,
                     selection.SelectedModelId,
-                    configuration.ReasoningEffort),
+                    configuration.ReasoningEffort,
+                    configuration.ActiveProviderName),
                 cancellationToken);
         }
 

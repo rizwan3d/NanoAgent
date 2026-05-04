@@ -65,7 +65,8 @@ internal sealed class InteractiveModelSelectionService : IInteractiveModelSelect
                 new AgentConfiguration(
                     session.ProviderProfile,
                     result.ResolvedModelId,
-                    session.ReasoningEffort),
+                    session.ReasoningEffort,
+                    session.ActiveProviderName),
                 cancellationToken);
         }
 

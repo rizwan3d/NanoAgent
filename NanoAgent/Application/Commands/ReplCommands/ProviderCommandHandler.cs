@@ -43,7 +43,10 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
         if (context.Arguments.Count > 0 &&
             string.Equals(context.Arguments[0], "list", StringComparison.OrdinalIgnoreCase))
         {
-            return ReplCommandResult.Continue(FormatProviderList(providers, context.Session.ProviderProfile));
+            return ReplCommandResult.Continue(FormatProviderList(
+                providers,
+                context.Session.ProviderProfile,
+                context.Session.ActiveProviderName));
         }
 
         if (providers.Count == 0)
@@ -58,7 +61,11 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
         {
             try
             {
-                provider = await PromptForProviderAsync(providers, context.Session.ProviderProfile, cancellationToken);
+                provider = await PromptForProviderAsync(
+                    providers,
+                    context.Session.ProviderProfile,
+                    context.Session.ActiveProviderName,
+                    cancellationToken);
             }
             catch (PromptCancelledException)
             {
@@ -83,6 +90,7 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
     private async Task<SavedProviderConfiguration> PromptForProviderAsync(
         IReadOnlyList<SavedProviderConfiguration> providers,
         AgentProviderProfile activeProviderProfile,
+        string? activeProviderName,
         CancellationToken cancellationToken)
     {
         return await _selectionPrompt.PromptAsync(
@@ -91,7 +99,10 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
                 providers
                     .Select(provider =>
                     {
-                        bool isActive = Equals(provider.ProviderProfile, activeProviderProfile);
+                        bool isActive = IsActiveProvider(
+                            provider,
+                            activeProviderProfile,
+                            activeProviderName);
                         return new SelectionPromptOption<SavedProviderConfiguration>(
                             provider.Name,
                             provider,
@@ -101,7 +112,7 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
                     })
                     .ToArray(),
                 "Use /onboard to add another provider. Esc cancels.",
-                DefaultIndex: GetActiveProviderIndex(providers, activeProviderProfile),
+                DefaultIndex: GetActiveProviderIndex(providers, activeProviderProfile, activeProviderName),
                 AllowCancellation: true),
             cancellationToken);
     }
@@ -138,7 +149,8 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
             provider.ProviderProfile,
             modelResult.SelectedModelId,
             modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
-            CreateModelContextWindowMap(modelResult.AvailableModels));
+            CreateModelContextWindowMap(modelResult.AvailableModels),
+            provider.Name);
 
         await _configurationStore.SaveAsync(
             new AgentConfiguration(
@@ -157,7 +169,8 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
 
     private static string FormatProviderList(
         IReadOnlyList<SavedProviderConfiguration> providers,
-        AgentProviderProfile activeProviderProfile)
+        AgentProviderProfile activeProviderProfile,
+        string? activeProviderName)
     {
         if (providers.Count == 0)
         {
@@ -168,7 +181,9 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
             "\n",
             providers.Select(provider =>
             {
-                string activeMarker = Equals(provider.ProviderProfile, activeProviderProfile) ? "* " : "  ";
+                string activeMarker = IsActiveProvider(provider, activeProviderProfile, activeProviderName)
+                    ? "* "
+                    : "  ";
                 string model = string.IsNullOrWhiteSpace(provider.PreferredModelId)
                     ? "no default model"
                     : provider.PreferredModelId;
@@ -178,17 +193,28 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
 
     private static int GetActiveProviderIndex(
         IReadOnlyList<SavedProviderConfiguration> providers,
-        AgentProviderProfile activeProviderProfile)
+        AgentProviderProfile activeProviderProfile,
+        string? activeProviderName)
     {
         for (int index = 0; index < providers.Count; index++)
         {
-            if (Equals(providers[index].ProviderProfile, activeProviderProfile))
+            if (IsActiveProvider(providers[index], activeProviderProfile, activeProviderName))
             {
                 return index;
             }
         }
 
         return 0;
+    }
+
+    private static bool IsActiveProvider(
+        SavedProviderConfiguration provider,
+        AgentProviderProfile activeProviderProfile,
+        string? activeProviderName)
+    {
+        return !string.IsNullOrWhiteSpace(activeProviderName)
+            ? string.Equals(provider.Name, activeProviderName, StringComparison.OrdinalIgnoreCase)
+            : Equals(provider.ProviderProfile, activeProviderProfile);
     }
 
     private static IReadOnlyDictionary<string, int> CreateModelContextWindowMap(

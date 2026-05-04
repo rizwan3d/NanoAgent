@@ -49,7 +49,8 @@ internal static class SessionCommandSupport
             source.ReasoningEffort,
             includeState ? source.SessionState : SessionStateSnapshot.Empty,
             source.WorkspacePath,
-            source.ModelContextWindowTokens);
+            source.ModelContextWindowTokens,
+            source.ActiveProviderName);
     }
 
     public static async Task<ReplSessionContext> SaveAndResumeAsync(
@@ -196,7 +197,8 @@ internal static class SessionCommandSupport
             imported.ReasoningEffort,
             imported.SessionState,
             currentSession.WorkspacePath,
-            imported.ModelContextWindowTokens);
+            imported.ModelContextWindowTokens,
+            imported.ActiveProviderName);
     }
 
     public static bool TryNormalizeSessionId(string value, out string sessionId)

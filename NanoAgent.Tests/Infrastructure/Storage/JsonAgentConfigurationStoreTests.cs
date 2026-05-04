@@ -109,6 +109,52 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_Should_PreserveMultipleNamedProvidersAndSwitchActiveProvider()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        await sut.SaveAsync(
+            new AgentConfiguration(
+                new AgentProviderProfile(ProviderKind.OpenAi, null),
+                "gpt-5.4",
+                "on",
+                "OpenAI"),
+            CancellationToken.None);
+        await sut.SaveAsync(
+            new AgentConfiguration(
+                new AgentProviderProfile(ProviderKind.Anthropic, null),
+                "claude-sonnet-4-6",
+                "off",
+                "Anthropic"),
+            CancellationToken.None);
+
+        IReadOnlyList<SavedProviderConfiguration> providers =
+            await sut.ListProvidersAsync(CancellationToken.None);
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        providers.Select(static provider => provider.Name)
+            .Should()
+            .Equal("Anthropic", "OpenAI");
+        providers.Single(provider => provider.Name == "OpenAI").PreferredModelId.Should().Be("gpt-5.4");
+        providers.Single(provider => provider.Name == "Anthropic").PreferredModelId.Should().Be("claude-sonnet-4-6");
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.Anthropic, null),
+            "claude-sonnet-4-6",
+            "off",
+            "Anthropic"));
+
+        await sut.SetActiveProviderAsync("OpenAI", CancellationToken.None);
+
+        loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "gpt-5.4",
+            "off",
+            "OpenAI"));
+    }
+
+    [Fact]
     public async Task LoadAsync_Should_PreferEnvironmentConfiguration_When_ProviderIsSet()
     {
         using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "openrouter");

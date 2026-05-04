@@ -48,7 +48,8 @@ internal sealed class UseModelCommandHandler : IReplCommandHandler
                 new AgentConfiguration(
                     context.Session.ProviderProfile,
                     result.ResolvedModelId,
-                    context.Session.ReasoningEffort),
+                    context.Session.ReasoningEffort,
+                    context.Session.ActiveProviderName),
                 cancellationToken);
         }
 

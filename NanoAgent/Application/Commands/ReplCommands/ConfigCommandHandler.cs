@@ -34,9 +34,10 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
             ?? context.Session.ProviderProfile.BaseUrl
             ?? "(not configured)";
         AgentConfiguration? configuration = await _configurationStore.LoadAsync(cancellationToken);
-        string savedProvider = string.IsNullOrWhiteSpace(configuration?.ActiveProviderName)
-            ? "(legacy/default)"
-            : configuration.ActiveProviderName;
+        string savedProvider = context.Session.ActiveProviderName ??
+            (string.IsNullOrWhiteSpace(configuration?.ActiveProviderName)
+                ? "(legacy/default)"
+                : configuration.ActiveProviderName);
 
         string message =
             "Current configuration:\n" +
