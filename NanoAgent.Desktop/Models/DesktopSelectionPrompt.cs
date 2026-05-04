@@ -49,6 +49,7 @@ public sealed partial class DesktopSelectionPrompt : ObservableObject
             Options.Add(new DesktopSelectionPromptOption(
                 option.Label,
                 option.Description,
+                ShouldShowSectionHeader(options, index) ? option.Section : null,
                 optionIndex == SelectedIndex,
                 new RelayCommand(
                     () => Select(optionIndex),
@@ -132,6 +133,24 @@ public sealed partial class DesktopSelectionPrompt : ObservableObject
         return Math.Max(0, (int)Math.Ceiling(remaining.TotalSeconds));
     }
 
+    private static bool ShouldShowSectionHeader(
+        IReadOnlyList<DesktopSelectionPromptOptionDescriptor> options,
+        int index)
+    {
+        if (index < 0 ||
+            index >= options.Count ||
+            string.IsNullOrWhiteSpace(options[index].Section))
+        {
+            return false;
+        }
+
+        return index == 0 ||
+            !string.Equals(
+                options[index - 1].Section,
+                options[index].Section,
+                StringComparison.Ordinal);
+    }
+
     private void NotifyCommandStatesChanged()
     {
         CancelCommand.NotifyCanExecuteChanged();
@@ -169,14 +188,18 @@ public sealed partial class DesktopSelectionPrompt : ObservableObject
 public sealed record DesktopSelectionPromptOption(
     string Label,
     string? Description,
+    string? Section,
     bool IsDefault,
     IRelayCommand SelectCommand)
 {
     public bool HasDescription => !string.IsNullOrWhiteSpace(Description);
+
+    public bool HasSection => !string.IsNullOrWhiteSpace(Section);
 
     public bool IsNotDefault => !IsDefault;
 }
 
 public sealed record DesktopSelectionPromptOptionDescriptor(
     string Label,
-    string? Description);
+    string? Description,
+    string? Section = null);

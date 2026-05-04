@@ -10,12 +10,24 @@ namespace NanoAgent.Application.Services;
 
 internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 {
-    private static readonly SelectionPromptOption<OnboardingProviderChoice>[] ProviderOptions =
+    private static readonly SelectionPromptOption<OnboardingProviderSetupChoice>[] ProviderSetupOptions =
     [
         new(
-            "OpenAI",
-            OnboardingProviderChoice.OpenAi,
-            "Use the official OpenAI API with only an API key."),
+            "Subscription accounts",
+            OnboardingProviderSetupChoice.SubscriptionAccount,
+            "Sign in with an existing ChatGPT, Claude, or GitHub Copilot subscription."),
+        new(
+            "API key providers",
+            OnboardingProviderSetupChoice.ApiKey,
+            "Use a hosted provider with only an API key."),
+        new(
+            "OpenAI-compatible provider",
+            OnboardingProviderSetupChoice.OpenAiCompatible,
+            "Use a custom base URL and API key.")
+    ];
+
+    private static readonly SelectionPromptOption<OnboardingProviderChoice>[] SubscriptionProviderOptions =
+    [
         new(
             "OpenAI ChatGPT Plus/Pro",
             OnboardingProviderChoice.OpenAiChatGptAccount,
@@ -27,23 +39,27 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "GitHub Copilot",
             OnboardingProviderChoice.GitHubCopilot,
-            "Use browser device sign-in for GitHub Copilot, including GitHub Enterprise."),
+            "Use browser device sign-in for GitHub Copilot, including GitHub Enterprise.")
+    ];
+
+    private static readonly SelectionPromptOption<OnboardingProviderChoice>[] ApiKeyProviderOptions =
+    [
         new(
-            "OpenRouter",
-            OnboardingProviderChoice.OpenRouter,
-            "Use OpenRouter with only an OpenRouter API key."),
-        new(
-            "Google AI Studio",
-            OnboardingProviderChoice.GoogleAiStudio,
-            "Use Gemini through Google AI Studio with only a Gemini API key."),
+            "OpenAI",
+            OnboardingProviderChoice.OpenAi,
+            "Use the official OpenAI API with only an API key."),
         new(
             "Anthropic",
             OnboardingProviderChoice.Anthropic,
             "Use Claude through Anthropic with only an Anthropic API key."),
         new(
-            "OpenAI-compatible provider",
-            OnboardingProviderChoice.OpenAiCompatible,
-            "Use a custom base URL and API key.")
+            "Google AI Studio",
+            OnboardingProviderChoice.GoogleAiStudio,
+            "Use Gemini through Google AI Studio with only a Gemini API key."),
+        new(
+            "OpenRouter",
+            OnboardingProviderChoice.OpenRouter,
+            "Use OpenRouter with only an OpenRouter API key.")
     ];
 
     private readonly ISelectionPrompt _selectionPrompt;
@@ -152,12 +168,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             introMessage,
             cancellationToken);
 
-        OnboardingProviderChoice providerChoice = await _selectionPrompt.PromptAsync(
-            new SelectionPromptRequest<OnboardingProviderChoice>(
-                "Choose the provider you want to use",
-                ProviderOptions,
-                "Pick how NanoAgent should connect to your model provider on this machine."),
-            cancellationToken);
+        OnboardingProviderChoice providerChoice = await PromptForProviderChoiceAsync(cancellationToken);
 
         AgentProviderProfile profile = providerChoice switch
         {
@@ -210,6 +221,54 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         ApplicationLogMessages.OnboardingCompleted(_logger, profile.ProviderKind.ToDisplayName());
 
         return new OnboardingResult(profile, WasOnboardedDuringCurrentRun: true);
+    }
+
+    private async Task<OnboardingProviderChoice> PromptForProviderChoiceAsync(
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            OnboardingProviderSetupChoice setupChoice = await _selectionPrompt.PromptAsync(
+                new SelectionPromptRequest<OnboardingProviderSetupChoice>(
+                    "Choose provider setup type",
+                    ProviderSetupOptions,
+                    "Pick the kind of provider setup you want to configure on this machine."),
+                cancellationToken);
+
+            if (setupChoice == OnboardingProviderSetupChoice.OpenAiCompatible)
+            {
+                return OnboardingProviderChoice.OpenAiCompatible;
+            }
+
+            try
+            {
+                return await _selectionPrompt.PromptAsync(
+                    CreateProviderSubmenuRequest(setupChoice),
+                    cancellationToken);
+            }
+            catch (PromptCancelledException)
+            {
+            }
+        }
+    }
+
+    private static SelectionPromptRequest<OnboardingProviderChoice> CreateProviderSubmenuRequest(
+        OnboardingProviderSetupChoice setupChoice)
+    {
+        return setupChoice switch
+        {
+            OnboardingProviderSetupChoice.SubscriptionAccount =>
+                new SelectionPromptRequest<OnboardingProviderChoice>(
+                    "Choose subscription provider",
+                    SubscriptionProviderOptions,
+                    "Esc returns to provider setup type."),
+            OnboardingProviderSetupChoice.ApiKey =>
+                new SelectionPromptRequest<OnboardingProviderChoice>(
+                    "Choose API key provider",
+                    ApiKeyProviderOptions,
+                    "Esc returns to provider setup type."),
+            _ => throw new InvalidOperationException($"Unsupported provider setup choice '{setupChoice}'.")
+        };
     }
 
     private async Task<string> AuthenticateOpenAiChatGptAccountAsync(CancellationToken cancellationToken)

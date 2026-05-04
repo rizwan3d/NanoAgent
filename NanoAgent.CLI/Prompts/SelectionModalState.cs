@@ -57,6 +57,11 @@ public sealed class SelectionModalState<T> : UiModalState
             for (int index = 0; index < _options.Count; index++)
             {
                 SelectionPromptOption<T> option = _options[index];
+                if (ShouldRenderSectionHeader(index))
+                {
+                    bodyLineCount += (index > 0 ? 1 : 0) + CountWrappedLines(option.Section, contentWidth);
+                }
+
                 bodyLineCount += CountWrappedLines($"> {index + 1}. {option.Label}", contentWidth);
 
                 if (!string.IsNullOrWhiteSpace(option.Description))
@@ -246,6 +251,19 @@ public sealed class SelectionModalState<T> : UiModalState
         for (int index = 0; index < _options.Count; index++)
         {
             SelectionPromptOption<T> option = _options[index];
+            if (ShouldRenderSectionHeader(index))
+            {
+                if (lines.Count > 0)
+                {
+                    lines.Add(string.Empty);
+                }
+
+                foreach (string sectionLine in WrapPlainText(option.Section, Math.Max(1, contentWidth)))
+                {
+                    lines.Add($"[bold grey]{Markup.Escape(sectionLine)}[/]");
+                }
+            }
+
             bool selected = index == SelectedIndex;
             string firstPrefix = selected ? "> " : "  ";
             string continuationPrefix = selected ? "  " : "  ";
@@ -328,6 +346,16 @@ public sealed class SelectionModalState<T> : UiModalState
         for (int index = 0; index < SelectedIndex && index < _options.Count; index++)
         {
             SelectionPromptOption<T> option = _options[index];
+            if (ShouldRenderSectionHeader(index))
+            {
+                if (lineIndex > 0)
+                {
+                    lineIndex++;
+                }
+
+                lineIndex += CountWrappedLines(option.Section, contentWidth);
+            }
+
             lineIndex += CountWrappedLines($"> {index + 1}. {option.Label}", contentWidth);
 
             if (!string.IsNullOrWhiteSpace(option.Description))
@@ -337,6 +365,22 @@ public sealed class SelectionModalState<T> : UiModalState
         }
 
         return lineIndex;
+    }
+
+    private bool ShouldRenderSectionHeader(int optionIndex)
+    {
+        if (optionIndex < 0 ||
+            optionIndex >= _options.Count ||
+            string.IsNullOrWhiteSpace(_options[optionIndex].Section))
+        {
+            return false;
+        }
+
+        return optionIndex == 0 ||
+            !string.Equals(
+                _options[optionIndex - 1].Section,
+                _options[optionIndex].Section,
+                StringComparison.Ordinal);
     }
 
     private static int GetContentWidth()
