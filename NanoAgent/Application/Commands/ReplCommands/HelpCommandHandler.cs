@@ -37,6 +37,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model directly.\n" +
+            "!<shell-command> - Run a local shell command directly from the input box.\n" +
             "\nKeyboard shortcuts:\n" +
             "F2 - Choose the active model with the arrow-key picker.\n" +
             "F3 - Pin or hide the latest plan in the terminal view.\n" +
