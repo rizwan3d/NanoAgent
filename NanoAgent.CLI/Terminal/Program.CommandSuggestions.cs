@@ -18,14 +18,21 @@ public static partial class Program
         }
 
         string input = state.Input.ToString();
-        if (!IsSlashCommandSuggestionInput(input))
+        bool isCommandSuggestionInput = IsSlashCommandSuggestionInput(input);
+        if (!isCommandSuggestionInput &&
+            FilePathSuggestionProvider.GetSuggestions(
+                state.RootDirectory,
+                input,
+                MaxSlashCommandSuggestionCount).Count == 0)
         {
             return false;
         }
 
-        suggestions = SlashCommandSuggestions
-            .Where(suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
+        suggestions = isCommandSuggestionInput
+            ? SlashCommandSuggestions
+                .Where(suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase))
+                .ToArray()
+            : GetFilePathSuggestions(state, input);
 
         if (suggestions.Count == 0)
         {
@@ -208,13 +215,14 @@ public static partial class Program
         SlashCommandSuggestion suggestion = suggestions[state.SlashCommandSuggestionIndex];
         state.Input.Clear();
         state.CollapsedInputPastes.Clear();
-        state.Input.Append(suggestion.RequiresArgument
-            ? suggestion.Command + " "
-            : suggestion.Command);
+        state.Input.Append(suggestion.CompletedInput ??
+            (suggestion.RequiresArgument
+                ? suggestion.Command + " "
+                : suggestion.Command));
         state.InputCursorIndex = state.Input.Length;
         state.SlashCommandSuggestionsDismissed = true;
 
-        if (submitCommand && !suggestion.RequiresArgument)
+        if (submitCommand && (suggestion.SubmitOnEnter || !suggestion.RequiresArgument))
         {
             SubmitInput(state);
         }
@@ -259,7 +267,9 @@ public static partial class Program
             visibleSuggestions[0]);
         List<string> lines =
         [
-            $"[grey]Commands matching [/][green]{Markup.Escape(state.Input.ToString())}[/][grey]:[/]"
+            suggestions[0].Kind == SlashCommandSuggestionKind.FilePath
+                ? $"[grey]Files matching [/][green]{Markup.Escape(state.Input.ToString())}[/][grey]:[/]"
+                : $"[grey]Commands matching [/][green]{Markup.Escape(state.Input.ToString())}[/][grey]:[/]"
         ];
 
         for (int visibleIndex = 0; visibleIndex < visibleSuggestions.Count; visibleIndex++)
@@ -317,6 +327,26 @@ public static partial class Program
         }
 
         return 0;
+    }
+
+    private static SlashCommandSuggestion[] GetFilePathSuggestions(
+        AppState state,
+        string input)
+    {
+        return FilePathSuggestionProvider
+            .GetSuggestions(
+                state.RootDirectory,
+                input,
+                MaxSlashCommandSuggestionCount)
+            .Select(static suggestion => new SlashCommandSuggestion(
+                suggestion.CompletedInput,
+                suggestion.DisplayPath,
+                suggestion.Description,
+                suggestion.IsDirectory,
+                SlashCommandSuggestionKind.FilePath,
+                suggestion.CompletedInput,
+                SubmitOnEnter: !suggestion.IsDirectory))
+            .ToArray();
     }
 
     private static string TruncateFromRight(string value, int maxLength)

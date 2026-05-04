@@ -27,5 +27,14 @@ public static partial class Program
         string Command,
         string Usage,
         string Description,
-        bool RequiresArgument);
+        bool RequiresArgument,
+        SlashCommandSuggestionKind Kind = SlashCommandSuggestionKind.Command,
+        string? CompletedInput = null,
+        bool SubmitOnEnter = false);
+
+    private enum SlashCommandSuggestionKind
+    {
+        Command,
+        FilePath
+    }
 }
