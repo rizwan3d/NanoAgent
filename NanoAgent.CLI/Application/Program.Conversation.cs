@@ -380,7 +380,17 @@ public static partial class Program
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     ApplySessionInfo(appState, result.SessionInfo);
 
-                    AddCommandFeedbackMessage(appState, result.CommandResult);
+                    if (result.CommandResult.ReplaySession)
+                    {
+                        RenderSessionView(
+                            appState,
+                            result.SessionInfo,
+                            result.CommandResult.Message);
+                    }
+                    else
+                    {
+                        AddCommandFeedbackMessage(appState, result.CommandResult);
+                    }
 
                     if (result.CommandResult.ExitRequested)
                     {
