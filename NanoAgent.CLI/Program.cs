@@ -59,7 +59,7 @@ public static partial class Program
         new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
         new("/models", "/models", "Choose the active model with the picker.", false),
         new("/new", "/new", "Start a new session.", false),
-        new("/onboard", "/onboard", "Re-run provider onboarding.", false),
+        new("/onboard", "/onboard", "Open provider onboarding menus.", false),
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
         new("/profile", "/profile <name>", "Switch the active agent profile.", true),
         new("/read", "/read <file>", "Read a workspace file after confirmation.", true),

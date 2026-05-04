@@ -77,32 +77,33 @@ nanoai
 
 NanoAgent will guide you through provider setup:
 
-1. Choose a provider.
-2. Enter an API key, sign in with ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot, or enter a custom compatible base URL.
-3. Let NanoAgent discover available models.
-4. Open a desktop workspace or use the current terminal directory.
-5. Start a new section or resume an existing one.
+1. Choose a setup type: subscription account, API key provider, or OpenAI-compatible provider.
+2. Choose a provider from the matching submenu when needed.
+3. Enter an API key, sign in with ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot, or enter a custom compatible base URL.
+4. Let NanoAgent discover available models.
+5. Open a desktop workspace or use the current terminal directory.
+6. Start a new section or resume an existing one.
 
 In terminal runs, `--provider-auth-key <key>` can supply the provider API key when onboarding asks for it.
 
 If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved. If provider validation fails after setup, NanoAgent offers to run onboarding again.
 
-Use `/onboard` in an active desktop or terminal session to re-run provider setup later. You can also use `/setting provider` or the `/setting` picker. The command supports every provider listed below and switches the active session to the validated provider and selected default model.
+Use `/onboard` in an active desktop or terminal session to re-run provider setup later. You can also use `/setting provider` or the `/setting` picker. The command opens setup-type and provider submenus, supports every provider listed below, and switches the active session to the validated provider and selected default model.
 
 When a newer NanoAgent release is available, startup can ask whether to update now or skip. One-shot prompt runs do not show the startup update prompt.
 
 ### Provider Options
 
-| Provider | Credential method | Notes |
-| --- | --- | --- |
-| OpenAI | API key | Uses the OpenAI API. |
-| OpenAI ChatGPT Plus/Pro | Browser sign-in | Uses OAuth with local callback port `1455`. |
-| Anthropic Claude Pro/Max | Browser sign-in | Uses OAuth with local callback port `53692`. |
-| GitHub Copilot | Browser device sign-in | Uses GitHub device-code login. Leave the Enterprise URL/domain prompt blank for `github.com`. |
-| OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
-| Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
-| Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
-| OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
+| Group | Provider | Credential method | Notes |
+| --- | --- | --- | --- |
+| Subscription based | OpenAI ChatGPT Plus/Pro | Browser sign-in | Uses OAuth with local callback port `1455`. |
+| Subscription based | Anthropic Claude Pro/Max | Browser sign-in | Uses OAuth with local callback port `53692`. |
+| Subscription based | GitHub Copilot | Browser device sign-in | Uses GitHub device-code login. Leave the Enterprise URL/domain prompt blank for `github.com`. |
+| API key | OpenAI | API key | Uses the OpenAI API. |
+| API key | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
+| API key | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
+| API key | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
+| OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 
 Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.
 
@@ -273,7 +274,7 @@ nanoai --section <section-guid>
 | `/config` | Show provider, session, config path, profile, thinking mode, and model. |
 | `/models` | Choose the active model with the arrow-key picker. |
 | `/use <model>` | Switch directly to a model id. |
-| `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
+| `/onboard` | Re-run provider onboarding through setup-type and provider submenus, then switch the active session. |
 | `/profile <name>` | Switch the active profile. |
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
 | `/permissions` | Show permission summary and override guidance. |

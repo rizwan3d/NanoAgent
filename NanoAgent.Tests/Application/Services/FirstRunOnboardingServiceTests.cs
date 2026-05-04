@@ -65,9 +65,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile openAiProfile = new(ProviderKind.OpenAi, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.OpenAi);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.OpenAi);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
 
@@ -132,14 +130,107 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
+    public async Task EnsureOnboardedAsync_Should_UseProviderSetupSubmenus()
+    {
+        AgentProviderProfile openAiProfile = new(ProviderKind.OpenAi, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        selectionPrompt
+            .Setup(prompt => prompt.PromptAsync(
+                It.IsAny<SelectionPromptRequest<OnboardingProviderSetupChoice>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<SelectionPromptRequest<OnboardingProviderSetupChoice>, CancellationToken>((request, _) =>
+            {
+                request.Title.Should().Be("Choose provider setup type");
+                request.Options.Select(option => (option.Label, option.Value))
+                    .Should()
+                    .Equal(
+                        ("Subscription accounts", OnboardingProviderSetupChoice.SubscriptionAccount),
+                        ("API key providers", OnboardingProviderSetupChoice.ApiKey),
+                        ("OpenAI-compatible provider", OnboardingProviderSetupChoice.OpenAiCompatible));
+
+                return Task.FromResult(OnboardingProviderSetupChoice.ApiKey);
+            });
+
+        selectionPrompt
+            .Setup(prompt => prompt.PromptAsync(
+                It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<SelectionPromptRequest<OnboardingProviderChoice>, CancellationToken>((request, _) =>
+            {
+                request.Title.Should().Be("Choose API key provider");
+                request.Description.Should().Be("Esc returns to provider setup type.");
+                request.Options.Select(option => option.Label)
+                    .Should()
+                    .Equal("OpenAI", "Anthropic", "Google AI Studio", "OpenRouter");
+
+                return Task.FromResult(OnboardingProviderChoice.OpenAi);
+            });
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        secretPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  sk-openai  ");
+
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: OpenAI.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        inputValidator
+            .Setup(validator => validator.ValidateApiKey("  sk-openai  "))
+            .Returns(InputValidationResult.Success("sk-openai"));
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(openAiProfile, null),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("sk-openai", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateOpenAi()).Returns(openAiProfile);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(openAiProfile, true));
+    }
+
+    [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveOpenAiChatGptAccountConfiguration_When_AccountProviderIsSelected()
     {
         AgentProviderProfile profile = new(ProviderKind.OpenAiChatGptAccount, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.OpenAiChatGptAccount);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.OpenAiChatGptAccount);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
         Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
@@ -210,9 +301,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile profile = new(ProviderKind.AnthropicClaudeAccount, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.AnthropicClaudeAccount);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.AnthropicClaudeAccount);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
         Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
@@ -283,9 +372,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile profile = new(ProviderKind.GitHubCopilot, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.GitHubCopilot);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.GitHubCopilot);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
         Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
@@ -357,9 +444,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile openRouterProfile = new(ProviderKind.OpenRouter, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.OpenRouter);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.OpenRouter);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
 
@@ -429,9 +514,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile googleAiStudioProfile = new(ProviderKind.GoogleAiStudio, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.GoogleAiStudio);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.GoogleAiStudio);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
 
@@ -501,9 +584,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile anthropicProfile = new(ProviderKind.Anthropic, null);
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.Anthropic);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.Anthropic);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
 
@@ -573,9 +654,7 @@ public sealed class FirstRunOnboardingServiceTests
         AgentProviderProfile compatibleProfile = new(ProviderKind.OpenAiCompatible, "https://compatible.example.com/v1");
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        selectionPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(OnboardingProviderChoice.OpenAiCompatible);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.OpenAiCompatible);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
         textPrompt
@@ -699,6 +778,37 @@ public sealed class FirstRunOnboardingServiceTests
         selectionPrompt.VerifyNoOtherCalls();
         textPrompt.VerifyNoOtherCalls();
         secretPrompt.VerifyNoOtherCalls();
+    }
+
+    private static void SetupProviderSelection(
+        Mock<ISelectionPrompt> selectionPrompt,
+        OnboardingProviderChoice providerChoice)
+    {
+        OnboardingProviderSetupChoice setupChoice = providerChoice switch
+        {
+            OnboardingProviderChoice.OpenAiChatGptAccount or
+                OnboardingProviderChoice.AnthropicClaudeAccount or
+                OnboardingProviderChoice.GitHubCopilot => OnboardingProviderSetupChoice.SubscriptionAccount,
+            OnboardingProviderChoice.OpenAiCompatible => OnboardingProviderSetupChoice.OpenAiCompatible,
+            _ => OnboardingProviderSetupChoice.ApiKey
+        };
+
+        selectionPrompt
+            .Setup(prompt => prompt.PromptAsync(
+                It.IsAny<SelectionPromptRequest<OnboardingProviderSetupChoice>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(setupChoice);
+
+        if (setupChoice == OnboardingProviderSetupChoice.OpenAiCompatible)
+        {
+            return;
+        }
+
+        selectionPrompt
+            .Setup(prompt => prompt.PromptAsync(
+                It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(providerChoice);
     }
 
     private static FirstRunOnboardingService CreateSut(
