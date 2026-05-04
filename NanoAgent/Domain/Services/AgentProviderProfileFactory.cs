@@ -20,6 +20,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateGitHubCopilot()
+    {
+        return new AgentProviderProfile(ProviderKind.GitHubCopilot, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateOpenRouter()
     {
         return new AgentProviderProfile(ProviderKind.OpenRouter, BaseUrl: null);

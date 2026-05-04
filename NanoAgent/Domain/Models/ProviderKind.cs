@@ -8,5 +8,6 @@ public enum ProviderKind
     Anthropic = 4,
     OpenAiChatGptAccount = 5,
     OpenRouter = 6,
-    AnthropicClaudeAccount = 7
+    AnthropicClaudeAccount = 7,
+    GitHubCopilot = 8
 }

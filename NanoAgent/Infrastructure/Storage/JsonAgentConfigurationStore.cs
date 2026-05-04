@@ -186,10 +186,11 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             "anthropic" or "claude" => ProviderKind.Anthropic,
             "anthropicclaudeaccount" or "anthropicaccount" or "claudeaccount" or
                 "claudepro" or "claudemax" or "claudepromax" => ProviderKind.AnthropicClaudeAccount,
+            "githubcopilot" or "copilot" => ProviderKind.GitHubCopilot,
             "openrouter" => ProviderKind.OpenRouter,
             "openaichatgptaccount" or "chatgpt" => ProviderKind.OpenAiChatGptAccount,
             _ => throw new InvalidOperationException(
-                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, openrouter.")
+                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter.")
         };
     }
 
@@ -217,6 +218,9 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                     BaseUrl: null),
                 ProviderKind.AnthropicClaudeAccount => new AgentProviderProfile(
                     ProviderKind.AnthropicClaudeAccount,
+                    BaseUrl: null),
+                ProviderKind.GitHubCopilot => new AgentProviderProfile(
+                    ProviderKind.GitHubCopilot,
                     BaseUrl: null),
                 ProviderKind.OpenRouter => new AgentProviderProfile(ProviderKind.OpenRouter, BaseUrl: null),
                 ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
