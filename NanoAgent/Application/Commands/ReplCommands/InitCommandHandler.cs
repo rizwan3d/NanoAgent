@@ -615,7 +615,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         - `SystemPrompt.md`: optional custom base system prompt. NanoAgent prepends its identity header automatically when this file has content.
         - `SystemPrompt.md.template`: inactive starter for the advanced SystemPrompt override, when selected during `/init custom`.
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
-        - `agents/*.md`: custom agents. Files ending in `.template` are inactive until renamed to `.md`.
+        - `agents/*.md`: custom agents and built-in profile prompt overrides. Files ending in `.template` are inactive until renamed to `.md`.
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
         - `cache/codebase-index.json`: local codebase index cache created by the `codebase_index` tool.
         - `memory/*.md`: repo-scoped team memory that can be inspected, diffed, and version-controlled.
@@ -624,7 +624,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
         Memory writes require approval by default. Keep team memory focused on durable architecture, convention, decision, known-issue, and test-strategy notes.
 
-        Root-level `AGENTS.md` files are loaded as persistent workspace instructions. Use `.nanoagent/SystemPrompt.md` only when you want to replace NanoAgent's base system prompt for this workspace.
+        Root-level `AGENTS.md` files are loaded as persistent workspace instructions. Use `.nanoagent/SystemPrompt.md` only when you want to replace NanoAgent's base system prompt for this workspace. Use `.nanoagent/agents/build.md`, `plan.md`, `review.md`, `general.md`, or `explore.md` when you only want to replace a built-in profile prompt; NanoAgent keeps the built-in profile's tools and permissions.
         """;
 
     private const string SystemPromptTemplate =

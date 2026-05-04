@@ -386,6 +386,72 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_UseWorkspaceProfilePromptWhenAvailable()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_workspace_profile_prompt"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_workspace_profile_prompt"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            workspaceAgentProfilePromptProvider: new FixedWorkspaceAgentProfilePromptProvider(
+                "Workspace build profile prompt."));
+
+        await ProcessAsync(
+            sut,
+            "Do the thing.",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Base prompt");
+        requests[0].SystemPrompt.Should().Contain("Workspace build profile prompt.");
+        requests[0].SystemPrompt.Should().Contain("planning_mode");
+        requests[0].SystemPrompt.Should().NotContain("Active agent profile: build.");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_IncludeRelevantLessonMemoryInSystemPrompt()
     {
         ReplSessionContext session = CreateSession();
@@ -2260,6 +2326,7 @@ public sealed class AgentConversationPipelineTests
         IToolRegistry toolRegistry,
         IConversationConfigurationAccessor configurationAccessor,
         IWorkspaceSystemPromptProvider? workspaceSystemPromptProvider = null,
+        IWorkspaceAgentProfilePromptProvider? workspaceAgentProfilePromptProvider = null,
         IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null,
         ILessonMemoryService? lessonMemoryService = null,
         ILifecycleHookService? lifecycleHookService = null,
@@ -2279,7 +2346,8 @@ public sealed class AgentConversationPipelineTests
             lessonMemoryService ?? new EmptyLessonMemoryService(),
             NullLogger<AgentConversationPipeline>.Instance,
             lifecycleHookService,
-            skillService);
+            skillService,
+            workspaceAgentProfilePromptProvider: workspaceAgentProfilePromptProvider ?? new EmptyWorkspaceAgentProfilePromptProvider());
     }
 
     private static Task<ConversationTurnResult> ProcessAsync(
@@ -2384,11 +2452,40 @@ public sealed class AgentConversationPipelineTests
         }
     }
 
+    private sealed class EmptyWorkspaceAgentProfilePromptProvider : IWorkspaceAgentProfilePromptProvider
+    {
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
+        }
+    }
+
     private sealed class FixedWorkspaceSystemPromptProvider : IWorkspaceSystemPromptProvider
     {
         private readonly string? _systemPrompt;
 
         public FixedWorkspaceSystemPromptProvider(string? systemPrompt)
+        {
+            _systemPrompt = systemPrompt;
+        }
+
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(_systemPrompt);
+        }
+    }
+
+    private sealed class FixedWorkspaceAgentProfilePromptProvider : IWorkspaceAgentProfilePromptProvider
+    {
+        private readonly string? _systemPrompt;
+
+        public FixedWorkspaceAgentProfilePromptProvider(string? systemPrompt)
         {
             _systemPrompt = systemPrompt;
         }

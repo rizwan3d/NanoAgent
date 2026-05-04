@@ -96,6 +96,52 @@ public sealed class BuiltInAgentProfileResolverTests
     }
 
     [Fact]
+    public void Resolve_Should_UseWorkspacePromptOverrideForBuiltInProfile()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        string agentsDirectory = Path.Combine(workspace.Path, ".nanoagent", "agents");
+        Directory.CreateDirectory(agentsDirectory);
+        File.WriteAllText(
+            Path.Combine(agentsDirectory, "plan.md"),
+            "Use this workspace-specific planning prompt.");
+
+        BuiltInAgentProfileResolver sut = new(new FixedWorkspaceRootProvider(workspace.Path));
+
+        IAgentProfile profile = sut.Resolve("plan");
+
+        profile.Name.Should().Be(BuiltInAgentProfiles.PlanName);
+        profile.Mode.Should().Be(AgentProfileMode.Primary);
+        profile.SystemPrompt.Should().Be("Use this workspace-specific planning prompt.");
+        profile.EnabledTools.Should().NotContain(AgentToolNames.ApplyPatch);
+        profile.EnabledTools.Should().NotContain(AgentToolNames.FileWrite);
+        profile.PermissionIntent.EditMode.Should().Be(AgentProfileEditMode.ReadOnly);
+        sut.List()
+            .Select(static item => item.Name)
+            .Should()
+            .Equal("build", "plan", "review", "general", "explore");
+    }
+
+    [Fact]
+    public void Resolve_Should_UseWorkspacePromptOverrideForDefaultProfile_When_NameIsMissing()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        string agentsDirectory = Path.Combine(workspace.Path, ".nanoagent", "agents");
+        Directory.CreateDirectory(agentsDirectory);
+        File.WriteAllText(
+            Path.Combine(agentsDirectory, "build.md"),
+            "Use this workspace-specific build prompt.");
+
+        BuiltInAgentProfileResolver sut = new(new FixedWorkspaceRootProvider(workspace.Path));
+
+        IAgentProfile profile = sut.Resolve(null);
+
+        profile.Name.Should().Be(BuiltInAgentProfiles.BuildName);
+        profile.SystemPrompt.Should().Be("Use this workspace-specific build prompt.");
+        profile.EnabledTools.Should().Contain(AgentToolNames.ApplyPatch);
+        profile.PermissionIntent.EditMode.Should().Be(AgentProfileEditMode.AllowEdits);
+    }
+
+    [Fact]
     public void Resolve_Should_DeriveWorkspaceAgentNameFromFileName_When_MetadataIsMissing()
     {
         using TempWorkspace workspace = TempWorkspace.Create();

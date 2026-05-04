@@ -417,6 +417,20 @@ Invoke a subagent for one turn:
 
 Primary agents can also use `agent_delegate` for one focused handoff or `agent_orchestrate` for several coordinated subtasks. Orchestration is useful when multiple read-only investigations can run independently or when implementation tasks can be split into clear file scopes.
 
+### Built-in Profile Prompt Overrides
+
+Create one of these files to replace only that built-in profile's prompt for a workspace:
+
+```text
+.nanoagent/agents/build.md
+.nanoagent/agents/plan.md
+.nanoagent/agents/review.md
+.nanoagent/agents/general.md
+.nanoagent/agents/explore.md
+```
+
+NanoAgent reads the markdown body as the active profile prompt, redacts secret-looking values, and reloads it for conversation turns like `.nanoagent/SystemPrompt.md`. For built-in profile names, NanoAgent keeps the built-in mode, enabled tools, and permission behavior, so a custom `plan.md` prompt still stays read-only.
+
 ## Permissions and Sandboxing
 
 NanoAgent evaluates every sensitive action through permission policy.
@@ -555,6 +569,8 @@ Use `AGENTS.md` for ordinary repository instructions. Use `SystemPrompt.md` only
 
 `/init custom` can create `.nanoagent/SystemPrompt.md.template` as an inactive starter. Edit and rename it to `SystemPrompt.md` only when you intentionally want the override.
 
+Use `.nanoagent/agents/<profile>.md` when you want to replace the active profile prompt while keeping the same base system prompt. Built-in profile names are `build`, `plan`, `review`, `general`, and `explore`.
+
 ### `.nanoagent/.nanoignore`
 
 Use `.nanoignore` to exclude paths from NanoAgent file tools. It supports gitignore-style patterns including comments, negation, directory rules, `*`, `?`, `**`, and character classes.
@@ -647,6 +663,8 @@ Review the requested code or change set with a findings-first posture.
 ```
 
 If front matter is omitted, NanoAgent derives the name from the file name and uses conservative defaults.
+
+If a workspace agent file uses a built-in profile name such as `build` or `review`, NanoAgent treats it as a prompt override for that built-in profile rather than adding a duplicate profile. The markdown body is customizable, but the built-in profile's mode, tool set, and permission behavior are preserved.
 
 ## MCP Servers
 
