@@ -82,6 +82,7 @@ public sealed class ReplSectionServiceTests
             ["gpt-5-mini"],
             BuiltInAgentProfiles.Build,
             null,
+            null,
             CancellationToken.None);
 
         sut.EnsureTitleGenerationStarted(session, "build a todo app");

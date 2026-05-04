@@ -50,6 +50,37 @@ public sealed class ApiKeySecretStoreTests
         platformCredentialStore.LastSavedSecret.Should().Be("sk-secret");
     }
 
+    [Fact]
+    public async Task SaveAsync_Should_UseProviderScopedReference_When_ProviderNameIsSupplied()
+    {
+        FakePlatformCredentialStore platformCredentialStore = new(null);
+        ApiKeySecretStore sut = new(platformCredentialStore);
+
+        await sut.SaveAsync("OpenAI ChatGPT Plus/Pro", " credential-json ", CancellationToken.None);
+
+        platformCredentialStore.LastSavedReference.Should().Be(new SecretReference(
+            "NanoAgent",
+            "provider-openai-chatgpt-plus-pro",
+            "NanoAgent API key (OpenAI ChatGPT Plus/Pro)"));
+        platformCredentialStore.LastSavedSecret.Should().Be("credential-json");
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_UseProviderScopedReference_When_ProviderNameIsSupplied()
+    {
+        using EnvironmentVariableScope apiKey = new("NANOAGENT_API_KEY", null);
+        FakePlatformCredentialStore platformCredentialStore = new("provider-secret");
+        ApiKeySecretStore sut = new(platformCredentialStore);
+
+        string? result = await sut.LoadAsync("OpenAI ChatGPT Plus/Pro", CancellationToken.None);
+
+        result.Should().Be("provider-secret");
+        platformCredentialStore.LastLoadedReference.Should().Be(new SecretReference(
+            "NanoAgent",
+            "provider-openai-chatgpt-plus-pro",
+            "NanoAgent API key (OpenAI ChatGPT Plus/Pro)"));
+    }
+
     private sealed class FakePlatformCredentialStore : IPlatformCredentialStore
     {
         private readonly string? _valueToLoad;
