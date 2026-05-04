@@ -196,6 +196,7 @@ nanoai --provider-auth-key <key>
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
+Start input with `!` to run a local shell command directly, for example `!dotnet test`.
 
 `/budget local` asks for monthly budget USD, alert threshold percent, and input, cached-input, and output prices per 1M tokens, then tracks usage in `.nanoagent/budget-controls.local.json`. `/budget cloud` asks for an API URL and auth key, fetches budget status with GET, and posts the token delta from each LLM call.
 
