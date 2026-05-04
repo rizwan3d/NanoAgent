@@ -8,6 +8,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOpenAiChatGptAccount();
 
+    AgentProviderProfile CreateAnthropicClaudeAccount();
+
     AgentProviderProfile CreateOpenRouter();
 
     AgentProviderProfile CreateCompatible(string baseUrl);

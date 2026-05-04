@@ -21,6 +21,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenAiChatGptAccount,
             "Use browser sign-in for a ChatGPT Plus or Pro account."),
         new(
+            "Anthropic Claude Pro/Max",
+            OnboardingProviderChoice.AnthropicClaudeAccount,
+            "Use browser sign-in for a Claude Pro or Max account."),
+        new(
             "OpenRouter",
             OnboardingProviderChoice.OpenRouter,
             "Use OpenRouter with only an OpenRouter API key."),
@@ -48,6 +52,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IApiKeySecretStore _secretStore;
     private readonly IAgentProviderProfileFactory _profileFactory;
     private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
+    private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -61,7 +66,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         IApiKeySecretStore secretStore,
         IAgentProviderProfileFactory profileFactory,
         ILogger<FirstRunOnboardingService> logger,
-        IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null)
+        IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
+        IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -73,6 +79,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _secretStore = secretStore;
         _profileFactory = profileFactory;
         _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
+        _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
         _logger = logger;
     }
 
@@ -149,6 +156,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         {
             OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
             OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
+            OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
@@ -164,16 +172,21 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
         };
 
-        string providerSecret = providerChoice == OnboardingProviderChoice.OpenAiChatGptAccount
-            ? await AuthenticateOpenAiChatGptAccountAsync(cancellationToken)
-            : await PromptUntilValidAsync(
-                cancellationToken => _secretPrompt.PromptAsync(
-                    new SecretPromptRequest(
-                        "API key",
-                        "Paste the API key for the selected provider."),
-                    cancellationToken),
-                _inputValidator.ValidateApiKey,
-                cancellationToken);
+        string providerSecret = providerChoice switch
+        {
+            OnboardingProviderChoice.OpenAiChatGptAccount =>
+                await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
+            OnboardingProviderChoice.AnthropicClaudeAccount =>
+                await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
+            _ => await PromptUntilValidAsync(
+                    cancellationToken => _secretPrompt.PromptAsync(
+                        new SecretPromptRequest(
+                            "API key",
+                            "Paste the API key for the selected provider."),
+                        cancellationToken),
+                    _inputValidator.ValidateApiKey,
+                    cancellationToken)
+        };
 
         await _configurationStore.SaveAsync(
             new AgentConfiguration(profile, PreferredModelId: null),
@@ -198,6 +211,17 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         }
 
         return await _openAiChatGptAccountAuthenticator.AuthenticateAsync(cancellationToken);
+    }
+
+    private async Task<string> AuthenticateAnthropicClaudeAccountAsync(CancellationToken cancellationToken)
+    {
+        if (_anthropicClaudeAccountAuthenticator is null)
+        {
+            throw new InvalidOperationException(
+                "Anthropic Claude Pro/Max authentication is unavailable in this runtime.");
+        }
+
+        return await _anthropicClaudeAccountAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
     private async Task<string> PromptUntilValidAsync(
