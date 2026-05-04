@@ -62,7 +62,8 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
             new AgentConfiguration(
                 session.ProviderProfile,
                 session.ActiveModelId,
-                session.ReasoningEffort),
+                session.ReasoningEffort,
+                session.ActiveProviderName),
             cancellationToken);
     }
 }

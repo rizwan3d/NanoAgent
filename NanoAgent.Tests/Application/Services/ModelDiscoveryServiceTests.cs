@@ -63,6 +63,47 @@ public sealed class ModelDiscoveryServiceTests
     }
 
     [Fact]
+    public async Task DiscoverAndSelectAsync_Should_LoadProviderScopedSecret_When_ActiveProviderNameIsConfigured()
+    {
+        AgentProviderProfile providerProfile = new(ProviderKind.OpenRouter, null);
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentConfiguration(providerProfile, null, null, "OpenRouter"));
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(providerProfile, "openai/gpt-5.4", null, "OpenRouter"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync("OpenRouter", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("openrouter-key");
+
+        Mock<IModelProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.GetAvailableModelsAsync(
+                providerProfile,
+                "openrouter-key",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new AvailableModel("openai/gpt-5.4")]);
+
+        ModelDiscoveryService sut = CreateSut(
+            configurationStore.Object,
+            secretStore.Object,
+            providerClient.Object,
+            new InMemoryModelCache(),
+            new ConfiguredOrFirstModelSelectionPolicy(),
+            new ModelSelectionSettings(TimeSpan.FromMinutes(5)));
+
+        ModelDiscoveryResult result = await sut.DiscoverAndSelectAsync(CancellationToken.None);
+
+        result.SelectedModelId.Should().Be("openai/gpt-5.4");
+        secretStore.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
     public async Task DiscoverAndSelectAsync_Should_UseFirstReturnedModel_When_ConfiguredDefaultIsNotReturned()
     {
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
