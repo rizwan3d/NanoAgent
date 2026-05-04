@@ -40,15 +40,15 @@ public static partial class Program
 
         return new Panel(new Markup(BuildHeaderMarkup(state)))
             .Header(statusHeader)
-            .Border(BoxBorder.Rounded)
+            .Border(BoxBorder.Square)
             .Expand();
     }
 
     private static IRenderable BuildMessagesPanel(AppState state)
     {
         return new Panel(new Markup(BuildMessagesMarkup(state)))
-            .Header($"[bold]Conversation[/] ──[grey] Working: {state.RootDirectory} [/]")
-            .Border(BoxBorder.Rounded)
+            .Header($"[bold]Session[/] ──[grey] Working: {state.RootDirectory} [/]")
+            .Border(BoxBorder.Square)
             .Expand();
     }
 
@@ -73,7 +73,7 @@ public static partial class Program
     {
         return new Panel(new Markup(BuildPinnedPlanMarkup(state)))
             .Header("[bold cyan]Plan[/] [grey](F3 to hide)[/]")
-            .Border(BoxBorder.Rounded)
+            .Border(BoxBorder.Square)
             .Expand();
     }
 
@@ -89,7 +89,7 @@ public static partial class Program
     {
         return new Panel(new Markup(BuildInputMarkup(state)))
             .Header(BuildInputPanelHeaderMarkup(state))
-            .Border(BoxBorder.Rounded)
+            .Border(BoxBorder.Square)
             .Expand();
     }
 
@@ -184,10 +184,10 @@ public static partial class Program
     {
         string roleName = message.Role switch
         {
-            Role.User => "You",
-            Role.Assistant => "Nano",
-            Role.System => "Nano",
-            _ => "???"
+            Role.User => "❯",
+            Role.Assistant => "◆",
+            Role.System => "◆",
+            _ => "?"
         };
 
         string roleColor = message.Role switch
@@ -608,7 +608,7 @@ public static partial class Program
         string busySuffixPlain = isBusy ? $"[yellow]{spinner}[/]" + " Press Esc to interrupt the current request." : string.Empty;
         string busySuffixMarkup = isBusy ? $"[yellow]{spinner}[/]" + " [grey]Press Esc to interrupt the current request.[/]" : string.Empty;
         const string promptPlain = "> ";
-        const string promptMarkup = "[bold green]>[/] ";
+        const string promptMarkup = "[bold green]❯[/] ";
         int contentWidth = Math.Max(20, Console.WindowWidth - 10);
         int maxInputLength = Math.Max(
             1,
@@ -878,7 +878,7 @@ public static partial class Program
 
     private static int GetInputFirstLineTextWidth(bool isBusy)
     {
-        const string promptPlain = "> ";
+        const string promptPlain = "❯ ";
         string busySuffixPlain = isBusy ? " Press Esc to interrupt the current request." : string.Empty;
         int contentWidth = Math.Max(20, Console.WindowWidth - 10);
 
@@ -899,7 +899,7 @@ public static partial class Program
             InputCursorBlinkIntervalMilliseconds;
 
         return blinkFrame % 2 == 0
-            ? "[green]|[/]"
+            ? "[green]█[/]"
             : " ";
     }
 
