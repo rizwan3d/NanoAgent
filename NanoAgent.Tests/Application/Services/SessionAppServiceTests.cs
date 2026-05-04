@@ -34,6 +34,7 @@ public sealed class SessionAppServiceTests
                     tokens,
                     "gpt-5-mini",
                     128_000)),
+                null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -79,6 +80,7 @@ public sealed class SessionAppServiceTests
                 It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5-mini" })),
                 It.Is<IAgentProfile>(profile => profile.Name == "build"),
                 It.IsAny<IReadOnlyDictionary<string, int>?>(),
+                null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 
@@ -118,6 +120,7 @@ public sealed class SessionAppServiceTests
                 It.Is<IReadOnlyList<string>>(models => models.SequenceEqual(new[] { "gpt-5.4" })),
                 It.Is<IAgentProfile>(profile => profile.Name == "build"),
                 It.IsAny<IReadOnlyDictionary<string, int>?>(),
+                null,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(createdSession);
 

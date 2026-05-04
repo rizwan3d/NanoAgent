@@ -54,7 +54,7 @@ internal sealed class LessonFailureClassifier : ILessonFailureClassifier
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        string? apiKey = await _secretStore.LoadAsync(cancellationToken);
+        string? apiKey = await LoadProviderSecretAsync(session, cancellationToken);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             return null;
@@ -79,6 +79,24 @@ internal sealed class LessonFailureClassifier : ILessonFailureClassifier
         return TryParseClassification(response.AssistantMessage, out LessonFailureClassification? classification)
             ? classification
             : null;
+    }
+
+    private async Task<string?> LoadProviderSecretAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(session.ActiveProviderName))
+        {
+            string? providerSecret = await _secretStore.LoadAsync(
+                session.ActiveProviderName,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(providerSecret))
+            {
+                return providerSecret;
+            }
+        }
+
+        return await _secretStore.LoadAsync(cancellationToken);
     }
 
     private static TimeSpan GetClassifierTimeout(TimeSpan conversationTimeout)

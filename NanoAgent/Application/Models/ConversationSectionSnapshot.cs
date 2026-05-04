@@ -20,7 +20,8 @@ public sealed class ConversationSectionSnapshot
         string? reasoningEffort = null,
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
-        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        string? activeProviderName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -52,6 +53,7 @@ public sealed class ConversationSectionSnapshot
         }
 
         ActiveModelId = normalizedActiveModelId;
+        ActiveProviderName = NormalizeProviderName(activeProviderName);
         AgentProfileName = string.IsNullOrWhiteSpace(agentProfileName)
             ? BuiltInAgentProfiles.BuildName
             : agentProfileName.Trim();
@@ -77,6 +79,8 @@ public sealed class ConversationSectionSnapshot
     }
 
     public string ActiveModelId { get; }
+
+    public string? ActiveProviderName { get; }
 
     public string AgentProfileName { get; }
 
@@ -132,5 +136,23 @@ public sealed class ConversationSectionSnapshot
         }
 
         return normalized;
+    }
+
+    private static string? NormalizeProviderName(string? providerName)
+    {
+        if (string.IsNullOrWhiteSpace(providerName))
+        {
+            return null;
+        }
+
+        string normalized = new(
+            providerName
+                .Trim()
+                .Where(static character => !char.IsControl(character))
+                .ToArray());
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? null
+            : normalized;
     }
 }

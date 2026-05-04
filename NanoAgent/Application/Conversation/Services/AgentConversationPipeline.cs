@@ -140,7 +140,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         try
         {
-            string apiKey = await _secretStore.LoadAsync(cancellationToken)
+            string apiKey = await LoadProviderSecretAsync(session, cancellationToken)
                 ?? throw new ConversationPipelineException(
                     "Conversation cannot start because the API key is missing.");
 
@@ -1160,6 +1160,24 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "The configured provider failed while processing the conversation request.",
                 exception);
         }
+    }
+
+    private async Task<string?> LoadProviderSecretAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(session.ActiveProviderName))
+        {
+            string? providerSecret = await _secretStore.LoadAsync(
+                session.ActiveProviderName,
+                cancellationToken);
+            if (!string.IsNullOrWhiteSpace(providerSecret))
+            {
+                return providerSecret;
+            }
+        }
+
+        return await _secretStore.LoadAsync(cancellationToken);
     }
 
     private static ConversationResponseException CreateProviderOutputExhaustedException(

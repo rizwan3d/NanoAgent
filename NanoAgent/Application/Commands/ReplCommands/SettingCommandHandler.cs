@@ -247,7 +247,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                 new AgentConfiguration(
                     context.Session.ProviderProfile,
                     result.ResolvedModelId,
-                    context.Session.ReasoningEffort),
+                    context.Session.ReasoningEffort,
+                    context.Session.ActiveProviderName),
                 cancellationToken);
         }
 
@@ -1133,7 +1134,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             new AgentConfiguration(
                 session.ProviderProfile,
                 session.ActiveModelId,
-                session.ReasoningEffort),
+                session.ReasoningEffort,
+                session.ActiveProviderName),
             cancellationToken);
     }
 

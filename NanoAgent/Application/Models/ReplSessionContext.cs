@@ -44,7 +44,8 @@ public sealed class ReplSessionContext
         IAgentProfile? agentProfile = null,
         string? reasoningEffort = null,
         string? workspacePath = null,
-        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        string? activeProviderName = null)
         : this(
             DefaultApplicationName,
             providerProfile,
@@ -53,7 +54,8 @@ public sealed class ReplSessionContext
             agentProfile: agentProfile,
             reasoningEffort: reasoningEffort,
             workspacePath: workspacePath,
-            modelContextWindowTokens: modelContextWindowTokens)
+            modelContextWindowTokens: modelContextWindowTokens,
+            activeProviderName: activeProviderName)
     {
     }
 
@@ -74,7 +76,8 @@ public sealed class ReplSessionContext
         string? reasoningEffort = null,
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
-        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        string? activeProviderName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -88,6 +91,7 @@ public sealed class ReplSessionContext
 
         ApplicationName = applicationName.Trim();
         AgentProfile = agentProfile ?? BuiltInAgentProfiles.Build;
+        ActiveProviderName = NormalizeProviderName(activeProviderName);
         ProviderProfile = providerProfile;
         AvailableModelIds = NormalizeAvailableModelIds(availableModelIds);
         _modelContextWindowTokens = NormalizeModelContextWindowTokens(
@@ -148,6 +152,8 @@ public sealed class ReplSessionContext
     public IAgentProfile AgentProfile { get; private set; }
 
     public string AgentProfileName => AgentProfile.Name;
+
+    public string? ActiveProviderName { get; private set; }
 
     public IReadOnlyList<string> AvailableModelIds { get; private set; }
 
@@ -329,7 +335,8 @@ public sealed class ReplSessionContext
         AgentProviderProfile providerProfile,
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
-        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        string? activeProviderName = null)
     {
         ArgumentNullException.ThrowIfNull(providerProfile);
         ArgumentException.ThrowIfNullOrWhiteSpace(activeModelId);
@@ -353,13 +360,20 @@ public sealed class ReplSessionContext
 
         Dictionary<string, int> normalizedModelContextWindowTokens =
             NormalizeModelContextWindowTokens(modelContextWindowTokens, normalizedAvailableModelIds);
+        string? normalizedActiveProviderName = NormalizeProviderName(activeProviderName);
+        if (normalizedActiveProviderName is null && Equals(ProviderProfile, providerProfile))
+        {
+            normalizedActiveProviderName = ActiveProviderName;
+        }
 
         bool changed =
             !Equals(ProviderProfile, providerProfile) ||
+            !string.Equals(ActiveProviderName, normalizedActiveProviderName, StringComparison.Ordinal) ||
             !string.Equals(ActiveModelId, normalizedActiveModelId, StringComparison.Ordinal) ||
             !AvailableModelIds.SequenceEqual(normalizedAvailableModelIds, StringComparer.Ordinal) ||
             !ModelContextWindowTokensEqual(_modelContextWindowTokens, normalizedModelContextWindowTokens);
 
+        ActiveProviderName = normalizedActiveProviderName;
         ProviderProfile = providerProfile;
         AvailableModelIds = normalizedAvailableModelIds;
         _modelContextWindowTokens = normalizedModelContextWindowTokens;
@@ -386,6 +400,19 @@ public sealed class ReplSessionContext
         }
 
         ReasoningEffort = normalizedReasoningEffort;
+        IsPersistedStateDirty = true;
+        return true;
+    }
+
+    public bool SetActiveProviderName(string? activeProviderName)
+    {
+        string? normalizedActiveProviderName = NormalizeProviderName(activeProviderName);
+        if (string.Equals(ActiveProviderName, normalizedActiveProviderName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        ActiveProviderName = normalizedActiveProviderName;
         IsPersistedStateDirty = true;
         return true;
     }
@@ -728,7 +755,8 @@ public sealed class ReplSessionContext
             ReasoningEffort,
             SessionState,
             WorkspacePath,
-            _modelContextWindowTokens);
+            _modelContextWindowTokens,
+            ActiveProviderName);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)
@@ -1467,6 +1495,24 @@ public sealed class ReplSessionContext
             : workspacePath.Trim();
 
         return Path.GetFullPath(normalized);
+    }
+
+    private static string? NormalizeProviderName(string? providerName)
+    {
+        if (string.IsNullOrWhiteSpace(providerName))
+        {
+            return null;
+        }
+
+        string normalized = new(
+            providerName
+                .Trim()
+                .Where(static character => !char.IsControl(character))
+                .ToArray());
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? null
+            : normalized;
     }
 
     private sealed class FileEditTransactionBatchScope : IDisposable
