@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.BudgetControls;
+using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
@@ -84,10 +85,19 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
+        services.AddHttpClient<AnthropicClaudeAccountCredentialService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
         services.AddTransient<IOpenAiChatGptAccountCredentialService>(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
         services.AddTransient<IOpenAiChatGptAccountAuthenticator>(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
+        services.AddTransient<IAnthropicClaudeAccountCredentialService>(serviceProvider =>
+            serviceProvider.GetRequiredService<AnthropicClaudeAccountCredentialService>());
+        services.AddTransient<IAnthropicClaudeAccountAuthenticator>(serviceProvider =>
+            serviceProvider.GetRequiredService<AnthropicClaudeAccountCredentialService>());
         services.AddHttpClient("NanoAgent.Mcp", client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;

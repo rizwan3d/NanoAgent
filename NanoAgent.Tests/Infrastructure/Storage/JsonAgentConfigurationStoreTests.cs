@@ -61,6 +61,22 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_ThenLoadAsync_Should_RoundTripAnthropicClaudeAccountConfiguration()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+        AgentConfiguration configuration = new(
+            new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null),
+            "claude-sonnet-4-6",
+            "on");
+
+        await sut.SaveAsync(configuration, CancellationToken.None);
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(configuration);
+    }
+
+    [Fact]
     public async Task SaveAsync_ThenLoadAsync_Should_RoundTripOpenRouterConfiguration()
     {
         StubUserDataPathProvider pathProvider = new(_tempRoot);
@@ -118,6 +134,21 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             new AgentProviderProfile(
                 ProviderKind.OpenAiCompatible,
                 "https://provider.example.com/v1"),
+            PreferredModelId: null,
+            ReasoningEffort: null));
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_CreateAnthropicClaudeAccountEnvironmentConfiguration_When_ProviderIsSet()
+    {
+        using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "anthropic-claude-account");
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null),
             PreferredModelId: null,
             ReasoningEffort: null));
     }

@@ -4,6 +4,7 @@ using Moq;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
@@ -211,6 +212,79 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         payload.ProviderKind.Should().Be(ProviderKind.Anthropic);
         payload.ResponseId.Should().Be("req_789");
     }
+
+    [Fact]
+    public async Task SendAsync_Should_PostMessagesRequestWithOAuthHeaders_When_AnthropicClaudeAccountProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "msg_account",
+              "type": "message",
+              "role": "assistant",
+              "content": [
+                { "type": "text", "text": "I can help." },
+                {
+                  "type": "tool_use",
+                  "id": "toolu_1",
+                  "name": "file_read",
+                  "input": {"path":"README.md"}
+                }
+              ],
+              "stop_reason": "tool_use",
+              "usage": {
+                "input_tokens": 12,
+                "output_tokens": 7,
+                "cache_read_input_tokens": 3
+              }
+            }
+            """, responseIdHeaderName: "request-id");
+        HttpClient httpClient = new(handler);
+        Mock<IAnthropicClaudeAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AnthropicClaudeAccountResolvedCredential("access-token"));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null),
+                "stored-credentials",
+                "claude-sonnet-4-6",
+                [
+                    ConversationRequestMessage.User("Read the README.")
+                ],
+                "You are helpful.",
+                [CreateToolDefinition("file_read")],
+                "on"),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.anthropic.com/v1/messages"));
+        handler.RequestMethod.Should().Be(HttpMethod.Post);
+        handler.AuthorizationHeader.Should().Be("Bearer access-token");
+        handler.AnthropicVersionHeader.Should().Be("2023-06-01");
+        handler.AnthropicBetaHeader.Should().Contain("oauth-2025-04-20");
+        handler.AnthropicAppHeader.Should().Be("cli");
+        handler.RequestBody.Should().Contain("\"model\":\"claude-sonnet-4-6\"");
+        handler.RequestBody.Should().Contain("You are Claude Code");
+        handler.RequestBody.Should().Contain("\"type\":\"enabled\"");
+        handler.RequestBody.Should().Contain("\"name\":\"file_read\"");
+        payload.ProviderKind.Should().Be(ProviderKind.AnthropicClaudeAccount);
+
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("I can help.");
+        response.ResponseId.Should().Be("msg_account");
+        response.PromptTokens.Should().Be(15);
+        response.CompletionTokens.Should().Be(7);
+        response.CachedPromptTokens.Should().Be(3);
+        response.ToolCalls.Should().ContainSingle()
+            .Which.Should().Be(new ConversationToolCall("toolu_1", "file_read", """{"path":"README.md"}"""));
+        credentialService.VerifyAll();
+    }
+
 
     [Fact]
     public async Task SendAsync_Should_SerializeProviderReasoningEffort_When_ThinkingIsOn()
@@ -712,6 +786,19 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
     private static OpenAiCompatibleConversationProviderClient CreateSut(
         HttpClient httpClient,
+        IAnthropicClaudeAccountCredentialService credentialService)
+    {
+        return new OpenAiCompatibleConversationProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance,
+            delayAsync: null,
+            nextJitter: null,
+            anthropicClaudeAccountCredentialService: credentialService);
+    }
+
+
+    private static OpenAiCompatibleConversationProviderClient CreateSut(
+        HttpClient httpClient,
         Func<TimeSpan, CancellationToken, Task>? delayAsync,
         Func<double>? nextJitter)
     {
@@ -764,6 +851,12 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         public string? OpenRouterTitleHeader { get; private set; }
 
+        public string? AnthropicAppHeader { get; private set; }
+
+        public string? AnthropicBetaHeader { get; private set; }
+
+        public string? AnthropicVersionHeader { get; private set; }
+
         public string? RequestBody { get; private set; }
 
         public HttpMethod? RequestMethod { get; private set; }
@@ -790,6 +883,15 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 : null;
             OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
                 ? titleValues.FirstOrDefault()
+                : null;
+            AnthropicVersionHeader = request.Headers.TryGetValues("anthropic-version", out IEnumerable<string>? versionValues)
+                ? versionValues.FirstOrDefault()
+                : null;
+            AnthropicBetaHeader = request.Headers.TryGetValues("anthropic-beta", out IEnumerable<string>? betaValues)
+                ? betaValues.FirstOrDefault()
+                : null;
+            AnthropicAppHeader = request.Headers.TryGetValues("x-app", out IEnumerable<string>? appValues)
+                ? appValues.FirstOrDefault()
                 : null;
             SessionIdHeader = request.Headers.TryGetValues("session_id", out IEnumerable<string>? sessionIdValues)
                 ? sessionIdValues.FirstOrDefault()
