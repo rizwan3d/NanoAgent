@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
@@ -155,6 +156,44 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestAnthropicClaudeAccountModelsEndpointWithOAuthHeaders_When_AccountProviderIsConfigured()
+    {
+        Mock<IAnthropicClaudeAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AnthropicClaudeAccountResolvedCredential("access-token"));
+
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "claude-sonnet-4-6" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            anthropicClaudeAccountCredentialService: credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null),
+            "stored-credentials",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.anthropic.com/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer access-token");
+        handler.AnthropicVersionHeader.Should().Be("2023-06-01");
+        handler.AnthropicBetaHeader.Should().Contain("oauth-2025-04-20");
+        handler.AnthropicAppHeader.Should().Be("cli");
+        models.Select(model => model.Id).Should().Equal("claude-sonnet-4-6");
+        credentialService.VerifyAll();
+    }
+
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestAccountBackedModels_When_OpenAiChatGptAccountProviderIsConfigured()
     {
         Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
@@ -267,13 +306,15 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     private static OpenAiCompatibleModelProviderClient CreateSut(
         HttpClient httpClient,
         IOpenAiChatGptAccountCredentialService? credentialService = null,
-        IOpenAiCodexClientVersionProvider? versionProvider = null)
+        IOpenAiCodexClientVersionProvider? versionProvider = null,
+        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
             NullLogger<OpenAiCompatibleModelProviderClient>.Instance,
             credentialService,
-            versionProvider);
+            versionProvider,
+            anthropicClaudeAccountCredentialService);
     }
 
     private sealed class StubOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider
@@ -302,6 +343,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         public string? AnthropicApiKeyHeader { get; private set; }
 
         public string? AnthropicVersionHeader { get; private set; }
+
+        public string? AnthropicBetaHeader { get; private set; }
+
+        public string? AnthropicAppHeader { get; private set; }
 
         public string? OpenRouterRefererHeader { get; private set; }
 
@@ -342,6 +387,12 @@ public sealed class OpenAiCompatibleModelProviderClientTests
                 : null;
             AnthropicVersionHeader = request.Headers.TryGetValues("anthropic-version", out IEnumerable<string>? versionValues)
                 ? versionValues.FirstOrDefault()
+                : null;
+            AnthropicBetaHeader = request.Headers.TryGetValues("anthropic-beta", out IEnumerable<string>? betaValues)
+                ? betaValues.FirstOrDefault()
+                : null;
+            AnthropicAppHeader = request.Headers.TryGetValues("x-app", out IEnumerable<string>? appValues)
+                ? appValues.FirstOrDefault()
                 : null;
             OpenRouterRefererHeader = request.Headers.TryGetValues("HTTP-Referer", out IEnumerable<string>? refererValues)
                 ? refererValues.FirstOrDefault()

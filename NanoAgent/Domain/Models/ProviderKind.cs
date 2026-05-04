@@ -7,5 +7,6 @@ public enum ProviderKind
     GoogleAiStudio = 3,
     Anthropic = 4,
     OpenAiChatGptAccount = 5,
-    OpenRouter = 6
+    OpenRouter = 6,
+    AnthropicClaudeAccount = 7
 }

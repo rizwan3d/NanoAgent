@@ -7,5 +7,6 @@ public enum OnboardingProviderChoice
     OpenAiCompatible = 2,
     Anthropic = 3,
     OpenAiChatGptAccount = 4,
-    OpenRouter = 5
+    OpenRouter = 5,
+    AnthropicClaudeAccount = 6
 }

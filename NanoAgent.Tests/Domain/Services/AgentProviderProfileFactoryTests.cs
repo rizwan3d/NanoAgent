@@ -25,6 +25,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateAnthropicClaudeAccount_Should_ReturnAnthropicClaudeAccountProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateAnthropicClaudeAccount();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null));
+    }
+
+    [Fact]
     public void CreateOpenRouter_Should_ReturnOpenRouterProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateOpenRouter();

@@ -16,6 +16,7 @@ public static class ProviderKindExtensions
             ProviderKind.OpenAiChatGptAccount => "OpenAI ChatGPT Plus/Pro",
             ProviderKind.GoogleAiStudio => "Google AI Studio",
             ProviderKind.Anthropic => "Anthropic",
+            ProviderKind.AnthropicClaudeAccount => "Anthropic Claude Pro/Max",
             ProviderKind.OpenRouter => "OpenRouter",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
@@ -30,6 +31,7 @@ public static class ProviderKindExtensions
             ProviderKind.OpenAiChatGptAccount => OpenAiChatGptAccountBaseUrl,
             ProviderKind.GoogleAiStudio => GoogleAiStudioBaseUrl,
             ProviderKind.Anthropic => AnthropicBaseUrl,
+            ProviderKind.AnthropicClaudeAccount => AnthropicBaseUrl,
             ProviderKind.OpenRouter => OpenRouterBaseUrl,
             _ => null
         };
