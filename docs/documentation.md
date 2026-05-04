@@ -127,6 +127,7 @@ Use sections for separate tasks:
 
 Type a prompt and let NanoAgent inspect, plan, edit, run commands, or ask for approval depending on the active profile and permissions.
 Type `/` in the desktop prompt to open command suggestions. Use Up/Down and Enter to choose a command, or Shift+Enter for multiline input.
+Start input with `!` to run the rest as a local shell command directly, for example `!dotnet test`. Direct shell input is treated as user-entered terminal work and does not ask the agent for a tool approval.
 
 ### Controls
 
@@ -288,6 +289,7 @@ Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
+Start input with `!` to run the rest as a local shell command directly, for example `!git status --short`.
 
 ## ACP Editor Integration
 
