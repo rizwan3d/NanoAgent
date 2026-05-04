@@ -36,7 +36,7 @@ It is designed for developers who want useful automation without giving up contr
 - Turn everyday engineering requests into useful progress: feature work, bug fixes, planning, code review, and build/test loops.
 - Keep control of the work with clear profiles for hands-on changes, read-only planning, and read-only review.
 - Bring NanoAgent into team workflows with GitHub, GitLab, and Bitbucket PR/MR review automation.
-- Use the model provider that fits your budget, policy, and performance needs, including OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, OpenRouter, Anthropic, Google AI Studio, and OpenAI-compatible providers.
+- Use the model provider that fits your budget, policy, and performance needs, including OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Anthropic, Google AI Studio, and OpenAI-compatible providers.
 - Search across the repository with a local codebase index that refreshes incrementally and respects ignore rules.
 - Give your team reviewable repo memory in `.nanoagent/memory/*.md` instead of relying on hidden agent notes.
 - Adapt the agent to your project with custom instructions, skills, agents, process tools, MCP tools, and reusable lessons.
@@ -123,6 +123,7 @@ Override built-in profile prompts per workspace with `.nanoagent/agents/build.md
 | OpenAI | API key |
 | OpenAI ChatGPT Plus/Pro | Browser sign-in |
 | Anthropic Claude Pro/Max | Browser sign-in |
+| GitHub Copilot | Browser device sign-in |
 | OpenRouter | API key |
 | Google AI Studio | API key |
 | Anthropic | API key |

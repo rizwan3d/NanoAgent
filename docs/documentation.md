@@ -78,7 +78,7 @@ nanoai
 NanoAgent will guide you through provider setup:
 
 1. Choose a provider.
-2. Enter an API key, sign in with ChatGPT Plus/Pro or Claude Pro/Max, or enter a custom compatible base URL.
+2. Enter an API key, sign in with ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot, or enter a custom compatible base URL.
 3. Let NanoAgent discover available models.
 4. Open a desktop workspace or use the current terminal directory.
 5. Start a new section or resume an existing one.
@@ -98,12 +98,13 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | OpenAI | API key | Uses the OpenAI API. |
 | OpenAI ChatGPT Plus/Pro | Browser sign-in | Uses OAuth with local callback port `1455`. |
 | Anthropic Claude Pro/Max | Browser sign-in | Uses OAuth with local callback port `53692`. |
+| GitHub Copilot | Browser device sign-in | Uses GitHub device-code login. Leave the Enterprise URL/domain prompt blank for `github.com`. |
 | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
 | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
 | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
 | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 
-Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro and Claude Pro/Max sign-in store refreshable account credentials locally.
+Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.
 
 ## Desktop Workflow
 
@@ -346,7 +347,7 @@ Optional repository variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, or `openrouter`. |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, or `openrouter`. |
 | `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
@@ -902,6 +903,10 @@ Check that port `1455` is available and that the browser callback URL opens loca
 ### Claude Pro/Max sign-in does not complete
 
 Check that port `53692` is available and that the browser callback URL opens locally. Sign-in requires network access and a valid Claude Pro or Max account.
+
+### GitHub Copilot sign-in does not complete
+
+Check that the device-code page opened, enter the displayed code, and verify that your GitHub account has Copilot access. For GitHub Enterprise, enter only the Enterprise URL or domain when prompted; leave it blank for `github.com`.
 
 ### No models are listed
 

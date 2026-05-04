@@ -33,6 +33,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateGitHubCopilot_Should_ReturnGitHubCopilotProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateGitHubCopilot();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.GitHubCopilot, null));
+    }
+
+    [Fact]
     public void CreateOpenRouter_Should_ReturnOpenRouterProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateOpenRouter();

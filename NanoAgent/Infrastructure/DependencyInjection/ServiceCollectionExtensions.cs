@@ -9,6 +9,7 @@ using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.CustomTools;
+using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
@@ -90,6 +91,11 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
+        services.AddHttpClient<GitHubCopilotCredentialService>(client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+        });
         services.AddTransient<IOpenAiChatGptAccountCredentialService>(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
         services.AddTransient<IOpenAiChatGptAccountAuthenticator>(serviceProvider =>
@@ -98,6 +104,10 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<AnthropicClaudeAccountCredentialService>());
         services.AddTransient<IAnthropicClaudeAccountAuthenticator>(serviceProvider =>
             serviceProvider.GetRequiredService<AnthropicClaudeAccountCredentialService>());
+        services.AddTransient<IGitHubCopilotCredentialService>(serviceProvider =>
+            serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
+        services.AddTransient<IGitHubCopilotAuthenticator>(serviceProvider =>
+            serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
         services.AddHttpClient("NanoAgent.Mcp", client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;

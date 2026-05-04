@@ -6,6 +6,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.Conversation;
+using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
 using System.Text;
@@ -284,6 +285,63 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             .Which.Should().Be(new ConversationToolCall("toolu_1", "file_read", """{"path":"README.md"}"""));
         credentialService.VerifyAll();
     }
+
+    [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsWithCopilotHeaders_When_GitHubCopilotProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_copilot",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Copilot."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<IGitHubCopilotCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GitHubCopilotResolvedCredential(
+                "copilot-token",
+                EnterpriseDomain: null,
+                new Uri("https://api.individual.githubcopilot.com/")));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.GitHubCopilot, null),
+                "stored-credentials",
+                "gpt-5",
+                [
+                    ConversationRequestMessage.User(
+                        "Describe this.",
+                        [new ConversationAttachment("screen.png", "image/png", "aW1n")])
+                ],
+                "You are helpful.",
+                [CreateToolDefinition("file_read")]),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.individual.githubcopilot.com/chat/completions"));
+        handler.RequestMethod.Should().Be(HttpMethod.Post);
+        handler.AuthorizationHeader.Should().Be("Bearer copilot-token");
+        handler.CopilotIntegrationIdHeader.Should().Be("vscode-chat");
+        handler.CopilotInitiatorHeader.Should().Be("user");
+        handler.CopilotIntentHeader.Should().Be("conversation-edits");
+        handler.CopilotVisionHeader.Should().Be("true");
+        handler.RequestBody.Should().Contain("\"model\":\"gpt-5\"");
+        handler.RequestBody.Should().Contain("\"image_url\"");
+        payload.ProviderKind.Should().Be(ProviderKind.GitHubCopilot);
+        payload.ResponseId.Should().Be("req_789");
+        credentialService.VerifyAll();
+    }
+
 
 
     [Fact]
@@ -796,6 +854,18 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             anthropicClaudeAccountCredentialService: credentialService);
     }
 
+    private static OpenAiCompatibleConversationProviderClient CreateSut(
+        HttpClient httpClient,
+        IGitHubCopilotCredentialService credentialService)
+    {
+        return new OpenAiCompatibleConversationProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance,
+            delayAsync: null,
+            nextJitter: null,
+            gitHubCopilotCredentialService: credentialService);
+    }
+
 
     private static OpenAiCompatibleConversationProviderClient CreateSut(
         HttpClient httpClient,
@@ -857,6 +927,14 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         public string? AnthropicVersionHeader { get; private set; }
 
+        public string? CopilotInitiatorHeader { get; private set; }
+
+        public string? CopilotIntegrationIdHeader { get; private set; }
+
+        public string? CopilotIntentHeader { get; private set; }
+
+        public string? CopilotVisionHeader { get; private set; }
+
         public string? RequestBody { get; private set; }
 
         public HttpMethod? RequestMethod { get; private set; }
@@ -892,6 +970,20 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 : null;
             AnthropicAppHeader = request.Headers.TryGetValues("x-app", out IEnumerable<string>? appValues)
                 ? appValues.FirstOrDefault()
+                : null;
+            CopilotIntegrationIdHeader = request.Headers.TryGetValues(
+                "Copilot-Integration-Id",
+                out IEnumerable<string>? integrationValues)
+                    ? integrationValues.FirstOrDefault()
+                    : null;
+            CopilotInitiatorHeader = request.Headers.TryGetValues("X-Initiator", out IEnumerable<string>? initiatorValues)
+                ? initiatorValues.FirstOrDefault()
+                : null;
+            CopilotIntentHeader = request.Headers.TryGetValues("Openai-Intent", out IEnumerable<string>? intentValues)
+                ? intentValues.FirstOrDefault()
+                : null;
+            CopilotVisionHeader = request.Headers.TryGetValues("Copilot-Vision-Request", out IEnumerable<string>? visionValues)
+                ? visionValues.FirstOrDefault()
                 : null;
             SessionIdHeader = request.Headers.TryGetValues("session_id", out IEnumerable<string>? sessionIdValues)
                 ? sessionIdValues.FirstOrDefault()

@@ -10,6 +10,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateAnthropicClaudeAccount();
 
+    AgentProviderProfile CreateGitHubCopilot();
+
     AgentProviderProfile CreateOpenRouter();
 
     AgentProviderProfile CreateCompatible(string baseUrl);
