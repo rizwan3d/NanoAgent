@@ -521,6 +521,45 @@ public sealed class ReplSessionContext
         IsPersistedStateDirty = true;
     }
 
+    public int CompactConversationHistory(int retainedHistoryTurns)
+    {
+        if (retainedHistoryTurns < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(retainedHistoryTurns));
+        }
+
+        int compactedTurnCount = _conversationTurns.Count - retainedHistoryTurns;
+        if (compactedTurnCount <= 0)
+        {
+            return 0;
+        }
+
+        string? compactedHistory = CreateCompactedConversationHistory(retainedHistoryTurns);
+        if (string.IsNullOrWhiteSpace(compactedHistory))
+        {
+            return 0;
+        }
+
+        ConversationSectionTurn compactedTurn = new(
+            "Compacted previous conversation",
+            compactedHistory);
+        ConversationSectionTurn[] retainedTurns = _conversationTurns
+            .Skip(compactedTurnCount)
+            .ToArray();
+
+        _conversationTurns.Clear();
+        _conversationHistory.Clear();
+        AddStoredTurn(compactedTurn);
+
+        foreach (ConversationSectionTurn retainedTurn in retainedTurns)
+        {
+            AddStoredTurn(retainedTurn);
+        }
+
+        IsPersistedStateDirty = true;
+        return compactedTurnCount;
+    }
+
     public void RecordFileContext(SessionFileContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -783,6 +822,13 @@ public sealed class ReplSessionContext
         return compactedHistory.Length <= MaxCompactedHistoryCharacters
             ? compactedHistory
             : compactedHistory[..Math.Max(0, MaxCompactedHistoryCharacters - 3)].TrimEnd() + "...";
+    }
+
+    private void AddStoredTurn(ConversationSectionTurn turn)
+    {
+        _conversationTurns.Add(turn);
+        _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
+        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(turn.AssistantResponse));
     }
 
     private static string CompactHistoryField(string value)

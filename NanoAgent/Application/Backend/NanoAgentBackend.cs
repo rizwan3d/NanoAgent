@@ -107,6 +107,13 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             _session,
             cancellationToken);
 
+        if (result.SessionOverride is not null &&
+            !ReferenceEquals(result.SessionOverride, _session))
+        {
+            await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
+            _session = result.SessionOverride;
+        }
+
         await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
 
         return new BackendCommandResult(

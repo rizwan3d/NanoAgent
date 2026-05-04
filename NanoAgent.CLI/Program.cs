@@ -44,22 +44,34 @@ public static partial class Program
         new("/allow", "/allow <tool-or-tag> [pattern]", "Add a session-scoped allow override.", true),
         new("/budget", "/budget [status|local|cloud]", "Show or configure budget controls.", false),
         new("/clear", "/clear", "Clear the terminal conversation view.", false),
+        new("/clone", "/clone", "Duplicate the current session.", false),
+        new("/compact", "/compact [retained-turns]", "Manually compact session context.", false),
         new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
+        new("/copy", "/copy", "Copy the last agent message.", false),
         new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
         new("/exit", "/exit", "Exit the interactive shell.", false),
+        new("/export", "/export [json|html] [path]", "Export session as JSON or HTML.", false),
+        new("/fork", "/fork [turn-number]", "Fork from a previous user message.", false),
         new("/help", "/help", "List available commands and usage.", false),
+        new("/import", "/import <json-path>", "Import a session from JSON.", true),
         new("/init", "/init [recommended|minimal|custom]", "Choose workspace-local NanoAgent files.", false),
         new("/ls", "/ls", "List files in the current workspace.", false),
         new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
         new("/models", "/models", "Choose the active model with the picker.", false),
+        new("/new", "/new", "Start a new session.", false),
         new("/onboard", "/onboard", "Re-run provider onboarding.", false),
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
         new("/profile", "/profile <name>", "Switch the active agent profile.", true),
         new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
+        new("/reload", "/reload", "Reload local resources.", false),
         new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
+        new("/resume", "/resume [session-id]", "Resume a saved session.", false),
         new("/rules", "/rules", "List effective permission rules.", false),
+        new("/session", "/session", "Show session info and stats.", false),
         new("/setting", "/setting [area]", "Open the NanoAgent settings picker.", false),
+        new("/share", "/share", "Share session as a secret GitHub gist.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
+        new("/tree", "/tree", "Navigate saved sessions.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
         new("/update", "/update [now]", "Check for updates.", false),
         new("/use", "/use <model>", "Switch the active model directly.", true)
@@ -427,17 +439,30 @@ public static partial class Program
             return;
         }
 
-        state.Messages.Clear();
-        state.ConversationScrollOffset = 0;
-
         string sectionTitle = string.IsNullOrWhiteSpace(sessionInfo.SectionTitle)
             ? "Untitled section"
             : sessionInfo.SectionTitle.Trim();
 
-        state.AddSystemMessage(
+        RenderSessionView(
+            state,
+            sessionInfo,
             $"Resumed section: {sectionTitle}\n" +
             $"Section: {sessionInfo.SessionId}\n" +
             $"Resume command: {sessionInfo.SectionResumeCommand}");
+    }
+
+    private static void RenderSessionView(
+        AppState state,
+        BackendSessionInfo sessionInfo,
+        string? statusMessage)
+    {
+        state.Messages.Clear();
+        state.ConversationScrollOffset = 0;
+
+        if (!string.IsNullOrWhiteSpace(statusMessage))
+        {
+            state.AddSystemMessage(statusMessage.Trim());
+        }
 
         foreach (BackendConversationMessage message in sessionInfo.ConversationHistory)
         {
