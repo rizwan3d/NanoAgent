@@ -74,9 +74,12 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             "thinking" => remainingArgumentText.Length == 0
                 ? await PromptForThinkingAsync(context, silent: false, cancellationToken) ?? ReplCommandResult.Continue()
                 : await ExecuteCommandAsync("thinking", remainingArgumentText, context, cancellationToken),
-            "provider" or "onboard" or "onboarding" => remainingArgumentText.Length == 0
+            "provider" or "providers" => remainingArgumentText.Length == 0
+                ? await ExecuteCommandAsync("provider", string.Empty, context, cancellationToken)
+                : await ExecuteCommandAsync("provider", remainingArgumentText, context, cancellationToken),
+            "onboard" or "onboarding" => remainingArgumentText.Length == 0
                 ? await ExecuteCommandAsync("onboard", string.Empty, context, cancellationToken)
-                : ReplCommandResult.Continue("Usage: /setting provider", ReplFeedbackKind.Error),
+                : ReplCommandResult.Continue("Usage: /setting onboarding", ReplFeedbackKind.Error),
             "budget" => await ExecuteCommandAsync("budget", remainingArgumentText, context, cancellationToken),
             "workspace" or "init" => await ExecuteCommandAsync("init", remainingArgumentText, context, cancellationToken),
             "permissions" or "permission" => remainingArgumentText.Length == 0
@@ -149,7 +152,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     new SelectionPromptOption<SettingCommandArea>(
                         "Provider",
                         SettingCommandArea.Provider,
-                        $"Re-run provider onboarding. Current: {context.Session.ProviderName}."),
+                        $"Switch saved providers or add one with /onboard. Current: {context.Session.ProviderName}."),
                     new SelectionPromptOption<SettingCommandArea>(
                         "Budget",
                         SettingCommandArea.Budget,
@@ -187,7 +190,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             SettingCommandArea.Model => await PromptForModelAsync(context, silent: true, cancellationToken),
             SettingCommandArea.Profile => await PromptForProfileAsync(context, silent: true, cancellationToken),
             SettingCommandArea.Thinking => await PromptForThinkingAsync(context, silent: true, cancellationToken),
-            SettingCommandArea.Provider => await ExecuteCommandFromMenuAsync("onboard", string.Empty, context, cancellationToken),
+            SettingCommandArea.Provider => await ExecuteCommandFromMenuAsync("provider", string.Empty, context, cancellationToken),
             SettingCommandArea.Budget => await ExecuteCommandFromMenuAsync("budget", string.Empty, context, cancellationToken),
             SettingCommandArea.Workspace => await ExecuteCommandFromMenuAsync("init", string.Empty, context, cancellationToken),
             SettingCommandArea.Permissions => await RunPermissionsMenuAsync(context, returnToSettingsMenu: true, cancellationToken),
@@ -884,7 +887,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                         new SelectionPromptOption<SettingSummaryAction>(
                             $"Provider: {context.Session.ProviderName}",
                             SettingSummaryAction.Back,
-                            "Choose Provider in settings to re-run onboarding."),
+                            "Choose Provider in settings to switch saved providers."),
                         new SelectionPromptOption<SettingSummaryAction>(
                             $"Model: {context.Session.ActiveModelId}",
                             SettingSummaryAction.Back,
@@ -1188,7 +1191,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             "/setting model [id] - Pick the active model, or switch directly when an id is supplied.\n" +
             "/setting profile [name] - Pick the active profile, or switch directly when a name is supplied.\n" +
             "/setting thinking [on|off] - Pick or set thinking mode.\n" +
-            "/setting provider - Re-run provider onboarding.\n" +
+            "/setting provider [list|name] - List or switch saved providers.\n" +
+            "/setting onboarding - Re-run provider onboarding and add a saved provider.\n" +
             "/setting budget [status|local|cloud] - Show or configure budget controls.\n" +
             "/setting workspace [recommended|minimal|custom] - Choose and initialize workspace-local NanoAgent files.\n" +
             "/setting permissions - Open permission settings for modes, sandbox, and session overrides.\n" +

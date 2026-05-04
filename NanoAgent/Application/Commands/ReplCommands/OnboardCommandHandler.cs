@@ -79,11 +79,13 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
             new AgentConfiguration(
                 context.Session.ProviderProfile,
                 context.Session.ActiveModelId,
-                context.Session.ReasoningEffort),
+                context.Session.ReasoningEffort,
+                onboardingResult.ActiveProviderName),
             cancellationToken);
 
         return ReplCommandResult.Continue(
             "Provider onboarding complete.\n" +
+            $"Saved provider: {onboardingResult.ActiveProviderName ?? context.Session.ProviderName}\n" +
             $"Provider: {context.Session.ProviderName}\n" +
             $"Active model: {context.Session.ActiveModelId}\n" +
             $"Available models: {context.Session.AvailableModelIds.Count}\n" +
