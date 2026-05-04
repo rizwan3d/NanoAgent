@@ -323,8 +323,8 @@ public static partial class Program
         string roleName,
         string roleColor)
     {
-        string prefixPlain = firstLine ? $"{roleName}: " : "     ";
-        string prefixMarkup = firstLine ? $"[{roleColor}]{roleName}:[/] " : "     ";
+        string prefixPlain = firstLine ? $"{roleName} " : "     ";
+        string prefixMarkup = firstLine ? $"[{roleColor}]{roleName}[/] " : "     ";
 
         lines.Add(new ConversationLine(
             prefixMarkup + contentMarkup,

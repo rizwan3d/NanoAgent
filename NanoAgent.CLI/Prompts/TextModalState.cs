@@ -116,7 +116,7 @@ public sealed class TextModalState : UiModalState
             : Math.Clamp(CursorIndex, 0, text.Length);
         string beforeCursor = text[..cursorIndex];
         string afterCursor = text[cursorIndex..];
-        return $"[bold green]>[/] {Markup.Escape(beforeCursor)}{Program.BuildInputCursorMarkup()}{Markup.Escape(afterCursor)}";
+        return $"[bold green]❯[/] {Markup.Escape(beforeCursor)}{Program.BuildInputCursorMarkup()}{Markup.Escape(afterCursor)}";
     }
 
     public override void HandleKey(AppState state, ConsoleKeyInfo key)

@@ -267,7 +267,7 @@ public static partial class Program
             int suggestionIndex = firstVisibleIndex + visibleIndex;
             SlashCommandSuggestion suggestion = visibleSuggestions[visibleIndex];
             bool selected = suggestionIndex == state.SlashCommandSuggestionIndex;
-            string prefix = selected ? "> " : "  ";
+            string prefix = selected ? "❯ " : "  ";
             string usageText = TruncateFromRight(prefix + suggestion.Usage, Math.Min(34, contentWidth));
             int descriptionWidth = Math.Max(0, contentWidth - usageText.Length - 3);
             string description = descriptionWidth == 0
