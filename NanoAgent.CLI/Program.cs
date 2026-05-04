@@ -10,7 +10,7 @@ public static partial class Program
 {
     private const double EstimatedLiveTokensPerSecond = 4d;
     private const int HeaderDividerWidth = 53;
-    private const int HeaderPanelSize = 10;
+    private const int HeaderPanelSize = 9;
     private const int InputCursorBlinkIntervalMilliseconds = 500;
     private const int InputCursorColumnWidth = 1;
     private const int MessageScrollbarColumnWidth = 2;
