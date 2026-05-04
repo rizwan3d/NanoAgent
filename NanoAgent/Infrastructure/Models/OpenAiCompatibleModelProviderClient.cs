@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
+using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Globalization;
 using System.Net.Http.Headers;
@@ -49,6 +50,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private readonly HttpClient _httpClient;
     private readonly IOpenAiCodexClientVersionProvider _openAiCodexClientVersionProvider;
     private readonly IAnthropicClaudeAccountCredentialService? _anthropicClaudeAccountCredentialService;
+    private readonly IGitHubCopilotCredentialService? _gitHubCopilotCredentialService;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
@@ -57,12 +59,14 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         ILogger<OpenAiCompatibleModelProviderClient> logger,
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
         IOpenAiCodexClientVersionProvider? openAiCodexClientVersionProvider = null,
-        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null)
+        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
         _anthropicClaudeAccountCredentialService = anthropicClaudeAccountCredentialService;
+        _gitHubCopilotCredentialService = gitHubCopilotCredentialService;
         _openAiCodexClientVersionProvider = openAiCodexClientVersionProvider ??
             new StaticOpenAiCodexClientVersionProvider(
                 GitHubOpenAiCodexClientVersionProvider.FallbackClientVersion);
@@ -98,6 +102,19 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             }
 
             return await GetAnthropicClaudeAccountModelsAsync(
+                apiKey,
+                cancellationToken);
+        }
+
+        if (providerProfile.ProviderKind == ProviderKind.GitHubCopilot)
+        {
+            if (_gitHubCopilotCredentialService is null)
+            {
+                throw new ModelProviderException(
+                    "GitHub Copilot credentials cannot be resolved in this runtime.");
+            }
+
+            return await GetGitHubCopilotModelsAsync(
                 apiKey,
                 cancellationToken);
         }
@@ -304,6 +321,84 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
     }
 
+    private async Task<IReadOnlyList<AvailableModel>> GetGitHubCopilotModelsAsync(
+        string storedCredentials,
+        CancellationToken cancellationToken)
+    {
+        if (_gitHubCopilotCredentialService is null)
+        {
+            throw new ModelProviderException(
+                "GitHub Copilot credentials cannot be resolved in this runtime.");
+        }
+
+        GitHubCopilotResolvedCredential credential =
+            await _gitHubCopilotCredentialService.ResolveAsync(
+                storedCredentials,
+                forceRefresh: false,
+                cancellationToken);
+
+        bool forcedRefreshAfterAuthFailure = false;
+
+        while (true)
+        {
+            try
+            {
+                using HttpRequestMessage request = CreateGitHubCopilotModelsRequest(credential);
+                LogDebugApiRequest(request.Method, request.RequestUri);
+
+                using HttpResponseMessage response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+
+                string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                LogDebugApiResponse(response.StatusCode, responseBody);
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                    !forcedRefreshAfterAuthFailure)
+                {
+                    forcedRefreshAfterAuthFailure = true;
+                    credential = await _gitHubCopilotCredentialService.ResolveAsync(
+                        storedCredentials,
+                        forceRefresh: true,
+                        cancellationToken);
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    string detail = string.IsNullOrWhiteSpace(responseBody)
+                        ? $"Provider returned HTTP {(int)response.StatusCode}."
+                        : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
+
+                    throw new ModelProviderException(
+                        $"Unable to fetch GitHub Copilot models from the account API. {detail}");
+                }
+
+                IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+                if (models.Count > 0)
+                {
+                    return models;
+                }
+
+                throw new ModelProviderException(
+                    "The GitHub Copilot account API returned an invalid models response.");
+            }
+            catch (HttpRequestException exception)
+            {
+                throw new ModelProviderException(
+                    "Unable to fetch GitHub Copilot models from the account API.",
+                    exception);
+            }
+            catch (JsonException exception)
+            {
+                throw new ModelProviderException(
+                    "The GitHub Copilot account API returned an invalid models response.",
+                    exception);
+            }
+        }
+    }
+
     private HttpRequestMessage CreateOpenAiChatGptAccountModelsRequest(
         Uri baseUri,
         OpenAiChatGptAccountResolvedCredential credential,
@@ -334,6 +429,16 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         request.Headers.TryAddWithoutValidation("anthropic-beta", AnthropicClaudeAccountBetaHeader);
         request.Headers.TryAddWithoutValidation("User-Agent", AnthropicClaudeAccountUserAgent);
         request.Headers.TryAddWithoutValidation("x-app", "cli");
+        return request;
+    }
+
+    private static HttpRequestMessage CreateGitHubCopilotModelsRequest(
+        GitHubCopilotResolvedCredential credential)
+    {
+        HttpRequestMessage request = new(HttpMethod.Get, new Uri(credential.BaseUri, "models"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+        request.Headers.Accept.ParseAdd("application/json");
+        GitHubCopilotCredentialService.ApplyCopilotHeaders(request);
         return request;
     }
 

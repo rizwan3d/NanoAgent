@@ -25,6 +25,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.AnthropicClaudeAccount,
             "Use browser sign-in for a Claude Pro or Max account."),
         new(
+            "GitHub Copilot",
+            OnboardingProviderChoice.GitHubCopilot,
+            "Use browser device sign-in for GitHub Copilot, including GitHub Enterprise."),
+        new(
             "OpenRouter",
             OnboardingProviderChoice.OpenRouter,
             "Use OpenRouter with only an OpenRouter API key."),
@@ -53,6 +57,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IAgentProviderProfileFactory _profileFactory;
     private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
     private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
+    private readonly IGitHubCopilotAuthenticator? _gitHubCopilotAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -67,7 +72,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         IAgentProviderProfileFactory profileFactory,
         ILogger<FirstRunOnboardingService> logger,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
-        IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null)
+        IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -80,6 +86,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _profileFactory = profileFactory;
         _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
         _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
+        _gitHubCopilotAuthenticator = gitHubCopilotAuthenticator;
         _logger = logger;
     }
 
@@ -157,6 +164,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
             OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
             OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
+            OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
@@ -178,6 +186,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
             OnboardingProviderChoice.AnthropicClaudeAccount =>
                 await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
+            OnboardingProviderChoice.GitHubCopilot =>
+                await AuthenticateGitHubCopilotAsync(cancellationToken),
             _ => await PromptUntilValidAsync(
                     cancellationToken => _secretPrompt.PromptAsync(
                         new SecretPromptRequest(
@@ -222,6 +232,17 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         }
 
         return await _anthropicClaudeAccountAuthenticator.AuthenticateAsync(cancellationToken);
+    }
+
+    private async Task<string> AuthenticateGitHubCopilotAsync(CancellationToken cancellationToken)
+    {
+        if (_gitHubCopilotAuthenticator is null)
+        {
+            throw new InvalidOperationException(
+                "GitHub Copilot authentication is unavailable in this runtime.");
+        }
+
+        return await _gitHubCopilotAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
     private async Task<string> PromptUntilValidAsync(

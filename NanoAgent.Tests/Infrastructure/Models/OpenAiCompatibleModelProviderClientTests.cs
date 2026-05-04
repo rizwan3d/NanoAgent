@@ -4,6 +4,7 @@ using Moq;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
+using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
@@ -192,6 +193,45 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         credentialService.VerifyAll();
     }
 
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestGitHubCopilotModelsEndpointWithCopilotHeaders_When_ProviderIsConfigured()
+    {
+        Mock<IGitHubCopilotCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GitHubCopilotResolvedCredential(
+                "copilot-token",
+                EnterpriseDomain: null,
+                new Uri("https://api.individual.githubcopilot.com/")));
+
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "gpt-5" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            gitHubCopilotCredentialService: credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.GitHubCopilot, null),
+            "stored-credentials",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.individual.githubcopilot.com/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer copilot-token");
+        handler.CopilotIntegrationIdHeader.Should().Be("vscode-chat");
+        models.Select(model => model.Id).Should().Equal("gpt-5");
+        credentialService.VerifyAll();
+    }
+
+
 
     [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestAccountBackedModels_When_OpenAiChatGptAccountProviderIsConfigured()
@@ -307,14 +347,16 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         HttpClient httpClient,
         IOpenAiChatGptAccountCredentialService? credentialService = null,
         IOpenAiCodexClientVersionProvider? versionProvider = null,
-        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null)
+        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
             NullLogger<OpenAiCompatibleModelProviderClient>.Instance,
             credentialService,
             versionProvider,
-            anthropicClaudeAccountCredentialService);
+            anthropicClaudeAccountCredentialService,
+            gitHubCopilotCredentialService);
     }
 
     private sealed class StubOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider
@@ -353,6 +395,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         public string? OpenRouterTitleHeader { get; private set; }
 
         public string? AccountHeader { get; private set; }
+
+        public string? CopilotIntegrationIdHeader { get; private set; }
 
         public HttpStatusCode StatusCode { get; }
 
@@ -405,6 +449,11 @@ public sealed class OpenAiCompatibleModelProviderClientTests
                 out IEnumerable<string>? accountValues)
                 ? accountValues.FirstOrDefault()
                 : null;
+            CopilotIntegrationIdHeader = request.Headers.TryGetValues(
+                "Copilot-Integration-Id",
+                out IEnumerable<string>? integrationValues)
+                    ? integrationValues.FirstOrDefault()
+                    : null;
         }
     }
 

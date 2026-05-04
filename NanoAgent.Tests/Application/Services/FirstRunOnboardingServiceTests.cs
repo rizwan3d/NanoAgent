@@ -277,6 +277,79 @@ public sealed class FirstRunOnboardingServiceTests
         statusMessageWriter.VerifyAll();
     }
 
+    [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveGitHubCopilotConfiguration_When_CopilotProviderIsSelected()
+    {
+        AgentProviderProfile profile = new(ProviderKind.GitHubCopilot, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        selectionPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SelectionPromptRequest<OnboardingProviderChoice>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(OnboardingProviderChoice.GitHubCopilot);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: GitHub Copilot.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(profile, null),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("github-copilot-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateGitHubCopilot()).Returns(profile);
+
+        Mock<IGitHubCopilotAuthenticator> authenticator = new(MockBehavior.Strict);
+        authenticator
+            .Setup(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("github-copilot-credential-json");
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object,
+            gitHubCopilotAuthenticator: authenticator.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(profile, true));
+        profileFactory.Verify(factory => factory.CreateGitHubCopilot(), Times.Once);
+        authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        secretPrompt.VerifyNoOtherCalls();
+        inputValidator.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
 
     [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveOpenRouterConfiguration_When_OpenRouterIsSelected()
@@ -639,7 +712,8 @@ public sealed class FirstRunOnboardingServiceTests
         IApiKeySecretStore secretStore,
         IAgentProviderProfileFactory profileFactory,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
-        IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null)
+        IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
     {
         return new FirstRunOnboardingService(
             selectionPrompt,
@@ -653,6 +727,7 @@ public sealed class FirstRunOnboardingServiceTests
             profileFactory,
             NullLogger<FirstRunOnboardingService>.Instance,
             openAiChatGptAccountAuthenticator,
-            anthropicClaudeAccountAuthenticator);
+            anthropicClaudeAccountAuthenticator,
+            gitHubCopilotAuthenticator);
     }
 }

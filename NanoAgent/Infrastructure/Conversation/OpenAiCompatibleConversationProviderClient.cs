@@ -4,6 +4,7 @@ using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
+using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
 using System.Net.Http.Headers;
@@ -29,6 +30,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
     private readonly HttpClient _httpClient;
     private readonly Func<double> _nextJitter;
     private readonly IAnthropicClaudeAccountCredentialService? _anthropicClaudeAccountCredentialService;
+    private readonly IGitHubCopilotCredentialService? _gitHubCopilotCredentialService;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleConversationProviderClient> _logger;
     private readonly string _sessionId = Guid.NewGuid().ToString("N");
@@ -39,7 +41,8 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
         Func<double>? nextJitter = null,
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
-        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null)
+        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
     {
         _httpClient = httpClient;
         _logger = logger;
@@ -47,6 +50,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         _nextJitter = nextJitter ?? Random.Shared.NextDouble;
         _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
         _anthropicClaudeAccountCredentialService = anthropicClaudeAccountCredentialService;
+        _gitHubCopilotCredentialService = gitHubCopilotCredentialService;
     }
 
     public async Task<ConversationProviderPayload> SendAsync(
@@ -64,6 +68,11 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         if (request.ProviderProfile.ProviderKind == ProviderKind.AnthropicClaudeAccount)
         {
             return await SendAnthropicClaudeAccountAsync(request, cancellationToken);
+        }
+
+        if (request.ProviderProfile.ProviderKind == ProviderKind.GitHubCopilot)
+        {
+            return await SendGitHubCopilotAsync(request, cancellationToken);
         }
 
         OpenAiChatCompletionRequest payload = BuildRequestPayload(request);
@@ -300,6 +309,90 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
     }
 
+    private async Task<ConversationProviderPayload> SendGitHubCopilotAsync(
+        ConversationProviderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_gitHubCopilotCredentialService is null)
+        {
+            throw new ConversationProviderException(
+                "GitHub Copilot credentials cannot be resolved in this runtime.");
+        }
+
+        OpenAiChatCompletionRequest payload = BuildRequestPayload(request);
+        string requestBody = JsonSerializer.Serialize(
+            payload,
+            OpenAiConversationJsonContext.Default.OpenAiChatCompletionRequest);
+        GitHubCopilotResolvedCredential credential =
+            await _gitHubCopilotCredentialService.ResolveAsync(
+                request.ApiKey,
+                forceRefresh: false,
+                cancellationToken);
+        int retryCount = 0;
+        bool forcedRefreshAfterAuthFailure = false;
+
+        for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        {
+            using HttpRequestMessage httpRequest = CreateGitHubCopilotHttpRequest(
+                credential,
+                request,
+                requestBody);
+            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                httpRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
+
+            if (response.IsSuccessStatusCode)
+            {
+                if (string.IsNullOrWhiteSpace(responseBody))
+                {
+                    throw new ConversationProviderException(
+                        "The provider returned an empty response body for the conversation request.");
+                }
+
+                return new ConversationProviderPayload(
+                    request.ProviderProfile.ProviderKind,
+                    responseBody,
+                    TryGetResponseId(response),
+                    retryCount);
+            }
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized && !forcedRefreshAfterAuthFailure)
+            {
+                forcedRefreshAfterAuthFailure = true;
+                credential = await _gitHubCopilotCredentialService.ResolveAsync(
+                    request.ApiKey,
+                    forceRefresh: true,
+                    cancellationToken);
+                continue;
+            }
+
+            if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
+            {
+                retryCount++;
+                TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
+                _logger.LogWarning(
+                    "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                    (int)response.StatusCode,
+                    attempt + 1,
+                    MaxRetryAttempts + 1,
+                    Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await _delayAsync(retryDelay, cancellationToken);
+                continue;
+            }
+
+            ThrowConversationRequestFailed(response.StatusCode, responseBody);
+        }
+
+        throw new ConversationProviderException(
+            "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
+    }
+
     private static HttpRequestMessage CreateHttpRequest(
         Uri baseUri,
         ProviderKind providerKind,
@@ -349,6 +442,25 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         httpRequest.Headers.TryAddWithoutValidation("anthropic-beta", AnthropicClaudeAccountBetaHeader);
         httpRequest.Headers.TryAddWithoutValidation("User-Agent", AnthropicClaudeAccountUserAgent);
         httpRequest.Headers.TryAddWithoutValidation("x-app", "cli");
+        httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        return httpRequest;
+    }
+
+    private static HttpRequestMessage CreateGitHubCopilotHttpRequest(
+        GitHubCopilotResolvedCredential credential,
+        ConversationProviderRequest providerRequest,
+        string requestBody)
+    {
+        HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(credential.BaseUri, "chat/completions"));
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+        GitHubCopilotCredentialService.ApplyCopilotHeaders(httpRequest);
+        httpRequest.Headers.TryAddWithoutValidation("Openai-Intent", "conversation-edits");
+        httpRequest.Headers.TryAddWithoutValidation("X-Initiator", InferGitHubCopilotInitiator(providerRequest.Messages));
+        if (HasImageInput(providerRequest.Messages))
+        {
+            httpRequest.Headers.TryAddWithoutValidation("Copilot-Vision-Request", "true");
+        }
+
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
         return httpRequest;
     }
@@ -569,6 +681,23 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         return string.IsNullOrWhiteSpace(normalized)
             ? "tool_call"
             : normalized[..Math.Min(normalized.Length, 64)];
+    }
+
+    private static string InferGitHubCopilotInitiator(IReadOnlyList<ConversationRequestMessage> messages)
+    {
+        ConversationRequestMessage? lastMessage = messages.Count == 0
+            ? null
+            : messages[^1];
+
+        return lastMessage is not null &&
+            !string.Equals(lastMessage.Role, "user", StringComparison.Ordinal)
+                ? "agent"
+                : "user";
+    }
+
+    private static bool HasImageInput(IReadOnlyList<ConversationRequestMessage> messages)
+    {
+        return messages.Any(static message => message.Attachments.Any(static attachment => attachment.IsImage));
     }
 
     private static string CreateToolCallId(string? rawId, string? responseId, int ordinal)
