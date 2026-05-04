@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Profiles;
 
@@ -181,7 +182,7 @@ internal static class WorkspaceAgentProfileLoader
             profileName,
             mode,
             description,
-            document.Body,
+            SecretRedactor.Redact(document.Body),
             enabledTools,
             new AgentProfilePermissionOverlay(
                 editMode,

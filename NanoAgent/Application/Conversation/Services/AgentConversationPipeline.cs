@@ -59,6 +59,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly IConversationConfigurationAccessor _configurationAccessor;
     private readonly IBudgetControlsUsageService _budgetControlsUsageService;
     private readonly IWorkspaceSystemPromptProvider _workspaceSystemPromptProvider;
+    private readonly IWorkspaceAgentProfilePromptProvider _workspaceAgentProfilePromptProvider;
     private readonly IWorkspaceInstructionsProvider _workspaceInstructionsProvider;
     private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ISkillService _skillService;
@@ -81,7 +82,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ILifecycleHookService? lifecycleHookService = null,
         ISkillService? skillService = null,
         IToolOutputFormatter? toolOutputFormatter = null,
-        IBudgetControlsUsageService? budgetControlsUsageService = null)
+        IBudgetControlsUsageService? budgetControlsUsageService = null,
+        IWorkspaceAgentProfilePromptProvider? workspaceAgentProfilePromptProvider = null)
     {
         _timeProvider = timeProvider;
         _tokenEstimator = tokenEstimator;
@@ -94,6 +96,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _configurationAccessor = configurationAccessor;
         _budgetControlsUsageService = budgetControlsUsageService ?? DisabledBudgetControlsUsageService.Instance;
         _workspaceSystemPromptProvider = workspaceSystemPromptProvider;
+        _workspaceAgentProfilePromptProvider =
+            workspaceAgentProfilePromptProvider ?? DisabledWorkspaceAgentProfilePromptProvider.Instance;
         _workspaceInstructionsProvider = workspaceInstructionsProvider;
         _lessonMemoryService = lessonMemoryService;
         _skillService = skillService ?? DisabledSkillService.Instance;
@@ -485,7 +489,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         string lessonQuery,
         CancellationToken cancellationToken)
     {
-        string? contribution = session.AgentProfile.SystemPrompt;
+        string? workspaceProfilePrompt = await _workspaceAgentProfilePromptProvider.LoadAsync(
+            session,
+            cancellationToken);
+        string? contribution = string.IsNullOrWhiteSpace(workspaceProfilePrompt)
+            ? session.AgentProfile.SystemPrompt
+            : workspaceProfilePrompt;
         string? workspaceInstructions = await _workspaceInstructionsProvider.LoadAsync(
             session,
             cancellationToken);
@@ -1221,6 +1230,19 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult<WorkspaceSkillLoadResult?>(null);
+        }
+    }
+
+    private sealed class DisabledWorkspaceAgentProfilePromptProvider : IWorkspaceAgentProfilePromptProvider
+    {
+        public static DisabledWorkspaceAgentProfilePromptProvider Instance { get; } = new();
+
+        public Task<string?> LoadAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<string?>(null);
         }
     }
 

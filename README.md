@@ -114,6 +114,8 @@ This is repo-scoped memory that your team can inspect, diff, and version-control
 | `general` | Bounded delegated implementation work. |
 | `explore` | Fast read-only project investigation. |
 
+Override built-in profile prompts per workspace with `.nanoagent/agents/build.md`, `plan.md`, `review.md`, `general.md`, or `explore.md`. NanoAgent uses the file body as the prompt while keeping the built-in tools and permissions.
+
 ### Providers
 
 | Provider | Setup |
