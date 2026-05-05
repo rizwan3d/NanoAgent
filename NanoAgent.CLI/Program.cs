@@ -109,7 +109,8 @@ public static partial class Program
             return await RunSingleTurnAsync(
                 invocation.BackendArgs,
                 invocation.ProviderAuthKey,
-                invocation.Prompt ?? string.Empty);
+                invocation.Prompt ?? string.Empty,
+                invocation.JsonOutput);
         }
 
         if (invocation.Mode == CliMode.Acp)
@@ -230,11 +231,12 @@ public static partial class Program
     private static async Task<int> RunSingleTurnAsync(
         string[] args,
         string? providerAuthKey,
-        string prompt)
+        string prompt,
+        bool jsonOutput)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
-            Console.Error.WriteLine("No prompt was provided.");
+            WriteSingleTurnError(jsonOutput, "missing_prompt", "No prompt was provided.");
             return 2;
         }
 
@@ -252,7 +254,7 @@ public static partial class Program
 
         try
         {
-            await backend.InitializeAsync(uiBridge, cancellation.Token);
+            BackendSessionInfo sessionInfo = await backend.InitializeAsync(uiBridge, cancellation.Token);
 
             string normalizedPrompt = prompt.Trim();
             if (normalizedPrompt.StartsWith("/", StringComparison.Ordinal))
@@ -261,7 +263,15 @@ public static partial class Program
                     normalizedPrompt,
                     cancellation.Token);
 
-                WriteCommandResult(commandResult.CommandResult);
+                if (jsonOutput)
+                {
+                    Console.WriteLine(CliJsonOutputWriter.FormatCommand(commandResult));
+                }
+                else
+                {
+                    WriteCommandResult(commandResult.CommandResult);
+                }
+
                 return commandResult.CommandResult.FeedbackKind == ReplFeedbackKind.Error ? 1 : 0;
             }
 
@@ -270,28 +280,46 @@ public static partial class Program
                 uiBridge,
                 cancellation.Token);
 
-            Console.WriteLine(result.ResponseText);
+            Console.WriteLine(jsonOutput
+                ? CliJsonOutputWriter.FormatTurn(result, sessionInfo)
+                : result.ResponseText);
             return 0;
         }
         catch (PromptCancelledException exception)
         {
-            Console.Error.WriteLine(exception.Message);
+            WriteSingleTurnError(jsonOutput, "prompt_cancelled", exception.Message);
             return 1;
         }
         catch (OperationCanceledException)
         {
-            Console.Error.WriteLine("Cancelled.");
+            WriteSingleTurnError(jsonOutput, "cancelled", "Cancelled.");
             return 130;
         }
         catch (Exception exception)
         {
-            Console.Error.WriteLine($"NanoAgent error: {exception.Message}");
+            WriteSingleTurnError(jsonOutput, "error", exception.Message);
             return 1;
         }
         finally
         {
             Console.CancelKeyPress -= cancelKeyPressHandler;
         }
+    }
+
+    private static void WriteSingleTurnError(
+        bool jsonOutput,
+        string errorCode,
+        string message)
+    {
+        if (jsonOutput)
+        {
+            Console.WriteLine(CliJsonOutputWriter.FormatError(errorCode, message));
+            return;
+        }
+
+        Console.Error.WriteLine(errorCode == "error"
+            ? $"NanoAgent error: {message}"
+            : message);
     }
 
     private static void WriteCommandResult(ReplCommandResult result)
@@ -332,6 +360,7 @@ public static partial class Program
               --acp                Speak ACP over stdin/stdout for compatible editors
               --interactive        Start the terminal UI explicitly
               --stdin              Read the one-shot prompt from standard input
+              --json               Write one-shot result as a JSON object
               -p, --prompt <text>  One-shot prompt text
               --provider-auth-key <key>
                                    Use this key for provider API-key onboarding

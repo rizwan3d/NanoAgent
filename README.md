@@ -173,6 +173,12 @@ For terminal onboarding, you can pass an API key up front:
 nanoai --provider-auth-key <key>
 ```
 
+For machine-readable one-shot output, add `--json`:
+
+```bash
+nanoai --json "Summarize this repository"
+```
+
 ## Common Commands
 
 | Command | Purpose |
