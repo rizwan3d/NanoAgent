@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Backend;
 using NanoAgent.Infrastructure.Mcp;
 
 namespace NanoAgent.Tests.Infrastructure.Mcp;
@@ -89,6 +90,80 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
         servers.Should().BeEmpty();
     }
 
+    [Fact]
+    public void Load_Should_MergeSessionScopedAcpServersAfterUserAndWorkspaceConfigs()
+    {
+        WriteConfig(
+            _userConfigPath,
+            """
+            {
+              "mcpServers": {
+                "shared": {
+                  "command": "npx",
+                  "args": ["user"],
+                  "cwd": ".mcp"
+                }
+              }
+            }
+            """);
+        WriteConfig(
+            Path.Combine(_workspaceRoot, ".nanoagent", "agent-profile.json"),
+            """
+            {
+              "mcpServers": {
+                "workspace": {
+                  "command": "dotnet",
+                  "args": ["tool"]
+                }
+              }
+            }
+            """);
+
+        BackendMcpServerConfiguration shared = new("shared")
+        {
+            Command = "node",
+            Source = "ACP session"
+        };
+        shared.Mark(nameof(BackendMcpServerConfiguration.Command));
+        shared.Url = null;
+        shared.Mark(nameof(BackendMcpServerConfiguration.Url));
+        shared.Args.Add("editor");
+        shared.Mark(nameof(BackendMcpServerConfiguration.Args));
+
+        BackendMcpServerConfiguration editor = new("editor")
+        {
+            Command = "node",
+            Source = "ACP session"
+        };
+        editor.Mark(nameof(BackendMcpServerConfiguration.Command));
+        editor.Args.Add("editor-mcp.js");
+        editor.Mark(nameof(BackendMcpServerConfiguration.Args));
+
+        NanoAgentMcpConfigLoader sut = CreateLoader([shared, editor]);
+
+        IReadOnlyList<McpServerConfiguration> servers = sut.Load();
+
+        servers.Select(static server => server.Name)
+            .Should()
+            .Equal("editor", "shared", "workspace");
+
+        McpServerConfiguration sharedResult = servers.Should()
+            .ContainSingle(static server => server.Name == "shared")
+            .Subject;
+        sharedResult.Command.Should().Be("node");
+        sharedResult.Url.Should().BeNull();
+        sharedResult.Args.Should().Equal("editor");
+        sharedResult.Cwd.Should().Be(Path.Combine(_workspaceRoot, ".mcp"));
+        sharedResult.SourcePath.Should().Be("ACP session");
+
+        McpServerConfiguration editorResult = servers.Should()
+            .ContainSingle(static server => server.Name == "editor")
+            .Subject;
+        editorResult.Command.Should().Be("node");
+        editorResult.Args.Should().Equal("editor-mcp.js");
+        editorResult.SourcePath.Should().Be("ACP session");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_tempRoot))
@@ -97,11 +172,13 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
         }
     }
 
-    private NanoAgentMcpConfigLoader CreateLoader()
+    private NanoAgentMcpConfigLoader CreateLoader(
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers = null)
     {
         return new NanoAgentMcpConfigLoader(
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new StubUserDataPathProvider(_userConfigPath));
+            new StubUserDataPathProvider(_userConfigPath),
+            sessionMcpServers);
     }
 
     private static void WriteConfig(string path, string content)

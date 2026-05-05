@@ -82,7 +82,7 @@ Example Zed-style server configuration:
 
 ACP mode is useful because it lets NanoAgent plug into editor and workflow clients without each integration needing a custom NanoAgent API. It supports initialization, session creation/loading, prompt turns, cancellation, session close, and session updates for assistant messages, plans, and tool progress.
 
-Run `nanoai` once first to finish provider onboarding. ACP mode uses NanoAgent's configured MCP servers; client-supplied `mcpServers` are not imported yet.
+Run `nanoai` once first to finish provider onboarding. ACP mode merges client-supplied `mcpServers` with NanoAgent's user and workspace MCP configuration for that ACP session only.
 
 ### CI Review Automation
 
