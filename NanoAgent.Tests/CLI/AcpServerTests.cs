@@ -136,6 +136,68 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_AllowMultipleActiveSessions()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        List<FakeBackend> backends = [];
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}",
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}",
+            """
+            {"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"sess-1","prompt":[{"type":"text","text":"First"}]}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":5,"method":"session/prompt","params":{"sessionId":"sess-2","prompt":[{"type":"text","text":"Second"}]}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":6,"method":"session/close","params":{"sessionId":"sess-1"}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":7,"method":"session/prompt","params":{"sessionId":"sess-2","prompt":[{"type":"text","text":"Still active"}]}}
+            """);
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ =>
+            {
+                FakeBackend backend = new($"sess-{backends.Count + 1}");
+                backends.Add(backend);
+                return backend;
+            });
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        FindResponse(messages, 2).GetProperty("result").GetProperty("sessionId").GetString().Should().Be("sess-1");
+        FindResponse(messages, 3).GetProperty("result").GetProperty("sessionId").GetString().Should().Be("sess-2");
+        FindResponse(messages, 4).GetProperty("result").GetProperty("stopReason").GetString().Should().Be("end_turn");
+        FindResponse(messages, 5).GetProperty("result").GetProperty("stopReason").GetString().Should().Be("end_turn");
+        FindResponse(messages, 6).GetProperty("result").ValueKind.Should().Be(JsonValueKind.Object);
+        FindResponse(messages, 7).GetProperty("result").GetProperty("stopReason").GetString().Should().Be("end_turn");
+
+        backends.Should().HaveCount(2);
+        backends[0].Inputs.Should().Equal("First");
+        backends[1].Inputs.Should().Equal("Second", "Still active");
+        backends[0].DisposeCount.Should().Be(1);
+        backends[1].DisposeCount.Should().Be(0);
+    }
+
+    [Fact]
     public void Parse_Should_Not_ReadRedirectedStdin_WhenAcpModeIsSelected()
     {
         bool readCalled = false;
@@ -186,12 +248,24 @@ public sealed class AcpServerTests
 
     private sealed class FakeBackend : INanoAgentBackend
     {
+        private readonly string _sessionId;
+
+        public FakeBackend(string sessionId = "sess-test")
+        {
+            _sessionId = sessionId;
+        }
+
+        public int DisposeCount { get; private set; }
+
+        public List<string> Inputs { get; } = [];
+
         public string LastCommand { get; private set; } = string.Empty;
 
         public string LastInput { get; private set; } = string.Empty;
 
         public ValueTask DisposeAsync()
         {
+            DisposeCount++;
             return ValueTask.CompletedTask;
         }
 
@@ -227,6 +301,7 @@ public sealed class AcpServerTests
             CancellationToken cancellationToken)
         {
             LastInput = input;
+            Inputs.Add(input);
             uiBridge.ShowExecutionPlan(new ExecutionPlanProgress(["Inspect context"], 0));
 
             ConversationToolCall toolCall = new("call-1", "file_read", """{"path":"README.md"}""");
@@ -247,11 +322,11 @@ public sealed class AcpServerTests
             throw new NotSupportedException();
         }
 
-        private static BackendSessionInfo CreateSessionInfo()
+        private BackendSessionInfo CreateSessionInfo()
         {
             return new BackendSessionInfo(
-                "sess-test",
-                "nanoai --section sess-test",
+                _sessionId,
+                $"nanoai --section {_sessionId}",
                 "OpenAI",
                 "gpt-test",
                 ActiveModelContextWindowTokens: null,
