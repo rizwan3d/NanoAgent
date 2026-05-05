@@ -13,7 +13,6 @@ nanoai_merge_request_review:
     - apt-get update
     - apt-get install -y --no-install-recommends bash ca-certificates curl git
     - curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
-    - export PATH="$HOME/.local/bin:$PATH"
   script:
     - bash .gitlab/nanoai-gitlab-review.sh
   artifacts:

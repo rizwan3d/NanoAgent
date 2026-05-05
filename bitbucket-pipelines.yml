@@ -12,7 +12,6 @@ pipelines:
             - apt-get update
             - apt-get install -y --no-install-recommends bash ca-certificates curl git python3
             - curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
-            - export PATH="$HOME/.local/bin:$PATH"
             - bash .bitbucket/nanoai-bitbucket-review.sh
           artifacts:
             - artifacts/nanoai-review/**

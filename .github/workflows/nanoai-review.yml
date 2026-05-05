@@ -43,7 +43,6 @@ jobs:
       - name: Install NanoAI
         run: |
           curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Review pull request
         if: ${{ github.event_name == 'pull_request_target' }}
