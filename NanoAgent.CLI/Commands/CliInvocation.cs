@@ -12,6 +12,7 @@ internal sealed record CliInvocation(
     string[] BackendArgs,
     string? ProviderAuthKey,
     string? Prompt,
+    bool JsonOutput,
     bool ShowHelp)
 {
     private static readonly string[] BackendOptionsWithValues =
@@ -27,6 +28,7 @@ internal sealed record CliInvocation(
         [],
         ProviderAuthKey: null,
         Prompt: null,
+        JsonOutput: false,
         ShowHelp: true);
 
     public static CliInvocation Parse(
@@ -42,6 +44,7 @@ internal sealed record CliInvocation(
         string? providerAuthKey = null;
         bool forceAcp = false;
         bool forceInteractive = false;
+        bool jsonOutput = false;
         bool readPromptFromStandardInput = false;
 
         for (int index = 0; index < args.Count; index++)
@@ -68,6 +71,12 @@ internal sealed record CliInvocation(
             if (IsInteractiveOption(arg))
             {
                 forceInteractive = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
+            {
+                jsonOutput = true;
                 continue;
             }
 
@@ -108,6 +117,11 @@ internal sealed record CliInvocation(
                 throw new ArgumentException("--acp cannot be combined with --interactive.");
             }
 
+            if (jsonOutput)
+            {
+                throw new ArgumentException("--json cannot be combined with --acp.");
+            }
+
             if (readPromptFromStandardInput || promptParts.Count > 0)
             {
                 throw new ArgumentException("--acp uses stdin for Agent Client Protocol messages and cannot accept a one-shot prompt.");
@@ -118,11 +132,17 @@ internal sealed record CliInvocation(
                 backendArgs.ToArray(),
                 providerAuthKey,
                 Prompt: null,
+                JsonOutput: false,
                 ShowHelp: false);
         }
 
         if (forceInteractive)
         {
+            if (jsonOutput)
+            {
+                throw new ArgumentException("--json requires a one-shot prompt.");
+            }
+
             if (stdinRedirected)
             {
                 throw new ArgumentException("--interactive requires terminal input.");
@@ -133,6 +153,7 @@ internal sealed record CliInvocation(
                 backendArgs.ToArray(),
                 providerAuthKey,
                 Prompt: null,
+                JsonOutput: false,
                 ShowHelp: false);
         }
 
@@ -153,6 +174,11 @@ internal sealed record CliInvocation(
         string prompt = string.Join(' ', promptParts).Trim();
         if (string.IsNullOrWhiteSpace(prompt))
         {
+            if (jsonOutput)
+            {
+                throw new ArgumentException("--json requires a one-shot prompt.");
+            }
+
             if (stdinRedirected)
             {
                 throw new ArgumentException("No prompt was provided.");
@@ -163,6 +189,7 @@ internal sealed record CliInvocation(
                 backendArgs.ToArray(),
                 providerAuthKey,
                 Prompt: null,
+                JsonOutput: false,
                 ShowHelp: false);
         }
 
@@ -171,6 +198,7 @@ internal sealed record CliInvocation(
             backendArgs.ToArray(),
             providerAuthKey,
             prompt,
+            jsonOutput,
             ShowHelp: false);
     }
 
