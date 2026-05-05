@@ -320,7 +320,7 @@ Example editor server configuration:
 }
 ```
 
-Run `nanoai` once before ACP use so provider onboarding, credentials, and the default model are already configured. ACP mode currently supports one active NanoAgent session per process. It uses NanoAgent's user and workspace MCP configuration; `mcpServers` sent by an ACP client are logged and ignored for now.
+Run `nanoai` once before ACP use so provider onboarding, credentials, and the default model are already configured. ACP mode currently supports one active NanoAgent session per process. It merges ACP client `mcpServers` with NanoAgent's user and workspace MCP configuration for that ACP session only, so editor-provided MCP tools do not become global configuration.
 
 ## Review Automation
 
@@ -676,7 +676,7 @@ If a workspace agent file uses a built-in profile name such as `build` or `revie
 
 ## MCP Servers
 
-NanoAgent can load MCP servers from user-level and workspace-level `agent-profile.json` files.
+NanoAgent can load MCP servers from user-level and workspace-level `agent-profile.json` files. ACP clients can also supply session-scoped `mcpServers`; those entries are merged after user and workspace config and are visible in `/mcp` only for that ACP session.
 
 Example:
 

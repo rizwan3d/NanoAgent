@@ -21,7 +21,7 @@ internal sealed class AcpServer : IAsyncDisposable
     private const int ProtocolVersion = 1;
 
     private readonly string[] _backendArgs;
-    private readonly Func<string[], INanoAgentBackend> _backendFactory;
+    private readonly Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> _backendFactory;
     private readonly TextWriter _error;
     private readonly TextReader _input;
     private readonly TextWriter _output;
@@ -35,6 +35,7 @@ internal sealed class AcpServer : IAsyncDisposable
     private readonly SemaphoreSlim _outputLock = new(1, 1);
     private readonly string? _providerAuthKey;
     private readonly string _startupDirectory;
+    private IReadOnlyList<BackendMcpServerConfiguration> _initializeMcpServers = [];
     private AcpSession? _session;
     private long _nextRequestId;
 
@@ -50,7 +51,7 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
-            static args => new NanoAgentBackend(args))
+            static (args, sessionMcpServers) => new NanoAgentBackend(args, sessionMcpServers))
     {
     }
 
@@ -61,6 +62,23 @@ internal sealed class AcpServer : IAsyncDisposable
         string[] backendArgs,
         string? providerAuthKey,
         Func<string[], INanoAgentBackend> backendFactory)
+        : this(
+            input,
+            output,
+            error,
+            backendArgs,
+            providerAuthKey,
+            (args, _) => (backendFactory ?? throw new ArgumentNullException(nameof(backendFactory)))(args))
+    {
+    }
+
+    internal AcpServer(
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        string[] backendArgs,
+        string? providerAuthKey,
+        Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _output = output ?? throw new ArgumentNullException(nameof(output));
@@ -194,7 +212,7 @@ internal sealed class AcpServer : IAsyncDisposable
             switch (method)
             {
                 case "initialize":
-                    await HandleInitializeAsync(responseId, cancellationToken);
+                    await HandleInitializeAsync(root, responseId, cancellationToken);
                     break;
 
                 case "authenticate":
@@ -245,8 +263,17 @@ internal sealed class AcpServer : IAsyncDisposable
         }
     }
 
-    private async Task HandleInitializeAsync(JsonElement? id, CancellationToken cancellationToken)
+    private async Task HandleInitializeAsync(
+        JsonElement root,
+        JsonElement? id,
+        CancellationToken cancellationToken)
     {
+        if (TryGetProperty(root, "params", out JsonElement parameters) &&
+            parameters.ValueKind == JsonValueKind.Object)
+        {
+            _initializeMcpServers = AcpMcpServerParser.Parse(parameters, "ACP initialize");
+        }
+
         await SendResultAsync(
             id,
             writer =>
@@ -264,7 +291,7 @@ internal sealed class AcpServer : IAsyncDisposable
                 writer.WriteEndObject();
                 writer.WritePropertyName("mcpCapabilities");
                 writer.WriteStartObject();
-                writer.WriteBoolean("http", false);
+                writer.WriteBoolean("http", true);
                 writer.WriteBoolean("sse", false);
                 writer.WriteEndObject();
                 writer.WritePropertyName("sessionCapabilities");
@@ -307,7 +334,7 @@ internal sealed class AcpServer : IAsyncDisposable
     {
         JsonElement parameters = GetRequiredParams(root);
         string cwd = ReadRequiredAbsolutePath(parameters, "cwd");
-        LogUnsupportedMcpServers(parameters);
+        IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers = CreateSessionMcpServers(parameters);
 
         if (_session is not null)
         {
@@ -320,6 +347,7 @@ internal sealed class AcpServer : IAsyncDisposable
             cwd,
             sectionId: null,
             replayHistory: false,
+            sessionMcpServers,
             cancellationToken);
 
         _session = session;
@@ -345,7 +373,7 @@ internal sealed class AcpServer : IAsyncDisposable
         JsonElement parameters = GetRequiredParams(root);
         string cwd = ReadRequiredAbsolutePath(parameters, "cwd");
         string sessionId = ReadRequiredString(parameters, "sessionId");
-        LogUnsupportedMcpServers(parameters);
+        IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers = CreateSessionMcpServers(parameters);
 
         if (_session is not null)
         {
@@ -358,6 +386,7 @@ internal sealed class AcpServer : IAsyncDisposable
             cwd,
             sessionId,
             replayHistory: true,
+            sessionMcpServers,
             cancellationToken);
 
         _session = session;
@@ -388,17 +417,30 @@ internal sealed class AcpServer : IAsyncDisposable
         {
             Directory.SetCurrentDirectory(session.WorkingDirectory);
 
-            ConversationTurnResult result = await session.Backend.RunTurnAsync(
-                prompt.Text,
-                prompt.Attachments,
-                session.Bridge,
-                promptCancellation.Token);
+            string responseText;
+            if (prompt.Attachments.Count == 0 &&
+                prompt.Text.StartsWith("/", StringComparison.Ordinal))
+            {
+                BackendCommandResult commandResult = await session.Backend.RunCommandAsync(
+                    prompt.Text,
+                    promptCancellation.Token);
+                responseText = FormatCommandResultMessage(commandResult.CommandResult);
+            }
+            else
+            {
+                ConversationTurnResult result = await session.Backend.RunTurnAsync(
+                    prompt.Text,
+                    prompt.Attachments,
+                    session.Bridge,
+                    promptCancellation.Token);
+                responseText = result.ResponseText;
+            }
 
             await session.Bridge.FlushAsync();
 
-            if (!string.IsNullOrWhiteSpace(result.ResponseText))
+            if (!string.IsNullOrWhiteSpace(responseText))
             {
-                await SendAgentMessageChunkAsync(session.SessionId, result.ResponseText, cancellationToken);
+                await SendAgentMessageChunkAsync(session.SessionId, responseText, cancellationToken);
             }
 
             await SendResultAsync(
@@ -487,12 +529,13 @@ internal sealed class AcpServer : IAsyncDisposable
         string cwd,
         string? sectionId,
         bool replayHistory,
+        IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers,
         CancellationToken cancellationToken)
     {
         Directory.SetCurrentDirectory(cwd);
 
         string[] backendArgs = CreateBackendArgs(sectionId);
-        INanoAgentBackend backend = _backendFactory(backendArgs);
+        INanoAgentBackend backend = _backendFactory(backendArgs, sessionMcpServers);
         AcpUiBridge bridge = new(this, _error, _providerAuthKey);
 
         try
@@ -1076,6 +1119,23 @@ internal sealed class AcpServer : IAsyncDisposable
         builder.Append(value.Trim());
     }
 
+    private static string FormatCommandResultMessage(ReplCommandResult result)
+    {
+        if (string.IsNullOrWhiteSpace(result.Message))
+        {
+            return string.Empty;
+        }
+
+        string prefix = result.FeedbackKind switch
+        {
+            ReplFeedbackKind.Error => "Error: ",
+            ReplFeedbackKind.Warning => "Warning: ",
+            _ => string.Empty
+        };
+
+        return prefix + result.Message.Trim();
+    }
+
     private static JsonElement GetRequiredParams(JsonElement root)
     {
         if (!TryGetProperty(root, "params", out JsonElement parameters) ||
@@ -1129,15 +1189,24 @@ internal sealed class AcpServer : IAsyncDisposable
         return value.Trim();
     }
 
-    private void LogUnsupportedMcpServers(JsonElement parameters)
+    private IReadOnlyList<BackendMcpServerConfiguration> CreateSessionMcpServers(JsonElement parameters)
     {
-        if (TryGetProperty(parameters, "mcpServers", out JsonElement mcpServers) &&
-            mcpServers.ValueKind == JsonValueKind.Array &&
-            mcpServers.GetArrayLength() > 0)
+        IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers =
+            AcpMcpServerParser.Parse(parameters, "ACP session");
+
+        if (_initializeMcpServers.Count == 0)
         {
-            _error.WriteLine(
-                "NanoAgent ACP: client-supplied mcpServers are not imported yet; using NanoAgent MCP configuration.");
+            return sessionMcpServers;
         }
+
+        if (sessionMcpServers.Count == 0)
+        {
+            return _initializeMcpServers;
+        }
+
+        return _initializeMcpServers
+            .Concat(sessionMcpServers)
+            .ToArray();
     }
 
     private static bool IsResponse(JsonElement root)

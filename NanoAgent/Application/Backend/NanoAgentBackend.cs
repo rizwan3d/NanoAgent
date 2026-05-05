@@ -11,6 +11,7 @@ namespace NanoAgent.Application.Backend;
 public sealed class NanoAgentBackend : INanoAgentBackend
 {
     private readonly string[] _args;
+    private readonly IReadOnlyList<BackendMcpServerConfiguration> _sessionMcpServers;
     private IAgentTurnService? _agentTurnService;
     private IHost? _host;
     private IProviderSetupService? _providerSetupService;
@@ -25,8 +26,16 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private bool _updatePromptShown;
 
     public NanoAgentBackend(string[] args)
+        : this(args, [])
+    {
+    }
+
+    public NanoAgentBackend(
+        string[] args,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers)
     {
         _args = args;
+        _sessionMcpServers = sessionMcpServers ?? [];
     }
 
     public async Task<BackendSessionInfo> InitializeAsync(
@@ -42,7 +51,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         CliSessionOptions options = ParseSessionOptions(_args);
 
-        _host = NanoAgentHostFactory.Create(uiBridge, _args);
+        _host = NanoAgentHostFactory.Create(uiBridge, _args, _sessionMcpServers);
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();

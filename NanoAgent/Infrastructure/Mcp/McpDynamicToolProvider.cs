@@ -82,7 +82,7 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
                     Enabled: false,
                     IsAvailable: false,
                     ToolCount: 0,
-                    Details: "disabled"));
+                    Details: FormatDetails(configuration, "disabled")));
                 continue;
             }
 
@@ -122,7 +122,7 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
                     Enabled: true,
                     IsAvailable: true,
                     ToolCount: enabledTools.Length,
-                    Details: client.Endpoint));
+                    Details: FormatDetails(configuration, client.Endpoint)));
             }
             catch (Exception exception)
             {
@@ -139,7 +139,7 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
                     Enabled: true,
                     IsAvailable: false,
                     ToolCount: 0,
-                    Details: exception.Message));
+                    Details: FormatDetails(configuration, exception.Message)));
 
                 if (configuration.Required)
                 {
@@ -181,6 +181,23 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
         return !string.IsNullOrWhiteSpace(configuration.Url)
             ? "http"
             : "unknown";
+    }
+
+    private static string FormatDetails(McpServerConfiguration configuration, string? details)
+    {
+        string normalizedDetails = string.IsNullOrWhiteSpace(details)
+            ? string.Empty
+            : details.Trim();
+
+        if (!NanoAgentMcpConfigLoader.IsAcpSource(configuration.SourcePath))
+        {
+            return normalizedDetails;
+        }
+
+        string source = configuration.SourcePath!.Trim();
+        return string.IsNullOrWhiteSpace(normalizedDetails)
+            ? $"source: {source}"
+            : $"{normalizedDetails}; source: {source}";
     }
 
     private static ToolApprovalMode GetApprovalMode(

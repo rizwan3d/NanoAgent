@@ -75,6 +75,67 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_ScopeInitializeAndSessionMcpServersToBackend()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        FakeBackend backend = new();
+        IReadOnlyList<BackendMcpServerConfiguration>? capturedMcpServers = null;
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"mcpServers":[{"name":"init-server","command":"node","args":["init.js"],"env":[{"name":"INIT_TOKEN","value":"secret"}]}]}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                """
+                ,"mcpServers":[{"type":"http","name":"editor-server","url":"http://127.0.0.1:9876/mcp","headers":[{"name":"X-Editor","value":"nano"}]}]}}
+                """,
+            """
+            {"jsonrpc":"2.0","id":3,"method":"session/prompt","params":{"sessionId":"sess-test","prompt":[{"type":"text","text":"/mcp"}]}}
+            """);
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: ["--profile", "review"],
+            providerAuthKey: null,
+            (args, mcpServers) =>
+            {
+                args.Should().Contain("--profile");
+                capturedMcpServers = mcpServers;
+                return backend;
+            });
+
+        await sut.RunAsync(CancellationToken.None);
+
+        capturedMcpServers.Should().NotBeNull();
+        capturedMcpServers!.Select(static server => server.Name)
+            .Should()
+            .Equal("init-server", "editor-server");
+
+        BackendMcpServerConfiguration initServer = capturedMcpServers[0];
+        initServer.Command.Should().Be("node");
+        initServer.Args.Should().Equal("init.js");
+        initServer.Env.Should().Contain("INIT_TOKEN", "secret");
+        initServer.Source.Should().Be("ACP initialize");
+
+        BackendMcpServerConfiguration editorServer = capturedMcpServers[1];
+        editorServer.Url.Should().Be("http://127.0.0.1:9876/mcp");
+        editorServer.Command.Should().BeNull();
+        editorServer.IsAssigned(nameof(BackendMcpServerConfiguration.Command)).Should().BeTrue();
+        editorServer.HttpHeaders.Should().Contain("X-Editor", "nano");
+        editorServer.Source.Should().Be("ACP session");
+        backend.LastCommand.Should().Be("/mcp");
+        ParseJsonLines(output.ToString()).Should().Contain(message =>
+            IsSessionUpdate(message, "agent_message_chunk") &&
+            message.GetProperty("params").GetProperty("update").GetProperty("content").GetProperty("text").GetString() == "command:/mcp");
+    }
+
+    [Fact]
     public void Parse_Should_Not_ReadRedirectedStdin_WhenAcpModeIsSelected()
     {
         bool readCalled = false;
@@ -125,6 +186,8 @@ public sealed class AcpServerTests
 
     private sealed class FakeBackend : INanoAgentBackend
     {
+        public string LastCommand { get; private set; } = string.Empty;
+
         public string LastInput { get; private set; } = string.Empty;
 
         public ValueTask DisposeAsync()
@@ -136,25 +199,17 @@ public sealed class AcpServerTests
             IUiBridge uiBridge,
             CancellationToken cancellationToken)
         {
-            return Task.FromResult(new BackendSessionInfo(
-                "sess-test",
-                "nanoai --section sess-test",
-                "OpenAI",
-                "gpt-test",
-                ActiveModelContextWindowTokens: null,
-                ["gpt-test"],
-                "off",
-                "build",
-                "Untitled section",
-                IsResumedSection: false,
-                ConversationHistory: []));
+            return Task.FromResult(CreateSessionInfo());
         }
 
         public Task<BackendCommandResult> RunCommandAsync(
             string commandText,
             CancellationToken cancellationToken)
         {
-            throw new NotSupportedException();
+            LastCommand = commandText;
+            return Task.FromResult(new BackendCommandResult(
+                ReplCommandResult.Continue("command:" + commandText),
+                CreateSessionInfo()));
         }
 
         public Task<ConversationTurnResult> RunTurnAsync(
@@ -190,6 +245,22 @@ public sealed class AcpServerTests
         public Task<BackendCommandResult> SelectModelAsync(CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
+        }
+
+        private static BackendSessionInfo CreateSessionInfo()
+        {
+            return new BackendSessionInfo(
+                "sess-test",
+                "nanoai --section sess-test",
+                "OpenAI",
+                "gpt-test",
+                ActiveModelContextWindowTokens: null,
+                ["gpt-test"],
+                "off",
+                "build",
+                "Untitled section",
+                IsResumedSection: false,
+                ConversationHistory: []);
         }
     }
 }
