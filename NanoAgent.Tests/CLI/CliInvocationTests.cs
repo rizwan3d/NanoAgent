@@ -19,6 +19,30 @@ public sealed class CliInvocationTests
     }
 
     [Fact]
+    public void Parse_Should_EnableAutoApprovalForOneShotPrompt()
+    {
+        CliInvocation invocation = CliInvocation.Parse(
+            ["--yes", "Hello"],
+            stdinRedirected: false,
+            () => throw new InvalidOperationException());
+
+        invocation.Mode.Should().Be(CliMode.SingleTurn);
+        invocation.AutoApproveAllTools.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Parse_Should_EnableAutoApprovalForAcpMode()
+    {
+        CliInvocation invocation = CliInvocation.Parse(
+            ["--acp", "-y"],
+            stdinRedirected: false,
+            () => throw new InvalidOperationException());
+
+        invocation.Mode.Should().Be(CliMode.Acp);
+        invocation.AutoApproveAllTools.Should().BeTrue();
+    }
+
+    [Fact]
     public void Parse_Should_RejectJsonOutputWithoutOneShotPrompt()
     {
         Action act = () => CliInvocation.Parse(

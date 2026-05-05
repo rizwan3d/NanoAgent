@@ -179,6 +179,12 @@ For machine-readable one-shot output, add `--json`:
 nanoai --json "Summarize this repository"
 ```
 
+For trusted automation, add `--yes` to approve promptable tool requests for that run:
+
+```bash
+nanoai --yes "Run the test suite and fix failures"
+```
+
 ## Common Commands
 
 | Command | Purpose |

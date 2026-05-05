@@ -61,34 +61,39 @@ internal static class ApplicationSettingsFactory
             TimeSpan.FromSeconds(options.ModelSelection.CacheDurationSeconds));
     }
 
-    public static PermissionSettings CreatePermissionSettings(ApplicationOptions options)
+    public static PermissionSettings CreatePermissionSettings(
+        ApplicationOptions options,
+        bool autoApproveAllToolsOverride = false)
     {
         ArgumentNullException.ThrowIfNull(options);
 
         PermissionSettings configured = options.Permissions ?? new PermissionSettings();
+        bool autoApproveAllTools = configured.AutoApproveAllTools || autoApproveAllToolsOverride;
         PermissionRule[] configuredRules = (configured.Rules ?? [])
             .Where(static rule => rule is not null)
             .Select(NormalizeRule)
+            .Select(rule => ConvertAskToAllowWhenAutoApproving(rule, autoApproveAllToolsOverride))
             .ToArray();
 
         return new PermissionSettings
         {
-            AutoApproveAllTools = configured.AutoApproveAllTools,
-            DefaultMode = configured.AutoApproveAllTools ? PermissionMode.Allow : configured.DefaultMode,
-            FileDelete = configured.FileDelete,
-            FileRead = configured.FileRead,
-            FileWrite = configured.FileWrite,
-            McpTools = configured.McpTools,
-            MemoryWrite = configured.MemoryWrite,
-            Network = configured.Network,
+            AutoApproveAllTools = autoApproveAllTools,
+            DefaultMode = autoApproveAllTools ? PermissionMode.Allow : configured.DefaultMode,
+            FileDelete = ConvertAskToAllowWhenAutoApproving(configured.FileDelete, autoApproveAllToolsOverride),
+            FileRead = ConvertAskToAllowWhenAutoApproving(configured.FileRead, autoApproveAllToolsOverride),
+            FileWrite = ConvertAskToAllowWhenAutoApproving(configured.FileWrite, autoApproveAllToolsOverride),
+            McpTools = ConvertAskToAllowWhenAutoApproving(configured.McpTools, autoApproveAllToolsOverride),
+            MemoryWrite = ConvertMemoryWriteMode(configured.MemoryWrite, autoApproveAllToolsOverride),
+            Network = ConvertAskToAllowWhenAutoApproving(configured.Network, autoApproveAllToolsOverride),
             SandboxMode = configured.SandboxMode,
             Shell = configured.Shell ?? new ShellPermissionSettings(),
-            ShellDefault = configured.ShellDefault,
-            ShellSafe = configured.ShellSafe,
-            Rules = CreateBuiltInPermissionRules(configured.AutoApproveAllTools)
+            ShellDefault = ConvertAskToAllowWhenAutoApproving(configured.ShellDefault, autoApproveAllToolsOverride),
+            ShellSafe = ConvertAskToAllowWhenAutoApproving(configured.ShellSafe, autoApproveAllToolsOverride),
+            Rules = CreateBuiltInPermissionRules(autoApproveAllTools)
                 .Concat(CreateShortcutPermissionRules(configured))
                 .Concat(configuredRules)
                 .Select(NormalizeRule)
+                .Select(rule => ConvertAskToAllowWhenAutoApproving(rule, autoApproveAllToolsOverride))
                 .ToArray()
         };
     }
@@ -325,5 +330,45 @@ internal static class ApplicationSettingsFactory
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToArray()
         };
+    }
+
+    private static PermissionMode? ConvertAskToAllowWhenAutoApproving(
+        PermissionMode? mode,
+        bool autoApproveAllToolsOverride)
+    {
+        return autoApproveAllToolsOverride && mode == PermissionMode.Ask
+            ? PermissionMode.Allow
+            : mode;
+    }
+
+    private static PermissionRule ConvertAskToAllowWhenAutoApproving(
+        PermissionRule rule,
+        bool autoApproveAllToolsOverride)
+    {
+        if (!autoApproveAllToolsOverride || rule.Mode != PermissionMode.Ask)
+        {
+            return rule;
+        }
+
+        return new PermissionRule
+        {
+            Mode = PermissionMode.Allow,
+            Patterns = rule.Patterns,
+            Tools = rule.Tools
+        };
+    }
+
+    private static PermissionMode? ConvertMemoryWriteMode(
+        PermissionMode? mode,
+        bool autoApproveAllToolsOverride)
+    {
+        if (!autoApproveAllToolsOverride)
+        {
+            return mode;
+        }
+
+        return mode == PermissionMode.Deny
+            ? PermissionMode.Deny
+            : PermissionMode.Allow;
     }
 }
