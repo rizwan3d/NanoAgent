@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Backend;
 using NanoAgent.Infrastructure.BudgetControls;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.CodeIntelligence;
@@ -61,7 +62,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();
         services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreatePermissionSettings(
-                serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
+                serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value,
+                serviceProvider.GetService<BackendRuntimeOptions>()?.AutoApproveAllTools == true));
         services.AddHttpClient<IWebRunService, WebRunService>(client =>
         {
             client.Timeout = TimeSpan.FromSeconds(20);

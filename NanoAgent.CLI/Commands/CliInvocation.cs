@@ -13,6 +13,7 @@ internal sealed record CliInvocation(
     string? ProviderAuthKey,
     string? Prompt,
     bool JsonOutput,
+    bool AutoApproveAllTools,
     bool ShowHelp)
 {
     private static readonly string[] BackendOptionsWithValues =
@@ -29,6 +30,7 @@ internal sealed record CliInvocation(
         ProviderAuthKey: null,
         Prompt: null,
         JsonOutput: false,
+        AutoApproveAllTools: false,
         ShowHelp: true);
 
     public static CliInvocation Parse(
@@ -45,6 +47,7 @@ internal sealed record CliInvocation(
         bool forceAcp = false;
         bool forceInteractive = false;
         bool jsonOutput = false;
+        bool autoApproveAllTools = false;
         bool readPromptFromStandardInput = false;
 
         for (int index = 0; index < args.Count; index++)
@@ -77,6 +80,13 @@ internal sealed record CliInvocation(
             if (string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
             {
                 jsonOutput = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(arg, "-y", StringComparison.OrdinalIgnoreCase))
+            {
+                autoApproveAllTools = true;
                 continue;
             }
 
@@ -133,6 +143,7 @@ internal sealed record CliInvocation(
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
+                AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false);
         }
 
@@ -154,6 +165,7 @@ internal sealed record CliInvocation(
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
+                AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false);
         }
 
@@ -190,6 +202,7 @@ internal sealed record CliInvocation(
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
+                AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false);
         }
 
@@ -199,6 +212,7 @@ internal sealed record CliInvocation(
             providerAuthKey,
             prompt,
             jsonOutput,
+            autoApproveAllTools,
             ShowHelp: false);
     }
 

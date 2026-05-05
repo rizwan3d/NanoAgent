@@ -258,6 +258,7 @@ nanoai --section <section-guid>
 | `--interactive` | Start the terminal UI explicitly. |
 | `--stdin` | Read one-shot prompt text from standard input. |
 | `--json` | Write one-shot prompt or command output as a JSON object. |
+| `-y, --yes` | Approve promptable tool requests for this run while preserving explicit deny rules. |
 | `-p, --prompt <text>` | Run one prompt and print the response. |
 | `--provider-auth-key <key>` | Use this key when provider API-key onboarding asks for a credential. |
 | `--section <id>` | Resume an existing section. |
