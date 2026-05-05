@@ -12,6 +12,7 @@ readonly TOTAL_STEPS=7
 
 TEMP_ROOT=""
 CURRENT_STEP=0
+COMMAND_AVAILABLE_SCOPE="current"
 
 cleanup() {
   if [[ -n "${TEMP_ROOT:-}" && -d "$TEMP_ROOT" ]]; then
@@ -323,6 +324,217 @@ detect_platform() {
   esac
 }
 
+path_contains_directory() {
+  local path_value="${1:-}"
+  local directory="$2"
+  local entry
+  local IFS=:
+
+  for entry in $path_value; do
+    if [[ "$entry" == "$directory" ]]; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+single_quote() {
+  printf "'"
+  printf '%s' "$1" | sed "s/'/'\\\\''/g"
+  printf "'"
+}
+
+fish_quote() {
+  printf "'"
+  printf '%s' "$1" | sed "s/[\\']/\\\\&/g"
+  printf "'"
+}
+
+profile_paths_for_shell() {
+  local shell_name="${SHELL##*/}"
+  local os
+
+  os="$(uname -s)"
+
+  case "$shell_name" in
+    zsh)
+      printf '%s\n' "${HOME}/.zshrc"
+      printf '%s\n' "${HOME}/.zprofile"
+      ;;
+    bash)
+      printf '%s\n' "${HOME}/.bashrc"
+      if [[ "$os" == "Darwin" ]]; then
+        printf '%s\n' "${HOME}/.bash_profile"
+      else
+        printf '%s\n' "${HOME}/.profile"
+      fi
+      ;;
+    fish)
+      printf '%s\n' "${HOME}/.config/fish/config.fish"
+      ;;
+    *)
+      printf '%s\n' "${HOME}/.profile"
+      ;;
+  esac
+}
+
+append_posix_path_entry() {
+  local profile_path="$1"
+  local install_dir="$2"
+  local quoted_install_dir
+  local quoted_path_match
+
+  quoted_install_dir="$(single_quote "$install_dir")"
+  quoted_path_match="$(single_quote ":${install_dir}:")"
+
+  {
+    printf '\n# Added by NanoAgent CLI installer\n'
+    printf "if [ -d %s ] && ! printf '%%s' \":\$PATH:\" | grep -qF -- %s; then\n" "$quoted_install_dir" "$quoted_path_match"
+    printf '  export PATH=%s:$PATH\n' "$quoted_install_dir"
+    printf 'fi\n'
+  } >> "$profile_path"
+}
+
+append_fish_path_entry() {
+  local profile_path="$1"
+  local install_dir="$2"
+  local quoted_install_dir
+
+  quoted_install_dir="$(fish_quote "$install_dir")"
+
+  {
+    printf '\n# Added by NanoAgent CLI installer\n'
+    printf 'if test -d %s; and not contains -- %s $PATH\n' "$quoted_install_dir" "$quoted_install_dir"
+    printf '    set -gx PATH %s $PATH\n' "$quoted_install_dir"
+    printf 'end\n'
+  } >> "$profile_path"
+}
+
+add_install_dir_to_shell_profiles() {
+  local install_dir="$1"
+  local profile_path
+  local profile_dir
+  local updated_profiles=()
+
+  while IFS= read -r profile_path; do
+    if [[ -z "$profile_path" ]]; then
+      continue
+    fi
+
+    if [[ -f "$profile_path" ]] && grep -F -- "$install_dir" "$profile_path" >/dev/null 2>&1; then
+      continue
+    fi
+
+    profile_dir="$(dirname "$profile_path")"
+    mkdir -p "$profile_dir"
+
+    if [[ "$profile_path" == */config.fish ]]; then
+      append_fish_path_entry "$profile_path" "$install_dir"
+    else
+      append_posix_path_entry "$profile_path" "$install_dir"
+    fi
+
+    updated_profiles+=("$profile_path")
+  done < <(profile_paths_for_shell)
+
+  printf '%s\n' "${updated_profiles[@]}"
+}
+
+link_command_into_existing_path() {
+  local destination_binary="$1"
+  local install_dir="$2"
+  local path_entry
+  local path_link
+  local IFS=:
+
+  for path_entry in ${PATH:-}; do
+    if [[ -z "$path_entry" || "$path_entry" != /* || "$path_entry" == "$install_dir" || "$path_entry" == */sbin ]]; then
+      continue
+    fi
+
+    if [[ ! -d "$path_entry" || ! -w "$path_entry" ]]; then
+      continue
+    fi
+
+    path_link="${path_entry}/${COMMAND_NAME}"
+    if [[ -e "$path_link" || -L "$path_link" ]]; then
+      if [[ "$path_link" -ef "$destination_binary" ]]; then
+        printf '%s\n' "$path_link"
+        return 0
+      fi
+
+      continue
+    fi
+
+    if ln -s "$destination_binary" "$path_link" 2>/dev/null; then
+      printf '%s\n' "$path_link"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+add_install_dir_to_github_path() {
+  local install_dir="$1"
+  local github_path_dir
+
+  if [[ -z "${GITHUB_PATH:-}" ]]; then
+    return 1
+  fi
+
+  github_path_dir="$(dirname "$GITHUB_PATH")"
+  if [[ ! -d "$github_path_dir" || ! -w "$github_path_dir" ]]; then
+    return 1
+  fi
+
+  printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
+  log "Added '${install_dir}' to GitHub Actions PATH for later steps."
+  return 0
+}
+
+make_command_available() {
+  local destination_binary="$1"
+  local install_dir="$2"
+  local linked_path
+  local updated_profiles
+  local profile_path
+
+  if path_contains_directory "${PATH:-}" "$install_dir"; then
+    log "The install directory is already on PATH."
+    COMMAND_AVAILABLE_SCOPE="current"
+    return 0
+  fi
+
+  if linked_path="$(link_command_into_existing_path "$destination_binary" "$install_dir")"; then
+    log "Linked '${COMMAND_NAME}' into PATH at ${linked_path}."
+    COMMAND_AVAILABLE_SCOPE="current"
+    return 0
+  fi
+
+  if add_install_dir_to_github_path "$install_dir"; then
+    COMMAND_AVAILABLE_SCOPE="ci"
+    return 1
+  fi
+
+  updated_profiles="$(add_install_dir_to_shell_profiles "$install_dir")"
+
+  if [[ -n "$updated_profiles" ]]; then
+    while IFS= read -r profile_path; do
+      if [[ -n "$profile_path" ]]; then
+        log "Added '${install_dir}' to PATH in ${profile_path}."
+      fi
+    done <<< "$updated_profiles"
+  else
+    log "The install directory is already listed in your shell profile."
+  fi
+
+  log "Open a new terminal to use '${COMMAND_NAME}'."
+  COMMAND_AVAILABLE_SCOPE="new_terminal"
+  return 1
+}
+
 main() {
   local install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
   local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
@@ -390,18 +602,13 @@ main() {
 
   finish_step "Installed '${COMMAND_NAME}' to ${destination_binary}."
 
-  case ":${PATH}:" in
-    *":${install_dir}:"*)
-      log "The install directory is already on PATH."
-      log "Run '${COMMAND_NAME}' to start NanoAgent."
-      ;;
-    *)
-      log "Add '${install_dir}' to your PATH if it is not already there."
-      log "For this shell, run: export PATH=\"${install_dir}:\$PATH\""
-      ;;
-  esac
-
-  log "Done. Thanks for installing NanoAgent."
+  if make_command_available "$destination_binary" "$install_dir"; then
+    log "Done. Run '${COMMAND_NAME}' to start NanoAgent."
+  elif [[ "$COMMAND_AVAILABLE_SCOPE" == "ci" ]]; then
+    log "Done. '${COMMAND_NAME}' will be available in later GitHub Actions steps."
+  else
+    log "Done. '${COMMAND_NAME}' will be available in new terminals."
+  fi
 }
 
 main "${1:-}"
