@@ -16,6 +16,14 @@ public static class NanoAgentHostFactory
         IUiBridge uiBridge,
         string[] args)
     {
+        return Create(uiBridge, args, []);
+    }
+
+    public static IHost Create(
+        IUiBridge uiBridge,
+        string[] args,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers)
+    {
         ArgumentNullException.ThrowIfNull(uiBridge);
         ArgumentNullException.ThrowIfNull(args);
 
@@ -35,6 +43,7 @@ public static class NanoAgentHostFactory
         builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));
 
         builder.Services.AddSingleton(uiBridge);
+        builder.Services.AddSingleton(sessionMcpServers ?? []);
         builder.Services
             .AddApplication()
             .AddReplCommands()
