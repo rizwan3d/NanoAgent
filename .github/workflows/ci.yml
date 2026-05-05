@@ -19,6 +19,8 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   SOLUTION_FILE: NanoAgent.slnx
+  TEST_PROJECT: NanoAgent.Tests/NanoAgent.Tests.csproj
+  COVERAGE_THRESHOLD: 60
 
 jobs:
   build-and-test:
@@ -46,13 +48,47 @@ jobs:
       - name: Build
         run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ env.CONFIGURATION }} --no-restore
 
-      - name: Test
+      - name: Test with coverage
         run: >
-          dotnet test ${{ env.SOLUTION_FILE }}
+          dotnet test ${{ env.TEST_PROJECT }}
           --configuration ${{ env.CONFIGURATION }}
           --no-restore
           --logger "trx;LogFileName=test-results.trx"
           --results-directory ./artifacts/test-results
+          /p:CollectCoverage=true
+          /p:CoverletOutput=../artifacts/coverage/
+          /p:CoverletOutputFormat=cobertura
+          /p:Threshold=${{ env.COVERAGE_THRESHOLD }}
+          /p:ThresholdType=line
+          /p:ThresholdStat=total
+
+      - name: Add coverage summary
+        if: always()
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+
+          coverage_path = "artifacts/coverage/coverage.cobertura.xml"
+          summary_path = os.environ["GITHUB_STEP_SUMMARY"]
+          threshold = os.environ.get("COVERAGE_THRESHOLD", "60")
+
+          with open(summary_path, "a", encoding="utf-8") as summary:
+              summary.write("### Coverage\n\n")
+              if not os.path.exists(coverage_path):
+                  summary.write("Coverage report was not generated.\n")
+                  raise SystemExit(0)
+
+              root = ET.parse(coverage_path).getroot()
+              line = float(root.attrib.get("line-rate", "0")) * 100
+              branch = float(root.attrib.get("branch-rate", "0")) * 100
+              summary.write("| Metric | Value |\n")
+              summary.write("| --- | ---: |\n")
+              summary.write(f"| Line coverage | {line:.2f}% |\n")
+              summary.write(f"| Branch coverage | {branch:.2f}% |\n")
+              summary.write(f"| Minimum line coverage | {threshold}% |\n")
+          PY
 
       - name: Upload test results
         if: always()
@@ -60,5 +96,14 @@ jobs:
         with:
           name: test-results
           path: artifacts/test-results
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report
+          path: artifacts/coverage
           if-no-files-found: warn
           retention-days: 14
