@@ -110,32 +110,37 @@ public static partial class Program
                 invocation.BackendArgs,
                 invocation.ProviderAuthKey,
                 invocation.Prompt ?? string.Empty,
-                invocation.JsonOutput);
+                invocation.JsonOutput,
+                invocation.AutoApproveAllTools);
         }
 
         if (invocation.Mode == CliMode.Acp)
         {
             return await RunAcpAsync(
                 invocation.BackendArgs,
-                invocation.ProviderAuthKey);
+                invocation.ProviderAuthKey,
+                invocation.AutoApproveAllTools);
         }
 
         await RunInteractiveAsync(
             invocation.BackendArgs,
-            invocation.ProviderAuthKey);
+            invocation.ProviderAuthKey,
+            invocation.AutoApproveAllTools);
         return 0;
     }
 
     private static async Task<int> RunAcpAsync(
         string[] args,
-        string? providerAuthKey)
+        string? providerAuthKey,
+        bool autoApproveAllTools)
     {
         AcpServer server = new(
             Console.In,
             Console.Out,
             Console.Error,
             args,
-            providerAuthKey);
+            providerAuthKey,
+            autoApproveAllTools);
 
         using CancellationTokenSource cancellation = new();
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
@@ -169,13 +174,17 @@ public static partial class Program
 
     private static async Task RunInteractiveAsync(
         string[] args,
-        string? providerAuthKey)
+        string? providerAuthKey,
+        bool autoApproveAllTools)
     {
         Console.CursorVisible = false;
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
-        INanoAgentBackend backend = new NanoAgentBackend(args ?? []);
+        INanoAgentBackend backend = new NanoAgentBackend(
+            args ?? [],
+            sessionMcpServers: [],
+            autoApproveAllTools);
         AppState state = new(uiBridge, backend);
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
         {
@@ -232,7 +241,8 @@ public static partial class Program
         string[] args,
         string? providerAuthKey,
         string prompt,
-        bool jsonOutput)
+        bool jsonOutput,
+        bool autoApproveAllTools)
     {
         if (string.IsNullOrWhiteSpace(prompt))
         {
@@ -242,7 +252,10 @@ public static partial class Program
 
         ConsoleBridge uiBridge = new(providerAuthKey);
         string[] backendArgs = [.. args, "--no-update-check"];
-        await using INanoAgentBackend backend = new NanoAgentBackend(backendArgs);
+        await using INanoAgentBackend backend = new NanoAgentBackend(
+            backendArgs,
+            sessionMcpServers: [],
+            autoApproveAllTools);
         using CancellationTokenSource cancellation = new();
         ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
         {
@@ -361,6 +374,7 @@ public static partial class Program
               --interactive        Start the terminal UI explicitly
               --stdin              Read the one-shot prompt from standard input
               --json               Write one-shot result as a JSON object
+              -y, --yes            Approve promptable tool requests for this run
               -p, --prompt <text>  One-shot prompt text
               --provider-auth-key <key>
                                    Use this key for provider API-key onboarding

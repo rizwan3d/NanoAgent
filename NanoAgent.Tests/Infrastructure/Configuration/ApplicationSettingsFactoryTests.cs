@@ -156,4 +156,43 @@ public sealed class ApplicationSettingsFactoryTests
         broadAllowIndex.Should().BeGreaterThanOrEqualTo(0);
         deniedShellIndex.Should().BeGreaterThan(broadAllowIndex);
     }
+
+    [Fact]
+    public void CreatePermissionSettings_Should_ConvertPromptableRules_When_RuntimeAutoApproveIsEnabled()
+    {
+        PermissionSettings settings = ApplicationSettingsFactory.CreatePermissionSettings(
+            new ApplicationOptions
+            {
+                Permissions = new PermissionSettings
+                {
+                    FileWrite = PermissionMode.Ask,
+                    MemoryWrite = PermissionMode.Ask,
+                    Rules =
+                    [
+                        new PermissionRule
+                        {
+                            Mode = PermissionMode.Ask,
+                            Tools = ["custom_tool"]
+                        },
+                        new PermissionRule
+                        {
+                            Mode = PermissionMode.Deny,
+                            Tools = ["blocked_tool"]
+                        }
+                    ]
+                }
+            },
+            autoApproveAllToolsOverride: true);
+
+        settings.AutoApproveAllTools.Should().BeTrue();
+        settings.DefaultMode.Should().Be(PermissionMode.Allow);
+        settings.FileWrite.Should().Be(PermissionMode.Allow);
+        settings.MemoryWrite.Should().Be(PermissionMode.Allow);
+        settings.Rules.Should().Contain(rule =>
+            rule.Mode == PermissionMode.Allow &&
+            rule.Tools.SequenceEqual(new[] { "custom_tool" }));
+        settings.Rules.Should().Contain(rule =>
+            rule.Mode == PermissionMode.Deny &&
+            rule.Tools.SequenceEqual(new[] { "blocked_tool" }));
+    }
 }

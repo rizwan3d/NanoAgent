@@ -51,7 +51,27 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
-            static (args, sessionMcpServers) => new NanoAgentBackend(args, sessionMcpServers))
+            autoApproveAllTools: false)
+    {
+    }
+
+    public AcpServer(
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        string[] backendArgs,
+        string? providerAuthKey,
+        bool autoApproveAllTools)
+        : this(
+            input,
+            output,
+            error,
+            backendArgs,
+            providerAuthKey,
+            (args, sessionMcpServers) => new NanoAgentBackend(
+                args,
+                sessionMcpServers,
+                autoApproveAllTools))
     {
     }
 
@@ -68,6 +88,26 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            autoApproveAllTools: false,
+            backendFactory)
+    {
+    }
+
+    internal AcpServer(
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        string[] backendArgs,
+        string? providerAuthKey,
+        bool autoApproveAllTools,
+        Func<string[], INanoAgentBackend> backendFactory)
+        : this(
+            input,
+            output,
+            error,
+            backendArgs,
+            providerAuthKey,
+            autoApproveAllTools,
             (args, _) => (backendFactory ?? throw new ArgumentNullException(nameof(backendFactory)))(args))
     {
     }
@@ -78,6 +118,25 @@ internal sealed class AcpServer : IAsyncDisposable
         TextWriter error,
         string[] backendArgs,
         string? providerAuthKey,
+        Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory)
+        : this(
+            input,
+            output,
+            error,
+            backendArgs,
+            providerAuthKey,
+            autoApproveAllTools: false,
+            backendFactory)
+    {
+    }
+
+    internal AcpServer(
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        string[] backendArgs,
+        string? providerAuthKey,
+        bool autoApproveAllTools,
         Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));

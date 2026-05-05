@@ -24,6 +24,19 @@ public static class NanoAgentHostFactory
         string[] args,
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers)
     {
+        return Create(
+            uiBridge,
+            args,
+            sessionMcpServers,
+            autoApproveAllTools: false);
+    }
+
+    public static IHost Create(
+        IUiBridge uiBridge,
+        string[] args,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
+        bool autoApproveAllTools)
+    {
         ArgumentNullException.ThrowIfNull(uiBridge);
         ArgumentNullException.ThrowIfNull(args);
 
@@ -44,6 +57,9 @@ public static class NanoAgentHostFactory
 
         builder.Services.AddSingleton(uiBridge);
         builder.Services.AddSingleton(sessionMcpServers ?? []);
+        builder.Services.AddSingleton(new BackendRuntimeOptions(
+            sessionMcpServers,
+            autoApproveAllTools));
         builder.Services
             .AddApplication()
             .AddReplCommands()
