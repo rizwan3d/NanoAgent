@@ -35,8 +35,8 @@ internal sealed class AcpServer : IAsyncDisposable
     private readonly SemaphoreSlim _outputLock = new(1, 1);
     private readonly string? _providerAuthKey;
     private readonly string _startupDirectory;
+    private readonly ConcurrentDictionary<string, AcpSession> _sessions = new(StringComparer.Ordinal);
     private IReadOnlyList<BackendMcpServerConfiguration> _initializeMcpServers = [];
-    private AcpSession? _session;
     private long _nextRequestId;
 
     public AcpServer(
@@ -121,11 +121,12 @@ internal sealed class AcpServer : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_session is not null)
+        foreach (AcpSession session in _sessions.Values.ToArray())
         {
-            await CloseSessionAsync(_session, CancellationToken.None);
+            await CloseSessionAsync(session, CancellationToken.None);
         }
 
+        _sessions.Clear();
         _outputLock.Dispose();
     }
 
@@ -336,13 +337,6 @@ internal sealed class AcpServer : IAsyncDisposable
         string cwd = ReadRequiredAbsolutePath(parameters, "cwd");
         IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers = CreateSessionMcpServers(parameters);
 
-        if (_session is not null)
-        {
-            throw new AcpProtocolException(
-                JsonRpcInvalidRequest,
-                "NanoAgent ACP currently supports one active session per process.");
-        }
-
         AcpSession session = await CreateSessionAsync(
             cwd,
             sectionId: null,
@@ -350,7 +344,13 @@ internal sealed class AcpServer : IAsyncDisposable
             sessionMcpServers,
             cancellationToken);
 
-        _session = session;
+        if (!_sessions.TryAdd(session.SessionId, session))
+        {
+            await CloseSessionAsync(session, cancellationToken);
+            throw new AcpProtocolException(
+                JsonRpcInvalidRequest,
+                $"Session '{session.SessionId}' is already active.");
+        }
 
         await SendResultAsync(
             id,
@@ -375,13 +375,6 @@ internal sealed class AcpServer : IAsyncDisposable
         string sessionId = ReadRequiredString(parameters, "sessionId");
         IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers = CreateSessionMcpServers(parameters);
 
-        if (_session is not null)
-        {
-            throw new AcpProtocolException(
-                JsonRpcInvalidRequest,
-                "NanoAgent ACP currently supports one active session per process.");
-        }
-
         AcpSession session = await CreateSessionAsync(
             cwd,
             sessionId,
@@ -389,7 +382,13 @@ internal sealed class AcpServer : IAsyncDisposable
             sessionMcpServers,
             cancellationToken);
 
-        _session = session;
+        if (!_sessions.TryAdd(session.SessionId, session))
+        {
+            await CloseSessionAsync(session, cancellationToken);
+            throw new AcpProtocolException(
+                JsonRpcInvalidRequest,
+                $"Session '{session.SessionId}' is already active.");
+        }
 
         await SendResultAsync(
             id,
@@ -495,8 +494,8 @@ internal sealed class AcpServer : IAsyncDisposable
         string sessionId = ReadRequiredString(parameters, "sessionId");
         AcpSession session = GetSession(sessionId);
 
+        _sessions.TryRemove(sessionId, out _);
         await CloseSessionAsync(session, cancellationToken);
-        _session = null;
 
         await SendResultAsync(
             id,
@@ -516,10 +515,9 @@ internal sealed class AcpServer : IAsyncDisposable
             return Task.CompletedTask;
         }
 
-        if (_session is not null &&
-            string.Equals(_session.SessionId, sessionId, StringComparison.Ordinal))
+        if (_sessions.TryGetValue(sessionId, out AcpSession? session))
         {
-            _session.ActivePromptCancellation?.Cancel();
+            session.ActivePromptCancellation?.Cancel();
         }
 
         return Task.CompletedTask;
@@ -921,13 +919,12 @@ internal sealed class AcpServer : IAsyncDisposable
 
     private AcpSession GetSession(string sessionId)
     {
-        if (_session is null ||
-            !string.Equals(_session.SessionId, sessionId, StringComparison.Ordinal))
+        if (!_sessions.TryGetValue(sessionId, out AcpSession? session))
         {
             throw new AcpProtocolException(JsonRpcInvalidParams, $"Unknown session '{sessionId}'.");
         }
 
-        return _session;
+        return session;
     }
 
     private string[] CreateBackendArgs(string? sectionId)
