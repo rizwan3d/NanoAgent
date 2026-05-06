@@ -103,6 +103,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
 | API key | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
 | API key | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
+| API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 
 Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.

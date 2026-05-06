@@ -14,6 +14,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOpenRouter();
 
+    AgentProviderProfile CreateKiloCode();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

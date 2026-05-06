@@ -9,5 +9,6 @@ public enum ProviderKind
     OpenAiChatGptAccount = 5,
     OpenRouter = 6,
     AnthropicClaudeAccount = 7,
-    GitHubCopilot = 8
+    GitHubCopilot = 8,
+    KiloCode = 9
 }

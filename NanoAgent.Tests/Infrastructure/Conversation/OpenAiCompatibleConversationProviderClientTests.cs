@@ -178,6 +178,45 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToKiloCodeEndpointWithKiloHeaders_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_kilo",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Kilo."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.KiloCode, null),
+                "test-key",
+                "kilo-auto/free",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.kilo.ai/api/gateway/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer test-key");
+        handler.KiloCodeEditorHeader.Should().Be("NanoAgent");
+        handler.KiloCodeUserAgentHeader.Should().Be("nanoagent-kilo-provider");
+        handler.RequestBody.Should().Contain("\"model\":\"kilo-auto/free\"");
+        payload.ProviderKind.Should().Be(ProviderKind.KiloCode);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToAnthropicEndpoint_When_AnthropicProviderIsSelected()
     {
         RecordingHandler handler = new("""
@@ -921,6 +960,10 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         public string? OpenRouterTitleHeader { get; private set; }
 
+        public string? KiloCodeEditorHeader { get; private set; }
+
+        public string? KiloCodeUserAgentHeader { get; private set; }
+
         public string? AnthropicAppHeader { get; private set; }
 
         public string? AnthropicBetaHeader { get; private set; }
@@ -961,6 +1004,12 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 : null;
             OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
                 ? titleValues.FirstOrDefault()
+                : null;
+            KiloCodeEditorHeader = request.Headers.TryGetValues("X-KILOCODE-EDITORNAME", out IEnumerable<string>? kiloEditorValues)
+                ? kiloEditorValues.FirstOrDefault()
+                : null;
+            KiloCodeUserAgentHeader = request.Headers.TryGetValues("User-Agent", out IEnumerable<string>? userAgentValues)
+                ? userAgentValues.FirstOrDefault()
                 : null;
             AnthropicVersionHeader = request.Headers.TryGetValues("anthropic-version", out IEnumerable<string>? versionValues)
                 ? versionValues.FirstOrDefault()
