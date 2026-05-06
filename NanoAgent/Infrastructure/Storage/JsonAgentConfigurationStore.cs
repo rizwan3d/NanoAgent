@@ -448,9 +448,10 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 "claudepro" or "claudemax" or "claudepromax" => ProviderKind.AnthropicClaudeAccount,
             "githubcopilot" or "copilot" => ProviderKind.GitHubCopilot,
             "openrouter" => ProviderKind.OpenRouter,
+            "kilocode" or "kilo" or "kiloai" => ProviderKind.KiloCode,
             "openaichatgptaccount" or "chatgpt" => ProviderKind.OpenAiChatGptAccount,
             _ => throw new InvalidOperationException(
-                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter.")
+                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code.")
         };
     }
 
@@ -501,6 +502,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                     ProviderKind.GitHubCopilot,
                     BaseUrl: null),
                 ProviderKind.OpenRouter => new AgentProviderProfile(ProviderKind.OpenRouter, BaseUrl: null),
+                ProviderKind.KiloCode => new AgentProviderProfile(ProviderKind.KiloCode, BaseUrl: null),
                 ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
                 ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),
                 ProviderKind.OpenAiCompatible when !string.IsNullOrWhiteSpace(profile.BaseUrl)

@@ -20,6 +20,8 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private const string Originator = "nanoagent";
     private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
+    private const string KiloCodeEditorName = "NanoAgent";
+    private const string KiloCodeUserAgent = "nanoagent-kilo-provider";
     private static readonly string[] ContextWindowPropertyNames =
     [
         "context_length",
@@ -460,6 +462,13 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         {
             request.Headers.TryAddWithoutValidation("HTTP-Referer", OpenRouterApplicationUrl);
             request.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            return;
+        }
+
+        if (providerKind == ProviderKind.KiloCode)
+        {
+            request.Headers.TryAddWithoutValidation("X-KILOCODE-EDITORNAME", KiloCodeEditorName);
+            request.Headers.TryAddWithoutValidation("User-Agent", KiloCodeUserAgent);
         }
     }
 

@@ -213,7 +213,7 @@ public sealed class FirstRunOnboardingServiceTests
                 request.Description.Should().Be("Esc returns to provider setup type.");
                 request.Options.Select(option => option.Label)
                     .Should()
-                    .Equal("OpenAI", "Anthropic", "Google AI Studio", "OpenRouter");
+                    .Equal("OpenAI", "Anthropic", "Google AI Studio", "OpenRouter", "Kilo Code");
 
                 return Task.FromResult(OnboardingProviderChoice.OpenAi);
             });
@@ -573,6 +573,80 @@ public sealed class FirstRunOnboardingServiceTests
             true,
             ActiveProviderName: "OpenRouter"));
         profileFactory.Verify(factory => factory.CreateOpenRouter(), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveKiloCodeConfiguration_When_KiloCodeIsSelected()
+    {
+        AgentProviderProfile kiloCodeProfile = new(ProviderKind.KiloCode, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.KiloCode);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        secretPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  kilo-key  ");
+
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: Kilo Code.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        inputValidator
+            .Setup(validator => validator.ValidateApiKey("  kilo-key  "))
+            .Returns(InputValidationResult.Success("kilo-key"));
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(kiloCodeProfile, null, null, "Kilo Code"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("kilo-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "kilo-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateKiloCode()).Returns(kiloCodeProfile);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            kiloCodeProfile,
+            true,
+            ActiveProviderName: "Kilo Code"));
+        profileFactory.Verify(factory => factory.CreateKiloCode(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
         secretStore.VerifyAll();

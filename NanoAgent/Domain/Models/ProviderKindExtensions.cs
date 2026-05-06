@@ -8,6 +8,7 @@ public static class ProviderKindExtensions
     private const string OpenAiChatGptAccountBaseUrl = "https://chatgpt.com/backend-api/" + "co" + "dex";
     private const string OpenRouterBaseUrl = "https://openrouter.ai/api/v1";
     private const string GitHubCopilotBaseUrl = "https://api.individual.githubcopilot.com";
+    private const string KiloCodeBaseUrl = "https://api.kilo.ai/api/gateway";
 
     public static string ToDisplayName(this ProviderKind providerKind)
     {
@@ -20,6 +21,7 @@ public static class ProviderKindExtensions
             ProviderKind.AnthropicClaudeAccount => "Anthropic Claude Pro/Max",
             ProviderKind.GitHubCopilot => "GitHub Copilot",
             ProviderKind.OpenRouter => "OpenRouter",
+            ProviderKind.KiloCode => "Kilo Code",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
         };
@@ -36,6 +38,7 @@ public static class ProviderKindExtensions
             ProviderKind.AnthropicClaudeAccount => AnthropicBaseUrl,
             ProviderKind.GitHubCopilot => GitHubCopilotBaseUrl,
             ProviderKind.OpenRouter => OpenRouterBaseUrl,
+            ProviderKind.KiloCode => KiloCodeBaseUrl,
             _ => null
         };
     }
