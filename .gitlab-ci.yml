@@ -11,7 +11,7 @@ nanoai_merge_request_review:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_DRAFT != "true" && $CI_MERGE_REQUEST_TITLE !~ /^(\[Draft\]|\(Draft\)|Draft:)/'
   before_script:
     - apt-get update
-    - apt-get install -y --no-install-recommends bash ca-certificates curl git
+    - apt-get install -y --no-install-recommends bash ca-certificates curl git unzip
     - curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
   script:
     - bash .gitlab/nanoai-gitlab-review.sh
