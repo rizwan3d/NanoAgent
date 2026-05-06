@@ -59,7 +59,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "OpenRouter",
             OnboardingProviderChoice.OpenRouter,
-            "Use OpenRouter with only an OpenRouter API key.")
+            "Use OpenRouter with only an OpenRouter API key."),
+        new(
+            "Kilo Code",
+            OnboardingProviderChoice.KiloCode,
+            "Use Kilo's OpenRouter-compatible gateway with only a Kilo API key.")
     ];
 
     private readonly ISelectionPrompt _selectionPrompt;
@@ -178,6 +182,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
             OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
+            OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
             OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(

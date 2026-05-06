@@ -49,6 +49,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateKiloCode_Should_ReturnKiloCodeProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateKiloCode();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.KiloCode, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

@@ -9,5 +9,6 @@ public enum OnboardingProviderChoice
     OpenAiChatGptAccount = 4,
     OpenRouter = 5,
     AnthropicClaudeAccount = 6,
-    GitHubCopilot = 7
+    GitHubCopilot = 7,
+    KiloCode = 8
 }

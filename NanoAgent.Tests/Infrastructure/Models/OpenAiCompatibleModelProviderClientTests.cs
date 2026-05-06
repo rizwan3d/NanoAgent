@@ -132,6 +132,31 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestKiloCodeModelsEndpointWithKiloHeaders_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "kilo-auto/free", "context_length": 128000 }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.KiloCode, null),
+            "test-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.kilo.ai/api/gateway/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer test-key");
+        handler.KiloCodeEditorHeader.Should().Be("NanoAgent");
+        handler.KiloCodeUserAgentHeader.Should().Be("nanoagent-kilo-provider");
+        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("kilo-auto/free", 128000));
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestAnthropicModelsEndpointWithAnthropicHeaders_When_AnthropicProviderIsConfigured()
     {
         RecordingHandler handler = new("""
@@ -394,6 +419,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         public string? OpenRouterTitleHeader { get; private set; }
 
+        public string? KiloCodeEditorHeader { get; private set; }
+
+        public string? KiloCodeUserAgentHeader { get; private set; }
+
         public string? AccountHeader { get; private set; }
 
         public string? CopilotIntegrationIdHeader { get; private set; }
@@ -443,6 +472,12 @@ public sealed class OpenAiCompatibleModelProviderClientTests
                 : null;
             OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
                 ? titleValues.FirstOrDefault()
+                : null;
+            KiloCodeEditorHeader = request.Headers.TryGetValues("X-KILOCODE-EDITORNAME", out IEnumerable<string>? kiloEditorValues)
+                ? kiloEditorValues.FirstOrDefault()
+                : null;
+            KiloCodeUserAgentHeader = request.Headers.TryGetValues("User-Agent", out IEnumerable<string>? userAgentValues)
+                ? userAgentValues.FirstOrDefault()
                 : null;
             AccountHeader = request.Headers.TryGetValues(
                 "Chat" + "G" + "P" + "T-Account-Id",

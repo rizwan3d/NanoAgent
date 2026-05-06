@@ -23,6 +23,8 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
     private const string AnthropicVersion = "2023-06-01";
     private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
+    private const string KiloCodeEditorName = "NanoAgent";
+    private const string KiloCodeUserAgent = "nanoagent-kilo-provider";
     private static readonly TimeSpan BaseRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(5);
 
@@ -406,9 +408,19 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             httpRequest.Headers.TryAddWithoutValidation("HTTP-Referer", OpenRouterApplicationUrl);
             httpRequest.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
         }
+        else if (providerKind == ProviderKind.KiloCode)
+        {
+            ApplyKiloCodeHeaders(httpRequest);
+        }
 
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
         return httpRequest;
+    }
+
+    private static void ApplyKiloCodeHeaders(HttpRequestMessage request)
+    {
+        request.Headers.TryAddWithoutValidation("X-KILOCODE-EDITORNAME", KiloCodeEditorName);
+        request.Headers.TryAddWithoutValidation("User-Agent", KiloCodeUserAgent);
     }
 
     private HttpRequestMessage CreateOpenAiChatGptAccountHttpRequest(
