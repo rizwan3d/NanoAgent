@@ -9,6 +9,7 @@ using NanoAgent.Application.Planning;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Domain.Models;
 using System.Text.Json;
 
 namespace NanoAgent.Application.Conversation.Services;
@@ -1177,7 +1178,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             }
         }
 
-        return await _secretStore.LoadAsync(cancellationToken);
+        return await _secretStore.LoadAsync(cancellationToken) ??
+            session.ProviderProfile.ProviderKind.GetDefaultApiKey();
     }
 
     private static ConversationResponseException CreateProviderOutputExhaustedException(

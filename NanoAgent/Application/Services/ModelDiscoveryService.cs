@@ -116,7 +116,8 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
             }
         }
 
-        return await _secretStore.LoadAsync(cancellationToken);
+        return await _secretStore.LoadAsync(cancellationToken) ??
+            configuration.ProviderProfile.ProviderKind.GetDefaultApiKey();
     }
 
     private async Task<(IReadOnlyList<AvailableModel> Models, bool HadDuplicates)> LoadAvailableModelsAsync(

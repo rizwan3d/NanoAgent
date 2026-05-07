@@ -340,7 +340,8 @@ internal sealed class ReplSectionService : IReplSectionService
             }
         }
 
-        return await _secretStore.LoadAsync(cancellationToken);
+        return await _secretStore.LoadAsync(cancellationToken) ??
+            session.ProviderProfile.ProviderKind.GetDefaultApiKey();
     }
 
     private SemaphoreSlim GetSectionLock(string sectionId)

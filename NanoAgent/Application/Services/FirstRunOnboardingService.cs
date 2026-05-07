@@ -75,7 +75,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "Google Antigravity",
             OnboardingProviderChoice.GoogleAntigravity,
-            "Use a local Antigravity OpenAI-compatible proxy.")
+            "Use a local Antigravity OpenAI-compatible proxy."),
+        new(
+            "Ollama",
+            OnboardingProviderChoice.Ollama,
+            "Use the local Ollama OpenAI-compatible API.")
     ];
 
     private readonly ISelectionPrompt _selectionPrompt;
@@ -127,6 +131,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         AgentConfiguration? existingConfiguration = await _configurationStore.LoadAsync(cancellationToken);
         AgentProviderProfile? existingProfile = existingConfiguration?.ProviderProfile;
         string? existingApiKey = await LoadProviderSecretAsync(existingConfiguration, cancellationToken);
+        existingApiKey ??= existingProfile?.ProviderKind.GetDefaultApiKey();
 
         if (existingProfile is not null && !string.IsNullOrWhiteSpace(existingApiKey))
         {
@@ -196,6 +201,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
             OnboardingProviderChoice.GoogleAntigravity => _profileFactory.CreateGoogleAntigravity(),
+            OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
             OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
@@ -210,23 +216,24 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
         };
 
-        string providerSecret = providerChoice switch
-        {
-            OnboardingProviderChoice.OpenAiChatGptAccount =>
-                await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
-            OnboardingProviderChoice.AnthropicClaudeAccount =>
-                await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
-            OnboardingProviderChoice.GitHubCopilot =>
-                await AuthenticateGitHubCopilotAsync(cancellationToken),
-            _ => await PromptUntilValidAsync(
-                    cancellationToken => _secretPrompt.PromptAsync(
-                        new SecretPromptRequest(
-                            "API key",
-                            "Paste the API key for the selected provider."),
-                        cancellationToken),
-                    _inputValidator.ValidateApiKey,
-                    cancellationToken)
-        };
+        string providerSecret = profile.ProviderKind.GetDefaultApiKey() ??
+            providerChoice switch
+            {
+                OnboardingProviderChoice.OpenAiChatGptAccount =>
+                    await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
+                OnboardingProviderChoice.AnthropicClaudeAccount =>
+                    await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
+                OnboardingProviderChoice.GitHubCopilot =>
+                    await AuthenticateGitHubCopilotAsync(cancellationToken),
+                _ => await PromptUntilValidAsync(
+                        cancellationToken => _secretPrompt.PromptAsync(
+                            new SecretPromptRequest(
+                                "API key",
+                                "Paste the API key for the selected provider."),
+                            cancellationToken),
+                        _inputValidator.ValidateApiKey,
+                        cancellationToken)
+            };
 
         string providerName = await CreateProviderNameAsync(profile, cancellationToken);
         await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
