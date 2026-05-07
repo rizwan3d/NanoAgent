@@ -81,6 +81,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateCerebras_Should_ReturnCerebrasProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateCerebras();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.Cerebras, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

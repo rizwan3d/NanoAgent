@@ -69,6 +69,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.KiloCode,
             "Use Kilo's OpenRouter-compatible gateway with only a Kilo API key."),
         new(
+            "Cerebras",
+            OnboardingProviderChoice.Cerebras,
+            "Use Cerebras Inference with only a Cerebras API key."),
+        new(
             "Ollama Cloud",
             OnboardingProviderChoice.OllamaCloud,
             "Use Ollama's hosted API with an Ollama Cloud API key.")
@@ -204,6 +208,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
+            OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
             OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
             OnboardingProviderChoice.GoogleAntigravity => _profileFactory.CreateGoogleAntigravity(),
             OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),

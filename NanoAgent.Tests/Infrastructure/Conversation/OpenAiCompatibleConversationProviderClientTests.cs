@@ -217,6 +217,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToCerebrasEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_cerebras",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Cerebras."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.Cerebras, null),
+                "cerebras-key",
+                "llama3.1-8b",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.cerebras.ai/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer cerebras-key");
+        handler.RequestBody.Should().Contain("\"model\":\"llama3.1-8b\"");
+        payload.ProviderKind.Should().Be(ProviderKind.Cerebras);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToGoogleAntigravityEndpoint_When_ProviderIsSelected()
     {
         RecordingHandler handler = new("""
