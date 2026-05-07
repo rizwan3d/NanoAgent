@@ -10,6 +10,8 @@ public static class ProviderKindExtensions
     private const string GitHubCopilotBaseUrl = "https://api.individual.githubcopilot.com";
     private const string KiloCodeBaseUrl = "https://api.kilo.ai/api/gateway";
     private const string GoogleAntigravityBaseUrl = "http://127.0.0.1:8045/v1";
+    private const string OllamaBaseUrl = "http://127.0.0.1:11434/v1";
+    private const string OllamaApiKeyPlaceholder = "ollama";
 
     public static string ToDisplayName(this ProviderKind providerKind)
     {
@@ -24,6 +26,7 @@ public static class ProviderKindExtensions
             ProviderKind.OpenRouter => "OpenRouter",
             ProviderKind.KiloCode => "Kilo Code",
             ProviderKind.GoogleAntigravity => "Google Antigravity",
+            ProviderKind.Ollama => "Ollama",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
         };
@@ -42,6 +45,16 @@ public static class ProviderKindExtensions
             ProviderKind.OpenRouter => OpenRouterBaseUrl,
             ProviderKind.KiloCode => KiloCodeBaseUrl,
             ProviderKind.GoogleAntigravity => GoogleAntigravityBaseUrl,
+            ProviderKind.Ollama => OllamaBaseUrl,
+            _ => null
+        };
+    }
+
+    public static string? GetDefaultApiKey(this ProviderKind providerKind)
+    {
+        return providerKind switch
+        {
+            ProviderKind.Ollama => OllamaApiKeyPlaceholder,
             _ => null
         };
     }

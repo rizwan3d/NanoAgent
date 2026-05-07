@@ -79,7 +79,7 @@ NanoAgent will guide you through provider setup:
 
 1. Choose a setup type: subscription account, API key provider, OpenAI-compatible provider, or local provider.
 2. Choose a provider from the matching submenu when needed.
-3. Enter an API key, sign in with ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot, or enter a custom compatible base URL.
+3. Enter an API key, sign in with ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot, enter a custom compatible base URL, or use a local provider default.
 4. Let NanoAgent discover available models.
 5. Open a desktop workspace or use the current terminal directory.
 6. Start a new section or resume an existing one.
@@ -106,6 +106,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 | Local provider | Google Antigravity | API key | Uses a local Antigravity OpenAI-compatible proxy at `http://127.0.0.1:8045/v1`. |
+| Local provider | Ollama | None | Uses Ollama's local OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. |
 
 Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.
 
@@ -355,7 +356,7 @@ Optional repository variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, or `google-antigravity`. |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, `google-antigravity`, or `ollama`. |
 | `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
@@ -919,6 +920,8 @@ Check that the device-code page opened, enter the displayed code, and verify tha
 ### No models are listed
 
 Check the provider credential, provider account access, network connectivity, and custom provider base URL. For compatible providers, the base URL must be absolute and use HTTP or HTTPS.
+
+For Ollama, make sure `ollama serve` is running and at least one model is installed.
 
 ### A command is denied
 

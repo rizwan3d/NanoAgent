@@ -18,6 +18,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateGoogleAntigravity();
 
+    AgentProviderProfile CreateOllama();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

@@ -123,6 +123,7 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
         CancellationToken cancellationToken)
     {
         string? providerSecret = await _secretStore.LoadAsync(provider.Name, cancellationToken);
+        providerSecret ??= provider.ProviderProfile.ProviderKind.GetDefaultApiKey();
         if (string.IsNullOrWhiteSpace(providerSecret))
         {
             return ReplCommandResult.Continue(
