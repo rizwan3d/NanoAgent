@@ -11,6 +11,7 @@ public static class ProviderKindExtensions
     private const string KiloCodeBaseUrl = "https://api.kilo.ai/api/gateway";
     private const string GoogleAntigravityBaseUrl = "http://127.0.0.1:8045/v1";
     private const string OllamaBaseUrl = "http://127.0.0.1:11434/v1";
+    private const string OllamaCloudBaseUrl = "https://ollama.com";
     private const string OllamaApiKeyPlaceholder = "ollama";
 
     public static string ToDisplayName(this ProviderKind providerKind)
@@ -27,6 +28,7 @@ public static class ProviderKindExtensions
             ProviderKind.KiloCode => "Kilo Code",
             ProviderKind.GoogleAntigravity => "Google Antigravity",
             ProviderKind.Ollama => "Ollama",
+            ProviderKind.OllamaCloud => "Ollama Cloud",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
         };
@@ -46,6 +48,7 @@ public static class ProviderKindExtensions
             ProviderKind.KiloCode => KiloCodeBaseUrl,
             ProviderKind.GoogleAntigravity => GoogleAntigravityBaseUrl,
             ProviderKind.Ollama => OllamaBaseUrl,
+            ProviderKind.OllamaCloud => OllamaCloudBaseUrl,
             _ => null
         };
     }

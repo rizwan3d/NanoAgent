@@ -121,6 +121,14 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 cancellationToken);
         }
 
+        if (providerProfile.ProviderKind == ProviderKind.OllamaCloud)
+        {
+            return await GetOllamaCloudModelsAsync(
+                providerProfile,
+                apiKey,
+                cancellationToken);
+        }
+
         Uri baseUri = providerProfile.ResolveBaseUri();
         using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
         ApplyAuthenticationHeaders(request, providerProfile.ProviderKind, apiKey);
@@ -401,6 +409,44 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
     }
 
+    private async Task<IReadOnlyList<AvailableModel>> GetOllamaCloudModelsAsync(
+        AgentProviderProfile providerProfile,
+        string apiKey,
+        CancellationToken cancellationToken)
+    {
+        Uri baseUri = providerProfile.ResolveBaseUri();
+        using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "api/tags"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        LogDebugApiRequest(request.Method, request.RequestUri);
+
+        using HttpResponseMessage response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+
+        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+        LogDebugApiResponse(response.StatusCode, responseBody);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            string detail = string.IsNullOrWhiteSpace(responseBody)
+                ? $"Provider returned HTTP {(int)response.StatusCode}."
+                : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
+
+            throw new ModelProviderException(
+                $"Unable to fetch models from Ollama Cloud. {detail}");
+        }
+
+        IReadOnlyList<AvailableModel> models = ParseOllamaModels(responseBody);
+        if (models.Count == 0)
+        {
+            throw new ModelProviderException(
+                "Ollama Cloud returned an invalid models response.");
+        }
+
+        return models;
+    }
+
     private HttpRequestMessage CreateOpenAiChatGptAccountModelsRequest(
         Uri baseUri,
         OpenAiChatGptAccountResolvedCredential credential,
@@ -500,6 +546,52 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         return models;
+    }
+
+    private static IReadOnlyList<AvailableModel> ParseOllamaModels(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        if (!document.RootElement.TryGetProperty("models", out JsonElement modelsElement) ||
+            modelsElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        List<AvailableModel> models = [];
+        foreach (JsonElement item in modelsElement.EnumerateArray())
+        {
+            string? name = TryGetModelName(item);
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                models.Add(new AvailableModel(name.Trim()));
+            }
+        }
+
+        return models;
+    }
+
+    private static string? TryGetModelName(JsonElement item)
+    {
+        if (item.ValueKind == JsonValueKind.String)
+        {
+            return item.GetString();
+        }
+
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (string propertyName in new[] { "name", "model", "id" })
+        {
+            if (item.TryGetProperty(propertyName, out JsonElement property) &&
+                property.ValueKind == JsonValueKind.String)
+            {
+                return property.GetString();
+            }
+        }
+
+        return null;
     }
 
     private static bool TryGetModelArray(
