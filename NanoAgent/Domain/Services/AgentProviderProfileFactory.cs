@@ -50,6 +50,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.OllamaCloud, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateCerebras()
+    {
+        return new AgentProviderProfile(ProviderKind.Cerebras, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);

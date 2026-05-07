@@ -12,6 +12,7 @@ public static class ProviderKindExtensions
     private const string GoogleAntigravityBaseUrl = "http://127.0.0.1:8045/v1";
     private const string OllamaBaseUrl = "http://127.0.0.1:11434/v1";
     private const string OllamaCloudBaseUrl = "https://ollama.com";
+    private const string CerebrasBaseUrl = "https://api.cerebras.ai/v1";
     private const string OllamaApiKeyPlaceholder = "ollama";
 
     public static string ToDisplayName(this ProviderKind providerKind)
@@ -29,6 +30,7 @@ public static class ProviderKindExtensions
             ProviderKind.GoogleAntigravity => "Google Antigravity",
             ProviderKind.Ollama => "Ollama",
             ProviderKind.OllamaCloud => "Ollama Cloud",
+            ProviderKind.Cerebras => "Cerebras",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
         };
@@ -49,6 +51,7 @@ public static class ProviderKindExtensions
             ProviderKind.GoogleAntigravity => GoogleAntigravityBaseUrl,
             ProviderKind.Ollama => OllamaBaseUrl,
             ProviderKind.OllamaCloud => OllamaCloudBaseUrl,
+            ProviderKind.Cerebras => CerebrasBaseUrl,
             _ => null
         };
     }

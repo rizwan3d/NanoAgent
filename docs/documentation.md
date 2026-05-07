@@ -104,6 +104,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
 | API key | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
 | API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
+| API key | Cerebras | API key | Uses the Cerebras OpenAI-compatible endpoint. |
 | API key | Ollama Cloud | API key | Uses Ollama's hosted native chat and tags APIs. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 | Local provider | Google Antigravity | API key | Uses a local Antigravity OpenAI-compatible proxy at `http://127.0.0.1:8045/v1`. |
@@ -357,7 +358,7 @@ Optional repository variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, `google-antigravity`, `ollama`, or `ollama-cloud`. |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, `cerebras`, `google-antigravity`, `ollama`, or `ollama-cloud`. |
 | `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
