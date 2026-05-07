@@ -482,6 +482,8 @@ internal sealed class AcpServer : IAsyncDisposable
                 BackendCommandResult commandResult = await session.Backend.RunCommandAsync(
                     prompt.Text,
                     promptCancellation.Token);
+                session.SessionInfo = commandResult.SessionInfo;
+                await SendSessionInfoUpdateAsync(session, cancellationToken);
                 responseText = FormatCommandResultMessage(commandResult.CommandResult);
             }
             else
@@ -604,7 +606,8 @@ internal sealed class AcpServer : IAsyncDisposable
                 sessionInfo.SessionId,
                 cwd,
                 backend,
-                bridge);
+                bridge,
+                sessionInfo);
 
             if (replayHistory)
             {
@@ -669,10 +672,39 @@ internal sealed class AcpServer : IAsyncDisposable
                 writer.WriteStartObject();
                 writer.WriteString("sessionUpdate", "session_info_update");
                 writer.WriteString("updatedAt", DateTimeOffset.UtcNow.ToString("O"));
+                WriteSessionInfo(writer, session.SessionInfo);
                 writer.WriteEndObject();
                 writer.WriteEndObject();
             },
             cancellationToken);
+    }
+
+    private static void WriteSessionInfo(Utf8JsonWriter writer, BackendSessionInfo sessionInfo)
+    {
+        writer.WriteString("sectionResumeCommand", sessionInfo.SectionResumeCommand);
+        writer.WriteString("providerName", sessionInfo.ProviderName);
+        writer.WriteString("modelId", sessionInfo.ModelId);
+        writer.WritePropertyName("activeModelContextWindowTokens");
+        if (sessionInfo.ActiveModelContextWindowTokens is null)
+        {
+            writer.WriteNullValue();
+        }
+        else
+        {
+            writer.WriteNumberValue(sessionInfo.ActiveModelContextWindowTokens.Value);
+        }
+
+        writer.WritePropertyName("availableModelIds");
+        writer.WriteStartArray();
+        foreach (string modelId in sessionInfo.AvailableModelIds)
+        {
+            writer.WriteStringValue(modelId);
+        }
+
+        writer.WriteEndArray();
+        writer.WriteString("thinkingMode", sessionInfo.ThinkingMode);
+        writer.WriteString("agentProfileName", sessionInfo.AgentProfileName);
+        writer.WriteString("sectionTitle", sessionInfo.SectionTitle);
     }
 
     internal async Task<JsonElement> SendClientRequestAsync(
@@ -1395,12 +1427,14 @@ internal sealed class AcpServer : IAsyncDisposable
             string sessionId,
             string workingDirectory,
             INanoAgentBackend backend,
-            AcpUiBridge bridge)
+            AcpUiBridge bridge,
+            BackendSessionInfo sessionInfo)
         {
             SessionId = sessionId;
             WorkingDirectory = workingDirectory;
             Backend = backend;
             Bridge = bridge;
+            SessionInfo = sessionInfo;
         }
 
         public CancellationTokenSource? ActivePromptCancellation { get; set; }
@@ -1410,6 +1444,8 @@ internal sealed class AcpServer : IAsyncDisposable
         public AcpUiBridge Bridge { get; }
 
         public string SessionId { get; }
+
+        public BackendSessionInfo SessionInfo { get; set; }
 
         public SemaphoreSlim TurnLock { get; } = new(1, 1);
 
@@ -1472,13 +1508,6 @@ internal sealed class AcpServer : IAsyncDisposable
                 throw new PromptCancelledException("No prompt options were available.");
             }
 
-            if (string.IsNullOrWhiteSpace(SessionId))
-            {
-                return Task.FromException<T>(
-                    new PromptCancelledException(
-                        $"Prompt '{request.Title}' requires an active ACP session."));
-            }
-
             return RequestSelectionViaAcpAsync(request, cancellationToken);
         }
 
@@ -1495,9 +1524,7 @@ internal sealed class AcpServer : IAsyncDisposable
                 return Task.FromResult(providerAuthKey);
             }
 
-            return Task.FromException<string>(
-                new PromptCancelledException(
-                    $"Prompt '{request.Label}' requires interactive input. Run nanoai once to finish setup before using ACP."));
+            return RequestTextViaAcpAsync(request, isSecret, cancellationToken);
         }
 
         public void ShowError(string message)
@@ -1589,7 +1616,7 @@ internal sealed class AcpServer : IAsyncDisposable
             SelectionPromptRequest<T> request,
             CancellationToken cancellationToken)
         {
-            string sessionId = SessionId!;
+            string sessionId = SessionId ?? string.Empty;
             string toolCallId = "prompt-" + Guid.NewGuid().ToString("N");
 
             JsonElement result = await _server.SendClientRequestAsync(
@@ -1652,6 +1679,64 @@ internal sealed class AcpServer : IAsyncDisposable
             }
 
             return request.Options[optionIndex].Value;
+        }
+
+        private async Task<string> RequestTextViaAcpAsync(
+            TextPromptRequest request,
+            bool isSecret,
+            CancellationToken cancellationToken)
+        {
+            string sessionId = SessionId ?? string.Empty;
+
+            try
+            {
+                JsonElement result = await _server.SendClientRequestAsync(
+                    "session/request_text",
+                    writer =>
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("sessionId", sessionId);
+                        writer.WriteString("label", request.Label);
+                        if (!string.IsNullOrWhiteSpace(request.Description))
+                        {
+                            writer.WriteString("description", request.Description);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(request.DefaultValue))
+                        {
+                            writer.WriteString("defaultValue", request.DefaultValue);
+                        }
+
+                        writer.WriteBoolean("isSecret", isSecret);
+                        writer.WriteBoolean("allowCancellation", request.AllowCancellation);
+                        writer.WriteEndObject();
+                    },
+                    cancellationToken);
+
+                if (!TryGetProperty(result, "outcome", out JsonElement outcome) ||
+                    !TryGetString(outcome, "outcome", out string outcomeKind))
+                {
+                    throw new PromptCancelledException("ACP client returned an invalid text prompt response.");
+                }
+
+                if (string.Equals(outcomeKind, "cancelled", StringComparison.Ordinal))
+                {
+                    throw new PromptCancelledException("The ACP client cancelled the text prompt.");
+                }
+
+                if (string.Equals(outcomeKind, "submitted", StringComparison.Ordinal) &&
+                    TryGetString(outcome, "value", out string value))
+                {
+                    return value;
+                }
+
+                throw new PromptCancelledException("ACP client returned an unknown text prompt response.");
+            }
+            catch (AcpRemoteException exception) when (exception.Code == JsonRpcMethodNotFound)
+            {
+                throw new PromptCancelledException(
+                    $"Prompt '{request.Label}' requires text input, but the ACP client does not support session/request_text.");
+            }
         }
 
         private void EnqueueSessionText(string message)
