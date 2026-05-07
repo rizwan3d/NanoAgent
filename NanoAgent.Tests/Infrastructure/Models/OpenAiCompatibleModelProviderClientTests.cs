@@ -5,6 +5,7 @@ using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.Google;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
@@ -371,6 +372,45 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         credentialService.VerifyAll();
     }
 
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestGoogleCodeAssistModels_When_GeminiCliProviderIsConfigured()
+    {
+        Mock<IGoogleCodeAssistCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-google-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleCodeAssistResolvedCredential(
+                "google-access-token",
+                "project-123",
+                GoogleCodeAssistProvider.GeminiCli));
+
+        RecordingHandler handler = new("""
+            {
+              "response": {
+                "models": {
+                  "gemini-2.5-pro": { "contextWindow": 1048576 }
+                }
+              }
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            googleCodeAssistCredentialService: credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.GeminiCli, null),
+            "stored-google-credentials",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"));
+        handler.AuthorizationHeader.Should().Be("Bearer google-access-token");
+        handler.RequestBody.Should().Contain("\"project\":\"project-123\"");
+        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("gemini-2.5-pro", 1048576));
+        credentialService.VerifyAll();
+    }
 
 
     [Fact]
@@ -488,7 +528,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         IOpenAiChatGptAccountCredentialService? credentialService = null,
         IOpenAiCodexClientVersionProvider? versionProvider = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
+        IGoogleCodeAssistCredentialService? googleCodeAssistCredentialService = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
@@ -496,7 +537,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             credentialService,
             versionProvider,
             anthropicClaudeAccountCredentialService,
-            gitHubCopilotCredentialService);
+            gitHubCopilotCredentialService,
+            googleCodeAssistCredentialService);
     }
 
     private sealed class StubOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider
@@ -542,6 +584,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         public string? CopilotIntegrationIdHeader { get; private set; }
 
+        public string? RequestBody { get; private set; }
+
         public HttpStatusCode StatusCode { get; }
 
         public RecordingHandler(
@@ -570,6 +614,9 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         {
             RequestUri = request.RequestUri;
             AuthorizationHeader = request.Headers.Authorization?.ToString();
+            RequestBody = request.Content is null
+                ? null
+                : request.Content.ReadAsStringAsync().GetAwaiter().GetResult();
             AnthropicApiKeyHeader = request.Headers.TryGetValues("x-api-key", out IEnumerable<string>? apiKeyValues)
                 ? apiKeyValues.FirstOrDefault()
                 : null;

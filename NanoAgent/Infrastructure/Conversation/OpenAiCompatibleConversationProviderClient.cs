@@ -5,6 +5,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.Google;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
 using System.Net.Http.Headers;
@@ -33,6 +34,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
     private readonly Func<double> _nextJitter;
     private readonly IAnthropicClaudeAccountCredentialService? _anthropicClaudeAccountCredentialService;
     private readonly IGitHubCopilotCredentialService? _gitHubCopilotCredentialService;
+    private readonly IGoogleCodeAssistCredentialService? _googleCodeAssistCredentialService;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleConversationProviderClient> _logger;
     private readonly string _sessionId = Guid.NewGuid().ToString("N");
@@ -44,7 +46,8 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         Func<double>? nextJitter = null,
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
+        IGoogleCodeAssistCredentialService? googleCodeAssistCredentialService = null)
     {
         _httpClient = httpClient;
         _logger = logger;
@@ -53,6 +56,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
         _anthropicClaudeAccountCredentialService = anthropicClaudeAccountCredentialService;
         _gitHubCopilotCredentialService = gitHubCopilotCredentialService;
+        _googleCodeAssistCredentialService = googleCodeAssistCredentialService;
     }
 
     public async Task<ConversationProviderPayload> SendAsync(
@@ -75,6 +79,11 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         if (request.ProviderProfile.ProviderKind == ProviderKind.GitHubCopilot)
         {
             return await SendGitHubCopilotAsync(request, cancellationToken);
+        }
+
+        if (request.ProviderProfile.ProviderKind == ProviderKind.GeminiCli)
+        {
+            return await SendGoogleCodeAssistAsync(request, cancellationToken);
         }
 
         if (request.ProviderProfile.ProviderKind == ProviderKind.OllamaCloud)
@@ -468,6 +477,93 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
     }
 
+    private async Task<ConversationProviderPayload> SendGoogleCodeAssistAsync(
+        ConversationProviderRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (_googleCodeAssistCredentialService is null)
+        {
+            throw new ConversationProviderException(
+                "Google Code Assist credentials cannot be resolved in this runtime.");
+        }
+
+        Uri baseUri = request.ProviderProfile.ResolveBaseUri();
+        GoogleCodeAssistResolvedCredential credential =
+            await _googleCodeAssistCredentialService.ResolveAsync(
+                request.ApiKey,
+                forceRefresh: false,
+                cancellationToken);
+        int retryCount = 0;
+        bool forcedRefreshAfterAuthFailure = false;
+
+        for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        {
+            string requestBody = BuildGoogleCodeAssistRequestBody(
+                request,
+                credential.ProjectId);
+            using HttpRequestMessage httpRequest = CreateGoogleCodeAssistHttpRequest(
+                baseUri,
+                request.ProviderProfile.ProviderKind,
+                credential,
+                requestBody);
+            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                httpRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
+
+            if (response.IsSuccessStatusCode)
+            {
+                string normalizedResponseBody = ConvertGoogleCodeAssistResponseToChatCompletion(
+                    responseBody);
+                if (string.IsNullOrWhiteSpace(normalizedResponseBody))
+                {
+                    throw new ConversationProviderException(
+                        "The provider returned an empty response body for the conversation request.");
+                }
+
+                return new ConversationProviderPayload(
+                    request.ProviderProfile.ProviderKind,
+                    normalizedResponseBody,
+                    TryGetResponseId(response),
+                    retryCount);
+            }
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized && !forcedRefreshAfterAuthFailure)
+            {
+                forcedRefreshAfterAuthFailure = true;
+                credential = await _googleCodeAssistCredentialService.ResolveAsync(
+                    request.ApiKey,
+                    forceRefresh: true,
+                    cancellationToken);
+                continue;
+            }
+
+            if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
+            {
+                retryCount++;
+                TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
+                _logger.LogWarning(
+                    "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                    (int)response.StatusCode,
+                    attempt + 1,
+                    MaxRetryAttempts + 1,
+                    Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await _delayAsync(retryDelay, cancellationToken);
+                continue;
+            }
+
+            ThrowConversationRequestFailed(response.StatusCode, responseBody);
+        }
+
+        throw new ConversationProviderException(
+            "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
+    }
+
     private static HttpRequestMessage CreateHttpRequest(
         Uri baseUri,
         ProviderKind providerKind,
@@ -546,6 +642,20 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             httpRequest.Headers.TryAddWithoutValidation("Copilot-Vision-Request", "true");
         }
 
+        httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        return httpRequest;
+    }
+
+    private static HttpRequestMessage CreateGoogleCodeAssistHttpRequest(
+        Uri baseUri,
+        ProviderKind providerKind,
+        GoogleCodeAssistResolvedCredential credential,
+        string requestBody)
+    {
+        HttpRequestMessage httpRequest = new(
+            HttpMethod.Post,
+            new Uri($"{baseUri.AbsoluteUri}v1internal:generateContent"));
+        GoogleCodeAssistCredentialService.ApplyCodeAssistHeaders(httpRequest, credential, providerKind);
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
         return httpRequest;
     }
@@ -685,6 +795,167 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             system,
             tools.Length == 0 ? null : tools,
             thinking);
+    }
+
+    private static string BuildGoogleCodeAssistRequestBody(
+        ConversationProviderRequest request,
+        string? projectId)
+    {
+        JsonObject generationRequest = new()
+        {
+            ["model"] = request.ModelId,
+            ["contents"] = BuildGoogleCodeAssistContents(request.Messages)
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.SystemPrompt))
+        {
+            JsonArray parts = [];
+            AddJsonObject(parts, new JsonObject
+            {
+                ["text"] = request.SystemPrompt.Trim()
+            });
+            generationRequest["systemInstruction"] = new JsonObject
+            {
+                ["parts"] = parts
+            };
+        }
+
+        if (request.AvailableTools.Count > 0)
+        {
+            JsonArray declarations = [];
+            foreach (ToolDefinition tool in request.AvailableTools)
+            {
+                AddJsonObject(declarations, new JsonObject
+                {
+                    ["name"] = tool.Name,
+                    ["description"] = tool.Description,
+                    ["parameters"] = JsonNode.Parse(tool.Schema.GetRawText())
+                });
+            }
+
+            JsonArray tools = [];
+            AddJsonObject(tools, new JsonObject
+            {
+                ["functionDeclarations"] = declarations
+            });
+            generationRequest["tools"] = tools;
+        }
+
+        JsonObject body = new()
+        {
+            ["model"] = request.ModelId,
+            ["request"] = generationRequest,
+            ["requestId"] = $"nanoagent-{Guid.NewGuid():N}",
+            ["userAgent"] = request.ProviderProfile.ProviderKind == ProviderKind.GoogleAntigravity
+                ? "antigravity"
+                : "gemini-cli"
+        };
+
+        if (!string.IsNullOrWhiteSpace(projectId))
+        {
+            body["project"] = projectId.Trim();
+        }
+
+        return body.ToJsonString();
+    }
+
+    private static JsonArray BuildGoogleCodeAssistContents(
+        IReadOnlyList<ConversationRequestMessage> messages)
+    {
+        JsonArray contents = [];
+        foreach (ConversationRequestMessage message in messages)
+        {
+            JsonArray parts = BuildGoogleCodeAssistParts(message);
+            if (parts.Count == 0)
+            {
+                continue;
+            }
+
+            AddJsonObject(contents, new JsonObject
+            {
+                ["role"] = message.Role == "assistant" ? "model" : "user",
+                ["parts"] = parts
+            });
+        }
+
+        return contents;
+    }
+
+    private static JsonArray BuildGoogleCodeAssistParts(ConversationRequestMessage message)
+    {
+        JsonArray parts = [];
+        if (!string.IsNullOrWhiteSpace(message.Content))
+        {
+            if (message.Role == "tool")
+            {
+                AddJsonObject(parts, new JsonObject
+                {
+                    ["text"] = $"Tool result ({message.ToolCallId}): {message.Content}"
+                });
+            }
+            else
+            {
+                AddJsonObject(parts, new JsonObject
+                {
+                    ["text"] = message.Content
+                });
+            }
+        }
+
+        foreach (ConversationAttachment attachment in message.Attachments)
+        {
+            if (attachment.IsImage)
+            {
+                AddJsonObject(parts, new JsonObject
+                {
+                    ["inlineData"] = new JsonObject
+                    {
+                        ["mimeType"] = attachment.MediaType,
+                        ["data"] = attachment.ContentBase64
+                    }
+                });
+                continue;
+            }
+
+            AddJsonObject(parts, new JsonObject
+            {
+                ["text"] = FormatAttachmentText(attachment)
+            });
+        }
+
+        foreach (ConversationToolCall toolCall in message.ToolCalls)
+        {
+            AddJsonObject(parts, new JsonObject
+            {
+                ["functionCall"] = new JsonObject
+                {
+                    ["name"] = toolCall.Name,
+                    ["args"] = ParseJsonNodeOrStringObject(toolCall.ArgumentsJson)
+                }
+            });
+        }
+
+        return parts;
+    }
+
+    private static void AddJsonObject(JsonArray array, JsonObject value)
+    {
+        array.Add((JsonNode)value);
+    }
+
+    private static JsonNode ParseJsonNodeOrStringObject(string value)
+    {
+        try
+        {
+            return JsonNode.Parse(value) ?? new JsonObject();
+        }
+        catch (JsonException)
+        {
+            return new JsonObject
+            {
+                ["value"] = value
+            };
+        }
     }
 
     private static IReadOnlyList<AnthropicContentBlock> CreateAnthropicUserContent(
@@ -939,6 +1210,101 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             OpenAiConversationJsonContext.Default.OpenAiChatCompletionResponse);
     }
 
+    private static string ConvertGoogleCodeAssistResponseToChatCompletion(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        JsonElement root = document.RootElement;
+        JsonElement responseRoot = root.ValueKind == JsonValueKind.Object &&
+            root.TryGetProperty("response", out JsonElement wrappedResponse)
+                ? wrappedResponse
+                : root;
+
+        string? responseId = TryGetString(responseRoot, "responseId") ??
+            TryGetString(root, "traceId") ??
+            TryGetString(root, "requestId");
+        JsonElement firstCandidate = default;
+        if (responseRoot.ValueKind == JsonValueKind.Object &&
+            responseRoot.TryGetProperty("candidates", out JsonElement candidatesElement) &&
+            candidatesElement.ValueKind == JsonValueKind.Array)
+        {
+            firstCandidate = candidatesElement.EnumerateArray().FirstOrDefault();
+        }
+
+        List<string> textParts = [];
+        List<OpenAiChatCompletionToolCall> toolCalls = [];
+        int toolCallOrdinal = 0;
+        if (firstCandidate.ValueKind == JsonValueKind.Object &&
+            firstCandidate.TryGetProperty("content", out JsonElement contentElement) &&
+            contentElement.ValueKind == JsonValueKind.Object &&
+            contentElement.TryGetProperty("parts", out JsonElement partsElement) &&
+            partsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement part in partsElement.EnumerateArray())
+            {
+                if (TryGetString(part, "text") is string text)
+                {
+                    textParts.Add(text);
+                    continue;
+                }
+
+                if (!part.TryGetProperty("functionCall", out JsonElement functionCallElement) ||
+                    functionCallElement.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                string? name = TryGetString(functionCallElement, "name");
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                string argumentsJson = "{}";
+                if (functionCallElement.TryGetProperty("args", out JsonElement argsElement) &&
+                    argsElement.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+                {
+                    argumentsJson = argsElement.GetRawText();
+                }
+
+                toolCalls.Add(new OpenAiChatCompletionToolCall(
+                    CreateToolCallId(null, responseId, ++toolCallOrdinal),
+                    "function",
+                    new OpenAiChatCompletionFunctionCall(name.Trim(), argumentsJson)));
+            }
+        }
+
+        JsonElement usageElement = responseRoot.ValueKind == JsonValueKind.Object &&
+            responseRoot.TryGetProperty("usageMetadata", out JsonElement directUsage)
+                ? directUsage
+                : default;
+        int? promptTokens = TryGetInt32(usageElement, "promptTokenCount");
+        int? completionTokens = TryGetInt32(usageElement, "candidatesTokenCount") ??
+            TryGetInt32(usageElement, "outputTokenCount");
+        int? totalTokens = TryGetInt32(usageElement, "totalTokenCount") ??
+            SumNullable(promptTokens, completionTokens);
+        string? finishReason = TryGetString(firstCandidate, "finishReason");
+        OpenAiChatCompletionResponse convertedResponse = new(
+            responseId,
+            [
+                new OpenAiChatCompletionChoice(
+                    new OpenAiChatCompletionResponseMessage(
+                        CreateStringContentElement(string.Join(Environment.NewLine + Environment.NewLine, textParts)),
+                        toolCalls.Count == 0 ? null : toolCalls,
+                        FunctionCall: null,
+                        Refusal: null),
+                    toolCalls.Count == 0 ? MapGoogleFinishReason(finishReason) : "tool_calls")
+            ],
+            new OpenAiChatCompletionUsage(
+                completionTokens,
+                promptTokens,
+                totalTokens,
+                PromptTokensDetails: null));
+
+        return JsonSerializer.Serialize(
+            convertedResponse,
+            OpenAiConversationJsonContext.Default.OpenAiChatCompletionResponse);
+    }
+
     private static string? TryGetString(JsonElement element, string propertyName)
     {
         if (element.ValueKind != JsonValueKind.Object ||
@@ -962,6 +1328,18 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         }
 
         return value;
+    }
+
+    private static string? MapGoogleFinishReason(string? finishReason)
+    {
+        return finishReason switch
+        {
+            "STOP" => "stop",
+            "MAX_TOKENS" => "length",
+            "SAFETY" or "RECITATION" or "PROHIBITED_CONTENT" or "SPII" => "content_filter",
+            null => null,
+            _ => finishReason
+        };
     }
 
     private static string? MapAnthropicStopReason(string? stopReason)
