@@ -43,11 +43,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "GitHub Copilot",
             OnboardingProviderChoice.GitHubCopilot,
-            "Use browser device sign-in for GitHub Copilot, including GitHub Enterprise."),
-        new(
-            "Gemini CLI",
-            OnboardingProviderChoice.GeminiCli,
-            "Use browser sign-in for Google's Gemini CLI Code Assist API.")
+            "Use browser device sign-in for GitHub Copilot, including GitHub Enterprise.")
     ];
 
     private static readonly SelectionPromptOption<OnboardingProviderChoice>[] ApiKeyProviderOptions =
@@ -110,7 +106,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
     private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
     private readonly IGitHubCopilotAuthenticator? _gitHubCopilotAuthenticator;
-    private readonly IGeminiCliAuthenticator? _geminiCliAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -126,8 +121,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         ILogger<FirstRunOnboardingService> logger,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
-        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
-        IGeminiCliAuthenticator? geminiCliAuthenticator = null)
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -141,7 +135,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
         _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
         _gitHubCopilotAuthenticator = gitHubCopilotAuthenticator;
-        _geminiCliAuthenticator = geminiCliAuthenticator;
         _logger = logger;
     }
 
@@ -217,7 +210,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
             OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
             OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
-            OnboardingProviderChoice.GeminiCli => _profileFactory.CreateGeminiCli(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
             OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
@@ -248,8 +240,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
                 OnboardingProviderChoice.GitHubCopilot =>
                     await AuthenticateGitHubCopilotAsync(cancellationToken),
-                OnboardingProviderChoice.GeminiCli =>
-                    await AuthenticateGeminiCliAsync(cancellationToken),
                 _ => await PromptUntilValidAsync(
                         cancellationToken => _secretPrompt.PromptAsync(
                             new SecretPromptRequest(
@@ -405,17 +395,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         }
 
         return await _gitHubCopilotAuthenticator.AuthenticateAsync(cancellationToken);
-    }
-
-    private async Task<string> AuthenticateGeminiCliAsync(CancellationToken cancellationToken)
-    {
-        if (_geminiCliAuthenticator is null)
-        {
-            throw new InvalidOperationException(
-                "Gemini CLI authentication is unavailable in this runtime.");
-        }
-
-        return await _geminiCliAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
     private async Task<string> PromptUntilValidAsync(
