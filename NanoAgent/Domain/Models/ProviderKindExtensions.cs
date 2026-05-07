@@ -9,6 +9,7 @@ public static class ProviderKindExtensions
     private const string OpenRouterBaseUrl = "https://openrouter.ai/api/v1";
     private const string GitHubCopilotBaseUrl = "https://api.individual.githubcopilot.com";
     private const string KiloCodeBaseUrl = "https://api.kilo.ai/api/gateway";
+    private const string GoogleAntigravityBaseUrl = "http://127.0.0.1:8045/v1";
     private const string OllamaBaseUrl = "http://127.0.0.1:11434/v1";
     private const string OllamaCloudBaseUrl = "https://ollama.com";
     private const string CerebrasBaseUrl = "https://api.cerebras.ai/v1";
@@ -51,7 +52,7 @@ public static class ProviderKindExtensions
             ProviderKind.GitHubCopilot => GitHubCopilotBaseUrl,
             ProviderKind.OpenRouter => OpenRouterBaseUrl,
             ProviderKind.KiloCode => KiloCodeBaseUrl,
-            ProviderKind.GoogleAntigravity => GoogleCodeAssistBaseUrl,
+            ProviderKind.GoogleAntigravity => GoogleAntigravityBaseUrl,
             ProviderKind.Ollama => OllamaBaseUrl,
             ProviderKind.OllamaCloud => OllamaCloudBaseUrl,
             ProviderKind.Cerebras => CerebrasBaseUrl,

@@ -126,7 +126,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 cancellationToken);
         }
 
-        if (providerProfile.ProviderKind is ProviderKind.GeminiCli or ProviderKind.GoogleAntigravity)
+        if (providerProfile.ProviderKind == ProviderKind.GeminiCli)
         {
             if (_googleCodeAssistCredentialService is null)
             {
@@ -481,7 +481,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
 
                 throw new ModelProviderException(
-                    $"Unable to fetch Google Code Assist models from the account API. {detail}");
+                    $"Unable to fetch Gemini CLI models from the Code Assist API. {detail}");
             }
 
             IReadOnlyList<AvailableModel> models = ParseGoogleCodeAssistModels(responseBody);

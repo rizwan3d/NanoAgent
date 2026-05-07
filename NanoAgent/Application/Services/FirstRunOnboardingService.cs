@@ -45,10 +45,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.GitHubCopilot,
             "Use browser device sign-in for GitHub Copilot, including GitHub Enterprise."),
         new(
-            "Google Antigravity",
-            OnboardingProviderChoice.GoogleAntigravity,
-            "Use browser sign-in for Google's Antigravity Code Assist API."),
-        new(
             "Gemini CLI",
             OnboardingProviderChoice.GeminiCli,
             "Use browser sign-in for Google's Gemini CLI Code Assist API.")
@@ -93,6 +89,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private static readonly SelectionPromptOption<OnboardingProviderChoice>[] LocalProviderOptions =
     [
         new(
+            "Google Antigravity",
+            OnboardingProviderChoice.GoogleAntigravity,
+            "Use a local Antigravity OpenAI-compatible proxy."),
+        new(
             "Ollama",
             OnboardingProviderChoice.Ollama,
             "Use the local Ollama OpenAI-compatible API.")
@@ -111,7 +111,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
     private readonly IGitHubCopilotAuthenticator? _gitHubCopilotAuthenticator;
     private readonly IGeminiCliAuthenticator? _geminiCliAuthenticator;
-    private readonly IGoogleAntigravityAuthenticator? _googleAntigravityAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -128,8 +127,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
         IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
-        IGeminiCliAuthenticator? geminiCliAuthenticator = null,
-        IGoogleAntigravityAuthenticator? googleAntigravityAuthenticator = null)
+        IGeminiCliAuthenticator? geminiCliAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -144,7 +142,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
         _gitHubCopilotAuthenticator = gitHubCopilotAuthenticator;
         _geminiCliAuthenticator = geminiCliAuthenticator;
-        _googleAntigravityAuthenticator = googleAntigravityAuthenticator;
         _logger = logger;
     }
 
@@ -253,8 +250,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     await AuthenticateGitHubCopilotAsync(cancellationToken),
                 OnboardingProviderChoice.GeminiCli =>
                     await AuthenticateGeminiCliAsync(cancellationToken),
-                OnboardingProviderChoice.GoogleAntigravity =>
-                    await AuthenticateGoogleAntigravityAsync(cancellationToken),
                 _ => await PromptUntilValidAsync(
                         cancellationToken => _secretPrompt.PromptAsync(
                             new SecretPromptRequest(
@@ -421,17 +416,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         }
 
         return await _geminiCliAuthenticator.AuthenticateAsync(cancellationToken);
-    }
-
-    private async Task<string> AuthenticateGoogleAntigravityAsync(CancellationToken cancellationToken)
-    {
-        if (_googleAntigravityAuthenticator is null)
-        {
-            throw new InvalidOperationException(
-                "Google Antigravity authentication is unavailable in this runtime.");
-        }
-
-        return await _googleAntigravityAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
     private async Task<string> PromptUntilValidAsync(

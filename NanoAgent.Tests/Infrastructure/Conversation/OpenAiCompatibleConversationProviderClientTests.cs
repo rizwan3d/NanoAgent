@@ -292,47 +292,27 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
-    public async Task SendAsync_Should_PostGenerateContentWithOAuthHeaders_When_GoogleAntigravityProviderIsSelected()
+    public async Task SendAsync_Should_PostChatCompletionsToGoogleAntigravityEndpoint_When_ProviderIsSelected()
     {
         RecordingHandler handler = new("""
             {
-              "response": {
-                "responseId": "antigravity-response",
-                "candidates": [
-                  {
-                    "content": {
-                      "parts": [
-                        { "text": "Hello from Antigravity." }
-                      ]
-                    },
-                    "finishReason": "STOP"
+              "id": "resp_antigravity",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Antigravity."
                   }
-                ],
-                "usageMetadata": {
-                  "promptTokenCount": 9,
-                  "candidatesTokenCount": 4,
-                  "totalTokenCount": 13
                 }
-              }
+              ]
             }
             """);
         HttpClient httpClient = new(handler);
-        Mock<IGoogleCodeAssistCredentialService> credentialService = new(MockBehavior.Strict);
-        credentialService
-            .Setup(service => service.ResolveAsync(
-                "stored-antigravity-credentials",
-                false,
-                It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new GoogleCodeAssistResolvedCredential(
-                "antigravity-access-token",
-                "antigravity-project",
-                GoogleCodeAssistProvider.GoogleAntigravity));
-        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
 
         ConversationProviderPayload payload = await sut.SendAsync(
             new ConversationProviderRequest(
                 new AgentProviderProfile(ProviderKind.GoogleAntigravity, null),
-                "stored-antigravity-credentials",
+                "antigravity-key",
                 "gemini-3-pro",
                 [
                     ConversationRequestMessage.User("Say hello.")
@@ -341,18 +321,11 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 []),
             CancellationToken.None);
 
-        handler.RequestUri.Should().Be(new Uri("https://cloudcode-pa.googleapis.com/v1internal:generateContent"));
-        handler.AuthorizationHeader.Should().Be("Bearer antigravity-access-token");
-        handler.RequestBody.Should().Contain("\"project\":\"antigravity-project\"");
-        handler.RequestBody.Should().Contain("\"userAgent\":\"antigravity\"");
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:8045/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer antigravity-key");
         handler.RequestBody.Should().Contain("\"model\":\"gemini-3-pro\"");
         payload.ProviderKind.Should().Be(ProviderKind.GoogleAntigravity);
-
-        OpenAiConversationResponseMapper mapper = new();
-        ConversationResponse response = mapper.Map(payload);
-        response.AssistantMessage.Should().Be("Hello from Antigravity.");
-        response.ResponseId.Should().Be("antigravity-response");
-        credentialService.VerifyAll();
+        payload.ResponseId.Should().Be("req_789");
     }
 
     [Fact]

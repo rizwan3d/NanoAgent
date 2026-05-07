@@ -99,7 +99,6 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | Subscription based | OpenAI ChatGPT Plus/Pro | Browser sign-in | Uses OAuth with local callback port `1455`. |
 | Subscription based | Anthropic Claude Pro/Max | Browser sign-in | Uses OAuth with local callback port `53692`. |
 | Subscription based | GitHub Copilot | Browser device sign-in | Uses GitHub device-code login. Leave the Enterprise URL/domain prompt blank for `github.com`. |
-| Subscription based | Google Antigravity | Browser sign-in | Uses Google OAuth and the cloud Code Assist API. |
 | Subscription based | Gemini CLI | Browser sign-in | Uses Google OAuth with a local callback port and the Code Assist API. |
 | API key | OpenAI | API key | Uses the OpenAI API. |
 | API key | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
@@ -110,6 +109,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Groq | API key | Uses the Groq OpenAI-compatible endpoint. |
 | API key | Ollama Cloud | API key | Uses Ollama's hosted native chat and tags APIs. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
+| Local provider | Google Antigravity | API key | Uses a local Antigravity OpenAI-compatible proxy at `http://127.0.0.1:8045/v1`. |
 | Local provider | Ollama | None | Uses Ollama's local OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. |
 
 Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.
@@ -921,7 +921,7 @@ Check that port `53692` is available and that the browser callback URL opens loc
 
 Check that the device-code page opened, enter the displayed code, and verify that your GitHub account has Copilot access. For GitHub Enterprise, enter only the Enterprise URL or domain when prompted; leave it blank for `github.com`.
 
-### Gemini CLI or Google Antigravity sign-in does not complete
+### Gemini CLI sign-in does not complete
 
 Check that the browser callback opens locally and that your Google account has Code Assist access. Set `GOOGLE_CLOUD_PROJECT` if your account requires an explicit Cloud project.
 
