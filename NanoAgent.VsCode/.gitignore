@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+jspm_packages/
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment variables (Sensitive data)
+.env
+.env.test
+.env.local
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.nuxt/
+
+# Debug and Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+.nyc_output
+coverage/
+
+# Editor/OS specific files
+.DS_Store
+.vscode/
+.idea/
+
+dist
