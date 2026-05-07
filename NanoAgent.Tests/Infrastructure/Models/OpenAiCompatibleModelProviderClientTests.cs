@@ -204,26 +204,43 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
-    public async Task GetAvailableModelsAsync_Should_RequestGoogleAntigravityModelsEndpoint_When_ProviderIsConfigured()
+    public async Task GetAvailableModelsAsync_Should_RequestGoogleCodeAssistModels_When_AntigravityProviderIsConfigured()
     {
+        Mock<IGoogleCodeAssistCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-antigravity-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleCodeAssistResolvedCredential(
+                "antigravity-access-token",
+                "antigravity-project",
+                GoogleCodeAssistProvider.GoogleAntigravity));
+
         RecordingHandler handler = new("""
             {
-              "data": [
-                { "id": "gemini-3-pro", "context_length": 1048576 }
-              ]
+              "response": {
+                "models": {
+                  "gemini-3-pro": { "contextWindow": 1048576 }
+                }
+              }
             }
             """);
         HttpClient httpClient = new(handler);
-        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            googleCodeAssistCredentialService: credentialService.Object);
 
         IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
             new AgentProviderProfile(ProviderKind.GoogleAntigravity, null),
-            "antigravity-key",
+            "stored-antigravity-credentials",
             CancellationToken.None);
 
-        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:8045/v1/models"));
-        handler.AuthorizationHeader.Should().Be("Bearer antigravity-key");
+        handler.RequestUri.Should().Be(new Uri("https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels"));
+        handler.AuthorizationHeader.Should().Be("Bearer antigravity-access-token");
+        handler.RequestBody.Should().Contain("\"project\":\"antigravity-project\"");
         models.Should().ContainSingle().Which.Should().Be(new AvailableModel("gemini-3-pro", 1048576));
+        credentialService.VerifyAll();
     }
 
     [Fact]
