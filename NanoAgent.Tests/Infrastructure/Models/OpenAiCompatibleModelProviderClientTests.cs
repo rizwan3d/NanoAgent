@@ -180,6 +180,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestGroqModelsEndpoint_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "llama-3.3-70b-versatile" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.Groq, null),
+            "groq-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.groq.com/openai/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer groq-key");
+        models.Select(model => model.Id).Should().Equal("llama-3.3-70b-versatile");
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestGoogleAntigravityModelsEndpoint_When_ProviderIsConfigured()
     {
         RecordingHandler handler = new("""

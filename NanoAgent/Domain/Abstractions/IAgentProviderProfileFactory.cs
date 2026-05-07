@@ -24,6 +24,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateCerebras();
 
+    AgentProviderProfile CreateGroq();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

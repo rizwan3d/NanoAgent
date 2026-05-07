@@ -55,6 +55,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.Cerebras, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateGroq()
+    {
+        return new AgentProviderProfile(ProviderKind.Groq, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);
