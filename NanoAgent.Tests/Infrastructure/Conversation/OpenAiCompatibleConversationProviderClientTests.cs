@@ -7,6 +7,7 @@ using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.Google;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
 using System.Text;
@@ -573,6 +574,76 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         credentialService.VerifyAll();
     }
 
+    [Fact]
+    public async Task SendAsync_Should_PostGenerateContentWithOAuthHeaders_When_GeminiCliProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "response": {
+                "responseId": "gemini-cli-response",
+                "candidates": [
+                  {
+                    "content": {
+                      "parts": [
+                        { "text": "Hello from Gemini CLI." }
+                      ]
+                    },
+                    "finishReason": "STOP"
+                  }
+                ],
+                "usageMetadata": {
+                  "promptTokenCount": 11,
+                  "candidatesTokenCount": 6,
+                  "totalTokenCount": 17
+                }
+              }
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<IGoogleCodeAssistCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "stored-google-credentials",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new GoogleCodeAssistResolvedCredential(
+                "google-access-token",
+                "project-123",
+                GoogleCodeAssistProvider.GeminiCli));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.GeminiCli, null),
+                "stored-google-credentials",
+                "gemini-2.5-pro",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                [CreateToolDefinition("file_read")]),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://cloudcode-pa.googleapis.com/v1internal:generateContent"));
+        handler.RequestMethod.Should().Be(HttpMethod.Post);
+        handler.AuthorizationHeader.Should().Be("Bearer google-access-token");
+        handler.GoogleApiClientHeader.Should().Contain("gl-node");
+        handler.RequestBody.Should().Contain("\"project\":\"project-123\"");
+        handler.RequestBody.Should().Contain("\"userAgent\":\"gemini-cli\"");
+        handler.RequestBody.Should().Contain("\"model\":\"gemini-2.5-pro\"");
+        handler.RequestBody.Should().Contain("\"functionDeclarations\"");
+        payload.ProviderKind.Should().Be(ProviderKind.GeminiCli);
+
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("Hello from Gemini CLI.");
+        response.ResponseId.Should().Be("gemini-cli-response");
+        response.PromptTokens.Should().Be(11);
+        response.CompletionTokens.Should().Be(6);
+        response.TotalTokens.Should().Be(17);
+        credentialService.VerifyAll();
+    }
+
 
 
     [Fact]
@@ -1097,6 +1168,18 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             gitHubCopilotCredentialService: credentialService);
     }
 
+    private static OpenAiCompatibleConversationProviderClient CreateSut(
+        HttpClient httpClient,
+        IGoogleCodeAssistCredentialService credentialService)
+    {
+        return new OpenAiCompatibleConversationProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance,
+            delayAsync: null,
+            nextJitter: null,
+            googleCodeAssistCredentialService: credentialService);
+    }
+
 
     private static OpenAiCompatibleConversationProviderClient CreateSut(
         HttpClient httpClient,
@@ -1170,6 +1253,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         public string? CopilotVisionHeader { get; private set; }
 
+        public string? GoogleApiClientHeader { get; private set; }
+
         public string? RequestBody { get; private set; }
 
         public HttpMethod? RequestMethod { get; private set; }
@@ -1225,6 +1310,9 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 : null;
             CopilotVisionHeader = request.Headers.TryGetValues("Copilot-Vision-Request", out IEnumerable<string>? visionValues)
                 ? visionValues.FirstOrDefault()
+                : null;
+            GoogleApiClientHeader = request.Headers.TryGetValues("x-goog-api-client", out IEnumerable<string>? googleApiValues)
+                ? googleApiValues.FirstOrDefault()
                 : null;
             SessionIdHeader = request.Headers.TryGetValues("session_id", out IEnumerable<string>? sessionIdValues)
                 ? sessionIdValues.FirstOrDefault()
