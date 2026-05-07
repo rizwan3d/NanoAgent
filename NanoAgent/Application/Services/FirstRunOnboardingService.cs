@@ -73,6 +73,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.Cerebras,
             "Use Cerebras Inference with only a Cerebras API key."),
         new(
+            "Groq",
+            OnboardingProviderChoice.Groq,
+            "Use Groq's OpenAI-compatible API with only a Groq API key."),
+        new(
             "Ollama Cloud",
             OnboardingProviderChoice.OllamaCloud,
             "Use Ollama's hosted API with an Ollama Cloud API key.")
@@ -209,6 +213,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
             OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
+            OnboardingProviderChoice.Groq => _profileFactory.CreateGroq(),
             OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
             OnboardingProviderChoice.GoogleAntigravity => _profileFactory.CreateGoogleAntigravity(),
             OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),

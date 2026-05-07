@@ -254,6 +254,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToGroqEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_groq",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Groq."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.Groq, null),
+                "groq-key",
+                "llama-3.3-70b-versatile",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.groq.com/openai/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer groq-key");
+        handler.RequestBody.Should().Contain("\"model\":\"llama-3.3-70b-versatile\"");
+        payload.ProviderKind.Should().Be(ProviderKind.Groq);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToGoogleAntigravityEndpoint_When_ProviderIsSelected()
     {
         RecordingHandler handler = new("""

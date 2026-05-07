@@ -89,6 +89,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateGroq_Should_ReturnGroqProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateGroq();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.Groq, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();
