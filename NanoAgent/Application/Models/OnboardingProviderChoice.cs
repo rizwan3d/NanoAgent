@@ -14,5 +14,6 @@ public enum OnboardingProviderChoice
     GoogleAntigravity = 9,
     Ollama = 10,
     OllamaCloud = 11,
-    Cerebras = 12
+    Cerebras = 12,
+    Groq = 13
 }

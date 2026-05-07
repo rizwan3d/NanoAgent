@@ -14,5 +14,6 @@ public enum ProviderKind
     GoogleAntigravity = 10,
     Ollama = 11,
     OllamaCloud = 12,
-    Cerebras = 13
+    Cerebras = 13,
+    Groq = 14
 }

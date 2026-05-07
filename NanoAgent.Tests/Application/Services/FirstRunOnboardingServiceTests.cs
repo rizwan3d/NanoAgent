@@ -221,6 +221,7 @@ public sealed class FirstRunOnboardingServiceTests
                         "OpenRouter",
                         "Kilo Code",
                         "Cerebras",
+                        "Groq",
                         "Ollama Cloud");
 
                 return Task.FromResult(OnboardingProviderChoice.OpenAi);
@@ -803,6 +804,80 @@ public sealed class FirstRunOnboardingServiceTests
             true,
             ActiveProviderName: "Cerebras"));
         profileFactory.Verify(factory => factory.CreateCerebras(), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveGroqConfiguration_When_GroqIsSelected()
+    {
+        AgentProviderProfile profile = new(ProviderKind.Groq, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.Groq);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        secretPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  groq-key  ");
+
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: Groq.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        inputValidator
+            .Setup(validator => validator.ValidateApiKey("  groq-key  "))
+            .Returns(InputValidationResult.Success("groq-key"));
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(profile, null, null, "Groq"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("groq-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "groq-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateGroq()).Returns(profile);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "Groq"));
+        profileFactory.Verify(factory => factory.CreateGroq(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
         secretStore.VerifyAll();
