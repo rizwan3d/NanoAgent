@@ -4,10 +4,12 @@ using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.Google;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Globalization;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace NanoAgent.Infrastructure.Models;
 
@@ -53,6 +55,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private readonly IOpenAiCodexClientVersionProvider _openAiCodexClientVersionProvider;
     private readonly IAnthropicClaudeAccountCredentialService? _anthropicClaudeAccountCredentialService;
     private readonly IGitHubCopilotCredentialService? _gitHubCopilotCredentialService;
+    private readonly IGoogleCodeAssistCredentialService? _googleCodeAssistCredentialService;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
@@ -62,13 +65,15 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
         IOpenAiCodexClientVersionProvider? openAiCodexClientVersionProvider = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
+        IGoogleCodeAssistCredentialService? googleCodeAssistCredentialService = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
         _anthropicClaudeAccountCredentialService = anthropicClaudeAccountCredentialService;
         _gitHubCopilotCredentialService = gitHubCopilotCredentialService;
+        _googleCodeAssistCredentialService = googleCodeAssistCredentialService;
         _openAiCodexClientVersionProvider = openAiCodexClientVersionProvider ??
             new StaticOpenAiCodexClientVersionProvider(
                 GitHubOpenAiCodexClientVersionProvider.FallbackClientVersion);
@@ -117,6 +122,20 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             }
 
             return await GetGitHubCopilotModelsAsync(
+                apiKey,
+                cancellationToken);
+        }
+
+        if (providerProfile.ProviderKind == ProviderKind.GeminiCli)
+        {
+            if (_googleCodeAssistCredentialService is null)
+            {
+                throw new ModelProviderException(
+                    "Google Code Assist credentials cannot be resolved in this runtime.");
+            }
+
+            return await GetGoogleCodeAssistModelsAsync(
+                providerProfile,
                 apiKey,
                 cancellationToken);
         }
@@ -409,6 +428,73 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
     }
 
+    private async Task<IReadOnlyList<AvailableModel>> GetGoogleCodeAssistModelsAsync(
+        AgentProviderProfile providerProfile,
+        string storedCredentials,
+        CancellationToken cancellationToken)
+    {
+        if (_googleCodeAssistCredentialService is null)
+        {
+            throw new ModelProviderException(
+                "Google Code Assist credentials cannot be resolved in this runtime.");
+        }
+
+        Uri baseUri = providerProfile.ResolveBaseUri();
+        GoogleCodeAssistResolvedCredential credential =
+            await _googleCodeAssistCredentialService.ResolveAsync(
+                storedCredentials,
+                forceRefresh: false,
+                cancellationToken);
+        bool forcedRefreshAfterAuthFailure = false;
+
+        while (true)
+        {
+            using HttpRequestMessage request = CreateGoogleCodeAssistModelsRequest(
+                baseUri,
+                providerProfile.ProviderKind,
+                credential);
+            LogDebugApiRequest(request.Method, request.RequestUri);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, responseBody);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                !forcedRefreshAfterAuthFailure)
+            {
+                forcedRefreshAfterAuthFailure = true;
+                credential = await _googleCodeAssistCredentialService.ResolveAsync(
+                    storedCredentials,
+                    forceRefresh: true,
+                    cancellationToken);
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = string.IsNullOrWhiteSpace(responseBody)
+                    ? $"Provider returned HTTP {(int)response.StatusCode}."
+                    : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
+
+                throw new ModelProviderException(
+                    $"Unable to fetch Gemini CLI models from the Code Assist API. {detail}");
+            }
+
+            IReadOnlyList<AvailableModel> models = ParseGoogleCodeAssistModels(responseBody);
+            if (models.Count > 0)
+            {
+                return models;
+            }
+
+            throw new ModelProviderException(
+                "The Google Code Assist API returned an invalid models response.");
+        }
+    }
+
     private async Task<IReadOnlyList<AvailableModel>> GetOllamaCloudModelsAsync(
         AgentProviderProfile providerProfile,
         string apiKey,
@@ -490,6 +576,25 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         return request;
     }
 
+    private static HttpRequestMessage CreateGoogleCodeAssistModelsRequest(
+        Uri baseUri,
+        ProviderKind providerKind,
+        GoogleCodeAssistResolvedCredential credential)
+    {
+        JsonObject body = new();
+        if (!string.IsNullOrWhiteSpace(credential.ProjectId))
+        {
+            body["project"] = credential.ProjectId;
+        }
+
+        HttpRequestMessage request = new(
+            HttpMethod.Post,
+            new Uri($"{baseUri.AbsoluteUri}v1internal:fetchAvailableModels"));
+        GoogleCodeAssistCredentialService.ApplyCodeAssistHeaders(request, credential, providerKind);
+        request.Content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json");
+        return request;
+    }
+
     private static void ApplyAuthenticationHeaders(
         HttpRequestMessage request,
         ProviderKind providerKind,
@@ -564,6 +669,56 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             if (!string.IsNullOrWhiteSpace(name))
             {
                 models.Add(new AvailableModel(name.Trim()));
+            }
+        }
+
+        return models;
+    }
+
+    private static IReadOnlyList<AvailableModel> ParseGoogleCodeAssistModels(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        JsonElement root = document.RootElement.ValueKind == JsonValueKind.Object &&
+            document.RootElement.TryGetProperty("response", out JsonElement responseElement)
+                ? responseElement
+                : document.RootElement;
+
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("models", out JsonElement modelsElement))
+        {
+            return [];
+        }
+
+        List<AvailableModel> models = [];
+        if (modelsElement.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty property in modelsElement.EnumerateObject())
+            {
+                string id = property.Name.Trim();
+                if (id.Length > 0)
+                {
+                    models.Add(new AvailableModel(
+                        id,
+                        TryGetContextWindowTokens(property.Value)));
+                }
+            }
+
+            return models;
+        }
+
+        if (modelsElement.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        foreach (JsonElement item in modelsElement.EnumerateArray())
+        {
+            string? id = TryGetModelId(item) ?? TryGetModelName(item);
+            if (!string.IsNullOrWhiteSpace(id))
+            {
+                models.Add(new AvailableModel(
+                    id.Trim(),
+                    TryGetContextWindowTokens(item)));
             }
         }
 

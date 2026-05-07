@@ -97,6 +97,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateGeminiCli_Should_ReturnGeminiCliProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateGeminiCli();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.GeminiCli, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();
