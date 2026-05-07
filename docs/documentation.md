@@ -104,6 +104,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
 | API key | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
 | API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
+| API key | Ollama Cloud | API key | Uses Ollama's hosted native chat and tags APIs. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 | Local provider | Google Antigravity | API key | Uses a local Antigravity OpenAI-compatible proxy at `http://127.0.0.1:8045/v1`. |
 | Local provider | Ollama | None | Uses Ollama's local OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. |
@@ -356,7 +357,7 @@ Optional repository variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, `google-antigravity`, or `ollama`. |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, `google-antigravity`, `ollama`, or `ollama-cloud`. |
 | `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
@@ -921,7 +922,7 @@ Check that the device-code page opened, enter the displayed code, and verify tha
 
 Check the provider credential, provider account access, network connectivity, and custom provider base URL. For compatible providers, the base URL must be absolute and use HTTP or HTTPS.
 
-For Ollama, make sure `ollama serve` is running and at least one model is installed.
+For Ollama, make sure `ollama serve` is running and at least one model is installed. For Ollama Cloud, check that the API key has access to the hosted models you expect to use.
 
 ### A command is denied
 

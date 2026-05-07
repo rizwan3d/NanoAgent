@@ -12,5 +12,6 @@ public enum OnboardingProviderChoice
     GitHubCopilot = 7,
     KiloCode = 8,
     GoogleAntigravity = 9,
-    Ollama = 10
+    Ollama = 10,
+    OllamaCloud = 11
 }

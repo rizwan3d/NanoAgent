@@ -291,6 +291,50 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatRequestToOllamaCloudEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "created_at": "2026-05-07T00:00:00Z",
+              "message": {
+                "role": "assistant",
+                "content": "Hello from Ollama Cloud."
+              },
+              "done": true,
+              "prompt_eval_count": 10,
+              "eval_count": 5
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OllamaCloud, null),
+                "ollama-cloud-key",
+                "gpt-oss:20b",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://ollama.com/api/chat"));
+        handler.AuthorizationHeader.Should().Be("Bearer ollama-cloud-key");
+        handler.RequestBody.Should().Contain("\"model\":\"gpt-oss:20b\"");
+        handler.RequestBody.Should().Contain("\"stream\":false");
+        payload.ProviderKind.Should().Be(ProviderKind.OllamaCloud);
+
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("Hello from Ollama Cloud.");
+        response.PromptTokens.Should().Be(10);
+        response.CompletionTokens.Should().Be(5);
+        response.TotalTokens.Should().Be(15);
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToAnthropicEndpoint_When_AnthropicProviderIsSelected()
     {
         RecordingHandler handler = new("""

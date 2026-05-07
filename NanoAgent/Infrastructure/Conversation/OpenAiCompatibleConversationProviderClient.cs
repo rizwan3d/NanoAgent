@@ -77,6 +77,11 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             return await SendGitHubCopilotAsync(request, cancellationToken);
         }
 
+        if (request.ProviderProfile.ProviderKind == ProviderKind.OllamaCloud)
+        {
+            return await SendOllamaCloudAsync(request, cancellationToken);
+        }
+
         OpenAiChatCompletionRequest payload = BuildRequestPayload(request);
         string requestBody = JsonSerializer.Serialize(
             payload,
@@ -113,6 +118,74 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
                 return new ConversationProviderPayload(
                     request.ProviderProfile.ProviderKind,
                     responseBody,
+                    TryGetResponseId(response),
+                    retryCount);
+            }
+
+            if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
+            {
+                retryCount++;
+                TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
+                _logger.LogWarning(
+                    "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                    (int)response.StatusCode,
+                    attempt + 1,
+                    MaxRetryAttempts + 1,
+                    Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await _delayAsync(retryDelay, cancellationToken);
+                continue;
+            }
+
+            ThrowConversationRequestFailed(response.StatusCode, responseBody);
+        }
+
+        throw new ConversationProviderException(
+            "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
+    }
+
+    private async Task<ConversationProviderPayload> SendOllamaCloudAsync(
+        ConversationProviderRequest request,
+        CancellationToken cancellationToken)
+    {
+        OpenAiChatCompletionRequest chatPayload = BuildRequestPayload(request);
+        OllamaChatRequest payload = new(
+            chatPayload.Model,
+            chatPayload.Messages,
+            chatPayload.Tools.Count == 0 ? null : chatPayload.Tools,
+            Stream: false);
+        string requestBody = JsonSerializer.Serialize(
+            payload,
+            OpenAiConversationJsonContext.Default.OllamaChatRequest);
+        Uri baseUri = request.ProviderProfile.ResolveBaseUri();
+        int retryCount = 0;
+
+        for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        {
+            using HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "api/chat"));
+            httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", request.ApiKey);
+            httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                httpRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
+
+            if (response.IsSuccessStatusCode)
+            {
+                string normalizedResponseBody = ConvertOllamaChatResponseToChatCompletion(responseBody);
+                if (string.IsNullOrWhiteSpace(normalizedResponseBody))
+                {
+                    throw new ConversationProviderException(
+                        "The provider returned an empty response body for the conversation request.");
+                }
+
+                return new ConversationProviderPayload(
+                    request.ProviderProfile.ProviderKind,
+                    normalizedResponseBody,
                     TryGetResponseId(response),
                     retryCount);
             }
@@ -795,6 +868,100 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         return JsonSerializer.Serialize(
             convertedResponse,
             OpenAiConversationJsonContext.Default.OpenAiChatCompletionResponse);
+    }
+
+    private static string ConvertOllamaChatResponseToChatCompletion(string responseBody)
+    {
+        using JsonDocument document = JsonDocument.Parse(responseBody);
+        JsonElement root = document.RootElement;
+        JsonElement message = root.TryGetProperty("message", out JsonElement messageElement)
+            ? messageElement
+            : default;
+
+        string content = TryGetString(message, "content") ?? string.Empty;
+        List<OpenAiChatCompletionToolCall> toolCalls = [];
+        if (message.ValueKind == JsonValueKind.Object &&
+            message.TryGetProperty("tool_calls", out JsonElement toolCallsElement) &&
+            toolCallsElement.ValueKind == JsonValueKind.Array)
+        {
+            int toolCallOrdinal = 0;
+            foreach (JsonElement toolCallElement in toolCallsElement.EnumerateArray())
+            {
+                if (!toolCallElement.TryGetProperty("function", out JsonElement functionElement) ||
+                    functionElement.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                string? name = TryGetString(functionElement, "name");
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    continue;
+                }
+
+                string argumentsJson = "{}";
+                if (functionElement.TryGetProperty("arguments", out JsonElement argumentsElement) &&
+                    argumentsElement.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+                {
+                    argumentsJson = argumentsElement.ValueKind == JsonValueKind.String
+                        ? argumentsElement.GetString() ?? "{}"
+                        : argumentsElement.GetRawText();
+                }
+
+                toolCalls.Add(new OpenAiChatCompletionToolCall(
+                    CreateToolCallId(null, TryGetString(root, "created_at"), ++toolCallOrdinal),
+                    "function",
+                    new OpenAiChatCompletionFunctionCall(name.Trim(), argumentsJson)));
+            }
+        }
+
+        int? promptTokens = TryGetInt32(root, "prompt_eval_count");
+        int? completionTokens = TryGetInt32(root, "eval_count");
+        OpenAiChatCompletionResponse convertedResponse = new(
+            TryGetString(root, "created_at"),
+            [
+                new OpenAiChatCompletionChoice(
+                    new OpenAiChatCompletionResponseMessage(
+                        CreateStringContentElement(content),
+                        toolCalls.Count == 0 ? null : toolCalls,
+                        FunctionCall: null,
+                        Refusal: null),
+                    toolCalls.Count == 0 ? "stop" : "tool_calls")
+            ],
+            new OpenAiChatCompletionUsage(
+                completionTokens,
+                promptTokens,
+                SumNullable(promptTokens, completionTokens),
+                PromptTokensDetails: null));
+
+        return JsonSerializer.Serialize(
+            convertedResponse,
+            OpenAiConversationJsonContext.Default.OpenAiChatCompletionResponse);
+    }
+
+    private static string? TryGetString(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(propertyName, out JsonElement property) ||
+            property.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return NormalizeOrNull(property.GetString());
+    }
+
+    private static int? TryGetInt32(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object ||
+            !element.TryGetProperty(propertyName, out JsonElement property) ||
+            property.ValueKind != JsonValueKind.Number ||
+            !property.TryGetInt32(out int value))
+        {
+            return null;
+        }
+
+        return value;
     }
 
     private static string? MapAnthropicStopReason(string? stopReason)

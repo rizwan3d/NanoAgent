@@ -203,6 +203,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestOllamaCloudTagsEndpoint_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "models": [
+                { "name": "gpt-oss:20b" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OllamaCloud, null),
+            "ollama-cloud-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://ollama.com/api/tags"));
+        handler.AuthorizationHeader.Should().Be("Bearer ollama-cloud-key");
+        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("gpt-oss:20b", null));
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestAnthropicModelsEndpointWithAnthropicHeaders_When_AnthropicProviderIsConfigured()
     {
         RecordingHandler handler = new("""

@@ -20,6 +20,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOllama();
 
+    AgentProviderProfile CreateOllamaCloud();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();
