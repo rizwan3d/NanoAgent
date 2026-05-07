@@ -131,7 +131,7 @@ Override built-in profile prompts per workspace with `.nanoagent/agents/build.md
 | Groq | API key |
 | Google AI Studio | API key |
 | Anthropic | API key |
-| Google Antigravity | Browser sign-in |
+| Google Antigravity | API key |
 | Ollama | None |
 | Ollama Cloud | API key |
 | OpenAI-compatible provider | Base URL and API key |
