@@ -67,7 +67,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "Kilo Code",
             OnboardingProviderChoice.KiloCode,
-            "Use Kilo's OpenRouter-compatible gateway with only a Kilo API key.")
+            "Use Kilo's OpenRouter-compatible gateway with only a Kilo API key."),
+        new(
+            "Ollama Cloud",
+            OnboardingProviderChoice.OllamaCloud,
+            "Use Ollama's hosted API with an Ollama Cloud API key.")
     ];
 
     private static readonly SelectionPromptOption<OnboardingProviderChoice>[] LocalProviderOptions =
@@ -200,6 +204,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
+            OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
             OnboardingProviderChoice.GoogleAntigravity => _profileFactory.CreateGoogleAntigravity(),
             OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),

@@ -37,3 +37,10 @@ internal sealed record OpenAiChatCompletionFunctionDefinition(
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("description")] string Description,
     [property: JsonPropertyName("parameters")] JsonElement Parameters);
+
+internal sealed record OllamaChatRequest(
+    [property: JsonPropertyName("model")] string Model,
+    [property: JsonPropertyName("messages")] IReadOnlyList<OpenAiChatCompletionRequestMessage> Messages,
+    [property: JsonPropertyName("tools")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<OpenAiChatCompletionToolDefinition>? Tools,
+    [property: JsonPropertyName("stream")] bool Stream);

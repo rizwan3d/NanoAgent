@@ -12,5 +12,6 @@ public enum ProviderKind
     GitHubCopilot = 8,
     KiloCode = 9,
     GoogleAntigravity = 10,
-    Ollama = 11
+    Ollama = 11,
+    OllamaCloud = 12
 }
