@@ -35,6 +35,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.KiloCode, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateGoogleAntigravity()
+    {
+        return new AgentProviderProfile(ProviderKind.GoogleAntigravity, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);

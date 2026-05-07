@@ -16,6 +16,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateKiloCode();
 
+    AgentProviderProfile CreateGoogleAntigravity();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

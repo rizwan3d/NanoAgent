@@ -77,7 +77,7 @@ nanoai
 
 NanoAgent will guide you through provider setup:
 
-1. Choose a setup type: subscription account, API key provider, or OpenAI-compatible provider.
+1. Choose a setup type: subscription account, API key provider, OpenAI-compatible provider, or local provider.
 2. Choose a provider from the matching submenu when needed.
 3. Enter an API key, sign in with ChatGPT Plus/Pro, Claude Pro/Max, or GitHub Copilot, or enter a custom compatible base URL.
 4. Let NanoAgent discover available models.
@@ -105,6 +105,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
 | API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
+| Local provider | Google Antigravity | API key | Uses a local Antigravity OpenAI-compatible proxy at `http://127.0.0.1:8045/v1`. |
 
 Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.
 
@@ -354,7 +355,7 @@ Optional repository variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, or `openrouter`. |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, or `google-antigravity`. |
 | `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |

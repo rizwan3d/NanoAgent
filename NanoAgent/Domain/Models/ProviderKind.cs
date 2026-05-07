@@ -10,5 +10,6 @@ public enum ProviderKind
     OpenRouter = 6,
     AnthropicClaudeAccount = 7,
     GitHubCopilot = 8,
-    KiloCode = 9
+    KiloCode = 9,
+    GoogleAntigravity = 10
 }

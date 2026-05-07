@@ -125,6 +125,22 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_ThenLoadAsync_Should_RoundTripGoogleAntigravityConfiguration()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+        AgentConfiguration configuration = new(
+            new AgentProviderProfile(ProviderKind.GoogleAntigravity, null),
+            "gemini-3-pro",
+            "on");
+
+        await sut.SaveAsync(configuration, CancellationToken.None);
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(configuration);
+    }
+
+    [Fact]
     public async Task SaveAsync_Should_PreserveMultipleNamedProvidersAndSwitchActiveProvider()
     {
         StubUserDataPathProvider pathProvider = new(_tempRoot);
@@ -257,6 +273,21 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
 
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.KiloCode, null),
+            PreferredModelId: null,
+            ReasoningEffort: null));
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_CreateGoogleAntigravityEnvironmentConfiguration_When_ProviderIsSet()
+    {
+        using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "google-antigravity");
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.GoogleAntigravity, null),
             PreferredModelId: null,
             ReasoningEffort: null));
     }
