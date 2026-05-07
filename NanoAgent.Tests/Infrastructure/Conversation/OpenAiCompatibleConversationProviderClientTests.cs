@@ -254,6 +254,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToOllamaEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_ollama",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Ollama."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.Ollama, null),
+                "ollama",
+                "llama3.2",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:11434/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer ollama");
+        handler.RequestBody.Should().Contain("\"model\":\"llama3.2\"");
+        payload.ProviderKind.Should().Be(ProviderKind.Ollama);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToAnthropicEndpoint_When_AnthropicProviderIsSelected()
     {
         RecordingHandler handler = new("""

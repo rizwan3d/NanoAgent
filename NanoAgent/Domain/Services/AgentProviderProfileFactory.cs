@@ -40,6 +40,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.GoogleAntigravity, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateOllama()
+    {
+        return new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);

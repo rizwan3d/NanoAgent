@@ -65,6 +65,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateOllama_Should_ReturnOllamaProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateOllama();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.Ollama, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

@@ -180,6 +180,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestOllamaModelsEndpoint_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "llama3.2", "context_length": 131072 }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.Ollama, null),
+            "ollama",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:11434/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer ollama");
+        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("llama3.2", 131072));
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestAnthropicModelsEndpointWithAnthropicHeaders_When_AnthropicProviderIsConfigured()
     {
         RecordingHandler handler = new("""

@@ -450,9 +450,10 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             "openrouter" => ProviderKind.OpenRouter,
             "kilocode" or "kilo" or "kiloai" => ProviderKind.KiloCode,
             "googleantigravity" or "antigravity" => ProviderKind.GoogleAntigravity,
+            "ollama" => ProviderKind.Ollama,
             "openaichatgptaccount" or "chatgpt" => ProviderKind.OpenAiChatGptAccount,
             _ => throw new InvalidOperationException(
-                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code, google-antigravity.")
+                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code, google-antigravity, ollama.")
         };
     }
 
@@ -507,6 +508,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 ProviderKind.GoogleAntigravity => new AgentProviderProfile(
                     ProviderKind.GoogleAntigravity,
                     BaseUrl: null),
+                ProviderKind.Ollama => new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null),
                 ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
                 ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),
                 ProviderKind.OpenAiCompatible when !string.IsNullOrWhiteSpace(profile.BaseUrl)

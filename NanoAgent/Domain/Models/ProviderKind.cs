@@ -11,5 +11,6 @@ public enum ProviderKind
     AnthropicClaudeAccount = 7,
     GitHubCopilot = 8,
     KiloCode = 9,
-    GoogleAntigravity = 10
+    GoogleAntigravity = 10,
+    Ollama = 11
 }

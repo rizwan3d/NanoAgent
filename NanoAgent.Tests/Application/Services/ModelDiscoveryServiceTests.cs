@@ -210,6 +210,50 @@ public sealed class ModelDiscoveryServiceTests
     }
 
     [Fact]
+    public async Task DiscoverAndSelectAsync_Should_UseProviderDefaultApiKey_When_SecretIsMissing()
+    {
+        AgentProviderProfile providerProfile = new(ProviderKind.Ollama, null);
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentConfiguration(providerProfile, null, null, "Ollama"));
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(providerProfile, "llama3.2", null, "Ollama"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync("Ollama", It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync((string?)null);
+
+        Mock<IModelProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.GetAvailableModelsAsync(
+                providerProfile,
+                "ollama",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([new AvailableModel("llama3.2")]);
+
+        ModelDiscoveryService sut = CreateSut(
+            configurationStore.Object,
+            secretStore.Object,
+            providerClient.Object,
+            new InMemoryModelCache(),
+            new ConfiguredOrFirstModelSelectionPolicy(),
+            new ModelSelectionSettings(TimeSpan.FromMinutes(5)));
+
+        ModelDiscoveryResult result = await sut.DiscoverAndSelectAsync(CancellationToken.None);
+
+        result.SelectedModelId.Should().Be("llama3.2");
+        providerClient.VerifyAll();
+    }
+
+    [Fact]
     public async Task DiscoverAndSelectAsync_Should_ThrowModelDiscoveryException_When_ProviderReturnsNoUsableModels()
     {
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
