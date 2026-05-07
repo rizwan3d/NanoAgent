@@ -10,5 +10,6 @@ public enum OnboardingProviderChoice
     OpenRouter = 5,
     AnthropicClaudeAccount = 6,
     GitHubCopilot = 7,
-    KiloCode = 8
+    KiloCode = 8,
+    GoogleAntigravity = 9
 }
