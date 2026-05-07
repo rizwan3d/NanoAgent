@@ -26,8 +26,6 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateGroq();
 
-    AgentProviderProfile CreateGeminiCli();
-
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

@@ -60,11 +60,6 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.Groq, BaseUrl: null);
     }
 
-    public AgentProviderProfile CreateGeminiCli()
-    {
-        return new AgentProviderProfile(ProviderKind.GeminiCli, BaseUrl: null);
-    }
-
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);
