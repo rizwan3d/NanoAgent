@@ -157,6 +157,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestCerebrasModelsEndpoint_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "llama3.1-8b" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.Cerebras, null),
+            "cerebras-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.cerebras.ai/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer cerebras-key");
+        models.Select(model => model.Id).Should().Equal("llama3.1-8b");
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestGoogleAntigravityModelsEndpoint_When_ProviderIsConfigured()
     {
         RecordingHandler handler = new("""

@@ -22,6 +22,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOllamaCloud();
 
+    AgentProviderProfile CreateCerebras();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

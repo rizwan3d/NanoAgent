@@ -13,5 +13,6 @@ public enum ProviderKind
     KiloCode = 9,
     GoogleAntigravity = 10,
     Ollama = 11,
-    OllamaCloud = 12
+    OllamaCloud = 12,
+    Cerebras = 13
 }

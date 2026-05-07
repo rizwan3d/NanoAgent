@@ -13,5 +13,6 @@ public enum OnboardingProviderChoice
     KiloCode = 8,
     GoogleAntigravity = 9,
     Ollama = 10,
-    OllamaCloud = 11
+    OllamaCloud = 11,
+    Cerebras = 12
 }
