@@ -11,7 +11,6 @@ public enum OnboardingProviderChoice
     AnthropicClaudeAccount = 6,
     GitHubCopilot = 7,
     KiloCode = 8,
-    GoogleAntigravity = 9,
     Ollama = 10,
     OllamaCloud = 11,
     Cerebras = 12,
