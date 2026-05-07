@@ -11,7 +11,6 @@ using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.GitHub;
-using NanoAgent.Infrastructure.Google;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
@@ -100,11 +99,6 @@ public static class ServiceCollectionExtensions
             client.Timeout = TimeSpan.FromSeconds(30);
             client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
         });
-        services.AddHttpClient<GoogleCodeAssistCredentialService>(client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
-        });
         services.AddTransient<IOpenAiChatGptAccountCredentialService>(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
         services.AddTransient<IOpenAiChatGptAccountAuthenticator>(serviceProvider =>
@@ -117,10 +111,6 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
         services.AddTransient<IGitHubCopilotAuthenticator>(serviceProvider =>
             serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
-        services.AddTransient<IGoogleCodeAssistCredentialService>(serviceProvider =>
-            serviceProvider.GetRequiredService<GoogleCodeAssistCredentialService>());
-        services.AddTransient<IGeminiCliAuthenticator>(serviceProvider =>
-            serviceProvider.GetRequiredService<GoogleCodeAssistCredentialService>());
         services.AddHttpClient("NanoAgent.Mcp", client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;

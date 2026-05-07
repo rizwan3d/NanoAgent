@@ -99,7 +99,6 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | Subscription based | OpenAI ChatGPT Plus/Pro | Browser sign-in | Uses OAuth with local callback port `1455`. |
 | Subscription based | Anthropic Claude Pro/Max | Browser sign-in | Uses OAuth with local callback port `53692`. |
 | Subscription based | GitHub Copilot | Browser device sign-in | Uses GitHub device-code login. Leave the Enterprise URL/domain prompt blank for `github.com`. |
-| Subscription based | Gemini CLI | Browser sign-in | Uses Google OAuth with a local callback port and the Code Assist API. |
 | API key | OpenAI | API key | Uses the OpenAI API. |
 | API key | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
 | API key | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
@@ -360,7 +359,7 @@ Optional repository variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `gemini-cli`, `openrouter`, `kilo-code`, `cerebras`, `groq`, `google-antigravity`, `ollama`, or `ollama-cloud`. |
+| `NANOAGENT_PROVIDER` | `openai` | `openai`, `openai-compatible`, `google-ai-studio`, `anthropic`, `anthropic-claude-account`, `github-copilot`, `openrouter`, `kilo-code`, `cerebras`, `groq`, `google-antigravity`, `ollama`, or `ollama-cloud`. |
 | `NANOAGENT_MODEL` | `gpt-5.4` | Preferred model id for the review run. |
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
@@ -920,10 +919,6 @@ Check that port `53692` is available and that the browser callback URL opens loc
 ### GitHub Copilot sign-in does not complete
 
 Check that the device-code page opened, enter the displayed code, and verify that your GitHub account has Copilot access. For GitHub Enterprise, enter only the Enterprise URL or domain when prompted; leave it blank for `github.com`.
-
-### Gemini CLI sign-in does not complete
-
-Check that the browser callback opens locally and that your Google account has Code Assist access. Set `GOOGLE_CLOUD_PROJECT` if your account requires an explicit Cloud project.
 
 ### No models are listed
 
