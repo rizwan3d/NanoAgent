@@ -81,7 +81,7 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             return await SendGitHubCopilotAsync(request, cancellationToken);
         }
 
-        if (request.ProviderProfile.ProviderKind == ProviderKind.GeminiCli)
+        if (request.ProviderProfile.ProviderKind is ProviderKind.GeminiCli or ProviderKind.GoogleAntigravity)
         {
             return await SendGoogleCodeAssistAsync(request, cancellationToken);
         }

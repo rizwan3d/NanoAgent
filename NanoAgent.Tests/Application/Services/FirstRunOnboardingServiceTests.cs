@@ -968,12 +968,7 @@ public sealed class FirstRunOnboardingServiceTests
         SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.GoogleAntigravity);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
-
         Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
-        secretPrompt
-            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync("  antigravity-key  ");
-
         Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
 
         Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
@@ -989,9 +984,6 @@ public sealed class FirstRunOnboardingServiceTests
             .Returns(Task.CompletedTask);
 
         Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
-        inputValidator
-            .Setup(validator => validator.ValidateApiKey("  antigravity-key  "))
-            .Returns(InputValidationResult.Success("antigravity-key"));
 
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
@@ -1003,11 +995,16 @@ public sealed class FirstRunOnboardingServiceTests
 
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
-        secretStore.Setup(store => store.SaveAsync("antigravity-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "antigravity-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync("antigravity-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "antigravity-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory.Setup(factory => factory.CreateGoogleAntigravity()).Returns(profile);
+
+        Mock<IGoogleAntigravityAuthenticator> authenticator = new(MockBehavior.Strict);
+        authenticator
+            .Setup(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("antigravity-credential-json");
 
         FirstRunOnboardingService sut = CreateSut(
             selectionPrompt.Object,
@@ -1018,7 +1015,8 @@ public sealed class FirstRunOnboardingServiceTests
             inputValidator.Object,
             configurationStore.Object,
             secretStore.Object,
-            profileFactory.Object);
+            profileFactory.Object,
+            googleAntigravityAuthenticator: authenticator.Object);
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
@@ -1027,7 +1025,10 @@ public sealed class FirstRunOnboardingServiceTests
             true,
             ActiveProviderName: "Google Antigravity"));
         profileFactory.Verify(factory => factory.CreateGoogleAntigravity(), Times.Once);
+        authenticator.Verify(service => service.AuthenticateAsync(It.IsAny<CancellationToken>()), Times.Once);
         textPrompt.VerifyNoOtherCalls();
+        secretPrompt.VerifyNoOtherCalls();
+        inputValidator.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
         secretStore.VerifyAll();
         statusMessageWriter.VerifyAll();
@@ -1398,10 +1399,10 @@ public sealed class FirstRunOnboardingServiceTests
             OnboardingProviderChoice.OpenAiChatGptAccount or
                 OnboardingProviderChoice.AnthropicClaudeAccount or
                 OnboardingProviderChoice.GitHubCopilot or
-                OnboardingProviderChoice.GeminiCli => OnboardingProviderSetupChoice.SubscriptionAccount,
+                OnboardingProviderChoice.GeminiCli or
+                OnboardingProviderChoice.GoogleAntigravity => OnboardingProviderSetupChoice.SubscriptionAccount,
             OnboardingProviderChoice.OpenAiCompatible => OnboardingProviderSetupChoice.OpenAiCompatible,
-            OnboardingProviderChoice.GoogleAntigravity or
-                OnboardingProviderChoice.Ollama => OnboardingProviderSetupChoice.LocalProvider,
+            OnboardingProviderChoice.Ollama => OnboardingProviderSetupChoice.LocalProvider,
             _ => OnboardingProviderSetupChoice.ApiKey
         };
 
@@ -1436,7 +1437,8 @@ public sealed class FirstRunOnboardingServiceTests
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
         IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
-        IGeminiCliAuthenticator? geminiCliAuthenticator = null)
+        IGeminiCliAuthenticator? geminiCliAuthenticator = null,
+        IGoogleAntigravityAuthenticator? googleAntigravityAuthenticator = null)
     {
         return new FirstRunOnboardingService(
             selectionPrompt,
@@ -1452,6 +1454,7 @@ public sealed class FirstRunOnboardingServiceTests
             openAiChatGptAccountAuthenticator,
             anthropicClaudeAccountAuthenticator,
             gitHubCopilotAuthenticator,
-            geminiCliAuthenticator);
+            geminiCliAuthenticator,
+            googleAntigravityAuthenticator);
     }
 }
