@@ -16,8 +16,6 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateKiloCode();
 
-    AgentProviderProfile CreateGoogleAntigravity();
-
     AgentProviderProfile CreateOllama();
 
     AgentProviderProfile CreateOllamaCloud();

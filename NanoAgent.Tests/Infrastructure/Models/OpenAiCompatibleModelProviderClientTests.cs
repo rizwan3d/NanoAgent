@@ -203,29 +203,6 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
-    public async Task GetAvailableModelsAsync_Should_RequestGoogleAntigravityModelsEndpoint_When_ProviderIsConfigured()
-    {
-        RecordingHandler handler = new("""
-            {
-              "data": [
-                { "id": "gemini-3-pro", "context_length": 1048576 }
-              ]
-            }
-            """);
-        HttpClient httpClient = new(handler);
-        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
-
-        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
-            new AgentProviderProfile(ProviderKind.GoogleAntigravity, null),
-            "antigravity-key",
-            CancellationToken.None);
-
-        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:8045/v1/models"));
-        handler.AuthorizationHeader.Should().Be("Bearer antigravity-key");
-        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("gemini-3-pro", 1048576));
-    }
-
-    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestOllamaModelsEndpoint_When_ProviderIsConfigured()
     {
         RecordingHandler handler = new("""

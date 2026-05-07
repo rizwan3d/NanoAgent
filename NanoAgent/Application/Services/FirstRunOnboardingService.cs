@@ -85,10 +85,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private static readonly SelectionPromptOption<OnboardingProviderChoice>[] LocalProviderOptions =
     [
         new(
-            "Google Antigravity",
-            OnboardingProviderChoice.GoogleAntigravity,
-            "Use a local Antigravity OpenAI-compatible proxy."),
-        new(
             "Ollama",
             OnboardingProviderChoice.Ollama,
             "Use the local Ollama OpenAI-compatible API.")
@@ -215,7 +211,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
             OnboardingProviderChoice.Groq => _profileFactory.CreateGroq(),
             OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
-            OnboardingProviderChoice.GoogleAntigravity => _profileFactory.CreateGoogleAntigravity(),
             OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
