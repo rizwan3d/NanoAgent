@@ -198,7 +198,8 @@ public sealed class FirstRunOnboardingServiceTests
                     .Equal(
                         ("Subscription accounts", OnboardingProviderSetupChoice.SubscriptionAccount),
                         ("API key providers", OnboardingProviderSetupChoice.ApiKey),
-                        ("OpenAI-compatible provider", OnboardingProviderSetupChoice.OpenAiCompatible));
+                        ("OpenAI-compatible provider", OnboardingProviderSetupChoice.OpenAiCompatible),
+                        ("Local providers", OnboardingProviderSetupChoice.LocalProvider));
 
                 return Task.FromResult(OnboardingProviderSetupChoice.ApiKey);
             });
@@ -654,6 +655,80 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveGoogleAntigravityConfiguration_When_GoogleAntigravityIsSelected()
+    {
+        AgentProviderProfile profile = new(ProviderKind.GoogleAntigravity, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.GoogleAntigravity);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        secretPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  antigravity-key  ");
+
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: Google Antigravity.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        inputValidator
+            .Setup(validator => validator.ValidateApiKey("  antigravity-key  "))
+            .Returns(InputValidationResult.Success("antigravity-key"));
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(profile, null, null, "Google Antigravity"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("antigravity-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "antigravity-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateGoogleAntigravity()).Returns(profile);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "Google Antigravity"));
+        profileFactory.Verify(factory => factory.CreateGoogleAntigravity(), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveGoogleAiStudioConfiguration_When_GoogleAiStudioIsSelected()
     {
         AgentProviderProfile googleAiStudioProfile = new(ProviderKind.GoogleAiStudio, null);
@@ -951,6 +1026,7 @@ public sealed class FirstRunOnboardingServiceTests
                 OnboardingProviderChoice.AnthropicClaudeAccount or
                 OnboardingProviderChoice.GitHubCopilot => OnboardingProviderSetupChoice.SubscriptionAccount,
             OnboardingProviderChoice.OpenAiCompatible => OnboardingProviderSetupChoice.OpenAiCompatible,
+            OnboardingProviderChoice.GoogleAntigravity => OnboardingProviderSetupChoice.LocalProvider,
             _ => OnboardingProviderSetupChoice.ApiKey
         };
 

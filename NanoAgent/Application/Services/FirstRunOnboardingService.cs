@@ -23,7 +23,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "OpenAI-compatible provider",
             OnboardingProviderSetupChoice.OpenAiCompatible,
-            "Use a custom base URL and API key.")
+            "Use a custom base URL and API key."),
+        new(
+            "Local providers",
+            OnboardingProviderSetupChoice.LocalProvider,
+            "Use a local provider with a managed OpenAI-compatible endpoint.")
     ];
 
     private static readonly SelectionPromptOption<OnboardingProviderChoice>[] SubscriptionProviderOptions =
@@ -64,6 +68,14 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             "Kilo Code",
             OnboardingProviderChoice.KiloCode,
             "Use Kilo's OpenRouter-compatible gateway with only a Kilo API key.")
+    ];
+
+    private static readonly SelectionPromptOption<OnboardingProviderChoice>[] LocalProviderOptions =
+    [
+        new(
+            "Google Antigravity",
+            OnboardingProviderChoice.GoogleAntigravity,
+            "Use a local Antigravity OpenAI-compatible proxy.")
     ];
 
     private readonly ISelectionPrompt _selectionPrompt;
@@ -183,6 +195,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
             OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
             OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
+            OnboardingProviderChoice.GoogleAntigravity => _profileFactory.CreateGoogleAntigravity(),
             OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
             OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
             OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
@@ -319,6 +332,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 new SelectionPromptRequest<OnboardingProviderChoice>(
                     "Choose API key provider",
                     ApiKeyProviderOptions,
+                    "Esc returns to provider setup type."),
+            OnboardingProviderSetupChoice.LocalProvider =>
+                new SelectionPromptRequest<OnboardingProviderChoice>(
+                    "Choose local provider",
+                    LocalProviderOptions,
                     "Esc returns to provider setup type."),
             _ => throw new InvalidOperationException($"Unsupported provider setup choice '{setupChoice}'.")
         };

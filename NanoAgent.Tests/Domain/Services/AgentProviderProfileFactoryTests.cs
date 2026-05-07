@@ -57,6 +57,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateGoogleAntigravity_Should_ReturnGoogleAntigravityProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateGoogleAntigravity();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.GoogleAntigravity, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

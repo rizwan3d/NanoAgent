@@ -217,6 +217,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToGoogleAntigravityEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_antigravity",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from Antigravity."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.GoogleAntigravity, null),
+                "antigravity-key",
+                "gemini-3-pro",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:8045/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer antigravity-key");
+        handler.RequestBody.Should().Contain("\"model\":\"gemini-3-pro\"");
+        payload.ProviderKind.Should().Be(ProviderKind.GoogleAntigravity);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToAnthropicEndpoint_When_AnthropicProviderIsSelected()
     {
         RecordingHandler handler = new("""
