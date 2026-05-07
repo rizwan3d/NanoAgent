@@ -3,7 +3,9 @@ using NanoAgent.Application.Backend;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
 using NanoAgent.CLI;
+using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 
 namespace NanoAgent.Tests.CLI;
 
@@ -56,6 +58,9 @@ public sealed class AcpServerTests
             .Should()
             .Be("sess-test");
 
+        messages.Should().Contain(message =>
+            IsSessionUpdate(message, "session_info_update") &&
+            message.GetProperty("params").GetProperty("update").GetProperty("modelId").GetString() == "gpt-test");
         messages.Should().Contain(message => IsSessionUpdate(message, "plan"));
         messages.Should().Contain(message => IsSessionUpdate(message, "tool_call"));
         messages.Should().Contain(message => IsSessionUpdate(message, "tool_call_update"));
@@ -198,6 +203,47 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_HandleOnboardingPromptsBeforeSessionExists()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        PromptingBackend backend = new();
+        ScriptedAcpTransport transport = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            transport.Input,
+            transport.Output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ => backend);
+
+        Task runTask = sut.RunAsync(CancellationToken.None);
+
+        await transport.SendAsync("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}""");
+        await transport.SendAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+            JsonSerializer.Serialize(cwd) +
+            "}}");
+        await transport.WaitForSessionNewAsync();
+        transport.CompleteInput();
+        await runTask;
+
+        IReadOnlyList<JsonElement> messages = transport.Messages;
+
+        messages.Should().Contain(message =>
+            IsMethod(message, "session/request_permission") &&
+            message.GetProperty("params").GetProperty("toolCall").GetProperty("title").GetString() == "Choose provider");
+        messages.Should().Contain(message =>
+            IsMethod(message, "session/request_text") &&
+            message.GetProperty("params").GetProperty("label").GetString() == "API key" &&
+            message.GetProperty("params").GetProperty("isSecret").GetBoolean());
+
+        FindResponse(messages, 2).GetProperty("result").GetProperty("sessionId").GetString().Should().Be("sess-prompt");
+        backend.SelectedProvider.Should().Be("OpenAI");
+        backend.ApiKey.Should().Be("sk-test");
+    }
+
+    [Fact]
     public void Parse_Should_Not_ReadRedirectedStdin_WhenAcpModeIsSelected()
     {
         bool readCalled = false;
@@ -221,7 +267,9 @@ public sealed class AcpServerTests
         return messages.Single(message =>
             message.TryGetProperty("id", out JsonElement responseId) &&
             responseId.ValueKind == JsonValueKind.Number &&
-            responseId.GetInt32() == id);
+            responseId.GetInt32() == id &&
+            !message.TryGetProperty("method", out _) &&
+            (message.TryGetProperty("result", out _) || message.TryGetProperty("error", out _)));
     }
 
     private static bool IsSessionUpdate(JsonElement message, string updateKind)
@@ -232,6 +280,12 @@ public sealed class AcpServerTests
             parameters.TryGetProperty("update", out JsonElement update) &&
             update.TryGetProperty("sessionUpdate", out JsonElement sessionUpdate) &&
             sessionUpdate.GetString() == updateKind;
+    }
+
+    private static bool IsMethod(JsonElement message, string methodName)
+    {
+        return message.TryGetProperty("method", out JsonElement method) &&
+            method.GetString() == methodName;
     }
 
     private static IReadOnlyList<JsonElement> ParseJsonLines(string output)
@@ -336,6 +390,204 @@ public sealed class AcpServerTests
                 "Untitled section",
                 IsResumedSection: false,
                 ConversationHistory: []);
+        }
+    }
+
+    private sealed class PromptingBackend : INanoAgentBackend
+    {
+        public string ApiKey { get; private set; } = string.Empty;
+
+        public string SelectedProvider { get; private set; } = string.Empty;
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public async Task<BackendSessionInfo> InitializeAsync(
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            SelectedProvider = await uiBridge.RequestSelectionAsync(
+                new SelectionPromptRequest<string>(
+                    "Choose provider",
+                    [new SelectionPromptOption<string>("OpenAI", "OpenAI")],
+                    "Pick a provider."),
+                cancellationToken);
+
+            ApiKey = await uiBridge.RequestTextAsync(
+                new TextPromptRequest(
+                    "API key",
+                    "Paste the API key."),
+                isSecret: true,
+                cancellationToken);
+
+            return new BackendSessionInfo(
+                "sess-prompt",
+                "nanoai --section sess-prompt",
+                SelectedProvider,
+                "gpt-test",
+                ActiveModelContextWindowTokens: null,
+                ["gpt-test"],
+                "off",
+                "build",
+                "Prompted session",
+                IsResumedSection: false,
+                ConversationHistory: []);
+        }
+
+        public Task<BackendCommandResult> RunCommandAsync(
+            string commandText,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BackendCommandResult> SelectModelAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IReadOnlyList<ConversationAttachment> attachments,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class ScriptedAcpTransport
+    {
+        private readonly Channel<string?> _input = Channel.CreateUnbounded<string?>();
+        private readonly TaskCompletionSource _sessionNewCompletion =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly List<JsonElement> _messages = [];
+
+        public ScriptedAcpTransport()
+        {
+            Input = new ChannelTextReader(_input.Reader);
+            Output = new ScriptedTextWriter(this);
+        }
+
+        public TextReader Input { get; }
+
+        public IReadOnlyList<JsonElement> Messages => _messages;
+
+        public TextWriter Output { get; }
+
+        public void CompleteInput()
+        {
+            _input.Writer.TryComplete();
+        }
+
+        public ValueTask SendAsync(string line)
+        {
+            return _input.Writer.WriteAsync(line);
+        }
+
+        public Task WaitForSessionNewAsync()
+        {
+            return _sessionNewCompletion.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        }
+
+        private void HandleOutputLine(string line)
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement message = document.RootElement.Clone();
+            _messages.Add(message);
+
+            if (message.TryGetProperty("method", out JsonElement method))
+            {
+                string? methodName = method.GetString();
+                if (methodName == "session/request_permission")
+                {
+                    Respond(
+                        message,
+                        """{"outcome":{"outcome":"selected","optionId":"0"}}""");
+                }
+                else if (methodName == "session/request_text")
+                {
+                    Respond(
+                        message,
+                        """{"outcome":{"outcome":"submitted","value":"sk-test"}}""");
+                }
+            }
+
+            if (message.TryGetProperty("id", out JsonElement id) &&
+                id.ValueKind == JsonValueKind.Number &&
+                id.GetInt32() == 2 &&
+                message.TryGetProperty("result", out JsonElement result) &&
+                result.TryGetProperty("sessionId", out _))
+            {
+                _sessionNewCompletion.TrySetResult();
+            }
+        }
+
+        private void Respond(JsonElement request, string resultJson)
+        {
+            JsonElement id = request.GetProperty("id");
+            string response =
+                "{\"jsonrpc\":\"2.0\",\"id\":" +
+                id.GetRawText() +
+                ",\"result\":" +
+                resultJson +
+                "}";
+
+            _input.Writer.TryWrite(response);
+        }
+
+        private sealed class ChannelTextReader : TextReader
+        {
+            private readonly ChannelReader<string?> _reader;
+
+            public ChannelTextReader(ChannelReader<string?> reader)
+            {
+                _reader = reader;
+            }
+
+            public override async ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken)
+            {
+                try
+                {
+                    return await _reader.ReadAsync(cancellationToken);
+                }
+                catch (ChannelClosedException)
+                {
+                    return null;
+                }
+            }
+        }
+
+        private sealed class ScriptedTextWriter : TextWriter
+        {
+            private readonly ScriptedAcpTransport _transport;
+
+            public ScriptedTextWriter(ScriptedAcpTransport transport)
+            {
+                _transport = transport;
+            }
+
+            public override Encoding Encoding => Encoding.UTF8;
+
+            public override Task WriteLineAsync(string? value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    _transport.HandleOutputLine(value);
+                }
+
+                return Task.CompletedTask;
+            }
         }
     }
 }
