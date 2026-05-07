@@ -14,6 +14,7 @@ namespace NanoAgent.Infrastructure.Google;
 
 internal sealed class GoogleCodeAssistCredentialService :
     IGeminiCliAuthenticator,
+    IGoogleAntigravityAuthenticator,
     IGoogleCodeAssistCredentialService
 {
     private const string AuthorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -21,12 +22,13 @@ internal sealed class GoogleCodeAssistCredentialService :
     private const string UserInfoEndpoint = "https://www.googleapis.com/oauth2/v2/userinfo";
     private const string CodeAssistEndpoint = "https://cloudcode-pa.googleapis.com";
     private const string CredentialType = "google-code-assist";
-    private const string GeminiCliClientId = "681255809395-bt1ps6nnm1adr36n2bmvkiv2ili3l1it.apps.googleusercontent.com";
-    private const string GeminiCliClientSecret = "GOCSPX-4u1lq4HExgHwq_dW3n3Qfvb8";
-    private const string AntigravityClientId = "720078229942-dvburqli0u37mbtif4mldqef2t0ippob.apps.googleusercontent.com";
-    private const string AntigravityClientSecret = "GOCSPX-2eKpKYRLeYg_jpa34TaGPr0R";
+    private const string GeminiCliClientId = "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
+    private const string GeminiCliClientSecret = "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";
+    private const string AntigravityClientId = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+    private const string AntigravityClientSecret = "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";
     private const string GeminiCliScopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile";
-    private const string AntigravityScopes = "https://www.googleapis.com/auth/cloud-platform";
+    private const string AntigravityScopes = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs";
+    private const string AntigravityFallbackProjectId = "rising-fact-p41fc";
     private const int AntigravityCallbackPort = 51121;
     private static readonly TimeSpan CallbackTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan TokenExpiryBuffer = TimeSpan.FromMinutes(5);
@@ -51,6 +53,11 @@ internal sealed class GoogleCodeAssistCredentialService :
     public Task<string> AuthenticateAsync(CancellationToken cancellationToken)
     {
         return AuthenticateAsync(GoogleCodeAssistProvider.GeminiCli, cancellationToken);
+    }
+
+    Task<string> IGoogleAntigravityAuthenticator.AuthenticateAsync(CancellationToken cancellationToken)
+    {
+        return AuthenticateAsync(GoogleCodeAssistProvider.GoogleAntigravity, cancellationToken);
     }
 
     internal async Task<string> AuthenticateAsync(
@@ -148,13 +155,19 @@ internal sealed class GoogleCodeAssistCredentialService :
 
         if (providerKind == ProviderKind.GoogleAntigravity)
         {
-            request.Headers.TryAddWithoutValidation("User-Agent", "antigravity/1.0");
-            request.Headers.TryAddWithoutValidation("x-goog-api-client", "antigravity-nanoagent/1.0");
+            request.Headers.TryAddWithoutValidation("User-Agent", "antigravity/1.18.3 windows/amd64");
+            request.Headers.TryAddWithoutValidation("x-goog-api-client", "google-cloud-sdk vscode_cloudshelleditor/0.1");
+            request.Headers.TryAddWithoutValidation(
+                "Client-Metadata",
+                """{"ideType":"ANTIGRAVITY","platform":"WINDOWS","pluginType":"GEMINI"}""");
             return;
         }
 
         request.Headers.TryAddWithoutValidation("User-Agent", "google-api-nodejs-client/9.15.1");
         request.Headers.TryAddWithoutValidation("x-goog-api-client", "gl-node/22.17.0 auth/9.15.1");
+        request.Headers.TryAddWithoutValidation(
+            "Client-Metadata",
+            "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI");
     }
 
     private static TcpListener CreateCallbackListener(GoogleCodeAssistProvider provider)
@@ -469,18 +482,22 @@ internal sealed class GoogleCodeAssistCredentialService :
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            return projectId;
+            return projectId ??
+                (provider == GoogleCodeAssistProvider.GoogleAntigravity ? AntigravityFallbackProjectId : null);
         }
 
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
         try
         {
             using JsonDocument document = JsonDocument.Parse(responseBody);
-            return ExtractProjectId(document.RootElement) ?? projectId;
+            return ExtractProjectId(document.RootElement) ??
+                projectId ??
+                (provider == GoogleCodeAssistProvider.GoogleAntigravity ? AntigravityFallbackProjectId : null);
         }
         catch (JsonException)
         {
-            return projectId;
+            return projectId ??
+                (provider == GoogleCodeAssistProvider.GoogleAntigravity ? AntigravityFallbackProjectId : null);
         }
     }
 
@@ -490,11 +507,13 @@ internal sealed class GoogleCodeAssistCredentialService :
     {
         JsonObject metadata = new()
         {
-            ["ideType"] = "IDE_UNSPECIFIED",
-            ["platform"] = "PLATFORM_UNSPECIFIED",
-            ["pluginType"] = provider == GoogleCodeAssistProvider.GoogleAntigravity
+            ["ideType"] = provider == GoogleCodeAssistProvider.GoogleAntigravity
                 ? "ANTIGRAVITY"
-                : "GEMINI"
+                : "IDE_UNSPECIFIED",
+            ["platform"] = provider == GoogleCodeAssistProvider.GoogleAntigravity
+                ? "WINDOWS"
+                : "PLATFORM_UNSPECIFIED",
+            ["pluginType"] = "GEMINI"
         };
         if (!string.IsNullOrWhiteSpace(projectId))
         {

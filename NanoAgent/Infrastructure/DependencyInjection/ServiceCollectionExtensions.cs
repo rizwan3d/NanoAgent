@@ -121,6 +121,8 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<GoogleCodeAssistCredentialService>());
         services.AddTransient<IGeminiCliAuthenticator>(serviceProvider =>
             serviceProvider.GetRequiredService<GoogleCodeAssistCredentialService>());
+        services.AddTransient<IGoogleAntigravityAuthenticator>(serviceProvider =>
+            serviceProvider.GetRequiredService<GoogleCodeAssistCredentialService>());
         services.AddHttpClient("NanoAgent.Mcp", client =>
         {
             client.Timeout = Timeout.InfiniteTimeSpan;
