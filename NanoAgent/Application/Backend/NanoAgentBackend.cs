@@ -14,6 +14,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private readonly bool _autoApproveAllTools;
     private readonly IReadOnlyList<BackendMcpServerConfiguration> _sessionMcpServers;
     private IAgentTurnService? _agentTurnService;
+    private IAgentProfileResolver? _profileResolver;
     private IHost? _host;
     private IProviderSetupService? _providerSetupService;
     private IReplCommandDispatcher? _commandDispatcher;
@@ -56,7 +57,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         if (_session is not null)
         {
-            return CreateSessionInfo(_session);
+            return CreateSessionInfo(_session, _profileResolver);
         }
 
         CliSessionOptions options = ParseSessionOptions(_args);
@@ -69,6 +70,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
+        _profileResolver = _host.Services.GetRequiredService<IAgentProfileResolver>();
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
         _commandDispatcher = _host.Services.GetRequiredService<IReplCommandDispatcher>();
         _modelSelectionService = _host.Services.GetRequiredService<IInteractiveModelSelectionService>();
@@ -108,7 +110,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         await PromptForUpdateIfAvailableAsync(options.SkipUpdateCheck, cancellationToken);
 
-        return CreateSessionInfo(_session);
+        return CreateSessionInfo(_session, _profileResolver);
     }
 
     public async Task<BackendCommandResult> RunCommandAsync(
@@ -142,7 +144,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         return new BackendCommandResult(
             result,
-            CreateSessionInfo(_session));
+            CreateSessionInfo(_session, _profileResolver));
     }
 
     public async Task<BackendCommandResult> SelectModelAsync(
@@ -163,7 +165,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         return new BackendCommandResult(
             result,
-            CreateSessionInfo(_session));
+            CreateSessionInfo(_session, _profileResolver));
     }
 
     public async Task<ConversationTurnResult> RunTurnAsync(
@@ -244,7 +246,9 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
     }
 
-    private static BackendSessionInfo CreateSessionInfo(ReplSessionContext session)
+    private static BackendSessionInfo CreateSessionInfo(
+        ReplSessionContext session,
+        IAgentProfileResolver? profileResolver)
     {
         return new BackendSessionInfo(
             session.SessionId,
@@ -257,7 +261,42 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             session.AgentProfileName,
             session.SectionTitle,
             session.IsResumedSection,
-            BackendConversationHistoryFormatter.Create(session));
+            BackendConversationHistoryFormatter.Create(session))
+        {
+            AvailableAgentProfiles = CreateAgentProfileInfos(session, profileResolver),
+            TotalEstimatedOutputTokens = session.TotalEstimatedOutputTokens,
+            SectionEstimatedContextTokens = EstimateSectionContextTokens(session)
+        };
+    }
+
+    private static IReadOnlyList<BackendAgentProfileInfo> CreateAgentProfileInfos(
+        ReplSessionContext session,
+        IAgentProfileResolver? profileResolver)
+    {
+        IReadOnlyList<IAgentProfile> profiles = profileResolver?.List() ?? [session.AgentProfile];
+        return profiles
+            .Select(static profile => new BackendAgentProfileInfo(
+                profile.Name,
+                profile.Mode.ToString().ToLowerInvariant(),
+                profile.Description))
+            .ToArray();
+    }
+
+    private static int EstimateSectionContextTokens(ReplSessionContext session)
+    {
+        long characters = 0;
+        foreach (ConversationSectionTurn turn in session.ConversationTurns)
+        {
+            characters += turn.UserInput.Length;
+            characters += turn.AssistantResponse.Length;
+            characters += turn.ToolOutputMessages.Sum(static message => message.Length);
+            characters += turn.ToolCalls.Sum(static toolCall => toolCall.ArgumentsJson.Length);
+        }
+
+        long estimatedTokens = (characters + 3) / 4;
+        return estimatedTokens > int.MaxValue
+            ? int.MaxValue
+            : Math.Max(session.TotalEstimatedOutputTokens, (int)estimatedTokens);
     }
 
     private static IReadOnlyDictionary<string, int> CreateModelContextWindowMap(

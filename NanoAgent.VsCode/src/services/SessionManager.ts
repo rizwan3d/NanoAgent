@@ -1,10 +1,10 @@
-import { AcpClient } from './AcpClient';
-import { NanoAgentProcessManager } from './NanoAgentProcessManager';
-import { LogService } from './LogService';
-import { AcpNotification, AcpRequest } from '../types/acp';
 import { EventEmitter } from 'events';
-import * as vscode from 'vscode';
 import * as path from 'path';
+import * as vscode from 'vscode';
+import { AcpClient } from './AcpClient';
+import { LogService } from './LogService';
+import { NanoAgentProcessManager, NanoAgentProcessStatus } from './NanoAgentProcessManager';
+import { AcpNotification, AcpRequest } from '../types/acp';
 
 type SessionNewResult = {
     sessionId: string;
@@ -12,6 +12,13 @@ type SessionNewResult = {
 
 type SessionPromptResult = {
     stopReason?: string;
+    metrics?: PromptMetrics;
+};
+
+export type AgentProfileInfo = {
+    name: string;
+    mode?: string;
+    description?: string;
 };
 
 export type SessionInfo = {
@@ -21,34 +28,146 @@ export type SessionInfo = {
     modelId?: string;
     activeModelContextWindowTokens?: number | null;
     availableModelIds: string[];
+    totalEstimatedOutputTokens?: number;
+    sectionEstimatedContextTokens?: number;
     thinkingMode?: string;
     agentProfileName?: string;
+    availableAgentProfiles: AgentProfileInfo[];
     sectionTitle?: string;
+};
+
+export type PromptMetrics = {
+    elapsedMilliseconds?: number;
+    estimatedInputTokens?: number;
+    estimatedOutputTokens?: number;
+    displayedEstimatedOutputTokens?: number;
+    estimatedTotalTokens?: number;
+    cachedInputTokens?: number;
+    providerRetryCount?: number;
+    toolRoundCount?: number;
+    sessionEstimatedOutputTokens?: number;
+};
+
+export type PromptState = {
+    isRunning: boolean;
+    isCancelling: boolean;
+    tracksMetrics?: boolean;
+    startedAt?: string;
+    input?: string;
+    lastStopReason?: string;
+    lastMetrics?: PromptMetrics;
+    sectionElapsedMilliseconds?: number;
+    sectionEstimatedOutputTokens?: number;
+    sectionEstimatedContextTokens?: number;
+    error?: string;
+};
+
+export type SessionMessageChunk = {
+    sessionId: string;
+    role: 'assistant' | 'user';
+    text: string;
+};
+
+export type ToolCallUpdate = {
+    sessionId: string;
+    toolCallId: string;
+    title?: string;
+    kind?: string;
+    status: string;
+    rawInput?: unknown;
+    content?: string[];
+};
+
+export type PlanEntry = {
+    content: string;
+    status: string;
+    priority?: string;
+};
+
+export type PlanUpdate = {
+    sessionId: string;
+    entries: PlanEntry[];
+};
+
+export type ClientRequest = PermissionClientRequest | TextClientRequest;
+
+export type PermissionClientRequest = {
+    id: string;
+    kind: 'permission';
+    title: string;
+    description?: string;
+    options: PermissionOption[];
+    allowCancellation: boolean;
+    defaultOptionId?: string;
+    autoSelectAfterMilliseconds?: number;
+};
+
+export type TextClientRequest = {
+    id: string;
+    kind: 'text';
+    label: string;
+    description?: string;
+    defaultValue?: string;
+    isSecret: boolean;
+    allowCancellation: boolean;
+};
+
+export type PermissionOption = {
+    optionId: string;
+    name: string;
+    kind: string;
+};
+
+export type ClientRequestResolution =
+    | {
+        outcome: 'selected';
+        optionId: string;
+    }
+    | {
+        outcome: 'submitted';
+        value: string;
+    }
+    | {
+        outcome: 'cancelled';
+    };
+
+type PendingClientRequest = {
+    request: ClientRequest;
+    resolve: (resolution: ClientRequestResolution) => void;
+    reject: (error: Error) => void;
 };
 
 export class SessionManager extends EventEmitter {
     private acpClient: AcpClient | null = null;
     private currentSessionInfo: SessionInfo | null = null;
+    private currentPromptState: PromptState = {
+        isRunning: false,
+        isCancelling: false
+    };
     private initializePromise: Promise<void> | null = null;
+    private pendingClientRequests = new Map<string, PendingClientRequest>();
     private promptTail: Promise<void> = Promise.resolve();
     private sessionId: string | null = null;
     private sessionPromise: Promise<string> | null = null;
-    private logService: LogService;
-    
-    constructor(private processManager: NanoAgentProcessManager) {
+    private sectionMetricsSessionId: string | null = null;
+    private sectionElapsedMilliseconds = 0;
+    private sectionEstimatedOutputTokens = 0;
+    private sectionEstimatedContextTokens = 0;
+    private readonly logService: LogService;
+
+    constructor(private readonly processManager: NanoAgentProcessManager) {
         super();
         this.logService = LogService.getInstance();
-        
-        // Listen to process manager events to wire up ACP
-        this.processManager.on('status', (status) => {
+
+        this.processManager.on('status', (status: NanoAgentProcessStatus) => {
+            this.emit('processStatusChanged', status);
             if (status === 'running') {
                 this.initializeSession();
             } else if (status === 'stopped' || status === 'error') {
                 this.terminateSession();
             }
         });
-        
-        // If already running, wire it up immediately
+
         if (this.processManager.getProcess()) {
             this.initializeSession();
         }
@@ -68,7 +187,12 @@ export class SessionManager extends EventEmitter {
         }
     }
 
-    public async sendPrompt(text: string): Promise<string> {
+    public async ensureSessionReady(): Promise<void> {
+        const client = await this.getReadyClient();
+        await this.ensureSession(client);
+    }
+
+    public async sendPrompt(text: string): Promise<SessionPromptResult> {
         const runPrompt = this.promptTail.then(
             () => this.sendPromptCore(text),
             () => this.sendPromptCore(text)
@@ -81,25 +205,90 @@ export class SessionManager extends EventEmitter {
         return runPrompt;
     }
 
+    public cancelPrompt(): void {
+        const client = this.acpClient;
+        const sessionId = this.sessionId ?? this.currentSessionInfo?.sessionId;
+        if (!client || !sessionId) {
+            return;
+        }
+
+        if (this.currentPromptState.isRunning) {
+            this.setPromptState({
+                ...this.currentPromptState,
+                isCancelling: true
+            });
+        }
+
+        client.sendNotification('session/cancel', { sessionId });
+    }
+
     public getSessionInfo(): SessionInfo | null {
         return this.currentSessionInfo;
     }
 
-    private async sendPromptCore(text: string): Promise<string> {
+    public getProcessStatus(): NanoAgentProcessStatus {
+        return this.processManager.getStatus();
+    }
+
+    public getPromptState(): PromptState {
+        return this.currentPromptState;
+    }
+
+    public getPendingClientRequests(): ClientRequest[] {
+        return Array.from(this.pendingClientRequests.values(), pending => pending.request);
+    }
+
+    public getWorkingDirectory(): string {
+        const config = vscode.workspace.getConfiguration('nanoagent');
+        const configuredDirectory = config.get<string>('workingDirectory');
+        if (configuredDirectory && configuredDirectory.trim()) {
+            const trimmedDirectory = configuredDirectory.trim();
+            if (path.isAbsolute(trimmedDirectory)) {
+                return trimmedDirectory;
+            }
+
+            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+            if (workspaceFolder) {
+                return path.resolve(workspaceFolder.uri.fsPath, trimmedDirectory);
+            }
+
+            return path.resolve(trimmedDirectory);
+        }
+
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (workspaceFolder) {
+            return workspaceFolder.uri.fsPath;
+        }
+
+        return process.cwd();
+    }
+
+    public resolveClientRequest(id: string, resolution: ClientRequestResolution): boolean {
+        const pending = this.pendingClientRequests.get(id);
+        if (!pending) {
+            return false;
+        }
+
+        pending.resolve(resolution);
+        this.pendingClientRequests.delete(id);
+        this.emit('clientRequestResolved', id);
+        return true;
+    }
+
+    private async sendPromptCore(text: string): Promise<SessionPromptResult> {
         const client = await this.getReadyClient();
         const sessionId = await this.ensureSession(client);
-        const chunks: string[] = [];
+        const startedAt = new Date().toISOString();
+        const tracksMetrics = !this.isCommandPrompt(text);
 
-        const onNotification = (message: AcpNotification) => {
-            const chunk = this.tryReadAgentMessageChunk(message, sessionId);
-            if (chunk) {
-                chunks.push(chunk);
-            }
-        };
+        this.setPromptState({
+            isRunning: true,
+            isCancelling: false,
+            tracksMetrics,
+            startedAt,
+            input: text
+        });
 
-        client.on('notification', onNotification);
-
-        let stopReason: string | undefined;
         try {
             const result = await client.sendRequest<SessionPromptResult>('session/prompt', {
                 sessionId,
@@ -110,21 +299,34 @@ export class SessionManager extends EventEmitter {
                     }
                 ]
             });
-            stopReason = result?.stopReason;
+
+            if (tracksMetrics) {
+                this.recordPromptMetrics(sessionId, result?.metrics);
+            }
+
+            this.setPromptState({
+                isRunning: false,
+                isCancelling: false,
+                tracksMetrics,
+                lastStopReason: result?.stopReason,
+                lastMetrics: tracksMetrics ? result?.metrics : undefined
+            });
+
+            return result ?? {};
         } catch (error) {
-            throw this.normalizeError(error);
-        } finally {
-            client.off('notification', onNotification);
+            const normalized = this.normalizeError(error);
+            this.setPromptState({
+                isRunning: false,
+                isCancelling: false,
+                tracksMetrics,
+                error: normalized.message
+            });
+            throw normalized;
         }
+    }
 
-        const response = chunks.join('\n').trim();
-        if (response) {
-            return response;
-        }
-
-        return stopReason === 'cancelled'
-            ? 'Cancelled.'
-            : '';
+    private isCommandPrompt(text: string): boolean {
+        return text.trimStart().startsWith('/');
     }
 
     private initializeSession() {
@@ -140,24 +342,20 @@ export class SessionManager extends EventEmitter {
 
         this.acpClient = new AcpClient();
 
-        // Wire stdout to ACP Client
         process.stdout.on('data', (data) => {
             if (this.acpClient) {
                 this.acpClient.handleData(data);
             }
         });
 
-        // Wire ACP Client sends to stdin
         this.acpClient.on('send', (data: string) => {
             if (process && process.stdin) {
                 process.stdin.write(data);
             }
         });
 
-        // Handle notifications and requests
-        this.acpClient.on('notification', (msg) => this.handleNotification(msg));
-
-        this.acpClient.on('request', (msg) => {
+        this.acpClient.on('notification', (msg: AcpNotification) => this.handleNotification(msg));
+        this.acpClient.on('request', (msg: AcpRequest) => {
             void this.handleClientRequest(msg);
         });
 
@@ -170,10 +368,16 @@ export class SessionManager extends EventEmitter {
             this.acpClient.removeAllListeners();
             this.acpClient = null;
             this.currentSessionInfo = null;
+            this.resetSectionMetrics(null);
             this.initializePromise = null;
             this.promptTail = Promise.resolve();
             this.sessionId = null;
             this.sessionPromise = null;
+            this.rejectPendingClientRequests(new Error('NanoAgent process stopped.'));
+            this.setPromptState({
+                isRunning: false,
+                isCancelling: false
+            });
             this.emit('sessionInfoChanged', null);
             this.logService.info('ACP Session terminated');
         }
@@ -257,19 +461,36 @@ export class SessionManager extends EventEmitter {
 
         const sessionInfo = this.tryReadSessionInfo(message);
         if (sessionInfo) {
+            this.syncSectionMetricsWithSessionInfo(sessionInfo);
             this.currentSessionInfo = sessionInfo;
             this.emit('sessionInfoChanged', sessionInfo);
+        }
+
+        const chunk = this.tryReadMessageChunk(message);
+        if (chunk) {
+            this.emit('messageChunk', chunk);
+        }
+
+        const toolCall = this.tryReadToolCallUpdate(message);
+        if (toolCall) {
+            this.emit('toolCallUpdated', toolCall);
+        }
+
+        const plan = this.tryReadPlanUpdate(message);
+        if (plan) {
+            this.emit('planUpdated', plan);
         }
     }
 
     private async handlePermissionRequest(client: AcpClient, message: AcpRequest): Promise<void> {
+        const request = this.readPermissionRequest(message);
         try {
-            const selection = await this.showPermissionPicker(message.params);
+            const resolution = await this.requestClientInput(request);
             client.sendResponse(message.id, {
-                outcome: selection
+                outcome: resolution.outcome === 'selected'
                     ? {
                         outcome: 'selected',
-                        optionId: selection.optionId
+                        optionId: resolution.optionId
                     }
                     : {
                         outcome: 'cancelled'
@@ -287,16 +508,17 @@ export class SessionManager extends EventEmitter {
     }
 
     private async handleTextRequest(client: AcpClient, message: AcpRequest): Promise<void> {
+        const request = this.readTextRequest(message);
         try {
-            const value = await this.showTextInput(message.params);
+            const resolution = await this.requestClientInput(request);
             client.sendResponse(message.id, {
-                outcome: value === null
+                outcome: resolution.outcome === 'submitted'
                     ? {
-                        outcome: 'cancelled'
+                        outcome: 'submitted',
+                        value: resolution.value
                     }
                     : {
-                        outcome: 'submitted',
-                        value
+                        outcome: 'cancelled'
                     }
             });
         } catch (error) {
@@ -310,51 +532,50 @@ export class SessionManager extends EventEmitter {
         }
     }
 
-    private async showPermissionPicker(params: unknown): Promise<PermissionSelection | null> {
-        const request = this.readPermissionRequest(params);
-        if (request.options.length === 0) {
-            return null;
-        }
-
-        const picked = await vscode.window.showQuickPick(
-            request.options.map((option) => ({
-                label: option.name,
-                description: option.kind,
-                detail: request.title,
-                optionId: option.optionId
-            })),
-            {
-                title: 'NanoAgent Permission',
-                placeHolder: request.title,
-                ignoreFocusOut: true
-            }
-        );
-
-        return picked
-            ? {
-                optionId: picked.optionId
-            }
-            : null;
+    private requestClientInput(request: ClientRequest): Promise<ClientRequestResolution> {
+        return new Promise((resolve, reject) => {
+            this.pendingClientRequests.set(request.id, {
+                request,
+                resolve,
+                reject
+            });
+            this.emit('clientRequest', request);
+        });
     }
 
-    private readPermissionRequest(params: unknown): PermissionRequest {
-        if (!params || typeof params !== 'object') {
+    private rejectPendingClientRequests(error: Error): void {
+        for (const [id, pending] of this.pendingClientRequests) {
+            pending.reject(error);
+            this.pendingClientRequests.delete(id);
+            this.emit('clientRequestResolved', id);
+        }
+    }
+
+    private readPermissionRequest(message: AcpRequest): PermissionClientRequest {
+        const id = String(message.id);
+        if (!message.params || typeof message.params !== 'object') {
             return {
+                id,
+                kind: 'permission',
                 title: 'NanoAgent wants permission to continue.',
-                options: []
+                options: [],
+                allowCancellation: true
             };
         }
 
-        const request = params as {
+        const request = message.params as {
             toolCall?: {
                 title?: unknown;
+                content?: unknown;
             };
             options?: unknown;
+            allowCancellation?: unknown;
+            defaultOptionId?: unknown;
+            autoSelectAfterMilliseconds?: unknown;
         };
 
-        const title = typeof request.toolCall?.title === 'string' && request.toolCall.title.trim()
-            ? request.toolCall.title.trim()
-            : 'NanoAgent wants permission to continue.';
+        const title = this.optionalString(request.toolCall?.title) ?? 'NanoAgent wants permission to continue.';
+        const description = this.readContentItems(request.toolCall?.content).join('\n').trim() || undefined;
         const options = Array.isArray(request.options)
             ? request.options
                 .map((option) => this.readPermissionOption(option))
@@ -362,8 +583,14 @@ export class SessionManager extends EventEmitter {
             : [];
 
         return {
+            id,
+            kind: 'permission',
             title,
-            options
+            description,
+            options,
+            allowCancellation: request.allowCancellation !== false,
+            defaultOptionId: this.readDefaultOptionId(request.defaultOptionId, options),
+            autoSelectAfterMilliseconds: this.optionalNonNegativeNumber(request.autoSelectAfterMilliseconds)
         };
     }
 
@@ -378,56 +605,31 @@ export class SessionManager extends EventEmitter {
             kind?: unknown;
         };
 
-        if (typeof option.optionId !== 'string' || !option.optionId.trim()) {
+        const optionId = this.optionalString(option.optionId);
+        if (!optionId) {
             return null;
         }
 
         return {
-            optionId: option.optionId,
-            name: typeof option.name === 'string' && option.name.trim()
-                ? option.name.trim()
-                : option.optionId,
-            kind: typeof option.kind === 'string'
-                ? option.kind
-                : ''
+            optionId,
+            name: this.optionalString(option.name) ?? optionId,
+            kind: this.optionalString(option.kind) ?? ''
         };
     }
 
-    private async showTextInput(params: unknown): Promise<string | null> {
-        const request = this.readTextRequest(params);
-        let value: string | undefined;
-
-        do {
-            value = await vscode.window.showInputBox({
-                title: request.label,
-                prompt: request.description,
-                value: request.defaultValue ?? '',
-                password: request.isSecret,
-                ignoreFocusOut: true
-            });
-
-            if (value !== undefined) {
-                return value;
-            }
-
-            if (request.allowCancellation) {
-                return null;
-            }
-        } while (value === undefined);
-
-        return null;
-    }
-
-    private readTextRequest(params: unknown): TextRequest {
-        if (!params || typeof params !== 'object') {
+    private readTextRequest(message: AcpRequest): TextClientRequest {
+        const id = String(message.id);
+        if (!message.params || typeof message.params !== 'object') {
             return {
+                id,
+                kind: 'text',
                 label: 'NanoAgent input',
                 isSecret: false,
                 allowCancellation: true
             };
         }
 
-        const request = params as {
+        const request = message.params as {
             label?: unknown;
             description?: unknown;
             defaultValue?: unknown;
@@ -436,12 +638,10 @@ export class SessionManager extends EventEmitter {
         };
 
         return {
-            label: typeof request.label === 'string' && request.label.trim()
-                ? request.label.trim()
-                : 'NanoAgent input',
-            description: typeof request.description === 'string'
-                ? request.description
-                : undefined,
+            id,
+            kind: 'text',
+            label: this.optionalString(request.label) ?? 'NanoAgent input',
+            description: this.optionalString(request.description),
             defaultValue: typeof request.defaultValue === 'string'
                 ? request.defaultValue
                 : undefined,
@@ -450,102 +650,310 @@ export class SessionManager extends EventEmitter {
         };
     }
 
-    private getWorkingDirectory(): string {
-        const config = vscode.workspace.getConfiguration('nanoagent');
-        const configuredDirectory = config.get<string>('workingDirectory');
-        if (configuredDirectory && configuredDirectory.trim()) {
-            const trimmedDirectory = configuredDirectory.trim();
-            if (path.isAbsolute(trimmedDirectory)) {
-                return trimmedDirectory;
-            }
-
-            const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-            if (workspaceFolder) {
-                return path.resolve(workspaceFolder.uri.fsPath, trimmedDirectory);
-            }
-
-            return path.resolve(trimmedDirectory);
-        }
-
-        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (workspaceFolder) {
-            return workspaceFolder.uri.fsPath;
-        }
-
-        return process.cwd();
-    }
-
-    private tryReadAgentMessageChunk(message: AcpNotification, sessionId: string): string | null {
+    private tryReadSessionUpdate(message: AcpNotification): { sessionId: string; update: Record<string, unknown> } | null {
         if (message.method !== 'session/update' || !message.params || typeof message.params !== 'object') {
             return null;
         }
 
         const params = message.params as {
             sessionId?: unknown;
-            update?: {
-                sessionUpdate?: unknown;
-                content?: {
-                    type?: unknown;
-                    text?: unknown;
-                };
-            };
-        };
-
-        if (params.sessionId !== sessionId ||
-            params.update?.sessionUpdate !== 'agent_message_chunk' ||
-            params.update.content?.type !== 'text' ||
-            typeof params.update.content.text !== 'string') {
-            return null;
-        }
-
-        return params.update.content.text;
-    }
-
-    private tryReadSessionInfo(message: AcpNotification): SessionInfo | null {
-        if (message.method !== 'session/update' || !message.params || typeof message.params !== 'object') {
-            return null;
-        }
-
-        const params = message.params as {
-            sessionId?: unknown;
-            update?: {
-                sessionUpdate?: unknown;
-                sectionResumeCommand?: unknown;
-                providerName?: unknown;
-                modelId?: unknown;
-                activeModelContextWindowTokens?: unknown;
-                availableModelIds?: unknown;
-                thinkingMode?: unknown;
-                agentProfileName?: unknown;
-                sectionTitle?: unknown;
-            };
+            update?: unknown;
         };
 
         if (typeof params.sessionId !== 'string' ||
-            params.update?.sessionUpdate !== 'session_info_update') {
+            !params.update ||
+            typeof params.update !== 'object' ||
+            Array.isArray(params.update)) {
             return null;
         }
 
         return {
             sessionId: params.sessionId,
-            sectionResumeCommand: this.optionalString(params.update.sectionResumeCommand),
-            providerName: this.optionalString(params.update.providerName),
-            modelId: this.optionalString(params.update.modelId),
-            activeModelContextWindowTokens: typeof params.update.activeModelContextWindowTokens === 'number'
-                ? params.update.activeModelContextWindowTokens
-                : null,
-            availableModelIds: Array.isArray(params.update.availableModelIds)
-                ? params.update.availableModelIds.filter((modelId): modelId is string => typeof modelId === 'string')
-                : [],
-            thinkingMode: this.optionalString(params.update.thinkingMode),
-            agentProfileName: this.optionalString(params.update.agentProfileName),
-            sectionTitle: this.optionalString(params.update.sectionTitle)
+            update: params.update as Record<string, unknown>
         };
+    }
+
+    private tryReadMessageChunk(message: AcpNotification): SessionMessageChunk | null {
+        const sessionUpdate = this.tryReadSessionUpdate(message);
+        if (!sessionUpdate) {
+            return null;
+        }
+
+        const updateKind = this.optionalString(sessionUpdate.update.sessionUpdate);
+        if (updateKind !== 'agent_message_chunk' && updateKind !== 'user_message_chunk') {
+            return null;
+        }
+
+        const text = this.readContentText(sessionUpdate.update.content);
+        if (text === null) {
+            return null;
+        }
+
+        return {
+            sessionId: sessionUpdate.sessionId,
+            role: updateKind === 'user_message_chunk' ? 'user' : 'assistant',
+            text
+        };
+    }
+
+    private tryReadToolCallUpdate(message: AcpNotification): ToolCallUpdate | null {
+        const sessionUpdate = this.tryReadSessionUpdate(message);
+        if (!sessionUpdate) {
+            return null;
+        }
+
+        const updateKind = this.optionalString(sessionUpdate.update.sessionUpdate);
+        if (updateKind !== 'tool_call' && updateKind !== 'tool_call_update') {
+            return null;
+        }
+
+        const toolCallId = this.optionalString(sessionUpdate.update.toolCallId);
+        if (!toolCallId) {
+            return null;
+        }
+
+        return {
+            sessionId: sessionUpdate.sessionId,
+            toolCallId,
+            title: this.optionalString(sessionUpdate.update.title),
+            kind: this.optionalString(sessionUpdate.update.kind),
+            status: this.optionalString(sessionUpdate.update.status) ?? 'pending',
+            rawInput: sessionUpdate.update.rawInput,
+            content: this.readContentItems(sessionUpdate.update.content)
+        };
+    }
+
+    private tryReadPlanUpdate(message: AcpNotification): PlanUpdate | null {
+        const sessionUpdate = this.tryReadSessionUpdate(message);
+        if (!sessionUpdate ||
+            this.optionalString(sessionUpdate.update.sessionUpdate) !== 'plan' ||
+            !Array.isArray(sessionUpdate.update.entries)) {
+            return null;
+        }
+
+        const entries = sessionUpdate.update.entries
+            .map((entry) => this.readPlanEntry(entry))
+            .filter((entry): entry is PlanEntry => entry !== null);
+
+        return {
+            sessionId: sessionUpdate.sessionId,
+            entries
+        };
+    }
+
+    private readPlanEntry(value: unknown): PlanEntry | null {
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+
+        const entry = value as {
+            content?: unknown;
+            status?: unknown;
+            priority?: unknown;
+        };
+        const content = this.optionalString(entry.content);
+        if (!content) {
+            return null;
+        }
+
+        return {
+            content,
+            status: this.optionalString(entry.status) ?? 'pending',
+            priority: this.optionalString(entry.priority)
+        };
+    }
+
+    private tryReadSessionInfo(message: AcpNotification): SessionInfo | null {
+        const sessionUpdate = this.tryReadSessionUpdate(message);
+        if (!sessionUpdate ||
+            this.optionalString(sessionUpdate.update.sessionUpdate) !== 'session_info_update') {
+            return null;
+        }
+
+        return {
+            sessionId: sessionUpdate.sessionId,
+            sectionResumeCommand: this.optionalString(sessionUpdate.update.sectionResumeCommand),
+            providerName: this.optionalString(sessionUpdate.update.providerName),
+            modelId: this.optionalString(sessionUpdate.update.modelId),
+            activeModelContextWindowTokens: typeof sessionUpdate.update.activeModelContextWindowTokens === 'number'
+                ? sessionUpdate.update.activeModelContextWindowTokens
+                : null,
+            availableModelIds: Array.isArray(sessionUpdate.update.availableModelIds)
+                ? sessionUpdate.update.availableModelIds.filter((modelId): modelId is string => typeof modelId === 'string')
+                : [],
+            totalEstimatedOutputTokens: this.optionalPositiveNumber(sessionUpdate.update.totalEstimatedOutputTokens),
+            sectionEstimatedContextTokens: this.optionalPositiveNumber(sessionUpdate.update.sectionEstimatedContextTokens),
+            thinkingMode: this.optionalString(sessionUpdate.update.thinkingMode),
+            agentProfileName: this.optionalString(sessionUpdate.update.agentProfileName),
+            availableAgentProfiles: Array.isArray(sessionUpdate.update.availableAgentProfiles)
+                ? sessionUpdate.update.availableAgentProfiles
+                    .map((profile) => this.readAgentProfileInfo(profile))
+                    .filter((profile): profile is AgentProfileInfo => profile !== null)
+                : [],
+            sectionTitle: this.optionalString(sessionUpdate.update.sectionTitle)
+        };
+    }
+
+    private readAgentProfileInfo(value: unknown): AgentProfileInfo | null {
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+
+        const profile = value as {
+            name?: unknown;
+            mode?: unknown;
+            description?: unknown;
+        };
+        const name = this.optionalString(profile.name);
+        if (!name) {
+            return null;
+        }
+
+        return {
+            name,
+            mode: this.optionalString(profile.mode),
+            description: this.optionalString(profile.description)
+        };
+    }
+
+    private readContentItems(value: unknown): string[] {
+        if (!value) {
+            return [];
+        }
+
+        if (Array.isArray(value)) {
+            return value
+                .map((item) => this.readContentText(item))
+                .filter((text): text is string => text !== null);
+        }
+
+        const text = this.readContentText(value);
+        return text === null ? [] : [text];
+    }
+
+    private readContentText(value: unknown): string | null {
+        if (typeof value === 'string') {
+            return value;
+        }
+
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+
+        const content = value as {
+            type?: unknown;
+            text?: unknown;
+            content?: unknown;
+        };
+
+        if (content.type === 'text' && typeof content.text === 'string') {
+            return content.text;
+        }
+
+        if (content.type === 'content') {
+            return this.readContentText(content.content);
+        }
+
+        const nestedText = this.readContentText(content.content);
+        if (nestedText !== null) {
+            return nestedText;
+        }
+
+        return null;
+    }
+
+    private readDefaultOptionId(
+        value: unknown,
+        options: ReadonlyArray<PermissionOption>): string | undefined {
+        const optionId = typeof value === 'number' && Number.isFinite(value)
+            ? String(Math.trunc(value))
+            : this.optionalString(value);
+        if (!optionId) {
+            return options[0]?.optionId;
+        }
+
+        return options.some(option => option.optionId === optionId)
+            ? optionId
+            : options[0]?.optionId;
     }
 
     private optionalString(value: unknown): string | undefined {
         return typeof value === 'string' && value.trim()
-            ? value
+            ? value.trim()
+            : undefined;
+    }
+
+    private optionalNonNegativeNumber(value: unknown): number | undefined {
+        return typeof value === 'number' && Number.isFinite(value) && value >= 0
+            ? Math.round(value)
+            : undefined;
+    }
+
+    private setPromptState(promptState: PromptState): void {
+        this.currentPromptState = {
+            sectionElapsedMilliseconds: this.sectionElapsedMilliseconds,
+            sectionEstimatedOutputTokens: this.sectionEstimatedOutputTokens,
+            sectionEstimatedContextTokens: this.sectionEstimatedContextTokens,
+            ...promptState
+        };
+        this.emit('promptStateChanged', this.currentPromptState);
+    }
+
+    private syncSectionMetricsWithSessionInfo(sessionInfo: SessionInfo): void {
+        if (this.sectionMetricsSessionId !== sessionInfo.sessionId) {
+            this.resetSectionMetrics(sessionInfo.sessionId);
+        }
+
+        if (typeof sessionInfo.totalEstimatedOutputTokens === 'number') {
+            this.sectionEstimatedOutputTokens = Math.max(
+                this.sectionEstimatedOutputTokens,
+                sessionInfo.totalEstimatedOutputTokens);
+        }
+
+        if (typeof sessionInfo.sectionEstimatedContextTokens === 'number') {
+            this.sectionEstimatedContextTokens = Math.max(
+                this.sectionEstimatedContextTokens,
+                sessionInfo.sectionEstimatedContextTokens);
+        }
+    }
+
+    private recordPromptMetrics(sessionId: string, metrics?: PromptMetrics): void {
+        if (this.sectionMetricsSessionId !== sessionId) {
+            this.resetSectionMetrics(sessionId);
+        }
+
+        if (!metrics) {
+            return;
+        }
+
+        this.sectionElapsedMilliseconds += this.optionalPositiveNumber(metrics.elapsedMilliseconds) ?? 0;
+
+        const sectionOutputTokens = this.optionalPositiveNumber(metrics.sessionEstimatedOutputTokens);
+        if (typeof sectionOutputTokens === 'number') {
+            this.sectionEstimatedOutputTokens = Math.max(
+                this.sectionEstimatedOutputTokens,
+                sectionOutputTokens);
+        } else {
+            this.sectionEstimatedOutputTokens += this.optionalPositiveNumber(metrics.estimatedOutputTokens) ?? 0;
+        }
+
+        const inputTokens = this.optionalPositiveNumber(metrics.estimatedInputTokens) ?? 0;
+        const contextTokens = inputTokens + this.sectionEstimatedOutputTokens;
+        this.sectionEstimatedContextTokens = Math.max(
+            this.sectionEstimatedContextTokens,
+            contextTokens);
+    }
+
+    private resetSectionMetrics(sessionId: string | null): void {
+        this.sectionMetricsSessionId = sessionId;
+        this.sectionElapsedMilliseconds = 0;
+        this.sectionEstimatedOutputTokens = 0;
+        this.sectionEstimatedContextTokens = 0;
+    }
+
+    private optionalPositiveNumber(value: unknown): number | undefined {
+        return typeof value === 'number' && Number.isFinite(value) && value > 0
+            ? Math.round(value)
             : undefined;
     }
 
@@ -564,25 +972,3 @@ export class SessionManager extends EventEmitter {
         return new Error('NanoAgent ACP request failed.');
     }
 }
-
-type PermissionRequest = {
-    title: string;
-    options: PermissionOption[];
-};
-
-type PermissionOption = PermissionSelection & {
-    name: string;
-    kind: string;
-};
-
-type PermissionSelection = {
-    optionId: string;
-};
-
-type TextRequest = {
-    label: string;
-    description?: string;
-    defaultValue?: string;
-    isSecret: boolean;
-    allowCancellation: boolean;
-};

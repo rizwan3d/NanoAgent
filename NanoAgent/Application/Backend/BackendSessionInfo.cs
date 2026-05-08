@@ -11,7 +11,19 @@ public sealed record BackendSessionInfo(
     string AgentProfileName,
     string SectionTitle,
     bool IsResumedSection,
-    IReadOnlyList<BackendConversationMessage> ConversationHistory);
+    IReadOnlyList<BackendConversationMessage> ConversationHistory)
+{
+    public IReadOnlyList<BackendAgentProfileInfo> AvailableAgentProfiles { get; init; } = [];
+
+    public int TotalEstimatedOutputTokens { get; init; }
+
+    public int SectionEstimatedContextTokens { get; init; }
+}
+
+public sealed record BackendAgentProfileInfo(
+    string Name,
+    string Mode,
+    string Description);
 
 public sealed record BackendConversationMessage(
     string Role,
