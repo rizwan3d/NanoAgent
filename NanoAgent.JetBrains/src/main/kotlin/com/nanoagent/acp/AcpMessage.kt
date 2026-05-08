@@ -1,4 +1,4 @@
-﻿package com.nanoagent.acp
+package com.nanoagent.acp
 
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
@@ -99,8 +99,9 @@ data class AcpSessionInfo(
     val sectionResumeCommand: String?,
     val providerName: String?,
     val modelId: String?,
-    val activeModelContextWindowTokens: Int?,
+    val activeModelContextWindowTokens: <redacted>,
     val availableModelIds: List<String>?,
+    val availableAgentProfiles: List<String>?,
     val thinkingMode: String?,
     val agentProfileName: String?,
     val sectionTitle: String?
@@ -165,7 +166,7 @@ data class AcpTextPromptRequest(
     val label: String,
     val description: String? = null,
     val defaultValue: String? = null,
-    @SerializedName("isSecret") val secretFlag: Boolean = false,
+    @SerializedName("isSecret") val secretFlag: <redacted> = false,
     val allowCancellation: Boolean = true
 )
 
