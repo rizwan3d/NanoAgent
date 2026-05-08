@@ -3,6 +3,7 @@
   "displayName": "NanoAgent",
   "description": "Use NanoAgent inside VS Code through ACP mode.",
   "version": "0.0.1",
+  "icon": "resources/logo.png",
   "license": "Apache-2.0",
   "homepage": "https://github.com/rizwan3d/NanoAgent#readme",
   "repository": {
@@ -52,7 +53,7 @@
         {
           "id": "nanoagent",
           "title": "NanoAgent",
-          "icon": "resources/nanoagent.svg"
+          "icon": "resources/logo.png"
         }
       ]
     },

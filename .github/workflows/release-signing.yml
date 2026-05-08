@@ -443,6 +443,7 @@ jobs:
           $scriptPath = Join-Path $env:RUNNER_TEMP "NanoAgent.Desktop.iss"
           $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\', '\\')
           $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\', '\\')
+          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "NanoAgent.Desktop/Assets/logo.ico").Replace('\', '\\')
 
           @"
           #define MyAppName "NanoAgent Desktop"
@@ -460,6 +461,7 @@ jobs:
           DisableProgramGroupPage=yes
           OutputDir=$outputDir
           OutputBaseFilename=NanoAgent.Desktop-${{ matrix.rid }}-setup
+          SetupIconFile=$setupIconFile
           Compression=lzma
           SolidCompression=yes
           WizardStyle=modern
