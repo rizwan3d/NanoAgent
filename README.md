@@ -59,6 +59,12 @@ nanoai "Summarize this repository"
 echo "Review the latest changes for regressions" | nanoai --profile review
 ```
 
+### VS Code
+
+Use the VS Code extension when you want NanoAgent chat, planning, file review, selection explainers, and Git diff review from inside the editor. The extension starts the local `nanoai --acp` process, so install the CLI and run `nanoai` once for provider onboarding before using it.
+
+Marketplace: [NanoAgent for VS Code](https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent)
+
 ### Agent Client Protocol
 
 Use `nanoai --acp` when you want an ACP-compatible editor or tool to drive NanoAgent over JSON-RPC stdio.
@@ -162,6 +168,26 @@ irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.
 
 Restart your shell if `nanoai` is not immediately available.
 
+### VS Code Extension
+
+Install from the VS Code Marketplace:
+
+```text
+ext install rizwan3d.nanoagent
+```
+
+The extension requires the NanoAgent CLI command configured by `nanoagent.command`, which defaults to `nanoai`. It runs with `nanoagent.args` set to `["--acp"]` by default.
+
+For local packaging from source:
+
+```bash
+cd NanoAgent.VsCode
+npm ci
+npm run package:vsix
+```
+
+The repository publishes the extension through `.github/workflows/vscode-extension-cd.yml` on `v*` tags or manual dispatch. Configure the `VSCE_PAT` repository secret with Marketplace Manage scope for the `rizwan3d` publisher before publishing.
+
 ## First Run
 
 Start NanoAgent:
@@ -236,7 +262,7 @@ Your code stays on your machine. Prompts, relevant snippets, tool output, and co
 
 ## Learn More
 
-The detailed user guide lives in [docs/documentation.md](docs/documentation.md). It covers onboarding, desktop and terminal workflows, codebase indexing, providers, models, permissions, MCP, memory, hooks, custom agents, troubleshooting, and source builds.
+The detailed user guide lives in [docs/documentation.md](docs/documentation.md). It covers onboarding, desktop, terminal, VS Code, ACP workflows, codebase indexing, providers, models, permissions, MCP, memory, hooks, custom agents, troubleshooting, release automation, and source builds.
 
 ## License
 

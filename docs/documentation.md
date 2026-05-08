@@ -10,6 +10,7 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 - [First Run](#first-run)
 - [Desktop Workflow](#desktop-workflow)
 - [Terminal Workflow](#terminal-workflow)
+- [VS Code Extension](#vs-code-extension)
 - [ACP Editor Integration](#acp-editor-integration)
 - [Review Automation](#review-automation)
 - [Codebase Indexing](#codebase-indexing)
@@ -303,6 +304,87 @@ Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 Start input with `!` to run the rest as a local shell command directly, for example `!git status --short`.
+
+## VS Code Extension
+
+NanoAgent includes a VS Code extension in `NanoAgent.VsCode`. It opens a NanoAgent chat view in the auxiliary bar and starts the local NanoAgent ACP process with:
+
+```bash
+nanoai --acp
+```
+
+Run `nanoai` once before using the extension so provider onboarding, credentials, and the default model are already configured.
+
+Install from the Visual Studio Marketplace:
+
+```text
+ext install rizwan3d.nanoagent
+```
+
+The Marketplace item is:
+
+```text
+https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent
+```
+
+### Extension Commands
+
+| Command | Purpose |
+| --- | --- |
+| `NanoAgent: Open Chat` | Open the NanoAgent chat view. |
+| `NanoAgent: New Chat` | Focus the chat view for a new prompt. |
+| `NanoAgent: Start` | Start the local NanoAgent ACP process. |
+| `NanoAgent: Stop` | Stop the local NanoAgent ACP process. |
+| `NanoAgent: Restart` | Restart the local NanoAgent ACP process. |
+| `NanoAgent: Send Selection` | Send the active editor selection as context. |
+| `NanoAgent: Explain Selection` | Ask NanoAgent to explain the active selection. |
+| `NanoAgent: Send Current File` | Send the full current editor file as context. |
+| `NanoAgent: Review Current File` | Ask for a review of the current file. |
+| `NanoAgent: Review Git Diff` | Ask for a review of the current workspace Git diff. |
+| `NanoAgent: Plan Changes` | Prefill a planning prompt. |
+| `NanoAgent: Apply Suggested Changes` | Ask NanoAgent to apply the previous suggested change. |
+| `NanoAgent: Open Logs` | Show extension logs. |
+| `NanoAgent: Open Settings` | Open the extension settings surface. |
+
+### Extension Settings
+
+| Setting | Default | Purpose |
+| --- | --- | --- |
+| `nanoagent.command` | `nanoai` | Command used to start NanoAgent. |
+| `nanoagent.args` | `["--acp"]` | Arguments passed to the NanoAgent CLI. |
+| `nanoagent.workingDirectory` | workspace root | Working directory for the NanoAgent process. |
+| `nanoagent.autoStart` | `false` | Start NanoAgent automatically when VS Code starts. |
+| `nanoagent.logLevel` | `info` | Extension log level. |
+
+### Extension Development
+
+Build and package locally:
+
+```bash
+cd NanoAgent.VsCode
+npm ci
+npm run lint
+npm run package
+npm run package:vsix
+```
+
+The package command creates an installable `.vsix`. Install a local package with:
+
+```bash
+code --install-extension nanoagent-<version>.vsix
+```
+
+### Extension Publishing
+
+The GitHub Actions workflow `.github/workflows/vscode-extension-cd.yml` packages and publishes the extension. It runs for `v*` tags and manual dispatch. For tag builds, the workflow removes the leading `v` and applies that value to `NanoAgent.VsCode/package.json` with `npm version --no-git-tag-version` before packaging.
+
+Required repository secret:
+
+```text
+VSCE_PAT
+```
+
+Create this token in Azure DevOps with Marketplace Manage scope and access to the `rizwan3d` Visual Studio Marketplace publisher. The workflow publishes through `@vscode/vsce`, uploads the generated `.vsix` artifact, and uses the `vscode-marketplace` GitHub environment for deployment approval or environment-level protection rules if configured.
 
 ## ACP Editor Integration
 
@@ -946,6 +1028,7 @@ Undo/redo only covers tracked file edit transactions. It does not revert arbitra
 Requirements:
 
 - .NET SDK compatible with `net10.0`.
+- Node.js 20 or newer for the VS Code extension.
 - Platform toolchains needed by your target desktop/CLI build.
 
 Commands:
@@ -956,6 +1039,16 @@ dotnet build NanoAgent.CLI/NanoAgent.CLI.sln
 dotnet test NanoAgent.Tests/NanoAgent.Tests.csproj
 ```
 
+VS Code extension commands:
+
+```bash
+cd NanoAgent.VsCode
+npm ci
+npm run lint
+npm run package
+npm run package:vsix
+```
+
 The main projects are:
 
 | Project | Purpose |
@@ -963,6 +1056,7 @@ The main projects are:
 | `NanoAgent` | Core application, domain, infrastructure, tools, providers, storage. |
 | `NanoAgent.CLI` | Terminal UI and one-shot CLI. |
 | `NanoAgent.Desktop` | Desktop app. |
+| `NanoAgent.VsCode` | VS Code extension that drives NanoAgent through ACP mode. |
 | `NanoAgent.Tests` | Test suite. |
 
 ## License
