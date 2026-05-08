@@ -1,0 +1,158 @@
+name: vscode-extension-cd
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build and publish
+        required: false
+        default: master
+        type: string
+      version:
+        description: Extension version to publish. Defaults to the tag version, or package.json on manual runs.
+        required: false
+        type: string
+
+concurrency:
+  group: vscode-extension-cd-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  EXTENSION_DIR: NanoAgent.VsCode
+  NODE_VERSION: 20.x
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+jobs:
+  package:
+    name: Package VS Code extension
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      extension_version: ${{ steps.version.outputs.extension_version }}
+      vsix_name: ${{ steps.version.outputs.vsix_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.EXTENSION_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm ci
+
+      - name: Resolve extension version
+        id: version
+        working-directory: ${{ env.EXTENSION_DIR }}
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          set -euo pipefail
+
+          version="$INPUT_VERSION"
+          release_ref="$RELEASE_REF"
+
+          if [[ -z "$version" && "$release_ref" =~ ^refs/tags/[vV].+ ]]; then
+            version="${release_ref##*/}"
+          elif [[ -z "$version" && "$release_ref" =~ ^[vV][0-9].* ]]; then
+            version="$release_ref"
+          elif [[ -z "$version" && "${GITHUB_REF_TYPE:-}" == "tag" ]]; then
+            version="$GITHUB_REF_NAME"
+          fi
+
+          version="${version#v}"
+          version="${version#V}"
+
+          if [[ -n "$version" ]]; then
+            npm version "$version" --no-git-tag-version --allow-same-version
+          fi
+
+          resolved_version="$(node -p "require('./package.json').version")"
+          vsix_name="nanoagent-${resolved_version}.vsix"
+
+          {
+            echo "extension_version=$resolved_version"
+            echo "vsix_name=$vsix_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Lint extension
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm run lint
+
+      - name: Bundle extension
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm run package
+
+      - name: Package VSIX
+        working-directory: ${{ env.EXTENSION_DIR }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p ../artifacts/vscode
+          npx @vscode/vsce package \
+            --no-dependencies \
+            --githubBranch master \
+            --out "../artifacts/vscode/${{ steps.version.outputs.vsix_name }}"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: vscode-extension-${{ steps.version.outputs.extension_version }}
+          path: artifacts/vscode/${{ steps.version.outputs.vsix_name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish VS Code extension
+    needs: package
+    runs-on: ubuntu-24.04
+    environment:
+      name: vscode-marketplace
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.EXTENSION_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm ci
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: vscode-extension-${{ needs.package.outputs.extension_version }}
+          path: artifacts/vscode
+
+      - name: Publish to Visual Studio Marketplace
+        working-directory: ${{ env.EXTENSION_DIR }}
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: >
+          npx @vscode/vsce publish
+          --packagePath "../artifacts/vscode/${{ needs.package.outputs.vsix_name }}"
