@@ -18,6 +18,17 @@
     ]]></description>
 
     <change-notes><![CDATA[
+        <h3>v0.2.0</h3>
+        <ul>
+            <li>Rich chat UI with message streaming, tool calls, plans, and settings</li>
+            <li>Editor integration: send selection, current file, review, explain, git diff</li>
+            <li>Process management with start/stop/restart</li>
+            <li>Full ACP protocol support with permission and text request dialogs</li>
+            <li>Slash command autocomplete</li>
+            <li>Model picker and profile selector</li>
+            <li>Plan tracking with step progress</li>
+            <li>Tool call visualization with status</li>
+        </ul>
         <h3>v0.1.0</h3>
         <ul>
             <li>Initial release with ACP-based communication</li>
@@ -36,12 +47,17 @@
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <!-- Tool Window -->
         <toolWindow
                 id="NanoAgent"
                 anchor="right"
                 icon="NanoAgentIcons.ToolWindow"
                 factoryClass="com.nanoagent.ui.NanoAgentToolWindowFactory"
                 doNotActivateOnStart="false"/>
+
+        <!-- Application Service -->
+        <applicationService
+                serviceImplementation="com.nanoagent.NanoAgentPlugin"/>
     </extensions>
 
     <applicationListeners>
@@ -49,4 +65,137 @@
                 class="com.nanoagent.NanoAgentPlugin"
                 topic="com.intellij.ide.AppLifecycleListener"/>
     </applicationListeners>
+
+    <!-- Actions -->
+    <actions>
+        <!-- NanoAgent action group -->
+        <group id="NanoAgentActions"
+               text="NanoAgent"
+               popup="true"
+               icon="NanoAgentIcons.ToolWindow">
+
+            <!-- Core actions -->
+            <action id="NanoAgent.Start"
+                    class="com.nanoagent.actions.StartNanoAgentAction"
+                    text="NanoAgent: Start"
+                    description="Start the NanoAgent process">
+                <keyboard-shortcut first-keystroke="control alt N" keymap="$default"/>
+            </action>
+
+            <action id="NanoAgent.Stop"
+                    class="com.nanoagent.actions.StopNanoAgentAction"
+                    text="NanoAgent: Stop"
+                    description="Stop the NanoAgent process"/>
+
+            <action id="NanoAgent.Restart"
+                    class="com.nanoagent.actions.RestartNanoAgentAction"
+                    text="NanoAgent: Restart"
+                    description="Restart the NanoAgent process"/>
+
+            <separator/>
+
+            <!-- Chat actions -->
+            <action id="NanoAgent.OpenChat"
+                    class="com.nanoagent.actions.OpenChatAction"
+                    text="NanoAgent: Open Chat"
+                    description="Open the NanoAgent chat panel"
+                    icon="NanoAgentIcons.ToolWindow">
+                <keyboard-shortcut first-keystroke="control shift N" keymap="$default"/>
+            </action>
+
+            <action id="NanoAgent.NewChat"
+                    class="com.nanoagent.actions.NewChatAction"
+                    text="NanoAgent: New Chat"
+                    description="Start a new NanoAgent chat session"/>
+
+            <separator/>
+
+            <!-- Editor integration actions -->
+            <action id="NanoAgent.SendSelection"
+                    class="com.nanoagent.actions.SendSelectionAction"
+                    text="NanoAgent: Send Selection"
+                    description="Send the selected code to NanoAgent as context">
+                <keyboard-shortcut first-keystroke="control shift S" keymap="$default"/>
+            </action>
+
+            <action id="NanoAgent.ExplainSelection"
+                    class="com.nanoagent.actions.ExplainSelectionAction"
+                    text="NanoAgent: Explain Selection"
+                    description="Ask NanoAgent to explain the selected code">
+                <keyboard-shortcut first-keystroke="control shift E" keymap="$default"/>
+            </action>
+
+            <action id="NanoAgent.SendCurrentFile"
+                    class="com.nanoagent.actions.SendCurrentFileAction"
+                    text="NanoAgent: Send Current File"
+                    description="Send the current file content to NanoAgent as context"/>
+
+            <action id="NanoAgent.ReviewCurrentFile"
+                    class="com.nanoagent.actions.ReviewCurrentFileAction"
+                    text="NanoAgent: Review Current File"
+                    description="Ask NanoAgent to review the current file for bugs"/>
+
+            <action id="NanoAgent.ReviewGitDiff"
+                    class="com.nanoagent.actions.ReviewGitDiffAction"
+                    text="NanoAgent: Review Git Diff"
+                    description="Ask NanoAgent to review the current git diff"/>
+
+            <action id="NanoAgent.PlanChanges"
+                    class="com.nanoagent.actions.PlanChangesAction"
+                    text="NanoAgent: Plan Changes"
+                    description="Ask NanoAgent to plan changes before editing"/>
+
+            <action id="NanoAgent.ApplySuggestedChanges"
+                    class="com.nanoagent.actions.ApplySuggestedChangesAction"
+                    text="NanoAgent: Apply Suggested Changes"
+                    description="Apply the previous suggested changes"/>
+
+            <separator/>
+
+            <!-- Utility actions -->
+            <action id="NanoAgent.OpenSettings"
+                    class="com.nanoagent.actions.OpenSettingsAction"
+                    text="NanoAgent: Open Settings"
+                    description="Open NanoAgent settings"/>
+
+            <action id="NanoAgent.OpenLogs"
+                    class="com.nanoagent.actions.OpenLogsAction"
+                    text="NanoAgent: Open Logs"
+                    description="Open NanoAgent log output"/>
+        </group>
+
+        <!-- Add NanoAgent to main menu -->
+        <group id="NanoAgent.MainMenu">
+            <reference id="NanoAgentActions"/>
+        </group>
+
+        <!-- Add to Tools menu -->
+        <group id="ToolsMenuNanoAgent">
+            <reference id="NanoAgentActions"/>
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </group>
+
+        <!-- Editor context menu integration -->
+        <group id="NanoAgent.EditorContextMenu">
+            <separator/>
+            <reference id="NanoAgent.SendSelection"/>
+            <reference id="NanoAgent.ExplainSelection"/>
+            <reference id="NanoAgent.ReviewCurrentFile"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </group>
+
+        <!-- Editor title area (gutter icon area) -->
+        <group id="NanoAgent.EditorTitle">
+            <reference id="NanoAgent.OpenChat"/>
+            <add-to-group group-id="EditorGutterActions" anchor="last"/>
+        </group>
+
+        <!-- Project view context menu -->
+        <group id="NanoAgent.ProjectViewContext">
+            <separator/>
+            <reference id="NanoAgent.SendCurrentFile"/>
+            <reference id="NanoAgent.ReviewCurrentFile"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </group>
+    </actions>
 </idea-plugin>
