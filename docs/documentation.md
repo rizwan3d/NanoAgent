@@ -1,8 +1,8 @@
 # NanoAgent Documentation
 
-NanoAgent is a AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app and as the `nanoai` terminal command.
+NanoAgent is an AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app, the `nanoai` terminal command, a VS Code extension, and an ACP-compatible editor server.
 
-This guide is the product handbook for setup, daily use, safety controls, and advanced workspace customization.
+This guide contains the setup, reference, and technical material for NanoAgent. The root README is the product overview; this document is the handbook for installation, daily use, safety controls, integration, automation, and advanced workspace customization.
 
 ## Contents
 
@@ -32,13 +32,13 @@ This guide is the product handbook for setup, daily use, safety controls, and ad
 
 Download the latest release for your platform:
 
-| Platform | Release asset |
+| Platform | Download |
 | --- | --- |
-| Windows x64 | `NanoAgent.Desktop-win-x64-setup.exe` |
-| Linux x64 | `NanoAgent.Desktop-linux-x64.zip` |
-| Linux arm64 | `NanoAgent.Desktop-linux-arm64.zip` |
-| macOS x64 | `NanoAgent.Desktop-osx-x64.zip` |
-| macOS arm64 | `NanoAgent.Desktop-osx-arm64.zip` |
+| Windows x64 | [Installer](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe) |
+| Linux x64 | [Zip](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-x64.zip) |
+| Linux arm64 | [Zip](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-arm64.zip) |
+| macOS x64 | [Zip](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-x64.zip) |
+| macOS arm64 | [Zip](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-arm64.zip) |
 
 Release downloads are published at:
 
