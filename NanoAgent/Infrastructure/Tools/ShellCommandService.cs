@@ -44,14 +44,16 @@ internal sealed class ShellCommandService : IShellCommandService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (string.IsNullOrWhiteSpace(request.Command))
+        ShellCommandExecutionRequest normalizedRequest = NormalizeRequest(request);
+
+        if (string.IsNullOrWhiteSpace(normalizedRequest.Command))
         {
             throw new ArgumentException(
                 "Shell command must be provided.",
                 nameof(request));
         }
 
-        PreparedShellCommand prepared = PrepareShellCommand(request);
+        PreparedShellCommand prepared = PrepareShellCommand(normalizedRequest);
 
         ProcessExecutionResult result;
         try
@@ -63,7 +65,7 @@ internal sealed class ShellCommandService : IShellCommandService
         catch (PlatformNotSupportedException exception) when (prepared.ProcessRequest.UsePseudoTerminal)
         {
             return CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start PTY shell execution: {exception.Message}");
@@ -71,7 +73,7 @@ internal sealed class ShellCommandService : IShellCommandService
         catch (Win32Exception exception) when (prepared.ProcessRequest.UsePseudoTerminal)
         {
             return CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start PTY shell execution: {exception.Message}");
@@ -79,7 +81,7 @@ internal sealed class ShellCommandService : IShellCommandService
         catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
         {
             return CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}");
@@ -87,25 +89,25 @@ internal sealed class ShellCommandService : IShellCommandService
         catch (Win32Exception exception)
         {
             return CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}");
         }
 
         return new ShellCommandExecutionResult(
-            request.Command,
+            normalizedRequest.Command,
             ToWorkspaceRelativePath(prepared.WorkingDirectory),
             result.ExitCode,
             TrimOutput(result.StandardOutput),
             TrimOutput(result.StandardError),
-            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
-            string.IsNullOrWhiteSpace(request.Justification)
+            ShellCommandSandboxArguments.ToWireValue(normalizedRequest.SandboxPermissions),
+            string.IsNullOrWhiteSpace(normalizedRequest.Justification)
                 ? null
-                : request.Justification.Trim(),
+                : normalizedRequest.Justification.Trim(),
             ToWireValue(prepared.EffectiveSandboxMode),
             prepared.SandboxPlan.Enforcement,
-            request.PseudoTerminal);
+            normalizedRequest.PseudoTerminal);
     }
 
     public Task<ShellCommandExecutionResult> StartBackgroundAsync(
@@ -115,18 +117,20 @@ internal sealed class ShellCommandService : IShellCommandService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (string.IsNullOrWhiteSpace(request.Command))
+        ShellCommandExecutionRequest normalizedRequest = NormalizeRequest(request);
+
+        if (string.IsNullOrWhiteSpace(normalizedRequest.Command))
         {
             throw new ArgumentException(
                 "Shell command must be provided.",
                 nameof(request));
         }
 
-        PreparedShellCommand prepared = PrepareShellCommand(request);
+        PreparedShellCommand prepared = PrepareShellCommand(normalizedRequest);
         if (prepared.ProcessRequest.UsePseudoTerminal)
         {
             return Task.FromResult(CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 "Background terminals do not support pseudo-terminal mode.",
@@ -137,7 +141,7 @@ internal sealed class ShellCommandService : IShellCommandService
         try
         {
             BackgroundTerminal terminal = StartBackgroundTerminal(
-                request,
+                normalizedRequest,
                 prepared);
             _backgroundTerminals[terminal.Id] = terminal;
 
@@ -152,7 +156,7 @@ internal sealed class ShellCommandService : IShellCommandService
         catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
         {
             return Task.FromResult(CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}",
@@ -162,7 +166,7 @@ internal sealed class ShellCommandService : IShellCommandService
         catch (Win32Exception exception)
         {
             return Task.FromResult(CreateExecutionFailureResult(
-                request,
+                normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}",
@@ -232,6 +236,14 @@ internal sealed class ShellCommandService : IShellCommandService
             standardError);
         terminal.Dispose();
         return result;
+    }
+
+    private static ShellCommandExecutionRequest NormalizeRequest(ShellCommandExecutionRequest request)
+    {
+        string normalizedCommand = ShellCommandText.NormalizeCommandText(request.Command).Trim();
+        return string.Equals(normalizedCommand, request.Command, StringComparison.Ordinal)
+            ? request
+            : request with { Command = normalizedCommand };
     }
 
     private PreparedShellCommand PrepareShellCommand(ShellCommandExecutionRequest request)

@@ -46,4 +46,34 @@ public sealed class ToolOutputFormatterTests
         preview.Should().Contain("<redacted>");
         preview.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
     }
+
+    [Fact]
+    public void FormatResults_Should_RenderSuspiciousUnicodeInShellOutput()
+    {
+        ToolOutputFormatter sut = new();
+        ToolExecutionBatchResult batchResult = new(
+            [
+                new ToolInvocationResult(
+                    "call_1",
+                    "shell_command",
+                    ToolResult.Success(
+                        "ok",
+                        """
+                        {
+                          "Command": "git status \u202E --short",
+                          "WorkingDirectory": ".",
+                          "ExitCode": 0,
+                          "StandardOutput": "clean\u200B",
+                          "StandardError": ""
+                        }
+                        """))
+            ]);
+
+        string message = sut.FormatResults(batchResult).Should().ContainSingle().Subject;
+
+        message.Should().Contain("git status <U+202E RIGHT-TO-LEFT OVERRIDE> --short");
+        message.Should().Contain("clean<U+200B ZERO WIDTH SPACE>");
+        message.Should().NotContain("\u202E");
+        message.Should().NotContain("\u200B");
+    }
 }

@@ -3,6 +3,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Services;
 
@@ -33,7 +34,7 @@ internal sealed class AgentTurnService : IAgentTurnService
         if (TryParseDirectShellCommand(request.UserInput, out string? command))
         {
             return await RunDirectShellCommandAsync(
-                command,
+                ShellCommandText.NormalizeCommandText(command),
                 request,
                 cancellationToken);
         }
@@ -168,9 +169,10 @@ internal sealed class AgentTurnService : IAgentTurnService
             $"Session working directory: {sessionWorkingDirectory}{Environment.NewLine}" +
             sessionDirectoryLine +
             $"Exit code: {result.ExitCode}{Environment.NewLine}" +
-            $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
-            $"STDERR:{Environment.NewLine}{result.StandardError}";
-        string message = $"Ran shell command '{result.Command}' with exit code {result.ExitCode}.";
+            $"STDOUT:{Environment.NewLine}{SuspiciousUnicodeText.RenderVisible(result.StandardOutput)}{Environment.NewLine}{Environment.NewLine}" +
+            $"STDERR:{Environment.NewLine}{SuspiciousUnicodeText.RenderVisible(result.StandardError)}";
+        string displayCommand = SuspiciousUnicodeText.RenderVisible(result.Command);
+        string message = $"Ran shell command '{displayCommand}' with exit code {result.ExitCode}.";
         if (!string.IsNullOrWhiteSpace(sessionDirectoryUpdate))
         {
             message += " " + sessionDirectoryUpdate;
@@ -181,7 +183,7 @@ internal sealed class AgentTurnService : IAgentTurnService
             result,
             ToolJsonContext.Default.ShellCommandExecutionResult,
             new ToolRenderPayload(
-                $"Shell command: {result.Command}",
+                $"Shell command: {displayCommand}",
                 renderText));
 
         return new ToolExecutionBatchResult(

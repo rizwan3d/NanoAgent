@@ -97,6 +97,28 @@ public sealed class SelectionPermissionApprovalPromptTests
         selectionPrompt.LastRequest.Description.Should().Contain("Command: git status --short");
     }
 
+    [Fact]
+    public async Task PromptAsync_Should_RenderSuspiciousUnicode_ForShellRequests()
+    {
+        CapturingSelectionPrompt selectionPrompt = new(PermissionApprovalChoice.AllowOnce);
+        SelectionPermissionApprovalPrompt sut = new(selectionPrompt);
+
+        await sut.PromptAsync(
+            new PermissionApprovalRequest(
+                "NanoAgent",
+                new PermissionRequestDescriptor(
+                    "shell_command",
+                    "bash",
+                    ["bash", "shell_command"],
+                    ["git status \u202E --short"]),
+                "Permission requires approval for tool 'shell_command' to run command 'git status \u202E --short'."),
+            CancellationToken.None);
+
+        selectionPrompt.LastRequest!.Description.Should()
+            .Contain("Command: git status <U+202E RIGHT-TO-LEFT OVERRIDE> --short");
+        selectionPrompt.LastRequest.Description.Should().NotContain("\u202E");
+    }
+
     private sealed class CapturingSelectionPrompt : ISelectionPrompt
     {
         private readonly PermissionApprovalChoice _choice;
