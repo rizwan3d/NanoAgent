@@ -1,0 +1,52 @@
+<idea-plugin>
+    <id>com.nanoagent.plugin</id>
+    <name>NanoAgent</name>
+    <vendor>ALFAIN Technologies (PVT) Limited</vendor>
+    <description><![CDATA[
+        <h3>NanoAgent - AI Coding Agent</h3>
+        <p>
+            NanoAgent brings an autonomous AI coding assistant directly into your IDE.
+            It can read and edit files, run shell commands, search code, browse the web,
+            and more — all through natural language conversations.
+        </p>
+        <ul>
+            <li><strong>Autonomous:</strong> The agent plans and executes multi-step tasks</li>
+            <li><strong>Context-aware:</strong> Understands your project structure and code</li>
+            <li><strong>Tool-rich:</strong> File operations, shell, browser, search, and more</li>
+            <li><strong>Session management:</strong> Save and resume conversations</li>
+        </ul>
+    ]]></description>
+
+    <change-notes><![CDATA[
+        <h3>v0.1.0</h3>
+        <ul>
+            <li>Initial release with ACP-based communication</li>
+            <li>Chat tool window for interacting with NanoAgent</li>
+            <li>Session management</li>
+            <li>Streaming responses</li>
+        </ul>
+    ]]></change-notes>
+
+    <!-- Supported IDE versions -->
+    <idea-version since-build="241" until-build="243.*"/>
+
+    <!-- Resource bundle -->
+    <resource-bundle>messages.NanoAgentBundle</resource-bundle>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+                id="NanoAgent"
+                anchor="right"
+                icon="NanoAgentIcons.ToolWindow"
+                factoryClass="com.nanoagent.ui.NanoAgentToolWindowFactory"
+                doNotActivateOnStart="false"/>
+    </extensions>
+
+    <applicationListeners>
+        <listener
+                class="com.nanoagent.NanoAgentPlugin"
+                topic="com.intellij.ide.AppLifecycleListener"/>
+    </applicationListeners>
+</idea-plugin>
