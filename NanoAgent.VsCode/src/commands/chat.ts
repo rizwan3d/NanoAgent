@@ -44,9 +44,21 @@ export function registerChatCommands(
         ChatPanel.currentPanel?.prefillMessage(prompt);
     };
 
+    const openSettings = async () => {
+        await openChat();
+
+        if (chatViewProvider.showSettings()) {
+            return;
+        }
+
+        ChatPanel.createOrShow(sessionManager);
+        ChatPanel.currentPanel?.showSettings();
+    };
+
     context.subscriptions.push(
         vscode.commands.registerCommand('nanoagent.openChat', openChat),
         vscode.commands.registerCommand('nanoagent.newChat', openChat),
+        vscode.commands.registerCommand('nanoagent.openSettings', openSettings),
         vscode.commands.registerCommand('nanoagent.sendSelection', async () => {
             const selectedText = getSelectedText();
             if (!selectedText) {

@@ -27,4 +27,6 @@ public sealed record BackendAgentProfileInfo(
 
 public sealed record BackendConversationMessage(
     string Role,
-    string Content);
+    string Content,
+    string? ReasoningContent = null,
+    string? ReasoningDetailsJson = null);

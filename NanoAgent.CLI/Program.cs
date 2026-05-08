@@ -520,6 +520,11 @@ public static partial class Program
 
             if (role is not null && !string.IsNullOrWhiteSpace(message.Content))
             {
+                if (role == Role.Assistant && !string.IsNullOrWhiteSpace(message.ReasoningContent))
+                {
+                    state.AddThinkingMessage("Thinking:\n\n" + message.ReasoningContent.Trim());
+                }
+
                 state.AddMessage(role.Value, message.Content);
             }
         }

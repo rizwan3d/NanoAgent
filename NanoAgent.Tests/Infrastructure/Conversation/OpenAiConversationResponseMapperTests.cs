@@ -92,6 +92,39 @@ public sealed class OpenAiConversationResponseMapperTests
     }
 
     [Fact]
+    public void Map_Should_PreserveReasoningObject_When_ResponseUsesReasoningField()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiCompatible,
+            """
+            {
+              "id": "resp_reasoning_object",
+              "choices": [
+                {
+                  "message": {
+                    "content": "I can answer now.",
+                    "reasoning": {
+                      "summary": [
+                        {
+                          "type": "summary_text",
+                          "text": "The request can be answered without tools."
+                        }
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("I can answer now.");
+        response.ReasoningDetailsJson.Should().Contain("The request can be answered without tools.");
+    }
+
+    [Fact]
     public void Map_Should_ReturnToolCalls_When_ResponseContainsFunctionCalls()
     {
         OpenAiConversationResponseMapper sut = new();
@@ -272,6 +305,47 @@ public sealed class OpenAiConversationResponseMapperTests
         response.CompletionTokens.Should().Be(9);
         response.TotalTokens.Should().Be(31);
         response.CachedPromptTokens.Should().Be(4);
+    }
+
+    [Fact]
+    public void Map_Should_PreserveReasoningDetails_When_ResponsesPayloadContainsReasoningOutputItem()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiChatGptAccount,
+            """
+            {
+              "id": "resp_account_reasoning",
+              "output": [
+                {
+                  "type": "reasoning",
+                  "summary": [
+                    {
+                      "type": "summary_text",
+                      "text": "I should inspect the requested file before editing."
+                    }
+                  ],
+                  "encrypted_content": "sealed-reasoning"
+                },
+                {
+                  "type": "message",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "I will inspect the file."
+                    }
+                  ]
+                }
+              ]
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("I will inspect the file.");
+        response.ReasoningDetailsJson.Should().Contain("summary_text");
+        response.ReasoningDetailsJson.Should().Contain("I should inspect the requested file before editing.");
+        response.ReasoningDetailsJson.Should().Contain("sealed-reasoning");
     }
 
     [Fact]

@@ -58,4 +58,8 @@ export class ChatPanel {
     public prefillMessage(text: string) {
         this.controller.prefillMessage(text);
     }
+
+    public showSettings() {
+        this.controller.showSettings();
+    }
 }

@@ -113,9 +113,9 @@ internal static class OpenAiResponsesEventStreamParser
         }
 
         List<string> usableOutputItems = outputItems.Values
-            .Where(HasUsableOutputItemPayload)
+            .Where(HasUsableOrReasoningOutputItemPayload)
             .ToList();
-        if (usableOutputItems.Count > 0)
+        if (usableOutputItems.Any(HasUsableOutputItemPayload))
         {
             return BuildResponsesPayload(
                 responseId,
@@ -124,12 +124,20 @@ internal static class OpenAiResponsesEventStreamParser
         }
 
         string outputText = completedText ?? textDeltas.ToString();
-        return string.IsNullOrWhiteSpace(outputText)
-            ? null
-            : BuildResponsesPayload(
-                responseId,
-                [BuildMessageOutputItem(outputText)],
-                usagePayload);
+        if (string.IsNullOrWhiteSpace(outputText))
+        {
+            return null;
+        }
+
+        List<string> outputPayloads = outputItems.Values
+            .Where(IsReasoningOutputItemPayload)
+            .ToList();
+        outputPayloads.Add(BuildMessageOutputItem(outputText));
+
+        return BuildResponsesPayload(
+            responseId,
+            outputPayloads,
+            usagePayload);
     }
 
     private static bool LooksLikeEventStream(string responseBody)
@@ -156,6 +164,19 @@ internal static class OpenAiResponsesEventStreamParser
         return HasUsableOutputItem(document.RootElement);
     }
 
+    private static bool HasUsableOrReasoningOutputItemPayload(string outputItemPayload)
+    {
+        using JsonDocument document = JsonDocument.Parse(outputItemPayload);
+        return HasUsableOutputItem(document.RootElement) ||
+            IsReasoningOutputItem(document.RootElement);
+    }
+
+    private static bool IsReasoningOutputItemPayload(string outputItemPayload)
+    {
+        using JsonDocument document = JsonDocument.Parse(outputItemPayload);
+        return IsReasoningOutputItem(document.RootElement);
+    }
+
     private static bool HasUsableOutputItem(JsonElement outputItem)
     {
         if (outputItem.ValueKind != JsonValueKind.Object)
@@ -177,6 +198,18 @@ internal static class OpenAiResponsesEventStreamParser
         }
 
         return HasUsableMessageContent(content);
+    }
+
+    private static bool IsReasoningOutputItem(JsonElement outputItem)
+    {
+        if (outputItem.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        string? type = TryGetString(outputItem, "type");
+        return string.Equals(type, "reasoning", StringComparison.Ordinal) ||
+            string.Equals(type, "thinking", StringComparison.Ordinal);
     }
 
     private static bool HasUsableMessageContent(JsonElement content)

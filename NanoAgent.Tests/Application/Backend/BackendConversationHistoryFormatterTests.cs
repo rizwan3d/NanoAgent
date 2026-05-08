@@ -55,6 +55,25 @@ public sealed class BackendConversationHistoryFormatterTests
         history[1].Content.Should().NotContain("Previewed saved tool call");
     }
 
+    [Fact]
+    public void Create_Should_IncludeAssistantReasoningMetadata_When_Present()
+    {
+        ReplSessionContext session = CreateSession();
+        session.AddConversationTurn(
+            "update the README",
+            "I updated it.",
+            assistantReasoningContent: "The README needs a concise edit.",
+            assistantReasoningDetailsJson: """[{ "summary": "Use a short patch." }]""");
+
+        IReadOnlyList<BackendConversationMessage> history = BackendConversationHistoryFormatter.Create(session);
+
+        history.Should().HaveCount(2);
+        history[1].Role.Should().Be("assistant");
+        history[1].Content.Should().Be("I updated it.");
+        history[1].ReasoningContent.Should().Be("The README needs a concise edit.");
+        history[1].ReasoningDetailsJson.Should().Contain("Use a short patch.");
+    }
+
     private static ReplSessionContext CreateSession()
     {
         return new ReplSessionContext(
