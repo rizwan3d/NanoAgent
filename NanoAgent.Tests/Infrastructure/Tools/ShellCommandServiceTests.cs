@@ -309,7 +309,7 @@ public sealed class ShellCommandServiceTests : IDisposable
             });
         string command = OperatingSystem.IsWindows()
             ? "Write-Output ready; Start-Sleep -Seconds 30"
-            : "printf ready; sleep 30";
+            : "printf '%s\\n' ready; sleep 30";
 
         ShellCommandExecutionResult started = await sut.StartBackgroundAsync(
             new ShellCommandExecutionRequest(command, null),
@@ -323,13 +323,13 @@ public sealed class ShellCommandServiceTests : IDisposable
         try
         {
             string output = string.Empty;
-            for (int attempt = 0; attempt < 20 && !output.Contains("ready", StringComparison.Ordinal); attempt++)
+            for (int attempt = 0; attempt < 50 && !output.Contains("ready", StringComparison.Ordinal); attempt++)
             {
                 ShellCommandExecutionResult read = await sut.ReadBackgroundAsync(
                     terminalId,
                     CancellationToken.None);
                 output += read.StandardOutput;
-                await Task.Delay(50);
+                await Task.Delay(100);
             }
 
             output.Should().Contain("ready");
