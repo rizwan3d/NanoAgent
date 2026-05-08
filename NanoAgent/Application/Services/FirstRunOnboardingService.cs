@@ -77,6 +77,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             OnboardingProviderChoice.Groq,
             "Use Groq's OpenAI-compatible API with only a Groq API key."),
         new(
+            "OpenCode Zen",
+            OnboardingProviderChoice.OpenCodeZen,
+            "Use OpenCode's curated hosted models with an OpenCode API key."),
+        new(
             "Ollama Cloud",
             OnboardingProviderChoice.OllamaCloud,
             "Use Ollama's hosted API with an Ollama Cloud API key.")
@@ -214,6 +218,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
                     OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
                     OnboardingProviderChoice.Groq => _profileFactory.CreateGroq(),
+                    OnboardingProviderChoice.OpenCodeZen => _profileFactory.CreateOpenCodeZen(),
                     OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
                     OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
                     OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),

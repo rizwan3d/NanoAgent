@@ -13,6 +13,7 @@ public static class ProviderKindExtensions
     private const string OllamaCloudBaseUrl = "https://ollama.com";
     private const string CerebrasBaseUrl = "https://api.cerebras.ai/v1";
     private const string GroqBaseUrl = "https://api.groq.com/openai/v1";
+    private const string OpenCodeZenBaseUrl = "https://opencode.ai/zen/v1";
     private const string OllamaApiKeyPlaceholder = "ollama";
 
     public static string ToDisplayName(this ProviderKind providerKind)
@@ -31,6 +32,7 @@ public static class ProviderKindExtensions
             ProviderKind.OllamaCloud => "Ollama Cloud",
             ProviderKind.Cerebras => "Cerebras",
             ProviderKind.Groq => "Groq",
+            ProviderKind.OpenCodeZen => "OpenCode Zen",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
         };
@@ -52,6 +54,7 @@ public static class ProviderKindExtensions
             ProviderKind.OllamaCloud => OllamaCloudBaseUrl,
             ProviderKind.Cerebras => CerebrasBaseUrl,
             ProviderKind.Groq => GroqBaseUrl,
+            ProviderKind.OpenCodeZen => OpenCodeZenBaseUrl,
             _ => null
         };
     }
