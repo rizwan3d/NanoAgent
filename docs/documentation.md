@@ -327,6 +327,12 @@ The Marketplace item is:
 https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent
 ```
 
+GitHub releases also publish an installable VSIX asset:
+
+```text
+NanoAgent.VsCode-<version>.vsix
+```
+
 ### Extension Commands
 
 | Command | Purpose |
@@ -376,7 +382,9 @@ code --install-extension nanoagent-<version>.vsix
 
 ### Extension Publishing
 
-The GitHub Actions workflow `.github/workflows/vscode-extension-cd.yml` packages and publishes the extension. It runs for `v*` tags and manual dispatch. For tag builds, the workflow removes the leading `v` and applies that value to `NanoAgent.VsCode/package.json` with `npm version --no-git-tag-version` before packaging.
+The release workflow `.github/workflows/release.yml` packages the extension as `NanoAgent.VsCode-<version>.vsix` and publishes it to GitHub Releases with the CLI and desktop assets. The signed release variant `.github/workflows/release-signing.yml` does the same when that workflow is used.
+
+The Marketplace CD workflow `.github/workflows/vscode-extension-cd.yml` publishes the extension to the Visual Studio Marketplace. It runs for `v*` tags and manual dispatch. For tag builds, the workflow removes the leading `v` and applies that value to `NanoAgent.VsCode/package.json` with `npm version --no-git-tag-version` before packaging.
 
 Required repository secret:
 
