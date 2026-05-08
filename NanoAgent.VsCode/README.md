@@ -1,14 +1,18 @@
 # NanoAgent for VS Code
 
-NanoAgent brings the NanoAgent coding assistant into Visual Studio Code. The extension starts the local `nanoai --acp` server, opens a chat view in the auxiliary bar, and sends editor context to NanoAgent when you ask it to explain, review, or plan code changes.
+NanoAgent for VS Code brings NanoAgent chat, code review, planning, and editor context into Visual Studio Code.
+
+The extension does not bundle the NanoAgent engine. It starts the local terminal command `nanoai --acp`, so the NanoAgent CLI must be installed and configured before the VS Code extension can work.
 
 ## Requirements
 
 - Visual Studio Code 1.80.0 or newer.
-- NanoAgent CLI installed and available as `nanoai`.
-- A completed first run of `nanoai` so provider credentials, model selection, and onboarding are ready before the extension starts ACP mode.
+- NanoAgent CLI installed and available as `nanoai` in your terminal.
+- A completed first run of `nanoai` so provider credentials, model selection, and onboarding are ready.
 
-Install the CLI first if `nanoai` is not on your `PATH`:
+## Install NanoAgent CLI First
+
+macOS / Linux:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
@@ -20,15 +24,34 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
 
+After installation, restart your terminal if `nanoai` is not found, then run:
+
+```bash
+nanoai
+```
+
+Finish provider setup in the terminal before using the VS Code extension.
+
+## Install The Extension
+
+Install from the Visual Studio Marketplace:
+
+```text
+ext install rizwan3d.nanoagent
+```
+
+Then open the NanoAgent view in VS Code or run `NanoAgent: Open Chat` from the Command Palette.
+
 ## Features
 
-- Open the NanoAgent chat view from the NanoAgent auxiliary bar container or with `NanoAgent: Open Chat`.
-- Start, stop, and restart the local NanoAgent ACP process from the Command Palette.
-- Send the current selection or full current file as chat context.
-- Ask NanoAgent to explain a selection, review the current file, or review the current Git diff.
-- Prefill a planning prompt for code changes.
-- Apply suggested changes from the previous NanoAgent response.
-- Open NanoAgent extension logs and settings from VS Code commands.
+- Open NanoAgent chat inside the VS Code auxiliary bar.
+- Send the current selection or full file as context.
+- Ask NanoAgent to explain selected code.
+- Review the current file or current Git diff.
+- Prefill planning prompts for code changes.
+- Apply suggested changes from a previous NanoAgent response.
+- Start, stop, and restart the local `nanoai --acp` process.
+- Open extension logs and settings from VS Code commands.
 
 ## Settings
 
@@ -40,23 +63,15 @@ irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.
 | `nanoagent.autoStart` | `false` | Start NanoAgent automatically when VS Code starts. |
 | `nanoagent.logLevel` | `info` | Extension log level. |
 
-## Local Development
+## Troubleshooting
 
-```bash
-cd NanoAgent.VsCode
-npm ci
-npm run lint
-npm run package
-npm run package:vsix
-```
+### `nanoai` is not found
 
-The `package:vsix` script creates an installable `.vsix` package with `@vscode/vsce`.
+Install the NanoAgent CLI, restart your terminal, and make sure `nanoai` is available on `PATH`.
 
-## Publishing
+### The extension starts but cannot connect
 
-Marketplace publishing is handled by the repository workflow `.github/workflows/vscode-extension-cd.yml`. Configure the repository secret `VSCE_PAT` with an Azure DevOps Marketplace Personal Access Token that has Marketplace Manage scope for the `rizwan3d` publisher.
-
-The workflow packages a `.vsix` artifact and publishes it on `v*` tags or manual dispatch. For tag builds, the extension version is synchronized from the tag name after removing the leading `v`.
+Run `nanoai` once in a terminal and finish provider onboarding. The extension starts NanoAgent in ACP mode and expects local configuration to already exist.
 
 ## License
 
