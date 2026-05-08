@@ -18,6 +18,7 @@ yarn-error.log*
 dist/
 build/
 out/
+*.vsix
 .next/
 .nuxt/
 
