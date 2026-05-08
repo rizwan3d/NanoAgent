@@ -408,7 +408,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 $"Cannot add '{operation.Path}' because the file already exists.");
         }
 
-        string content = JoinLines(operation.AddLines, trailingNewLine: false);
+        string content = operation.AddLines.Count == 0
+            ? string.Empty
+            : JoinLines(operation.AddLines, trailingNewLine: true);
         EnsureParentDirectory(fullPath);
         await File.WriteAllTextAsync(
             fullPath,
@@ -902,49 +904,44 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             throw new FormatException("Patch text must not be empty.");
         }
 
-        string[] lines = patch
+        string[] lines = StripPatchHeredoc(patch.Trim())
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Split('\n', StringSplitOptions.None);
 
-        int lineIndex = 0;
-        SkipEmptyLines(lines, ref lineIndex);
+        int lineIndex = FindPatchMarker(lines, "*** Begin Patch");
+        int endPatchIndex = FindPatchMarker(lines, "*** End Patch");
 
-        if (lineIndex >= lines.Length || !string.Equals(lines[lineIndex], "*** Begin Patch", StringComparison.Ordinal))
+        if (lineIndex < 0 || endPatchIndex < 0 || lineIndex >= endPatchIndex)
         {
-            throw new FormatException("Patch text must begin with '*** Begin Patch'.");
+            throw new FormatException("Patch text must include '*** Begin Patch' before '*** End Patch'.");
         }
 
         lineIndex++;
         List<PatchOperation> operations = [];
 
-        while (lineIndex < lines.Length)
+        while (lineIndex < endPatchIndex)
         {
             string currentLine = lines[lineIndex];
-            if (string.Equals(currentLine, "*** End Patch", StringComparison.Ordinal))
-            {
-                return new PatchDocument(operations);
-            }
-
             if (string.IsNullOrWhiteSpace(currentLine))
             {
                 lineIndex++;
                 continue;
             }
 
-            if (currentLine.StartsWith("*** Add File: ", StringComparison.Ordinal))
+            if (IsPatchHeader(currentLine, "*** Add File:"))
             {
                 operations.Add(ParseAddFile(lines, ref lineIndex));
                 continue;
             }
 
-            if (currentLine.StartsWith("*** Delete File: ", StringComparison.Ordinal))
+            if (IsPatchHeader(currentLine, "*** Delete File:"))
             {
                 operations.Add(ParseDeleteFile(lines, ref lineIndex));
                 continue;
             }
 
-            if (currentLine.StartsWith("*** Update File: ", StringComparison.Ordinal))
+            if (IsPatchHeader(currentLine, "*** Update File:"))
             {
                 operations.Add(ParseUpdateFile(lines, ref lineIndex));
                 continue;
@@ -953,19 +950,24 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             throw new FormatException($"Unrecognized patch line: '{currentLine}'.");
         }
 
-        throw new FormatException("Patch text must end with '*** End Patch'.");
+        if (operations.Count == 0)
+        {
+            throw new FormatException("Patch must include at least one Add File, Delete File, or Update File section.");
+        }
+
+        return new PatchDocument(operations);
     }
 
     private static PatchOperation ParseAddFile(
         IReadOnlyList<string> lines,
         ref int lineIndex)
     {
-        string path = ParseHeaderValue(lines[lineIndex], "*** Add File: ");
+        string path = ParseHeaderValue(lines[lineIndex], "*** Add File:");
         lineIndex++;
 
         List<string> fileLines = [];
         while (lineIndex < lines.Count &&
-               !lines[lineIndex].StartsWith("*** ", StringComparison.Ordinal))
+               !IsPatchOperationBoundary(lines[lineIndex]))
         {
             if (lines[lineIndex].Length == 0)
             {
@@ -981,11 +983,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             lineIndex++;
         }
 
-        if (fileLines.Count == 0)
-        {
-            throw new FormatException("Add file operations must include at least one '+' line.");
-        }
-
         return new PatchOperation(
             PatchOperationKind.Add,
             path,
@@ -998,7 +995,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         IReadOnlyList<string> lines,
         ref int lineIndex)
     {
-        string path = ParseHeaderValue(lines[lineIndex], "*** Delete File: ");
+        string path = ParseHeaderValue(lines[lineIndex], "*** Delete File:");
         lineIndex++;
 
         return new PatchOperation(
@@ -1013,22 +1010,24 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         IReadOnlyList<string> lines,
         ref int lineIndex)
     {
-        string path = ParseHeaderValue(lines[lineIndex], "*** Update File: ");
+        string path = ParseHeaderValue(lines[lineIndex], "*** Update File:");
         lineIndex++;
 
         string? moveToPath = null;
         if (lineIndex < lines.Count &&
-            lines[lineIndex].StartsWith("*** Move to: ", StringComparison.Ordinal))
+            IsPatchHeader(lines[lineIndex], "*** Move to:"))
         {
-            moveToPath = ParseHeaderValue(lines[lineIndex], "*** Move to: ");
+            moveToPath = ParseHeaderValue(lines[lineIndex], "*** Move to:");
             lineIndex++;
         }
 
         List<PatchHunk> hunks = [];
         List<PatchLine>? currentHunkLines = null;
+        string? currentChangeContext = null;
+        bool currentHunkIsEndOfFile = false;
 
         while (lineIndex < lines.Count &&
-               !lines[lineIndex].StartsWith("*** ", StringComparison.Ordinal))
+               !IsPatchOperationBoundary(lines[lineIndex]))
         {
             string line = lines[lineIndex];
             if (string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal))
@@ -1046,6 +1045,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (string.Equals(line, "*** End of File", StringComparison.Ordinal))
             {
+                if (currentHunkLines is null)
+                {
+                    throw new FormatException("End-of-file patch markers must follow a hunk header.");
+                }
+
+                currentHunkIsEndOfFile = true;
                 lineIndex++;
                 continue;
             }
@@ -1054,10 +1059,20 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             {
                 if (currentHunkLines is not null)
                 {
-                    hunks.Add(new PatchHunk(currentHunkLines));
+                    hunks.Add(new PatchHunk(
+                        currentHunkLines,
+                        currentChangeContext,
+                        currentHunkIsEndOfFile));
                 }
 
                 currentHunkLines = [];
+                currentChangeContext = line[2..].Trim();
+                if (currentChangeContext.Length == 0)
+                {
+                    currentChangeContext = null;
+                }
+
+                currentHunkIsEndOfFile = false;
                 lineIndex++;
                 continue;
             }
@@ -1084,7 +1099,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         if (currentHunkLines is not null)
         {
-            hunks.Add(new PatchHunk(currentHunkLines));
+            hunks.Add(new PatchHunk(
+                currentHunkLines,
+                currentChangeContext,
+                currentHunkIsEndOfFile));
         }
 
         if (moveToPath is null && hunks.Count == 0)
@@ -1100,15 +1118,91 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             hunks);
     }
 
-    private static void SkipEmptyLines(
-        IReadOnlyList<string> lines,
-        ref int lineIndex)
+    private static string StripPatchHeredoc(string patch)
     {
-        while (lineIndex < lines.Count &&
-               string.IsNullOrWhiteSpace(lines[lineIndex]))
+        string normalized = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        string[] lines = normalized.Split('\n', StringSplitOptions.None);
+        if (lines.Length < 3)
         {
-            lineIndex++;
+            return patch;
         }
+
+        if (!TryReadHeredocMarker(lines[0].Trim(), out string? marker))
+        {
+            return patch;
+        }
+
+        if (!string.Equals(lines[^1].Trim(), marker, StringComparison.Ordinal))
+        {
+            return patch;
+        }
+
+        return string.Join("\n", lines.Skip(1).Take(lines.Length - 2));
+    }
+
+    private static bool TryReadHeredocMarker(
+        string line,
+        out string? marker)
+    {
+        marker = null;
+        if (line.StartsWith("cat ", StringComparison.Ordinal))
+        {
+            line = line["cat ".Length..].TrimStart();
+        }
+
+        if (!line.StartsWith("<<", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string value = line[2..].Trim();
+        if (value.Length >= 2 &&
+            ((value[0] == '\'' && value[^1] == '\'') ||
+             (value[0] == '"' && value[^1] == '"')))
+        {
+            value = value[1..^1];
+        }
+
+        if (value.Length == 0 ||
+            value.Any(static character => !char.IsAsciiLetterOrDigit(character) && character != '_'))
+        {
+            return false;
+        }
+
+        marker = value;
+        return true;
+    }
+
+    private static int FindPatchMarker(
+        IReadOnlyList<string> lines,
+        string marker)
+    {
+        for (int index = 0; index < lines.Count; index++)
+        {
+            if (string.Equals(lines[index].Trim(), marker, StringComparison.Ordinal))
+            {
+                return index;
+            }
+        }
+
+        return -1;
+    }
+
+    private static bool IsPatchOperationBoundary(string line)
+    {
+        return string.Equals(line.Trim(), "*** End Patch", StringComparison.Ordinal) ||
+               IsPatchHeader(line, "*** Add File:") ||
+               IsPatchHeader(line, "*** Delete File:") ||
+               IsPatchHeader(line, "*** Update File:");
+    }
+
+    private static bool IsPatchHeader(
+        string line,
+        string prefix)
+    {
+        return line.StartsWith(prefix, StringComparison.Ordinal);
     }
 
     private static string ParseHeaderValue(
@@ -1129,12 +1223,29 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string previousContent,
         IReadOnlyList<PatchHunk> hunks)
     {
-        List<string> currentLines = SplitLines(previousContent).ToList();
+        string[] originalLines = SplitLines(previousContent);
+        List<PatchReplacement> replacements = [];
         int searchStart = 0;
         bool? trailingNewLineOverride = null;
 
         foreach (PatchHunk hunk in hunks)
         {
+            if (!string.IsNullOrWhiteSpace(hunk.ChangeContext))
+            {
+                int contextIndex = SeekSequence(
+                    originalLines,
+                    [hunk.ChangeContext],
+                    searchStart,
+                    endOfFile: false);
+                if (contextIndex < 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Could not apply the requested patch because context '{hunk.ChangeContext}' was not found in '{path}'.");
+                }
+
+                searchStart = contextIndex + 1;
+            }
+
             string[] beforeLines = hunk.Lines
                 .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
                 .Select(static line => line.Text)
@@ -1144,13 +1255,36 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 .Select(static line => line.Text)
                 .ToArray();
 
-            int matchIndex = beforeLines.Length == 0
-                ? searchStart
-                : FindSequence(currentLines, beforeLines, searchStart);
-
-            if (matchIndex < 0 && beforeLines.Length > 0 && searchStart > 0)
+            if (beforeLines.Length == 0)
             {
-                matchIndex = FindSequence(currentLines, beforeLines, 0);
+                replacements.Add(new PatchReplacement(originalLines.Length, 0, afterLines));
+                trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
+                continue;
+            }
+
+            string[] pattern = beforeLines;
+            string[] replacementLines = afterLines;
+            int matchIndex = SeekSequence(
+                originalLines,
+                pattern,
+                searchStart,
+                hunk.IsEndOfFile);
+
+            if (matchIndex < 0 &&
+                pattern.Length > 0 &&
+                pattern[^1].Length == 0)
+            {
+                pattern = pattern[..^1];
+                if (replacementLines.Length > 0 && replacementLines[^1].Length == 0)
+                {
+                    replacementLines = replacementLines[..^1];
+                }
+
+                matchIndex = SeekSequence(
+                    originalLines,
+                    pattern,
+                    searchStart,
+                    hunk.IsEndOfFile);
             }
 
             if (matchIndex < 0)
@@ -1159,14 +1293,23 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     $"Could not apply the requested patch because the target context was not found in '{path}'.");
             }
 
-            currentLines.RemoveRange(matchIndex, beforeLines.Length);
-            currentLines.InsertRange(matchIndex, afterLines);
-            searchStart = matchIndex + afterLines.Length;
+            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines));
+            searchStart = matchIndex + pattern.Length;
             trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
         }
 
-        bool trailingNewLine = trailingNewLineOverride ??
-            (previousContent.EndsWith('\n') || previousContent.EndsWith('\r'));
+        List<string> currentLines = originalLines.ToList();
+        PatchReplacement[] orderedReplacements = replacements
+            .OrderBy(static replacement => replacement.StartIndex)
+            .ToArray();
+        for (int index = orderedReplacements.Length - 1; index >= 0; index--)
+        {
+            PatchReplacement replacement = orderedReplacements[index];
+            currentLines.RemoveRange(replacement.StartIndex, replacement.OldLineCount);
+            currentLines.InsertRange(replacement.StartIndex, replacement.NewLines);
+        }
+
+        bool trailingNewLine = trailingNewLineOverride ?? true;
         return JoinLines(currentLines, trailingNewLine);
     }
 
@@ -1189,35 +1332,104 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return trailingNewLine;
     }
 
-    private static int FindSequence(
+    private static int SeekSequence(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
-        int startIndex)
+        int startIndex,
+        bool endOfFile)
     {
         if (target.Count == 0)
         {
-            return startIndex;
+            return -1;
+        }
+
+        Func<string, string, bool>[] comparers =
+        [
+            static (left, right) => string.Equals(left, right, StringComparison.Ordinal),
+            static (left, right) => string.Equals(left.TrimEnd(), right.TrimEnd(), StringComparison.Ordinal),
+            static (left, right) => string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal),
+            static (left, right) => string.Equals(
+                NormalizePatchMatchText(left.Trim()),
+                NormalizePatchMatchText(right.Trim()),
+                StringComparison.Ordinal)
+        ];
+
+        foreach (Func<string, string, bool> comparer in comparers)
+        {
+            int matchIndex = TryMatchSequence(source, target, startIndex, endOfFile, comparer);
+            if (matchIndex >= 0)
+            {
+                return matchIndex;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int TryMatchSequence(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        int startIndex,
+        bool endOfFile,
+        Func<string, string, bool> comparer)
+    {
+        if (endOfFile)
+        {
+            int fromEndIndex = source.Count - target.Count;
+            if (fromEndIndex >= Math.Max(0, startIndex) &&
+                SequenceMatches(source, target, fromEndIndex, comparer))
+            {
+                return fromEndIndex;
+            }
         }
 
         for (int index = Math.Max(0, startIndex); index <= source.Count - target.Count; index++)
         {
-            bool matched = true;
-            for (int offset = 0; offset < target.Count; offset++)
-            {
-                if (!string.Equals(source[index + offset], target[offset], StringComparison.Ordinal))
-                {
-                    matched = false;
-                    break;
-                }
-            }
-
-            if (matched)
+            if (SequenceMatches(source, target, index, comparer))
             {
                 return index;
             }
         }
 
         return -1;
+    }
+
+    private static bool SequenceMatches(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        int sourceIndex,
+        Func<string, string, bool> comparer)
+    {
+        for (int offset = 0; offset < target.Count; offset++)
+        {
+            if (!comparer(source[sourceIndex + offset], target[offset]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static string NormalizePatchMatchText(string value)
+    {
+        return value
+            .Replace('\u2018', '\'')
+            .Replace('\u2019', '\'')
+            .Replace('\u201A', '\'')
+            .Replace('\u201B', '\'')
+            .Replace('\u201C', '"')
+            .Replace('\u201D', '"')
+            .Replace('\u201E', '"')
+            .Replace('\u201F', '"')
+            .Replace('\u2010', '-')
+            .Replace('\u2011', '-')
+            .Replace('\u2012', '-')
+            .Replace('\u2013', '-')
+            .Replace('\u2014', '-')
+            .Replace('\u2015', '-')
+            .Replace("\u2026", "...", StringComparison.Ordinal)
+            .Replace('\u00A0', ' ');
     }
 
     private static string JoinLines(
@@ -1402,12 +1614,19 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         IReadOnlyList<PatchHunk> Hunks);
 
     private readonly record struct PatchHunk(
-        IReadOnlyList<PatchLine> Lines);
+        IReadOnlyList<PatchLine> Lines,
+        string? ChangeContext,
+        bool IsEndOfFile);
 
     private readonly record struct PatchLine(
         PatchLineKind Kind,
         string Text,
         bool NoNewlineAtEnd);
+
+    private readonly record struct PatchReplacement(
+        int StartIndex,
+        int OldLineCount,
+        IReadOnlyList<string> NewLines);
 
     private enum PatchOperationKind
     {
