@@ -118,6 +118,7 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         string? responseId = TryGetPropertyString(root, "id") ?? payload.ResponseId;
         List<string> contentParts = [];
         List<ConversationToolCall> toolCalls = [];
+        List<string> reasoningDetails = [];
         int toolCallOrdinal = 0;
 
         if (root.TryGetProperty("output", out JsonElement output) &&
@@ -130,8 +131,15 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
                     responseId,
                     contentParts,
                     toolCalls,
+                    reasoningDetails,
                     ref toolCallOrdinal);
             }
+        }
+
+        if (root.TryGetProperty("reasoning", out JsonElement reasoning) &&
+            reasoning.ValueKind is not JsonValueKind.Undefined and not JsonValueKind.Null)
+        {
+            reasoningDetails.Add(reasoning.GetRawText());
         }
 
         if (TryGetPropertyString(root, "output_text") is string outputText)
@@ -167,7 +175,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             completionTokens,
             promptTokens,
             totalTokens,
-            cachedPromptTokens);
+            cachedPromptTokens,
+            ReasoningDetailsJson: CreateReasoningDetailsJson(reasoningDetails));
     }
 
     private static string? ExtractReasoningDetailsJson(OpenAiChatCompletionResponseMessage message)
@@ -176,7 +185,11 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         if (reasoningDetails is null ||
             reasoningDetails.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
         {
-            return null;
+            JsonElement? reasoning = message.Reasoning;
+            return reasoning is not null &&
+                reasoning.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array
+                    ? reasoning.Value.GetRawText()
+                    : null;
         }
 
         return reasoningDetails.Value.GetRawText();
@@ -203,6 +216,7 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         string? responseId,
         List<string> contentParts,
         List<ConversationToolCall> toolCalls,
+        List<string> reasoningDetails,
         ref int toolCallOrdinal)
     {
         if (outputItem.ValueKind != JsonValueKind.Object)
@@ -211,6 +225,13 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         }
 
         string? type = TryGetPropertyString(outputItem, "type");
+        if (string.Equals(type, "reasoning", StringComparison.Ordinal) ||
+            string.Equals(type, "thinking", StringComparison.Ordinal))
+        {
+            reasoningDetails.Add(outputItem.GetRawText());
+            return;
+        }
+
         if (string.Equals(type, "message", StringComparison.Ordinal))
         {
             ExtractResponsesMessageContent(outputItem, contentParts);
@@ -242,6 +263,16 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
                 functionName,
                 functionArguments));
         }
+    }
+
+    private static string? CreateReasoningDetailsJson(IReadOnlyList<string> reasoningDetails)
+    {
+        if (reasoningDetails.Count == 0)
+        {
+            return null;
+        }
+
+        return "[" + string.Join(",", reasoningDetails) + "]";
     }
 
     private static void ExtractResponsesMessageContent(

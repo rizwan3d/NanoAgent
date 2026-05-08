@@ -12,7 +12,6 @@ type SessionNewResult = {
 
 type SessionPromptResult = {
     stopReason?: string;
-    metrics?: PromptMetrics;
 };
 
 export type AgentProfileInfo = {
@@ -26,45 +25,24 @@ export type SessionInfo = {
     sectionResumeCommand?: string;
     providerName?: string;
     modelId?: string;
-    activeModelContextWindowTokens?: number | null;
     availableModelIds: string[];
-    totalEstimatedOutputTokens?: number;
-    sectionEstimatedContextTokens?: number;
     thinkingMode?: string;
     agentProfileName?: string;
     availableAgentProfiles: AgentProfileInfo[];
     sectionTitle?: string;
 };
 
-export type PromptMetrics = {
-    elapsedMilliseconds?: number;
-    estimatedInputTokens?: number;
-    estimatedOutputTokens?: number;
-    displayedEstimatedOutputTokens?: number;
-    estimatedTotalTokens?: number;
-    cachedInputTokens?: number;
-    providerRetryCount?: number;
-    toolRoundCount?: number;
-    sessionEstimatedOutputTokens?: number;
-};
-
 export type PromptState = {
     isRunning: boolean;
     isCancelling: boolean;
-    tracksMetrics?: boolean;
-    startedAt?: string;
     input?: string;
     lastStopReason?: string;
-    lastMetrics?: PromptMetrics;
-    sectionElapsedMilliseconds?: number;
-    sectionEstimatedOutputTokens?: number;
-    sectionEstimatedContextTokens?: number;
     error?: string;
 };
 
 export type SessionMessageChunk = {
     sessionId: string;
-    role: 'assistant' | 'user';
+    role: 'assistant' | 'reasoning' | 'user';
     text: string;
 };
 
@@ -149,10 +127,6 @@ export class SessionManager extends EventEmitter {
     private promptTail: Promise<void> = Promise.resolve();
     private sessionId: string | null = null;
     private sessionPromise: Promise<string> | null = null;
-    private sectionMetricsSessionId: string | null = null;
-    private sectionElapsedMilliseconds = 0;
-    private sectionEstimatedOutputTokens = 0;
-    private sectionEstimatedContextTokens = 0;
     private readonly logService: LogService;
 
     constructor(private readonly processManager: NanoAgentProcessManager) {
@@ -278,14 +252,10 @@ export class SessionManager extends EventEmitter {
     private async sendPromptCore(text: string): Promise<SessionPromptResult> {
         const client = await this.getReadyClient();
         const sessionId = await this.ensureSession(client);
-        const startedAt = new Date().toISOString();
-        const tracksMetrics = !this.isCommandPrompt(text);
 
         this.setPromptState({
             isRunning: true,
             isCancelling: false,
-            tracksMetrics,
-            startedAt,
             input: text
         });
 
@@ -300,16 +270,10 @@ export class SessionManager extends EventEmitter {
                 ]
             });
 
-            if (tracksMetrics) {
-                this.recordPromptMetrics(sessionId, result?.metrics);
-            }
-
             this.setPromptState({
                 isRunning: false,
                 isCancelling: false,
-                tracksMetrics,
-                lastStopReason: result?.stopReason,
-                lastMetrics: tracksMetrics ? result?.metrics : undefined
+                lastStopReason: result?.stopReason
             });
 
             return result ?? {};
@@ -318,15 +282,10 @@ export class SessionManager extends EventEmitter {
             this.setPromptState({
                 isRunning: false,
                 isCancelling: false,
-                tracksMetrics,
                 error: normalized.message
             });
             throw normalized;
         }
-    }
-
-    private isCommandPrompt(text: string): boolean {
-        return text.trimStart().startsWith('/');
     }
 
     private initializeSession() {
@@ -368,7 +327,6 @@ export class SessionManager extends EventEmitter {
             this.acpClient.removeAllListeners();
             this.acpClient = null;
             this.currentSessionInfo = null;
-            this.resetSectionMetrics(null);
             this.initializePromise = null;
             this.promptTail = Promise.resolve();
             this.sessionId = null;
@@ -461,7 +419,6 @@ export class SessionManager extends EventEmitter {
 
         const sessionInfo = this.tryReadSessionInfo(message);
         if (sessionInfo) {
-            this.syncSectionMetricsWithSessionInfo(sessionInfo);
             this.currentSessionInfo = sessionInfo;
             this.emit('sessionInfoChanged', sessionInfo);
         }
@@ -680,13 +637,35 @@ export class SessionManager extends EventEmitter {
         }
 
         const updateKind = this.optionalString(sessionUpdate.update.sessionUpdate);
-        if (updateKind !== 'agent_message_chunk' && updateKind !== 'user_message_chunk') {
+        if (!this.isMessageChunkUpdateKind(updateKind)) {
             return null;
         }
 
-        const text = this.readContentText(sessionUpdate.update.content);
+        const content = sessionUpdate.update.content;
+        const text = this.readContentText(content);
         if (text === null) {
             return null;
+        }
+
+        if (this.isReasoningMessageChunk(updateKind, content)) {
+            return {
+                sessionId: sessionUpdate.sessionId,
+                role: 'reasoning',
+                text
+            };
+        }
+
+        if (this.isAgentMessageChunkUpdateKind(updateKind)) {
+            const reasoningText = this.readThinkingMessageText(
+                text,
+                this.isPromptRunningForAssistantReasoning());
+            if (reasoningText !== null) {
+                return {
+                    sessionId: sessionUpdate.sessionId,
+                    role: 'reasoning',
+                    text: reasoningText
+                };
+            }
         }
 
         return {
@@ -775,14 +754,9 @@ export class SessionManager extends EventEmitter {
             sectionResumeCommand: this.optionalString(sessionUpdate.update.sectionResumeCommand),
             providerName: this.optionalString(sessionUpdate.update.providerName),
             modelId: this.optionalString(sessionUpdate.update.modelId),
-            activeModelContextWindowTokens: typeof sessionUpdate.update.activeModelContextWindowTokens === 'number'
-                ? sessionUpdate.update.activeModelContextWindowTokens
-                : null,
             availableModelIds: Array.isArray(sessionUpdate.update.availableModelIds)
                 ? sessionUpdate.update.availableModelIds.filter((modelId): modelId is string => typeof modelId === 'string')
                 : [],
-            totalEstimatedOutputTokens: this.optionalPositiveNumber(sessionUpdate.update.totalEstimatedOutputTokens),
-            sectionEstimatedContextTokens: this.optionalPositiveNumber(sessionUpdate.update.sectionEstimatedContextTokens),
             thinkingMode: this.optionalString(sessionUpdate.update.thinkingMode),
             agentProfileName: this.optionalString(sessionUpdate.update.agentProfileName),
             availableAgentProfiles: Array.isArray(sessionUpdate.update.availableAgentProfiles)
@@ -840,13 +814,10 @@ export class SessionManager extends EventEmitter {
             return null;
         }
 
-        const content = value as {
-            type?: unknown;
-            text?: unknown;
-            content?: unknown;
-        };
+        const content = value as Record<string, unknown>;
 
-        if (content.type === 'text' && typeof content.text === 'string') {
+        if ((content.type === 'text' || this.isReasoningMarker(content.type)) &&
+            typeof content.text === 'string') {
             return content.text;
         }
 
@@ -860,6 +831,74 @@ export class SessionManager extends EventEmitter {
         }
 
         return null;
+    }
+
+    private readThinkingMessageText(text: string, allowSingleLine: boolean): string | null {
+        const pattern = allowSingleLine
+            ? /^\s*(?:Thinking|Reasoning):[ \t]*(?:\r?\n)*([\s\S]*)$/i
+            : /^\s*(?:Thinking|Reasoning):[ \t]*(?:\r?\n)+([\s\S]*)$/i;
+        const match = pattern.exec(text);
+        return match && match[1].trim() ? match[1] : null;
+    }
+
+    private isPromptRunningForAssistantReasoning(): boolean {
+        return this.currentPromptState.isRunning &&
+            !this.isSlashCommandText(this.currentPromptState.input);
+    }
+
+    private isSlashCommandText(value: string | undefined): boolean {
+        return typeof value === 'string' &&
+            value.trimStart().startsWith('/');
+    }
+
+    private isMessageChunkUpdateKind(updateKind: string | undefined): updateKind is string {
+        return updateKind === 'agent_message_chunk' ||
+            updateKind === 'user_message_chunk' ||
+            this.isReasoningMessageChunkUpdateKind(updateKind);
+    }
+
+    private isAgentMessageChunkUpdateKind(updateKind: string | undefined): boolean {
+        return updateKind === 'agent_message_chunk' ||
+            this.isReasoningMessageChunkUpdateKind(updateKind);
+    }
+
+    private isReasoningMessageChunkUpdateKind(updateKind: string | undefined): boolean {
+        return updateKind === 'agent_reasoning_chunk' ||
+            updateKind === 'reasoning_message_chunk' ||
+            updateKind === 'thinking_message_chunk';
+    }
+
+    private isReasoningMessageChunk(updateKind: string, content: unknown): boolean {
+        return this.isReasoningMessageChunkUpdateKind(updateKind) ||
+            this.hasReasoningContentMarker(content);
+    }
+
+    private hasReasoningContentMarker(value: unknown): boolean {
+        if (!value || typeof value !== 'object') {
+            return false;
+        }
+
+        if (Array.isArray(value)) {
+            return value.some(item => this.hasReasoningContentMarker(item));
+        }
+
+        const content = value as Record<string, unknown>;
+        return this.isReasoningMarker(content.type) ||
+            this.isReasoningMarker(content.role) ||
+            this.isReasoningMarker(content.kind) ||
+            this.isReasoningMarker(content.channel) ||
+            this.hasReasoningContentMarker(content.content);
+    }
+
+    private isReasoningMarker(value: unknown): boolean {
+        if (typeof value !== 'string') {
+            return false;
+        }
+
+        const normalized = value.trim().toLowerCase();
+        return normalized === 'reasoning' ||
+            normalized === 'thinking' ||
+            normalized === 'thought';
     }
 
     private readDefaultOptionId(
@@ -890,71 +929,8 @@ export class SessionManager extends EventEmitter {
     }
 
     private setPromptState(promptState: PromptState): void {
-        this.currentPromptState = {
-            sectionElapsedMilliseconds: this.sectionElapsedMilliseconds,
-            sectionEstimatedOutputTokens: this.sectionEstimatedOutputTokens,
-            sectionEstimatedContextTokens: this.sectionEstimatedContextTokens,
-            ...promptState
-        };
+        this.currentPromptState = promptState;
         this.emit('promptStateChanged', this.currentPromptState);
-    }
-
-    private syncSectionMetricsWithSessionInfo(sessionInfo: SessionInfo): void {
-        if (this.sectionMetricsSessionId !== sessionInfo.sessionId) {
-            this.resetSectionMetrics(sessionInfo.sessionId);
-        }
-
-        if (typeof sessionInfo.totalEstimatedOutputTokens === 'number') {
-            this.sectionEstimatedOutputTokens = Math.max(
-                this.sectionEstimatedOutputTokens,
-                sessionInfo.totalEstimatedOutputTokens);
-        }
-
-        if (typeof sessionInfo.sectionEstimatedContextTokens === 'number') {
-            this.sectionEstimatedContextTokens = Math.max(
-                this.sectionEstimatedContextTokens,
-                sessionInfo.sectionEstimatedContextTokens);
-        }
-    }
-
-    private recordPromptMetrics(sessionId: string, metrics?: PromptMetrics): void {
-        if (this.sectionMetricsSessionId !== sessionId) {
-            this.resetSectionMetrics(sessionId);
-        }
-
-        if (!metrics) {
-            return;
-        }
-
-        this.sectionElapsedMilliseconds += this.optionalPositiveNumber(metrics.elapsedMilliseconds) ?? 0;
-
-        const sectionOutputTokens = this.optionalPositiveNumber(metrics.sessionEstimatedOutputTokens);
-        if (typeof sectionOutputTokens === 'number') {
-            this.sectionEstimatedOutputTokens = Math.max(
-                this.sectionEstimatedOutputTokens,
-                sectionOutputTokens);
-        } else {
-            this.sectionEstimatedOutputTokens += this.optionalPositiveNumber(metrics.estimatedOutputTokens) ?? 0;
-        }
-
-        const inputTokens = this.optionalPositiveNumber(metrics.estimatedInputTokens) ?? 0;
-        const contextTokens = inputTokens + this.sectionEstimatedOutputTokens;
-        this.sectionEstimatedContextTokens = Math.max(
-            this.sectionEstimatedContextTokens,
-            contextTokens);
-    }
-
-    private resetSectionMetrics(sessionId: string | null): void {
-        this.sectionMetricsSessionId = sessionId;
-        this.sectionElapsedMilliseconds = 0;
-        this.sectionEstimatedOutputTokens = 0;
-        this.sectionEstimatedContextTokens = 0;
-    }
-
-    private optionalPositiveNumber(value: unknown): number | undefined {
-        return typeof value === 'number' && Number.isFinite(value) && value > 0
-            ? Math.round(value)
-            : undefined;
     }
 
     private normalizeError(error: unknown): Error {

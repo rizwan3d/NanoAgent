@@ -35,10 +35,24 @@ internal static class BackendConversationHistoryFormatter
                 }
             }
 
-            AddMessage(messages, "assistant", turn.AssistantResponse);
+            AddAssistantMessage(messages, turn);
         }
 
         return messages;
+    }
+
+    private static void AddAssistantMessage(
+        List<BackendConversationMessage> messages,
+        ConversationSectionTurn turn)
+    {
+        if (!string.IsNullOrWhiteSpace(turn.AssistantResponse))
+        {
+            messages.Add(new BackendConversationMessage(
+                "assistant",
+                turn.AssistantResponse.Trim(),
+                NormalizeOptionalText(turn.AssistantReasoningContent),
+                NormalizeOptionalText(turn.AssistantReasoningDetailsJson)));
+        }
     }
 
     private static void AddMessage(
@@ -50,5 +64,12 @@ internal static class BackendConversationHistoryFormatter
         {
             messages.Add(new BackendConversationMessage(role, content.Trim()));
         }
+    }
+
+    private static string? NormalizeOptionalText(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
     }
 }

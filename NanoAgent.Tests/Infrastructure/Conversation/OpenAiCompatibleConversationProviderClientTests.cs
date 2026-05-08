@@ -821,7 +821,10 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             data: {"type":"response.created","response":{"id":"resp_stream"}}
 
             event: response.output_item.done
-            data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","content":[{"type":"output_text","text":"Done from stream."}]}}
+            data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","summary":[{"type":"summary_text","text":"I can answer directly from the prompt."}],"encrypted_content":"sealed"}}
+
+            event: response.output_item.done
+            data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","content":[{"type":"output_text","text":"Done from stream."}]}}
 
             event: response.completed
             data: {"type":"response.completed","response":{"id":"resp_stream","error":null,"output":[],"usage":{"input_tokens":5,"output_tokens":3,"total_tokens":8}}}
@@ -854,6 +857,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         OpenAiConversationResponseMapper mapper = new();
         ConversationResponse response = mapper.Map(payload);
         response.AssistantMessage.Should().Be("Done from stream.");
+        response.ReasoningDetailsJson.Should().Contain("I can answer directly from the prompt.");
+        response.ReasoningDetailsJson.Should().Contain("sealed");
         response.ResponseId.Should().Be("resp_stream");
         response.PromptTokens.Should().Be(5);
         response.CompletionTokens.Should().Be(3);
