@@ -1,4 +1,4 @@
-﻿using Spectre.Console;
+using Spectre.Console;
 using Spectre.Console.Rendering;
 using System.Text;
 
@@ -210,6 +210,7 @@ public static partial class Program
         {
             Role.User => "❯",
             Role.Assistant => "◆",
+            Role.Thinking => "◇",
             Role.System => "◆",
             _ => "?"
         };
@@ -218,6 +219,7 @@ public static partial class Program
         {
             Role.User => "deepskyblue1",
             Role.Assistant => "mediumpurple1",
+            Role.Thinking => "grey58",
             Role.System => "yellow",
             _ => "grey"
         };

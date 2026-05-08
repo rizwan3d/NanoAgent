@@ -19,6 +19,8 @@ public interface IUiBridge
 
     void ShowSuccess(string message);
 
+    void ShowAssistantReasoning(string reasoningText);
+
     void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls);
 
     void ShowToolResults(ToolExecutionBatchResult toolExecutionResult);

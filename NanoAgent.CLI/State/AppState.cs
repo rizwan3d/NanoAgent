@@ -89,6 +89,11 @@ public sealed class AppState
         AddMessage(Role.System, text);
     }
 
+    public void AddThinkingMessage(string text)
+    {
+        AddMessage(Role.Thinking, text);
+    }
+
     public ChatMessage AddMessage(Role role, string text)
     {
         ChatMessage message = new()

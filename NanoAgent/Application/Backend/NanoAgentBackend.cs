@@ -220,7 +220,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             result.Kind,
             result.ResponseText,
             result.ToolExecutionResult,
-            metrics);
+            metrics,
+            result.ReasoningText);
     }
 
     public async ValueTask DisposeAsync()
