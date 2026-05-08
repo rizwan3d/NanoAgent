@@ -1,5 +1,6 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
+using NanoAgent.Application.Utilities;
 using System.Text;
 
 namespace NanoAgent.Application.Permissions;
@@ -54,7 +55,7 @@ internal static class PermissionRequestDisplayFormatter
         };
 
         return request.Subjects.Count == 1
-            ? $"Permission {verb} tool '{request.ToolName}' to {action} '{request.Subjects[0]}'."
+            ? $"Permission {verb} tool '{request.ToolName}' to {action} '{SuspiciousUnicodeText.RenderVisible(request.Subjects[0])}'."
             : $"Permission {verb} tool '{request.ToolName}' to {action} for {request.Subjects.Count} targets.";
     }
 
@@ -63,7 +64,7 @@ internal static class PermissionRequestDisplayFormatter
         ArgumentNullException.ThrowIfNull(request);
 
         StringBuilder builder = new();
-        builder.Append(request.Reason);
+        builder.Append(SuspiciousUnicodeText.RenderVisible(request.Reason));
         builder.AppendLine();
         builder.AppendLine();
         builder.Append("Tool: ");
@@ -120,7 +121,7 @@ internal static class PermissionRequestDisplayFormatter
         }
 
         return request.Subjects.Count == 1
-            ? [$"{singularLabel}: {request.Subjects[0]}"]
-            : [pluralLabel + ":", .. request.Subjects.Select(static subject => $"- {subject}")];
+            ? [$"{singularLabel}: {SuspiciousUnicodeText.RenderVisible(request.Subjects[0])}"]
+            : [pluralLabel + ":", .. request.Subjects.Select(static subject => $"- {SuspiciousUnicodeText.RenderVisible(subject)}")];
     }
 }

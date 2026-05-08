@@ -203,7 +203,7 @@ internal static class SessionStateToolRecorder
 
         session.RecordTerminalCommand(new SessionTerminalCommand(
             DateTimeOffset.UtcNow,
-            result.Command,
+            SuspiciousUnicodeText.RenderVisible(result.Command),
             result.WorkingDirectory,
             result.ExitCode,
             NormalizeOptionalForState(result.StandardOutput, MaxTerminalOutputCharacters),
@@ -277,7 +277,7 @@ internal static class SessionStateToolRecorder
         string value,
         int maxCharacters)
     {
-        string normalized = SecretRedactor.Redact(value)
+        string normalized = SuspiciousUnicodeText.RenderVisible(SecretRedactor.Redact(value))
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Trim();

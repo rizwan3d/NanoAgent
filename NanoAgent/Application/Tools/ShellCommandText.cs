@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Tools;
 
@@ -17,6 +18,8 @@ internal static class ShellCommandText
 {
     public static bool ContainsControlSyntax(string commandText)
     {
+        commandText = NormalizeCommandText(commandText);
+
         return commandText.Contains('|') ||
                commandText.Contains(';') ||
                commandText.Contains("&&", StringComparison.Ordinal) ||
@@ -31,6 +34,7 @@ internal static class ShellCommandText
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(commandText);
 
+        commandText = NormalizeCommandText(commandText);
         List<ShellCommandSegment> segments = [];
         int segmentStart = 0;
         bool inSingleQuote = false;
@@ -148,6 +152,8 @@ internal static class ShellCommandText
 
     public static string[] Tokenize(string commandText)
     {
+        commandText = NormalizeCommandText(commandText);
+
         MatchCollection matches = Regex.Matches(
             commandText,
             "\"[^\"]*\"|'[^']*'|\\S+");
@@ -178,6 +184,7 @@ internal static class ShellCommandText
 
     public static string NormalizeCommandToken(string token)
     {
+        token = NormalizeCommandText(token);
         string trimmedToken = token.Trim();
         if (string.IsNullOrWhiteSpace(trimmedToken))
         {
@@ -189,5 +196,12 @@ internal static class ShellCommandText
         return normalizedCommand.Any(static ch => char.IsLetterOrDigit(ch))
             ? normalizedCommand
             : string.Empty;
+    }
+
+    public static string NormalizeCommandText(string commandText)
+    {
+        ArgumentNullException.ThrowIfNull(commandText);
+
+        return SuspiciousUnicodeText.NormalizeForCommand(commandText);
     }
 }

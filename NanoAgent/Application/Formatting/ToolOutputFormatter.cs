@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools;
 using NanoAgent.Application.Utilities;
 using System.Globalization;
 using System.Text;
@@ -30,7 +31,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         string description = name switch
         {
             "shell_command" when TryGetArgumentString(toolCall.ArgumentsJson, "command", out string command) =>
-                $"command: {Truncate(command, 120)}",
+                $"command: {Truncate(ShellCommandText.NormalizeCommandText(command), 120)}",
             "file_read" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file read: {path}",
             "file_delete" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
@@ -471,7 +472,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
 
         StringBuilder builder = new();
-        builder.Append(Bullet).Append(" Ran ").Append(result.Command);
+        builder.Append(Bullet).Append(" Ran ").Append(SuspiciousUnicodeText.RenderVisible(result.Command));
 
         if (result.ExitCode != 0)
         {
@@ -1590,7 +1591,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
 
     private static string Truncate(string value, int maxLength)
     {
-        string normalized = value.Trim();
+        string normalized = SuspiciousUnicodeText.RenderVisible(value).Trim();
         if (normalized.Length <= maxLength)
         {
             return normalized;

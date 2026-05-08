@@ -405,13 +405,15 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                 context.Arguments,
                 permissionPolicy.Shell.CommandArgumentName,
                 out string? commandText) &&
-            !PlanningModePolicy.IsSafeInspectionShellCommand(commandText!, out string denialReason) &&
+            !PlanningModePolicy.IsSafeInspectionShellCommand(
+                ShellCommandText.NormalizeCommandText(commandText!),
+                out string denialReason) &&
             !ShellRequestsSandboxEscalation(context, permissionPolicy.Shell))
         {
             PermissionRequestDescriptor request = CreateRequestDescriptor(
                 context,
                 permissionPolicy,
-                [commandText!]);
+                [ShellCommandText.NormalizeCommandText(commandText!)]);
 
             return PermissionEvaluationResult.Denied(
                 "sandbox_readonly_shell_blocked",
@@ -579,6 +581,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             return PermissionEvaluationResult.Allowed();
         }
 
+        string normalizedCommandText = ShellCommandText.NormalizeCommandText(commandText!);
         if (!ShellCommandSandboxArguments.TryGetSandboxPermissions(
                 context.Arguments,
                 shellPolicy.SandboxPermissionsArgumentName,
@@ -603,9 +606,9 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         }
 
         if (context.ExecutionPhase == ConversationExecutionPhase.Planning &&
-            PlanningModePolicy.ShouldBypassShellPolicyForPlanningProbe(commandText!))
+            PlanningModePolicy.ShouldBypassShellPolicyForPlanningProbe(normalizedCommandText))
         {
-            AddSubject(subjects, commandText!.Trim());
+            AddSubject(subjects, normalizedCommandText.Trim());
             AddSandboxEscalationSubjectIfNeeded(
                 requiresEscalation,
                 context,
@@ -615,7 +618,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             return PermissionEvaluationResult.Allowed();
         }
 
-        IReadOnlyList<ShellCommandSegment> segments = ShellCommandText.ParseSegments(commandText!);
+        IReadOnlyList<ShellCommandSegment> segments = ShellCommandText.ParseSegments(normalizedCommandText);
         if (segments.Count == 0)
         {
             return PermissionEvaluationResult.Denied(
@@ -623,7 +626,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
                 $"Tool '{context.ToolName}' did not receive a valid shell command.");
         }
 
-        AddSubject(subjects, commandText!.Trim());
+        AddSubject(subjects, normalizedCommandText.Trim());
         AddSandboxEscalationSubjectIfNeeded(
             requiresEscalation,
             context,
