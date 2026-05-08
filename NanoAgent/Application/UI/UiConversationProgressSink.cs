@@ -1,4 +1,4 @@
-﻿using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 
 namespace NanoAgent.Application.UI;
@@ -10,6 +10,15 @@ public sealed class UiConversationProgressSink : IConversationProgressSink
     public UiConversationProgressSink(IUiBridge uiBridge)
     {
         _uiBridge = uiBridge;
+    }
+
+    public Task ReportAssistantReasoningAsync(
+        string reasoningText,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _uiBridge.ShowAssistantReasoning(reasoningText);
+        return Task.CompletedTask;
     }
 
     public Task ReportExecutionPlanAsync(

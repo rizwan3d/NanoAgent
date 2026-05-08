@@ -225,7 +225,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 batchResult,
                 CreateMetrics(
                     startedAt,
-                    result));
+                    result),
+                result.AssistantReasoningContent ?? ExtractReasoningDetailsText(result.AssistantReasoningDetailsJson));
 
             await RunAfterTaskCompleteHookAsync(normalizedInput, session, turnResult, cancellationToken);
             return turnResult;
@@ -320,7 +321,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             batchResult,
             CreateMetrics(
                 startedAt,
-                executionResult));
+                executionResult),
+            executionResult.AssistantReasoningContent ??
+                ExtractReasoningDetailsText(executionResult.AssistantReasoningDetailsJson));
     }
 
     private ConversationTurnMetrics CreateMetrics(
@@ -684,6 +687,11 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 response,
                 cancellationToken);
 
+            await ReportAssistantReasoningAsync(
+                response,
+                progressSink,
+                cancellationToken);
+
             if (response.HasToolCalls)
             {
                 telemetry.IncrementToolRoundCount();
@@ -826,6 +834,116 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     {
         return maxToolRoundsPerTurn <= 0 ||
             completedToolRoundCount < maxToolRoundsPerTurn;
+    }
+
+    private static async Task ReportAssistantReasoningAsync(
+        ConversationResponse response,
+        IConversationProgressSink progressSink,
+        CancellationToken cancellationToken)
+    {
+        string? reasoningText = ExtractReasoningTextForDisplay(response);
+        if (string.IsNullOrWhiteSpace(reasoningText))
+        {
+            return;
+        }
+
+        await progressSink.ReportAssistantReasoningAsync(
+            reasoningText,
+            cancellationToken);
+    }
+
+    private static string? ExtractReasoningTextForDisplay(ConversationResponse response)
+    {
+        if (!string.IsNullOrWhiteSpace(response.ReasoningContent))
+        {
+            return response.ReasoningContent.Trim();
+        }
+
+        return ExtractReasoningDetailsText(response.ReasoningDetailsJson);
+    }
+
+    private static string? ExtractReasoningDetailsText(string? reasoningDetailsJson)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningDetailsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(reasoningDetailsJson);
+            List<string> parts = [];
+            CollectReasoningText(document.RootElement, parts);
+
+            return parts.Count == 0
+                ? null
+                : string.Join(
+                    Environment.NewLine + Environment.NewLine,
+                    parts.Distinct(StringComparer.Ordinal));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void CollectReasoningText(
+        JsonElement element,
+        List<string> parts)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                AddReasoningTextProperty(element, parts, "text");
+                AddReasoningTextProperty(element, parts, "summary");
+                AddReasoningTextProperty(element, parts, "content");
+
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                    {
+                        CollectReasoningText(property.Value, parts);
+                    }
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    CollectReasoningText(item, parts);
+                }
+
+                break;
+        }
+    }
+
+    private static void AddReasoningTextProperty(
+        JsonElement element,
+        List<string> parts,
+        string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out JsonElement value))
+        {
+            return;
+        }
+
+        if (value.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            parts.Add(value.GetString()!.Trim());
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in value.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(item.GetString()))
+                {
+                    parts.Add(item.GetString()!.Trim());
+                }
+            }
+        }
     }
 
     private static async Task<ExecutionPlanProgress?> ReportPlanUpdatesAsync(

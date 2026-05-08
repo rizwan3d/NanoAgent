@@ -294,6 +294,14 @@ public sealed class AgentTurnServiceTests
 
     private sealed class RecordingProgressSink : IConversationProgressSink
     {
+        public Task ReportAssistantReasoningAsync(
+            string reasoningText,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
         public Task ReportExecutionPlanAsync(
             ExecutionPlanProgress executionPlanProgress,
             CancellationToken cancellationToken)

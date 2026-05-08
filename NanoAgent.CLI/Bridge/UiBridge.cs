@@ -140,6 +140,20 @@ public sealed class UiBridge : IUiBridge
         Enqueue(state => state.AddSystemMessage($"Success: {message}"));
     }
 
+    public void ShowAssistantReasoning(string reasoningText)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningText))
+        {
+            return;
+        }
+
+        Enqueue(state =>
+        {
+            state.ActivityText = "Thinking";
+            state.AddThinkingMessage("Thinking:\n\n" + reasoningText.Trim());
+        });
+    }
+
     public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
     {
         string[] descriptions = toolCalls

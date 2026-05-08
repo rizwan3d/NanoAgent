@@ -6,7 +6,8 @@ public sealed class ConversationTurnResult
         ConversationTurnResultKind kind,
         string responseText,
         ToolExecutionBatchResult? toolExecutionResult,
-        ConversationTurnMetrics? metrics)
+        ConversationTurnMetrics? metrics,
+        string? reasoningText = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(responseText);
 
@@ -14,6 +15,9 @@ public sealed class ConversationTurnResult
         ResponseText = responseText.Trim();
         ToolExecutionResult = toolExecutionResult;
         Metrics = metrics;
+        ReasoningText = string.IsNullOrWhiteSpace(reasoningText)
+            ? null
+            : reasoningText.Trim();
     }
 
     public ConversationTurnResult(string responseText)
@@ -34,6 +38,8 @@ public sealed class ConversationTurnResult
 
     public string ResponseText { get; }
 
+    public string? ReasoningText { get; }
+
     public ToolExecutionBatchResult? ToolExecutionResult { get; }
 
     public static ConversationTurnResult AssistantMessage(
@@ -48,11 +54,21 @@ public sealed class ConversationTurnResult
         ToolExecutionBatchResult? toolExecutionResult,
         ConversationTurnMetrics? metrics = null)
     {
+        return AssistantMessage(responseText, toolExecutionResult, metrics, reasoningText: null);
+    }
+
+    public static ConversationTurnResult AssistantMessage(
+        string responseText,
+        ToolExecutionBatchResult? toolExecutionResult,
+        ConversationTurnMetrics? metrics,
+        string? reasoningText)
+    {
         return new ConversationTurnResult(
             ConversationTurnResultKind.AssistantMessage,
             responseText,
             toolExecutionResult,
-            metrics);
+            metrics,
+            reasoningText);
     }
 
     public static ConversationTurnResult ToolExecution(
