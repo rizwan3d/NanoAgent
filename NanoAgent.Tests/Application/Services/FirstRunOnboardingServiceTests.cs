@@ -222,6 +222,7 @@ public sealed class FirstRunOnboardingServiceTests
                         "Kilo Code",
                         "Cerebras",
                         "Groq",
+                        "OpenCode Zen",
                         "Ollama Cloud");
 
                 return Task.FromResult(OnboardingProviderChoice.OpenAi);
@@ -878,6 +879,80 @@ public sealed class FirstRunOnboardingServiceTests
             true,
             ActiveProviderName: "Groq"));
         profileFactory.Verify(factory => factory.CreateGroq(), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveOpenCodeZenConfiguration_When_OpenCodeZenIsSelected()
+    {
+        AgentProviderProfile profile = new(ProviderKind.OpenCodeZen, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.OpenCodeZen);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        secretPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  opencode-zen-key  ");
+
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: OpenCode Zen.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        inputValidator
+            .Setup(validator => validator.ValidateApiKey("  opencode-zen-key  "))
+            .Returns(InputValidationResult.Success("opencode-zen-key"));
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(profile, null, null, "OpenCode Zen"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("opencode-zen-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "opencode-zen-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateOpenCodeZen()).Returns(profile);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "OpenCode Zen"));
+        profileFactory.Verify(factory => factory.CreateOpenCodeZen(), Times.Once);
         textPrompt.VerifyNoOtherCalls();
         configurationStore.VerifyAll();
         secretStore.VerifyAll();

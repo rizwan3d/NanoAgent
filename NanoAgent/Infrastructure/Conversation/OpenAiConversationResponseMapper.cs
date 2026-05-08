@@ -12,7 +12,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
     {
         ArgumentNullException.ThrowIfNull(payload);
 
-        if (payload.ProviderKind == ProviderKind.OpenAiChatGptAccount)
+        if (payload.ProviderKind == ProviderKind.OpenAiChatGptAccount ||
+            LooksLikeOpenAiResponsesPayload(payload))
         {
             return MapResponsesPayload(payload);
         }
@@ -101,6 +102,30 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             response?.Usage?.PromptTokensDetails?.CachedTokens,
             ExtractReasoningContent(message),
             ExtractReasoningDetailsJson(message));
+    }
+
+    private static bool LooksLikeOpenAiResponsesPayload(ConversationProviderPayload payload)
+    {
+        if (payload.ProviderKind != ProviderKind.OpenCodeZen)
+        {
+            return false;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(payload.RawContent);
+            JsonElement root = document.RootElement;
+            return root.ValueKind == JsonValueKind.Object &&
+                !root.TryGetProperty("choices", out _) &&
+                (root.TryGetProperty("output", out _) ||
+                    root.TryGetProperty("output_text", out _) ||
+                    root.TryGetProperty("text", out _) ||
+                    root.TryGetProperty("error", out _));
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static ConversationResponse MapResponsesPayload(ConversationProviderPayload payload)

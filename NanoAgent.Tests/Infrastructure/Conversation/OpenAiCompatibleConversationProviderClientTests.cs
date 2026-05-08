@@ -363,6 +363,144 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToOpenCodeZenEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_opencode_zen",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from OpenCode Zen."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
+                "opencode-zen-key",
+                "qwen3.6-plus",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://opencode.ai/zen/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer opencode-zen-key");
+        handler.RequestBody.Should().Contain("\"model\":\"qwen3.6-plus\"");
+        payload.ProviderKind.Should().Be(ProviderKind.OpenCodeZen);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_PostResponsesRequestToOpenCodeZenEndpoint_When_GptModelIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_opencode_zen_gpt",
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    { "type": "output_text", "text": "Hello from OpenCode Zen responses." }
+                  ]
+                }
+              ],
+              "usage": {
+                "input_tokens": 4,
+                "output_tokens": 2,
+                "total_tokens": 6
+              }
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
+                "opencode-zen-key",
+                "gpt-5.2-codex",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://opencode.ai/zen/v1/responses"));
+        handler.AuthorizationHeader.Should().Be("Bearer opencode-zen-key");
+
+        using JsonDocument requestDocument = JsonDocument.Parse(handler.RequestBody!);
+        requestDocument.RootElement.GetProperty("model").GetString().Should().Be("gpt-5.2-codex");
+        requestDocument.RootElement.GetProperty("stream").GetBoolean().Should().BeTrue();
+
+        payload.ProviderKind.Should().Be(ProviderKind.OpenCodeZen);
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("Hello from OpenCode Zen responses.");
+        response.PromptTokens.Should().Be(4);
+        response.CompletionTokens.Should().Be(2);
+        response.TotalTokens.Should().Be(6);
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_PostMessagesRequestToOpenCodeZenEndpoint_When_ClaudeModelIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "msg_opencode_zen_claude",
+              "type": "message",
+              "role": "assistant",
+              "content": [
+                { "type": "text", "text": "Hello from OpenCode Zen messages." }
+              ],
+              "stop_reason": "end_turn",
+              "usage": {
+                "input_tokens": 6,
+                "output_tokens": 3
+              }
+            }
+            """, responseIdHeaderName: "request-id");
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
+                "opencode-zen-key",
+                "claude-sonnet-4-5",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://opencode.ai/zen/v1/messages"));
+        handler.AuthorizationHeader.Should().Be("Bearer opencode-zen-key");
+        handler.AnthropicVersionHeader.Should().Be("2023-06-01");
+
+        using JsonDocument requestDocument = JsonDocument.Parse(handler.RequestBody!);
+        requestDocument.RootElement.GetProperty("model").GetString().Should().Be("claude-sonnet-4-5");
+
+        payload.ProviderKind.Should().Be(ProviderKind.OpenCodeZen);
+        OpenAiConversationResponseMapper mapper = new();
+        ConversationResponse response = mapper.Map(payload);
+        response.AssistantMessage.Should().Be("Hello from OpenCode Zen messages.");
+        response.PromptTokens.Should().Be(6);
+        response.CompletionTokens.Should().Be(3);
+        response.TotalTokens.Should().Be(9);
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToOllamaEndpoint_When_ProviderIsSelected()
     {
         RecordingHandler handler = new("""

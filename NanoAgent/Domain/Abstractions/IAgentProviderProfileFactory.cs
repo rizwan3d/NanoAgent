@@ -24,6 +24,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateGroq();
 
+    AgentProviderProfile CreateOpenCodeZen();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();

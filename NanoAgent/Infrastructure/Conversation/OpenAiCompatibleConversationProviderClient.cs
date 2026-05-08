@@ -82,6 +82,12 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             return await SendOllamaCloudAsync(request, cancellationToken);
         }
 
+        if (request.ProviderProfile.ProviderKind == ProviderKind.OpenCodeZen &&
+            ResolveOpenCodeZenEndpoint(request.ModelId) is not OpenCodeZenEndpoint.ChatCompletions and { } openCodeZenEndpoint)
+        {
+            return await SendOpenCodeZenAsync(request, openCodeZenEndpoint, cancellationToken);
+        }
+
         OpenAiChatCompletionRequest payload = BuildRequestPayload(request);
         string requestBody = JsonSerializer.Serialize(
             payload,
@@ -118,6 +124,83 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
                 return new ConversationProviderPayload(
                     request.ProviderProfile.ProviderKind,
                     responseBody,
+                    TryGetResponseId(response),
+                    retryCount);
+            }
+
+            if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
+            {
+                retryCount++;
+                TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
+                _logger.LogWarning(
+                    "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                    (int)response.StatusCode,
+                    attempt + 1,
+                    MaxRetryAttempts + 1,
+                    Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await _delayAsync(retryDelay, cancellationToken);
+                continue;
+            }
+
+            ThrowConversationRequestFailed(response.StatusCode, responseBody);
+        }
+
+        throw new ConversationProviderException(
+            "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
+    }
+
+    private async Task<ConversationProviderPayload> SendOpenCodeZenAsync(
+        ConversationProviderRequest request,
+        OpenCodeZenEndpoint endpoint,
+        CancellationToken cancellationToken)
+    {
+        string requestBody = endpoint switch
+        {
+            OpenCodeZenEndpoint.Responses => JsonSerializer.Serialize(
+                BuildResponsesRequestPayload(request),
+                OpenAiConversationJsonContext.Default.OpenAiResponsesRequest),
+            OpenCodeZenEndpoint.Messages => JsonSerializer.Serialize(
+                BuildAnthropicMessagesRequest(request),
+                OpenAiConversationJsonContext.Default.AnthropicMessagesRequest),
+            _ => throw new InvalidOperationException($"Unsupported OpenCode Zen endpoint '{endpoint}'.")
+        };
+        Uri baseUri = request.ProviderProfile.ResolveBaseUri();
+        int retryCount = 0;
+
+        for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        {
+            using HttpRequestMessage httpRequest = CreateOpenCodeZenHttpRequest(
+                baseUri,
+                endpoint,
+                request.ApiKey,
+                requestBody);
+            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                httpRequest,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
+
+            if (response.IsSuccessStatusCode)
+            {
+                string normalizedResponseBody = endpoint switch
+                {
+                    OpenCodeZenEndpoint.Responses => NormalizeOpenAiChatGptAccountResponseBody(responseBody),
+                    OpenCodeZenEndpoint.Messages => ConvertAnthropicMessagesResponseToChatCompletion(responseBody),
+                    _ => responseBody
+                };
+                if (string.IsNullOrWhiteSpace(normalizedResponseBody))
+                {
+                    throw new ConversationProviderException(
+                        "The provider returned an empty response body for the conversation request.");
+                }
+
+                return new ConversationProviderPayload(
+                    request.ProviderProfile.ProviderKind,
+                    normalizedResponseBody,
                     TryGetResponseId(response),
                     retryCount);
             }
@@ -490,6 +573,31 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         return httpRequest;
     }
 
+    private static HttpRequestMessage CreateOpenCodeZenHttpRequest(
+        Uri baseUri,
+        OpenCodeZenEndpoint endpoint,
+        string apiKey,
+        string requestBody)
+    {
+        string path = endpoint switch
+        {
+            OpenCodeZenEndpoint.Responses => "responses",
+            OpenCodeZenEndpoint.Messages => "messages",
+            _ => throw new InvalidOperationException($"Unsupported OpenCode Zen endpoint '{endpoint}'.")
+        };
+
+        HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, path));
+        httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        httpRequest.Headers.Accept.ParseAdd("application/json");
+        if (endpoint == OpenCodeZenEndpoint.Messages)
+        {
+            httpRequest.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
+        }
+
+        httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
+        return httpRequest;
+    }
+
     private static void ApplyKiloCodeHeaders(HttpRequestMessage request)
     {
         request.Headers.TryAddWithoutValidation("X-KILOCODE-EDITORNAME", KiloCodeEditorName);
@@ -685,6 +793,22 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             system,
             tools.Length == 0 ? null : tools,
             thinking);
+    }
+
+    private static OpenCodeZenEndpoint ResolveOpenCodeZenEndpoint(string modelId)
+    {
+        string normalizedModelId = modelId.Trim().ToLowerInvariant();
+        if (normalizedModelId.StartsWith("gpt-", StringComparison.Ordinal))
+        {
+            return OpenCodeZenEndpoint.Responses;
+        }
+
+        if (normalizedModelId.StartsWith("claude-", StringComparison.Ordinal))
+        {
+            return OpenCodeZenEndpoint.Messages;
+        }
+
+        return OpenCodeZenEndpoint.ChatCompletions;
     }
 
     private static IReadOnlyList<AnthropicContentBlock> CreateAnthropicUserContent(
@@ -1382,5 +1506,12 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             responseId ?? "(none)",
             responseBody);
 #endif
+    }
+
+    private enum OpenCodeZenEndpoint
+    {
+        ChatCompletions,
+        Responses,
+        Messages
     }
 }

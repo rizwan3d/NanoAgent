@@ -203,6 +203,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestOpenCodeZenModelsEndpoint_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "qwen3.6-plus" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
+            "opencode-zen-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://opencode.ai/zen/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer opencode-zen-key");
+        models.Select(model => model.Id).Should().Equal("qwen3.6-plus");
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestOllamaModelsEndpoint_When_ProviderIsConfigured()
     {
         RecordingHandler handler = new("""

@@ -89,6 +89,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateOpenCodeZen_Should_ReturnOpenCodeZenProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateOpenCodeZen();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.OpenCodeZen, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();
