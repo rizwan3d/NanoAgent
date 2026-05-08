@@ -27,6 +27,8 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  EXTENSION_DIR: NanoAgent.VsCode
+  NODE_VERSION: 20.x
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   SOLUTION_FILE: NanoAgent.slnx
@@ -619,9 +621,64 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish-vscode-extension:
+    name: Publish VS Code extension package
+    needs:
+      - validate
+      - release-approval
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.EXTENSION_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm ci
+
+      - name: Set extension version
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Lint extension
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm run lint
+
+      - name: Package VSIX
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: |
+          mkdir -p ../artifacts/packages
+          npx @vscode/vsce package \
+            --no-dependencies \
+            --githubBranch master \
+            --out "../artifacts/packages/NanoAgent.VsCode-${{ env.RELEASE_VERSION }}.vsix"
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: vscode-extension
+          path: artifacts/packages/NanoAgent.VsCode-${{ env.RELEASE_VERSION }}.vsix
+          if-no-files-found: error
+          retention-days: 14
+
   publish-release:
     name: Publish GitHub release
-    needs: publish
+    needs:
+      - publish
+      - publish-vscode-extension
     runs-on: ubuntu-24.04
     permissions:
       attestations: write
@@ -660,7 +717,7 @@ jobs:
             cp "$asset_path" "$destination"
           done < <(
             find "$GITHUB_WORKSPACE/artifacts/release" -type f \
-              \( -name '*.zip' -o -name '*.exe' -o -name '*.sbom.cdx.json' \) |
+              \( -name '*.zip' -o -name '*.exe' -o -name '*.vsix' -o -name '*.sbom.cdx.json' \) |
               sort
           )
 
@@ -724,6 +781,7 @@ jobs:
             echo "- SHA256 hashes are published in SHA256SUMS."
             echo "- CycloneDX SBOM files are published beside the packages."
             echo "- GitHub artifact attestations are generated for the checksummed assets."
+            echo "- The VS Code extension VSIX is published beside the desktop and CLI packages."
             echo
             echo "## Commit messages"
             echo
