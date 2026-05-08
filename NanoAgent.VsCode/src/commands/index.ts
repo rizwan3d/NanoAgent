@@ -18,10 +18,6 @@ export function registerCommands(context: vscode.ExtensionContext, processManage
 
         vscode.commands.registerCommand('nanoagent.openLogs', () => {
             logService.show();
-        }),
-
-        vscode.commands.registerCommand('nanoagent.openSettings', () => {
-            vscode.commands.executeCommand('workbench.action.openSettings', 'nanoagent');
         })
     );
 }

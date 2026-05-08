@@ -244,6 +244,26 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void CreateSectionSnapshot_Should_PersistAssistantReasoningOnTurn()
+    {
+        ReplSessionContext session = CreateSession();
+
+        session.AddConversationTurn(
+            "update the README",
+            "I updated it.",
+            assistantReasoningContent: "The file needs a small edit.",
+            assistantReasoningDetailsJson: """[{ "summary": "README edit chosen." }]""");
+
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+            session.SectionCreatedAtUtc.AddMinutes(1));
+
+        snapshot.Turns.Should().ContainSingle();
+        snapshot.Turns[0].AssistantReasoningContent.Should().Be("The file needs a small edit.");
+        snapshot.Turns[0].AssistantReasoningDetailsJson.Should().Contain("README edit chosen.");
+        session.ConversationHistory[1].ReasoningContent.Should().Be("The file needs a small edit.");
+    }
+
+    [Fact]
     public void CreateSectionSnapshot_Should_RedactSecretsFromHistoryAndToolCalls()
     {
         ReplSessionContext session = CreateSession();

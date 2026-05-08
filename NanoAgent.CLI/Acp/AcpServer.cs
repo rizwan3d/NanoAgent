@@ -642,7 +642,20 @@ internal sealed class AcpServer : IAsyncDisposable
                 continue;
             }
 
-            string updateKind = string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase)
+            bool isUserMessage = string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase);
+            if (!isUserMessage)
+            {
+                string? reasoningText = ExtractReasoningTextForDisplay(message);
+                if (!string.IsNullOrWhiteSpace(reasoningText))
+                {
+                    await SendThinkingAsync(
+                        sessionInfo.SessionId,
+                        reasoningText,
+                        cancellationToken);
+                }
+            }
+
+            string updateKind = isUserMessage
                 ? "user_message_chunk"
                 : "agent_message_chunk";
 
@@ -651,6 +664,100 @@ internal sealed class AcpServer : IAsyncDisposable
                 updateKind,
                 message.Content,
                 cancellationToken);
+        }
+    }
+
+    private static string? ExtractReasoningTextForDisplay(BackendConversationMessage message)
+    {
+        if (!string.IsNullOrWhiteSpace(message.ReasoningContent))
+        {
+            return message.ReasoningContent.Trim();
+        }
+
+        return ExtractReasoningDetailsText(message.ReasoningDetailsJson);
+    }
+
+    private static string? ExtractReasoningDetailsText(string? reasoningDetailsJson)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningDetailsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(reasoningDetailsJson);
+            List<string> parts = [];
+            CollectReasoningText(document.RootElement, parts);
+
+            return parts.Count == 0
+                ? null
+                : string.Join(
+                    Environment.NewLine + Environment.NewLine,
+                    parts.Distinct(StringComparer.Ordinal));
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static void CollectReasoningText(
+        JsonElement element,
+        List<string> parts)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                AddReasoningTextProperty(element, parts, "text");
+                AddReasoningTextProperty(element, parts, "summary");
+                AddReasoningTextProperty(element, parts, "content");
+
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (property.Value.ValueKind is JsonValueKind.Object or JsonValueKind.Array)
+                    {
+                        CollectReasoningText(property.Value, parts);
+                    }
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    CollectReasoningText(item, parts);
+                }
+
+                break;
+        }
+    }
+
+    private static void AddReasoningTextProperty(
+        JsonElement element,
+        List<string> parts,
+        string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out JsonElement value))
+        {
+            return;
+        }
+
+        if (value.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(value.GetString()))
+        {
+            parts.Add(value.GetString()!.Trim());
+        }
+        else if (value.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in value.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(item.GetString()))
+                {
+                    parts.Add(item.GetString()!.Trim());
+                }
+            }
         }
     }
 
@@ -895,10 +1002,9 @@ internal sealed class AcpServer : IAsyncDisposable
         string reasoningText,
         CancellationToken cancellationToken)
     {
-        return SendMessageChunkAsync(
+        return SendReasoningChunkAsync(
             sessionId,
-            "agent_message_chunk",
-            "Thinking:" + Environment.NewLine + Environment.NewLine + reasoningText.Trim(),
+            reasoningText.Trim(),
             cancellationToken);
     }
 
@@ -932,6 +1038,31 @@ internal sealed class AcpServer : IAsyncDisposable
                 writer.WritePropertyName("content");
                 writer.WriteStartObject();
                 writer.WriteString("type", "text");
+                writer.WriteString("text", text);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            },
+            cancellationToken);
+    }
+
+    private Task SendReasoningChunkAsync(
+        string sessionId,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        return SendNotificationAsync(
+            "session/update",
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteString("sessionId", sessionId);
+                writer.WritePropertyName("update");
+                writer.WriteStartObject();
+                writer.WriteString("sessionUpdate", "agent_reasoning_chunk");
+                writer.WritePropertyName("content");
+                writer.WriteStartObject();
+                writer.WriteString("type", "thinking");
                 writer.WriteString("text", text);
                 writer.WriteEndObject();
                 writer.WriteEndObject();

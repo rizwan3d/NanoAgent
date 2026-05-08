@@ -139,9 +139,7 @@ public sealed class ReplSessionContext
 
         foreach (ConversationSectionTurn turn in conversationTurns.Where(static turn => turn is not null))
         {
-            _conversationTurns.Add(turn);
-            _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
-            _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(turn.AssistantResponse));
+            AddStoredTurn(turn);
         }
     }
 
@@ -542,7 +540,9 @@ public sealed class ReplSessionContext
             userInput,
             assistantResponse,
             toolCalls,
-            toolOutputMessages);
+            toolOutputMessages,
+            assistantReasoningContent,
+            assistantReasoningDetailsJson);
 
         _conversationTurns.Add(turn);
         _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
@@ -738,7 +738,9 @@ public sealed class ReplSessionContext
                 string.IsNullOrWhiteSpace(userMessage.Content) ||
                 string.IsNullOrWhiteSpace(assistantMessage.Content) ||
                 !string.Equals(userMessage.Content, turn.UserInput, StringComparison.Ordinal) ||
-                !string.Equals(assistantMessage.Content, turn.AssistantResponse, StringComparison.Ordinal))
+                !string.Equals(assistantMessage.Content, turn.AssistantResponse, StringComparison.Ordinal) ||
+                !string.Equals(assistantMessage.ReasoningContent, turn.AssistantReasoningContent, StringComparison.Ordinal) ||
+                !string.Equals(assistantMessage.ReasoningDetailsJson, turn.AssistantReasoningDetailsJson, StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     "Conversation history contains an unsupported message layout for section persistence.");
@@ -861,7 +863,10 @@ public sealed class ReplSessionContext
     {
         _conversationTurns.Add(turn);
         _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
-        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(turn.AssistantResponse));
+        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(
+            turn.AssistantResponse,
+            turn.AssistantReasoningContent,
+            turn.AssistantReasoningDetailsJson));
     }
 
     private static string CompactHistoryField(string value)

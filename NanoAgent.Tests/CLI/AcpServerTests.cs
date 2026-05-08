@@ -82,6 +82,10 @@ public sealed class AcpServerTests
             .Should()
             .Contain("\u2022 Ran dotnet test");
         messages.Should().Contain(message =>
+            IsSessionUpdate(message, "agent_reasoning_chunk") &&
+            message.GetProperty("params").GetProperty("update").GetProperty("content").GetProperty("text").GetString() ==
+                "Inspect first.");
+        messages.Should().Contain(message =>
             IsSessionUpdate(message, "agent_message_chunk") &&
             message.GetProperty("params").GetProperty("update").GetProperty("content").GetProperty("text").GetString() == "Done.");
 
@@ -373,6 +377,57 @@ public sealed class AcpServerTests
         readCalled.Should().BeFalse();
     }
 
+    [Fact]
+    public async Task RunAsync_Should_ReplayAssistantReasoningHistoryAsThinkingChunk()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        HistoryBackend backend = new();
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/load\",\"params\":{\"sessionId\":\"sess-history\",\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ => backend);
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        int thinkingIndex = IndexOfMessage(messages, message =>
+            IsSessionUpdate(message, "agent_reasoning_chunk") &&
+            message.GetProperty("params")
+                .GetProperty("update")
+                .GetProperty("content")
+                .GetProperty("type")
+                .GetString() == "thinking" &&
+            message.GetProperty("params")
+                .GetProperty("update")
+                .GetProperty("content")
+                .GetProperty("text")
+                .GetString() == "Inspect first.");
+        int assistantIndex = IndexOfMessage(messages, message =>
+            IsSessionUpdate(message, "agent_message_chunk") &&
+            message.GetProperty("params")
+                .GetProperty("update")
+                .GetProperty("content")
+                .GetProperty("text")
+                .GetString() == "I updated it.");
+
+        thinkingIndex.Should().BeLessThan(assistantIndex);
+    }
+
     private static JsonElement FindResponse(IReadOnlyList<JsonElement> messages, int id)
     {
         return messages.Single(message =>
@@ -482,6 +537,7 @@ public sealed class AcpServerTests
         {
             LastInput = input;
             Inputs.Add(input);
+            uiBridge.ShowAssistantReasoning("Inspect first.");
             uiBridge.ShowExecutionPlan(new ExecutionPlanProgress(["Inspect context"], 0));
 
             ConversationToolCall toolCall = new("call-1", "shell_command", """{"command":"dotnet test"}""");
@@ -533,6 +589,68 @@ public sealed class AcpServerTests
                     new BackendAgentProfileInfo("custom-review", "primary", "Workspace custom review profile")
                 ]
             };
+        }
+    }
+
+    private sealed class HistoryBackend : INanoAgentBackend
+    {
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public Task<BackendSessionInfo> InitializeAsync(
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new BackendSessionInfo(
+                "sess-history",
+                "nanoai --section sess-history",
+                "OpenAI",
+                "gpt-test",
+                ActiveModelContextWindowTokens: null,
+                ["gpt-test"],
+                "on",
+                "build",
+                "History session",
+                IsResumedSection: true,
+                ConversationHistory:
+                [
+                    new BackendConversationMessage("user", "Please update README."),
+                    new BackendConversationMessage(
+                        "assistant",
+                        "I updated it.",
+                        ReasoningContent: "Inspect first.")
+                ]));
+        }
+
+        public Task<BackendCommandResult> RunCommandAsync(
+            string commandText,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BackendCommandResult> SelectModelAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IReadOnlyList<ConversationAttachment> attachments,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
         }
     }
 

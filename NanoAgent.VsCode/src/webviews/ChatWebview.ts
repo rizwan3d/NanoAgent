@@ -16,9 +16,11 @@ import { NanoAgentProcessStatus } from '../services/NanoAgentProcessManager';
 
 type ChatMessage =
     | SendMessage
+    | RunSessionCommandMessage
     | SelectModelMessage
     | ChangeModelMessage
     | ChangeProfileMessage
+    | OpenVsCodeSettingsMessage
     | ReadyMessage
     | ResolveClientRequestMessage
     | CancelPromptMessage
@@ -26,6 +28,11 @@ type ChatMessage =
 
 type SendMessage = {
     command: 'sendMessage';
+    text: string;
+};
+
+type RunSessionCommandMessage = {
+    command: 'runSessionCommand';
     text: string;
 };
 
@@ -41,6 +48,10 @@ type ChangeModelMessage = {
 type ChangeProfileMessage = {
     command: 'changeProfile';
     profileName: string;
+};
+
+type OpenVsCodeSettingsMessage = {
+    command: 'openVsCodeSettings';
 };
 
 type ReadyMessage = {
@@ -133,12 +144,16 @@ export class ChatWebviewController {
             this.webview.onDidReceiveMessage(async (message: ChatMessage) => {
                 if (message.command === 'sendMessage') {
                     await this.handleUserMessage(message.text);
+                } else if (message.command === 'runSessionCommand') {
+                    await this.runSettingsCommand(message.text);
                 } else if (message.command === 'selectModel') {
                     await this.handleModelSelection();
                 } else if (message.command === 'changeModel') {
                     await this.handleModelChange(message.modelId);
                 } else if (message.command === 'changeProfile') {
                     await this.handleProfileChange(message.profileName);
+                } else if (message.command === 'openVsCodeSettings') {
+                    await vscode.commands.executeCommand('workbench.action.openSettings', 'nanoagent');
                 } else if (message.command === 'resolveClientRequest') {
                     this.resolveClientRequest(message.requestId, message.resolution);
                 } else if (message.command === 'cancelPrompt') {
@@ -174,6 +189,10 @@ export class ChatWebviewController {
 
     public prefillMessage(text: string) {
         this.webview.postMessage({ command: 'prefillComposer', text });
+    }
+
+    public showSettings() {
+        this.webview.postMessage({ command: 'showSettings' });
     }
 
     private registerSessionListeners() {
@@ -257,7 +276,7 @@ export class ChatWebviewController {
             return;
         }
 
-        this.postChatMessage(trimmedText, 'user', !this.isSlashCommand(trimmedText));
+        this.postChatMessage(trimmedText, 'user');
 
         if (trimmedText === '/ls') {
             await this.listWorkspaceFiles();
@@ -280,6 +299,15 @@ export class ChatWebviewController {
 
     private async handleModelSelection() {
         await this.runSessionCommand('/models', 'Model selection failed');
+    }
+
+    private async runSettingsCommand(text: string) {
+        const trimmedText = text.trim();
+        if (!trimmedText.startsWith('/')) {
+            return;
+        }
+
+        await this.runSessionCommand(trimmedText, 'Settings command failed');
     }
 
     private async ensureSessionReady() {
@@ -337,10 +365,6 @@ export class ChatWebviewController {
             LogService.getInstance().error(logContext, error);
             this.postSystemMessage(`Error: ${message}`);
         }
-    }
-
-    private isSlashCommand(text: string): boolean {
-        return text.trimStart().startsWith('/');
     }
 
     private async listWorkspaceFiles() {
@@ -600,14 +624,13 @@ export class ChatWebviewController {
 
     private postChatMessage(
         text: string,
-        role: 'assistant' | 'system' | 'user',
-        countsForMetrics = role === 'assistant' || role === 'user'
+        role: 'assistant' | 'system' | 'user'
     ) {
-        this.webview.postMessage({ command: 'appendMessage', text, role, countsForMetrics });
+        this.webview.postMessage({ command: 'appendMessage', text, role });
     }
 
     private postSystemMessage(text: string) {
-        this.postChatMessage(text, 'system', false);
+        this.postChatMessage(text, 'system');
     }
 
     private postSessionInfo(sessionInfo: SessionInfo | null) {
@@ -711,6 +734,16 @@ function getChatWebviewContent() {
             min-height: 0;
         }
 
+        .messages,
+        .settings-page {
+            grid-row: 1;
+        }
+
+        .messages.hidden,
+        .settings-page.hidden {
+            display: none;
+        }
+
         .messages {
             display: flex;
             flex-direction: column;
@@ -742,6 +775,36 @@ function getChatWebviewContent() {
         .message-card.assistant {
             align-self: flex-start;
             max-width: min(820px, 94%);
+        }
+
+        .message-card.reasoning {
+            align-self: flex-start;
+            max-width: min(760px, 92%);
+            color: var(--muted);
+        }
+
+        .thinking-details {
+            padding: 7px 9px;
+            border-left: 2px solid var(--focus);
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--input-bg) 58%, transparent);
+        }
+
+        .thinking-details summary {
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .thinking-details pre {
+            margin: 6px 0 0;
+            color: var(--muted);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 12px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
         }
 
         .message-card.tool {
@@ -921,6 +984,7 @@ function getChatWebviewContent() {
         }
 
         .side-pane {
+            grid-row: 2;
             display: none;
             grid-template-columns: minmax(0, 1fr);
             gap: 8px;
@@ -1136,7 +1200,112 @@ function getChatWebviewContent() {
             line-height: 1.45;
         }
 
+        .settings-page {
+            min-height: 0;
+            padding: 12px 14px 10px;
+            overflow-y: auto;
+            background: var(--app-bg);
+        }
+
+        .settings-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .settings-title {
+            min-width: 0;
+        }
+
+        .settings-title h1 {
+            margin: 0;
+            color: var(--fg);
+            font-size: 16px;
+            line-height: 1.25;
+        }
+
+        .settings-summary {
+            margin-top: 4px;
+            color: var(--muted);
+            font-size: 12px;
+            line-height: 1.45;
+            overflow-wrap: anywhere;
+        }
+
+        .settings-groups {
+            display: grid;
+            gap: 12px;
+            max-width: 860px;
+        }
+
+        .settings-group {
+            display: grid;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .settings-group h2 {
+            margin: 0;
+            color: var(--muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .settings-action {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 8px;
+            align-items: center;
+            width: 100%;
+            min-height: 44px;
+            padding: 8px 10px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--fg);
+            text-align: left;
+            background: var(--panel-bg);
+        }
+
+        .settings-action:hover {
+            border-color: var(--focus);
+            background: var(--vscode-list-hoverBackground, var(--panel-bg));
+        }
+
+        .settings-action-main {
+            display: grid;
+            gap: 3px;
+            min-width: 0;
+        }
+
+        .settings-action-title {
+            font-size: 13px;
+            font-weight: 600;
+            overflow-wrap: anywhere;
+        }
+
+        .settings-action-description {
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.35;
+            overflow-wrap: anywhere;
+        }
+
+        .settings-action-value {
+            max-width: min(240px, 34vw);
+            color: var(--muted);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 11px;
+            overflow: hidden;
+            text-align: right;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
         .composer {
+            grid-row: 3;
             position: relative;
             display: grid;
             gap: 8px;
@@ -1280,12 +1449,6 @@ function getChatWebviewContent() {
             font-weight: 600;
         }
 
-        .stats-pill {
-            color: var(--muted);
-            font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 11px;
-        }
-
         .icon-button,
         .composer .primary-button {
             width: 30px;
@@ -1358,44 +1521,6 @@ function getChatWebviewContent() {
 
         .composer .primary-button:not(:disabled):hover {
             background: var(--vscode-button-secondaryHoverBackground, #45494e);
-        }
-
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: var(--muted);
-        }
-
-        .status-dot.running {
-            background: var(--ok);
-        }
-
-        .status-dot.starting {
-            background: var(--warning);
-        }
-
-        .status-dot.error {
-            background: var(--danger);
-        }
-
-        .spinner {
-            width: 12px;
-            height: 12px;
-            border: 2px solid color-mix(in srgb, var(--fg) 22%, transparent);
-            border-top-color: var(--focus);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        .spinner.hidden {
-            display: none;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
         }
 
         .modal-backdrop {
@@ -1547,6 +1672,113 @@ function getChatWebviewContent() {
                 <div id="messages" class="messages">
                     <div id="empty-state" class="empty-state">Start a request or use slash commands from the composer.</div>
                 </div>
+                <section id="settings-page" class="settings-page hidden" aria-label="NanoAgent settings">
+                    <div class="settings-header">
+                        <div class="settings-title">
+                            <h1>Settings</h1>
+                            <div id="settings-summary" class="settings-summary">No active session.</div>
+                        </div>
+                        <button id="settings-close-button" class="ghost-button">Chat</button>
+                    </div>
+                    <div class="settings-groups">
+                        <section class="settings-group">
+                            <h2>Session</h2>
+                            <button class="settings-action" data-action="model">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Model</span>
+                                    <span class="settings-action-description">Choose active model for this session.</span>
+                                </span>
+                                <span id="settings-model-value" class="settings-action-value">-</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting profile">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Profile</span>
+                                    <span class="settings-action-description">Switch build, plan, review, or subagent profile.</span>
+                                </span>
+                                <span id="settings-profile-value" class="settings-action-value">-</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting thinking">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Thinking</span>
+                                    <span class="settings-action-description">Set provider reasoning effort for later prompts.</span>
+                                </span>
+                                <span id="settings-thinking-value" class="settings-action-value">-</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting summary">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Summary</span>
+                                    <span class="settings-action-description">Show provider, model, profile, thinking, and session details.</span>
+                                </span>
+                                <span class="settings-action-value">open</span>
+                            </button>
+                        </section>
+                        <section class="settings-group">
+                            <h2>Provider</h2>
+                            <button class="settings-action" data-command="/setting provider">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Provider</span>
+                                    <span class="settings-action-description">Switch saved provider for this session.</span>
+                                </span>
+                                <span id="settings-provider-value" class="settings-action-value">-</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting onboarding">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Onboarding</span>
+                                    <span class="settings-action-description">Add or repair provider credentials.</span>
+                                </span>
+                                <span class="settings-action-value">setup</span>
+                            </button>
+                        </section>
+                        <section class="settings-group">
+                            <h2>Workspace</h2>
+                            <button class="settings-action" data-command="/setting workspace">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Workspace Files</span>
+                                    <span class="settings-action-description">Create or review .nanoagent project files.</span>
+                                </span>
+                                <span class="settings-action-value">init</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting budget">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Budget</span>
+                                    <span class="settings-action-description">Configure local or cloud budget controls.</span>
+                                </span>
+                                <span class="settings-action-value">open</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting permissions">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Permissions</span>
+                                    <span class="settings-action-description">Edit modes, sandbox, and session overrides.</span>
+                                </span>
+                                <span class="settings-action-value">policy</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting rules">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Rules</span>
+                                    <span class="settings-action-description">Inspect effective tool permission rules.</span>
+                                </span>
+                                <span class="settings-action-value">view</span>
+                            </button>
+                            <button class="settings-action" data-command="/setting tools">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Tools</span>
+                                    <span class="settings-action-description">Show MCP servers, custom tools, and dynamic tool status.</span>
+                                </span>
+                                <span class="settings-action-value">view</span>
+                            </button>
+                        </section>
+                        <section class="settings-group">
+                            <h2>Extension</h2>
+                            <button class="settings-action" data-action="vscodeSettings">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">VS Code Extension Settings</span>
+                                    <span class="settings-action-description">Edit command, args, working directory, auto-start, and log level.</span>
+                                </span>
+                                <span class="settings-action-value">vscode</span>
+                            </button>
+                        </section>
+                    </div>
+                </section>
                 <aside id="activity-pane" class="side-pane">
                     <section class="section section-scroll">
                         <div class="section-header">
@@ -1563,6 +1795,7 @@ function getChatWebviewContent() {
                         <div class="composer-toolbar">
                             <div class="toolbar-left">
                                 <button id="add-context-button" class="icon-button" title="Read workspace file" aria-label="Read workspace file">+</button>
+                                <button id="settings-button" class="icon-button" title="Settings" aria-label="Settings">&#9881;</button>
                                 <select id="profile-select" class="profile-select" title="Profile" aria-label="Profile"></select>
                                 <button id="model-button" class="model-pill" title="Choose model" aria-label="Choose model"><span id="model-button-label">Model</span></button>
                                 <div class="status-pill" title="Process status">
@@ -1594,8 +1827,16 @@ function getChatWebviewContent() {
         const commandSuggestions = ${commandSuggestionsJson};
         const messagesDiv = document.getElementById('messages');
         const emptyState = document.getElementById('empty-state');
+        const settingsPage = document.getElementById('settings-page');
+        const settingsSummary = document.getElementById('settings-summary');
+        const settingsCloseButton = document.getElementById('settings-close-button');
+        const settingsModelValue = document.getElementById('settings-model-value');
+        const settingsProfileValue = document.getElementById('settings-profile-value');
+        const settingsThinkingValue = document.getElementById('settings-thinking-value');
+        const settingsProviderValue = document.getElementById('settings-provider-value');
         const inputField = document.getElementById('chat-input');
         const addContextButton = document.getElementById('add-context-button');
+        const settingsButton = document.getElementById('settings-button');
         const sendButton = document.getElementById('send-button');
         const stopButton = document.getElementById('stop-button');
         const modelButton = document.getElementById('model-button');
@@ -1620,6 +1861,8 @@ function getChatWebviewContent() {
         let visibleSuggestions = [];
         let activeSuggestionIndex = 0;
         let activeAssistantMessage = null;
+        let activeReasoningMessage = null;
+        let activeView = 'chat';
         let activeModalRequest = null;
         let activeAutoSelectTimer = null;
         let progressIndicator = null;
@@ -1627,7 +1870,6 @@ function getChatWebviewContent() {
         const queuedClientRequests = [];
         const toolCalls = new Map();
         const toolMessageElements = new Map();
-        const liveTokensPerSecond = 4;
         const fallbackProfiles = [
             { name: 'build', mode: 'primary', description: 'Default coding agent profile' },
             { name: 'plan', mode: 'primary', description: 'Read-only planning profile' },
@@ -1636,13 +1878,11 @@ function getChatWebviewContent() {
             { name: 'explore', mode: 'subagent', description: 'Read-only subagent profile' }
         ];
 
-        setInterval(updateStatusRail, 500);
-
         function post(command) {
             api.postMessage(command);
         }
 
-        function appendMessage(text, role, countsForMetrics) {
+        function appendMessage(text, role) {
             if (typeof text !== 'string') {
                 return null;
             }
@@ -1650,11 +1890,18 @@ function getChatWebviewContent() {
             emptyState.hidden = true;
             const article = document.createElement('article');
             article.className = 'message-card ' + role;
-            article.dataset.countsForMetrics = shouldCountMessageForMetrics(role, countsForMetrics) ? 'true' : 'false';
 
             const label = document.createElement('div');
             label.className = 'message-label';
-            label.textContent = role === 'user' ? 'You' : role === 'system' ? 'System' : role === 'tool' ? 'Tool' : 'NanoAgent';
+            label.textContent = role === 'user'
+                ? 'You'
+                : role === 'system'
+                    ? 'System'
+                    : role === 'tool'
+                        ? 'Tool'
+                        : role === 'reasoning'
+                            ? 'Thinking'
+                            : 'NanoAgent';
             article.appendChild(label);
 
             const body = document.createElement('div');
@@ -1668,14 +1915,6 @@ function getChatWebviewContent() {
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             updateStatusRail();
             return article;
-        }
-
-        function shouldCountMessageForMetrics(role, countsForMetrics) {
-            if (typeof countsForMetrics === 'boolean') {
-                return countsForMetrics;
-            }
-
-            return role === 'assistant' || role === 'user';
         }
 
         const fileReferencePattern = /(^|[\\s("'<>\\[])([A-Za-z]:[\\\\/][^\\s"'<>|]+|(?:\\.{1,2}[\\\\/])?(?:(?:[^\\s"'<>:|\\\\/]+)[\\\\/])+[^\\s"'<>:|\\\\/]+\\.[A-Za-z][A-Za-z0-9]{0,15}|[^\\s"'<>:|\\\\/]+\\.[A-Za-z][A-Za-z0-9]{0,15})(?::(\\d{1,7})(?::(\\d{1,5}))?)?/g;
@@ -1761,14 +2000,24 @@ function getChatWebviewContent() {
         }
 
         function appendMessageChunk(chunk) {
-            const role = chunk.role === 'user' ? 'user' : 'assistant';
+            const role = chunk.role === 'user'
+                ? 'user'
+                : chunk.role === 'reasoning'
+                    ? 'reasoning'
+                    : 'assistant';
             if (role === 'user') {
-                appendMessage(chunk.text, 'user', shouldTrackPromptMetrics());
+                appendMessage(chunk.text, 'user');
                 return;
             }
 
+            if (role === 'reasoning') {
+                appendReasoningChunk(chunk.text);
+                return;
+            }
+
+            activeReasoningMessage = null;
             if (!activeAssistantMessage) {
-                activeAssistantMessage = appendMessage('', 'assistant', shouldTrackPromptMetrics());
+                activeAssistantMessage = appendMessage('', 'assistant');
             }
 
             if (!activeAssistantMessage) {
@@ -1781,6 +2030,29 @@ function getChatWebviewContent() {
             const nextText = currentText + chunk.text;
             activeAssistantMessage.dataset.text = nextText;
             renderLinkifiedText(body, nextText);
+            moveProgressIndicatorToEnd();
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            updateStatusRail();
+        }
+
+        function appendReasoningChunk(text) {
+            if (!activeReasoningMessage) {
+                activeReasoningMessage = appendMessage('', 'reasoning');
+            }
+
+            if (!activeReasoningMessage) {
+                return;
+            }
+
+            emptyState.hidden = true;
+            const body = activeReasoningMessage.querySelector('.message-text');
+            const currentText = activeReasoningMessage.dataset.text || '';
+            const nextText = currentText + text;
+            activeReasoningMessage.dataset.text = nextText;
+            body.textContent = '';
+            const details = createDetails('Thinking', nextText, true);
+            details.className = 'thinking-details';
+            body.appendChild(details);
             moveProgressIndicatorToEnd();
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             updateStatusRail();
@@ -1805,6 +2077,11 @@ function getChatWebviewContent() {
             inputField.setSelectionRange(inputField.value.length, inputField.value.length);
             updateSuggestions();
             updateComposerState();
+        });
+        settingsButton.addEventListener('click', showSettingsPage);
+        settingsCloseButton.addEventListener('click', showChatPage);
+        settingsPage.querySelectorAll('.settings-action').forEach(button => {
+            button.addEventListener('click', () => runSettingsAction(button));
         });
         modelButton.addEventListener('click', showModelPicker);
         profileSelect.addEventListener('change', () => {
@@ -1855,7 +2132,7 @@ function getChatWebviewContent() {
         window.addEventListener('message', event => {
             const message = event.data;
             if (message.command === 'appendMessage') {
-                appendMessage(message.text, message.role, message.countsForMetrics);
+                appendMessage(message.text, message.role);
             } else if (message.command === 'appendMessageChunk') {
                 appendMessageChunk(message.chunk);
             } else if (message.command === 'clearMessages') {
@@ -1863,6 +2140,7 @@ function getChatWebviewContent() {
                 messagesDiv.appendChild(emptyState);
                 emptyState.hidden = false;
                 activeAssistantMessage = null;
+                activeReasoningMessage = null;
                 progressIndicator = null;
                 toolCalls.clear();
                 toolMessageElements.clear();
@@ -1881,12 +2159,14 @@ function getChatWebviewContent() {
                 promptState = message.promptState || { isRunning: false, isCancelling: false };
                 if (promptState.isRunning && !wasRunning) {
                     activeAssistantMessage = null;
+                    activeReasoningMessage = null;
                 }
                 if (!promptState.isRunning && wasRunning && promptState.lastStopReason === 'cancelled') {
-                    appendMessage('Cancelled.', 'system', false);
+                    appendMessage('Cancelled.', 'system');
                 }
                 if (!promptState.isRunning) {
                     activeAssistantMessage = null;
+                    activeReasoningMessage = null;
                 }
                 updateStatusRail();
                 updateComposerState();
@@ -1900,46 +2180,89 @@ function getChatWebviewContent() {
                 clearClientRequest(message.requestId);
             } else if (message.command === 'prefillComposer') {
                 inputField.value = message.text || '';
+                showChatPage();
                 inputField.focus();
                 inputField.setSelectionRange(inputField.value.length, inputField.value.length);
                 updateSuggestions();
                 updateComposerState();
+            } else if (message.command === 'showSettings') {
+                showSettingsPage();
             }
         });
 
+        function showSettingsPage() {
+            activeView = 'settings';
+            messagesDiv.classList.add('hidden');
+            settingsPage.classList.remove('hidden');
+            hideSuggestions();
+            renderSettingsSummary();
+            updateActivityVisibility();
+        }
+
+        function showChatPage() {
+            activeView = 'chat';
+            settingsPage.classList.add('hidden');
+            messagesDiv.classList.remove('hidden');
+            updateActivityVisibility();
+            inputField.focus();
+        }
+
+        function runSettingsAction(button) {
+            if (promptState.isRunning === true) {
+                return;
+            }
+
+            const action = button.dataset.action || '';
+            if (action === 'model') {
+                showModelPicker();
+                return;
+            }
+
+            if (action === 'vscodeSettings') {
+                post({ command: 'openVsCodeSettings' });
+                return;
+            }
+
+            const commandText = button.dataset.command || '';
+            if (commandText) {
+                post({ command: 'runSessionCommand', text: commandText });
+            }
+        }
+
         function updateStatusRail() {
             const running = promptState.isRunning === true;
-            const runningForMetrics = running && shouldTrackPromptMetrics();
             stopButton.disabled = !running || promptState.isCancelling;
-            statusText.textContent = formatStatusSummary(runningForMetrics);
+            statusText.textContent = formatStatusText(running);
             updateProgressIndicator();
+            updateSettingsActionState();
         }
 
-        function formatStatusSummary(running) {
-            const liveOutputTokens = running ? estimateLiveTokens(promptState.startedAt) : 0;
-            const elapsedMilliseconds = getSectionElapsedMilliseconds() +
-                (running ? getRunningElapsedMilliseconds(promptState.startedAt) : 0);
-            const elapsed = formatElapsedMilliseconds(elapsedMilliseconds);
-            const baseContextUsedTokens = Math.max(
-                getSectionContextUsedTokens(),
-                estimateVisibleTokens());
-            const estimatedTokens = Math.max(getSectionTotalTokens(), baseContextUsedTokens) + liveOutputTokens;
-            const contextUsedTokens = baseContextUsedTokens + liveOutputTokens;
-            const contextWindow = sessionInfo && sessionInfo.activeModelContextWindowTokens
-                ? sessionInfo.activeModelContextWindowTokens
-                : 0;
-            const percent = contextWindow > 0
-                ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 100))
-                : 0;
-            return '[' + elapsed + ' · ' + formatTokenCount(estimatedTokens) + ' tokens · (' + percent + '%) ' + formatTokenCount(contextUsedTokens) + ' · ' + formatContextWindow(contextWindow) + ' ctx]';
+        function formatStatusText(running) {
+            if (running) {
+                return promptState.isCancelling ? 'Cancelling' : 'Running';
+            }
+
+            return formatProcessStatus(processStatus);
         }
 
-        function shouldTrackPromptMetrics() {
-            return !promptState || promptState.tracksMetrics !== false;
+        function formatProcessStatus(status) {
+            if (status === 'starting') {
+                return 'Starting';
+            }
+
+            if (status === 'running') {
+                return 'Ready';
+            }
+
+            if (status === 'error') {
+                return 'Error';
+            }
+
+            return 'Stopped';
         }
 
         function updateProgressIndicator() {
-            const shouldShow = promptState.isRunning === true && shouldTrackPromptMetrics();
+            const shouldShow = promptState.isRunning === true && !isSlashCommandText(promptState.input);
             if (!shouldShow) {
                 if (progressIndicator) {
                     progressIndicator.remove();
@@ -1959,7 +2282,6 @@ function getChatWebviewContent() {
             const indicator = document.createElement('article');
             indicator.className = 'message-card assistant progress-indicator';
             indicator.dataset.text = '';
-            indicator.dataset.countsForMetrics = 'false';
             indicator.setAttribute('role', 'status');
             indicator.setAttribute('aria-live', 'polite');
 
@@ -1985,139 +2307,8 @@ function getChatWebviewContent() {
             }
         }
 
-        function getRunningElapsedMilliseconds(startedAt) {
-            const started = Date.parse(startedAt || '');
-            if (!Number.isFinite(started)) {
-                return 0;
-            }
-
-            return Math.max(0, Date.now() - started);
-        }
-
-        function estimateLiveTokens(startedAt) {
-            const started = Date.parse(startedAt || '');
-            if (!Number.isFinite(started)) {
-                return 0;
-            }
-
-            const elapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
-            return Math.max(0, Math.floor(elapsedSeconds * liveTokensPerSecond));
-        }
-
-        function getSectionElapsedMilliseconds() {
-            return getPromptStateMetricValue('sectionElapsedMilliseconds');
-        }
-
-        function getSectionOutputTokens() {
-            return getPromptStateMetricValue('sectionEstimatedOutputTokens') ||
-                getSessionInfoMetricValue('totalEstimatedOutputTokens') ||
-                getCompletedOutputTokens();
-        }
-
-        function getSectionTotalTokens() {
-            return Math.max(
-                getSectionOutputTokens(),
-                getSectionContextUsedTokens(),
-                getCompletedTotalTokens());
-        }
-
-        function getSectionContextUsedTokens() {
-            return getPromptStateMetricValue('sectionEstimatedContextTokens') ||
-                getSessionInfoMetricValue('sectionEstimatedContextTokens') ||
-                getCompletedContextUsedTokens();
-        }
-
-        function getCompletedOutputTokens() {
-            return getPromptMetricValue('displayedEstimatedOutputTokens') ||
-                getPromptMetricValue('sessionEstimatedOutputTokens') ||
-                getPromptMetricValue('estimatedOutputTokens');
-        }
-
-        function getCompletedContextUsedTokens() {
-            const inputTokens = getPromptMetricValue('estimatedInputTokens');
-            const outputTokens = getCompletedOutputTokens();
-            return inputTokens > 0 || outputTokens > 0
-                ? inputTokens + outputTokens
-                : getPromptMetricValue('estimatedTotalTokens');
-        }
-
-        function getCompletedTotalTokens() {
-            return getPromptMetricValue('estimatedTotalTokens') ||
-                getPromptMetricValue('estimatedInputTokens') + getPromptMetricValue('estimatedOutputTokens');
-        }
-
-        function getPromptMetricValue(name) {
-            const metrics = promptState && promptState.lastMetrics ? promptState.lastMetrics : null;
-            const value = metrics ? metrics[name] : 0;
-            return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-        }
-
-        function getPromptStateMetricValue(name) {
-            const value = promptState ? promptState[name] : 0;
-            return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-        }
-
-        function getSessionInfoMetricValue(name) {
-            const value = sessionInfo ? sessionInfo[name] : 0;
-            return Number.isFinite(value) && value > 0 ? Math.round(value) : 0;
-        }
-
-        function formatElapsedMilliseconds(value) {
-            if (!Number.isFinite(value) || value <= 0) {
-                return '0s';
-            }
-
-            return formatElapsedSeconds(Math.floor(value / 1000));
-        }
-
-        function estimateVisibleTokens() {
-            let characters = 0;
-            messagesDiv.querySelectorAll('.message-card').forEach(message => {
-                if (message.dataset.countsForMetrics === 'true') {
-                    characters += (message.dataset.text || '').length;
-                }
-            });
-            return Math.max(0, Math.ceil(characters / 4));
-        }
-
-        function formatTokenCount(value) {
-            if (value >= 1000) {
-                return trimFixed(value / 1000) + 'k';
-            }
-
-            return String(value);
-        }
-
-        function formatContextWindow(value) {
-            if (!value) {
-                return '0k';
-            }
-
-            return formatTokenCount(value);
-        }
-
-        function trimFixed(value) {
-            return value >= 10
-                ? Math.round(value).toString()
-                : value.toFixed(1).replace(/\\.0$/, '');
-        }
-
-        function formatElapsedLabel(startedAt) {
-            const started = Date.parse(startedAt);
-            if (!Number.isFinite(started)) {
-                return '0s';
-            }
-
-            const elapsedSeconds = Math.max(0, Math.floor((Date.now() - started) / 1000));
-            return formatElapsedSeconds(elapsedSeconds);
-        }
-
-        function formatElapsedSeconds(elapsedSeconds) {
-            const minutes = Math.floor(elapsedSeconds / 60);
-            const seconds = elapsedSeconds % 60;
-            return minutes > 0
-                ? minutes + 'm ' + seconds + 's'
-                : seconds + 's';
+        function isSlashCommandText(value) {
+            return String(value || '').trimStart().startsWith('/');
         }
 
         function updateComposerState() {
@@ -2126,6 +2317,7 @@ function getChatWebviewContent() {
             sendButton.disabled = promptState.isRunning === true || !hasText;
             modelButton.disabled = promptState.isRunning === true || !sessionInfo;
             profileSelect.disabled = promptState.isRunning === true;
+            updateSettingsActionState();
         }
 
         function renderContext() {
@@ -2136,9 +2328,30 @@ function getChatWebviewContent() {
             sectionTitle.textContent = sessionInfo && sessionInfo.sectionTitle ? sessionInfo.sectionTitle : 'No active section';
             renderProfileSelect();
             renderModelSelect(models);
+            renderSettingsSummary();
 
             updateStatusRail();
             updateComposerState();
+        }
+
+        function renderSettingsSummary() {
+            const provider = sessionInfo && sessionInfo.providerName ? sessionInfo.providerName : 'No provider';
+            const model = sessionInfo && sessionInfo.modelId ? sessionInfo.modelId : 'No model';
+            const profile = sessionInfo && sessionInfo.agentProfileName ? sessionInfo.agentProfileName : 'No profile';
+            const thinking = sessionInfo && sessionInfo.thinkingMode ? sessionInfo.thinkingMode : 'default';
+
+            settingsSummary.textContent = provider + ' / ' + model + ' / ' + profile + ' / thinking ' + thinking;
+            settingsProviderValue.textContent = provider;
+            settingsModelValue.textContent = model;
+            settingsProfileValue.textContent = profile;
+            settingsThinkingValue.textContent = thinking;
+        }
+
+        function updateSettingsActionState() {
+            const disabled = promptState.isRunning === true;
+            settingsPage.querySelectorAll('.settings-action').forEach(button => {
+                button.disabled = disabled;
+            });
         }
 
         function renderProfileSelect() {
@@ -2252,6 +2465,7 @@ function getChatWebviewContent() {
                 return;
             }
 
+            activeReasoningMessage = null;
             let article = toolMessageElements.get(call.toolCallId);
             if (!article) {
                 article = appendMessage('', 'tool');
@@ -2358,7 +2572,7 @@ function getChatWebviewContent() {
         }
 
         function updateActivityVisibility() {
-            sidePane.classList.toggle('visible', hasPlanActivity);
+            sidePane.classList.toggle('visible', activeView === 'chat' && hasPlanActivity);
         }
 
         function formatPayload(value) {
