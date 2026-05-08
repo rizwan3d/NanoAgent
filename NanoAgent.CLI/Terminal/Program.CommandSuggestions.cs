@@ -1,3 +1,4 @@
+using NanoAgent.Application.Commands;
 using Spectre.Console;
 
 namespace NanoAgent.CLI;
@@ -18,7 +19,7 @@ public static partial class Program
         }
 
         string input = state.Input.ToString();
-        bool isCommandSuggestionInput = IsSlashCommandSuggestionInput(input);
+        bool isCommandSuggestionInput = IsSlashCommandSuggestionInput(state.RootDirectory, input);
         if (!isCommandSuggestionInput &&
             FilePathSuggestionProvider.GetSuggestions(
                 state.RootDirectory,
@@ -29,7 +30,7 @@ public static partial class Program
         }
 
         suggestions = isCommandSuggestionInput
-            ? SlashCommandSuggestions
+            ? GetSlashCommandSuggestions(state.RootDirectory)
                 .Where(suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase))
                 .ToArray()
             : GetFilePathSuggestions(state, input);
@@ -47,7 +48,7 @@ public static partial class Program
         return true;
     }
 
-    private static bool IsSlashCommandSuggestionInput(string input)
+    private static bool IsSlashCommandSuggestionInput(string rootDirectory, string input)
     {
         if (string.IsNullOrEmpty(input) ||
             !input.StartsWith("/", StringComparison.Ordinal) ||
@@ -57,7 +58,7 @@ public static partial class Program
         }
 
         return input.Length == 1 ||
-            SlashCommandSuggestions.Any(
+            GetSlashCommandSuggestions(rootDirectory).Any(
                 suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -346,6 +347,23 @@ public static partial class Program
                 SlashCommandSuggestionKind.FilePath,
                 suggestion.CompletedInput,
                 SubmitOnEnter: !suggestion.IsDirectory))
+            .ToArray();
+    }
+
+    private static SlashCommandSuggestion[] GetSlashCommandSuggestions(string rootDirectory)
+    {
+        SlashCommandSuggestion[] customSuggestions = CustomSlashCommandService
+            .List(rootDirectory)
+            .Select(static suggestion => new SlashCommandSuggestion(
+                suggestion.Command,
+                suggestion.Usage,
+                suggestion.Description,
+                suggestion.RequiresArgument))
+            .ToArray();
+
+        return SlashCommandSuggestions
+            .Concat(customSuggestions)
+            .OrderBy(static suggestion => suggestion.Command, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 

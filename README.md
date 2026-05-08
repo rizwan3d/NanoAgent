@@ -37,6 +37,7 @@ It is built for practical engineering work: local projects, real shells, version
 - Run code review with a findings-first workflow for local diffs, files, pull requests, and merge requests.
 - Switch between hands-on implementation, read-only planning, and read-only review profiles.
 - Keep team knowledge in reviewable `.nanoagent/memory` files instead of hidden agent notes.
+- Save repeatable slash prompts in `.nanoagent/commands` and run them from the terminal, desktop app, or editor.
 - Use the provider that fits your budget and policy, from API-key providers to subscription sign-in and local Ollama.
 - Bring the same agent into desktop, terminal, VS Code, ACP-compatible editors, and CI review automation.
 

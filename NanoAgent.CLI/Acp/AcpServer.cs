@@ -1,4 +1,5 @@
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
@@ -480,12 +481,36 @@ internal sealed class AcpServer : IAsyncDisposable
             if (prompt.Attachments.Count == 0 &&
                 prompt.Text.StartsWith("/", StringComparison.Ordinal))
             {
-                BackendCommandResult commandResult = await session.Backend.RunCommandAsync(
-                    prompt.Text,
-                    promptCancellation.Token);
-                session.SessionInfo = commandResult.SessionInfo;
-                await SendSessionInfoUpdateAsync(session, cancellationToken);
-                responseText = FormatCommandResultMessage(commandResult.CommandResult);
+                if (CustomSlashCommandService.TryExpand(
+                        session.WorkingDirectory,
+                        prompt.Text,
+                        out CustomSlashCommandResolution? customCommand,
+                        out string? customCommandError))
+                {
+                    if (customCommand is null)
+                    {
+                        responseText = customCommandError ?? "Custom command could not be expanded.";
+                    }
+                    else
+                    {
+                        ConversationTurnResult result = await session.Backend.RunTurnAsync(
+                            customCommand.ExpandedPrompt,
+                            prompt.Attachments,
+                            session.Bridge,
+                            promptCancellation.Token);
+                        responseText = result.ResponseText;
+                        metrics = result.Metrics;
+                    }
+                }
+                else
+                {
+                    BackendCommandResult commandResult = await session.Backend.RunCommandAsync(
+                        prompt.Text,
+                        promptCancellation.Token);
+                    session.SessionInfo = commandResult.SessionInfo;
+                    await SendSessionInfoUpdateAsync(session, cancellationToken);
+                    responseText = FormatCommandResultMessage(commandResult.CommandResult);
+                }
             }
             else
             {
