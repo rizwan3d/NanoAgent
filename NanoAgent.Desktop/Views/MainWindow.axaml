@@ -10,7 +10,7 @@
         d:DesignHeight="860"
         x:Class="NanoAgent.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/logo.ico"
         Width="1360"
         Height="860"
         MinWidth="720"
@@ -45,13 +45,12 @@
                     <Border Width="26"
                             Height="26"
                             CornerRadius="6"
-                            Background="#F3F4F6">
-                        <TextBlock Text="N"
-                                   Foreground="#08090A"
-                                   FontSize="13"
-                                   FontWeight="Bold"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"/>
+                            Background="#F3F4F6"
+                            ClipToBounds="True">
+                        <Image Source="/Assets/logo.png"
+                               Width="26"
+                               Height="26"
+                               Stretch="UniformToFill"/>
                     </Border>
                     <TextBlock Text="NanoAgent"
                                Foreground="#F4F4F5"
@@ -730,13 +729,12 @@
                                             Height="34"
                                             CornerRadius="8"
                                             Background="#F4F4F5"
-                                            HorizontalAlignment="Left">
-                                        <TextBlock Text="N"
-                                                   Foreground="#08090A"
-                                                   FontSize="16"
-                                                   FontWeight="Bold"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"/>
+                                            HorizontalAlignment="Left"
+                                            ClipToBounds="True">
+                                        <Image Source="/Assets/logo.png"
+                                               Width="34"
+                                               Height="34"
+                                               Stretch="UniformToFill"/>
                                     </Border>
                                     <StackPanel Spacing="4">
                                         <TextBlock Text="NanoAgent setup"
