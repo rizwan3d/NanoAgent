@@ -280,6 +280,14 @@ internal sealed class AgentDelegateTool : ITool
     {
         public static NoOpConversationProgressSink Instance { get; } = new();
 
+        public Task ReportAssistantReasoningAsync(
+            string reasoningText,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
         public Task ReportExecutionPlanAsync(
             ExecutionPlanProgress executionPlanProgress,
             CancellationToken cancellationToken)

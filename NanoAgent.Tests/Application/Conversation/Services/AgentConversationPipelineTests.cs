@@ -1746,6 +1746,136 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_ReportAssistantReasoningProgress()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.FileRead)]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_reasoning_progress"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_reasoning_progress",
+                ReasoningContent: "I inspected the request and can answer directly."));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+        RecordingConversationProgressSink progressSink = new();
+
+        ConversationTurnResult result = await sut.ProcessAsync(
+            "Answer this.",
+            session,
+            progressSink,
+            CancellationToken.None);
+
+        result.ResponseText.Should().Be("Done.");
+        result.ReasoningText.Should().Be("I inspected the request and can answer directly.");
+        progressSink.AssistantReasoningUpdates.Should().ContainSingle()
+            .Which.Should().Be("I inspected the request and can answer directly.");
+        session.ConversationHistory[1].ReasoningContent.Should()
+            .Be("I inspected the request and can answer directly.");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_ReportReasoningDetailsText_When_ReasoningContentIsMissing()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_reasoning_details_progress"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_reasoning_details_progress",
+                ReasoningDetailsJson: """
+                    [
+                      { "type": "reasoning.text", "text": "First internal summary." },
+                      { "type": "reasoning.summary", "summary": ["Second internal summary."] }
+                    ]
+                    """));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+        RecordingConversationProgressSink progressSink = new();
+
+        ConversationTurnResult result = await sut.ProcessAsync(
+            "Answer this.",
+            session,
+            progressSink,
+            CancellationToken.None);
+
+        result.ReasoningText.Should().Contain("First internal summary.");
+        result.ReasoningText.Should().Contain("Second internal summary.");
+        progressSink.AssistantReasoningUpdates.Should().ContainSingle()
+            .Which.Should().Contain("First internal summary.");
+        progressSink.AssistantReasoningUpdates[0].Should().Contain("Second internal summary.");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_IncrementToolFailureCount_AndResetAfterSuccessfulToolResult()
     {
         ReplSessionContext session = CreateSession();
@@ -2468,11 +2598,22 @@ public sealed class AgentConversationPipelineTests
 
     private sealed class RecordingConversationProgressSink : IConversationProgressSink
     {
+        public List<string> AssistantReasoningUpdates { get; } = [];
+
         public List<ExecutionPlanProgress> PlanProgressUpdates { get; } = [];
 
         public List<IReadOnlyList<ConversationToolCall>> StartedToolBatches { get; } = [];
 
         public List<ToolExecutionBatchResult> CompletedToolBatches { get; } = [];
+
+        public Task ReportAssistantReasoningAsync(
+            string reasoningText,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            AssistantReasoningUpdates.Add(reasoningText);
+            return Task.CompletedTask;
+        }
 
         public Task ReportExecutionPlanAsync(
             ExecutionPlanProgress executionPlanProgress,

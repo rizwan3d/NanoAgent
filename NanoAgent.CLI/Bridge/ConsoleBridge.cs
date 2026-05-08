@@ -144,6 +144,14 @@ public sealed class ConsoleBridge : IUiBridge
         WriteStatus("Success", message);
     }
 
+    public void ShowAssistantReasoning(string reasoningText)
+    {
+        if (!string.IsNullOrWhiteSpace(reasoningText))
+        {
+            WriteBlock("Thinking:\n\n" + reasoningText.Trim());
+        }
+    }
+
     public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
     {
         string[] descriptions = toolCalls

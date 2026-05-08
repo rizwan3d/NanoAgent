@@ -4,6 +4,10 @@ namespace NanoAgent.Application.Abstractions;
 
 public interface IConversationProgressSink
 {
+    Task ReportAssistantReasoningAsync(
+        string reasoningText,
+        CancellationToken cancellationToken);
+
     Task ReportExecutionPlanAsync(
         ExecutionPlanProgress executionPlanProgress,
         CancellationToken cancellationToken);

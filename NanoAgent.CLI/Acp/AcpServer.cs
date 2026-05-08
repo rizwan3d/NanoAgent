@@ -890,6 +890,18 @@ internal sealed class AcpServer : IAsyncDisposable
             cancellationToken);
     }
 
+    internal Task SendThinkingAsync(
+        string sessionId,
+        string reasoningText,
+        CancellationToken cancellationToken)
+    {
+        return SendMessageChunkAsync(
+            sessionId,
+            "agent_message_chunk",
+            "Thinking:" + Environment.NewLine + Environment.NewLine + reasoningText.Trim(),
+            cancellationToken);
+    }
+
     internal Task SendAgentMessageChunkAsync(
         string sessionId,
         string text,
@@ -1583,6 +1595,25 @@ internal sealed class AcpServer : IAsyncDisposable
         public void ShowSuccess(string message)
         {
             EnqueueSessionText($"Success: {message}");
+        }
+
+        public void ShowAssistantReasoning(string reasoningText)
+        {
+            if (string.IsNullOrWhiteSpace(reasoningText))
+            {
+                return;
+            }
+
+            string? sessionId = SessionId;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return;
+            }
+
+            EnqueueNotification(token => _server.SendThinkingAsync(
+                sessionId,
+                reasoningText,
+                token));
         }
 
         public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)

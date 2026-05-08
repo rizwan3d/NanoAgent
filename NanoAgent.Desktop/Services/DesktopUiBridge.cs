@@ -150,6 +150,18 @@ internal sealed class DesktopUiBridge : IUiBridge
         AddActivity($"Success: {message}");
     }
 
+    public void ShowAssistantReasoning(string reasoningText)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningText))
+        {
+            return;
+        }
+
+        string message = "Thinking:" + Environment.NewLine + Environment.NewLine + reasoningText.Trim();
+        AddActivity(message);
+        AddConversationMessage("Thinking", message);
+    }
+
     public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
     {
         string[] descriptions = toolCalls
