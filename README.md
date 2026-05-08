@@ -22,6 +22,14 @@
   <a href="https://github.com/rizwan3d/NanoAgent/releases/latest">
     <img src="https://img.shields.io/badge/View-Releases-0969da?style=for-the-badge" alt="View NanoAgent releases">
   </a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent">
+    <img src="https://img.shields.io/badge/Install-VSCode-0969da?style=for-the-badge" alt="View NanoAgent releases">
+  <a href="#cli-install">
+    <img src="https://img.shields.io/badge/Install-CLI-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
+  </a>
+  <a href="#desktop-app">
+    <img src="https://img.shields.io/badge/Install-Desktop-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
+  </a>
 </p>
 
 ---
@@ -55,8 +63,6 @@ Use `nanoai` when you want a keyboard-first agent for interactive work, one-shot
 
 Use the VS Code extension to chat with NanoAgent, send selections, review files, review Git diffs, and apply suggested changes from inside the editor.
 
-[NanoAgent for VS Code](https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent)
-
 ### CI Review Automation
 
 Use the included GitHub Actions, GitLab CI, and Bitbucket Pipelines examples to run NanoAgent against pull request and merge request diffs, then post review comments back to your platform.
@@ -79,6 +85,19 @@ NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max si
 ## Get Started
 
 Download the latest desktop build from [GitHub Releases](https://github.com/rizwan3d/NanoAgent/releases/latest), or install the CLI:
+
+### Desktop App
+
+| Platform | Architecture | Download|
+|---|---:|---|
+| Windows | x64 | [Setup `.exe`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe) |
+| Windows | x64 | [Portable `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64.zip) |
+| macOS | Apple Silicon / arm64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-arm64.zip) |
+| macOS | Intel / x64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-x64.zip) |
+| Linux | x64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-x64.zip) |
+| Linux | arm64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-arm64.zip) |
+
+### CLI Install
 
 macOS / Linux:
 
