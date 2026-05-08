@@ -2,6 +2,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Tools;
 
@@ -121,7 +122,7 @@ internal sealed class ShellCommandTool : ITool
                     "Provide a non-empty 'command' string."));
         }
 
-        string safeCommand = command!;
+        string safeCommand = ShellCommandText.NormalizeCommandText(command!);
         if (!ShellCommandSandboxArguments.TryGetSandboxPermissions(
                 context.Arguments,
                 "sandbox_permissions",
@@ -264,6 +265,8 @@ internal sealed class ShellCommandTool : ITool
         ShellCommandExecutionResult result,
         string? sessionDirectoryUpdate)
     {
+        string standardOutput = SuspiciousUnicodeText.RenderVisible(result.StandardOutput);
+        string standardError = SuspiciousUnicodeText.RenderVisible(result.StandardError);
         string renderText =
             $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +
             $"Session working directory: {context.Session.WorkingDirectory}{Environment.NewLine}" +
@@ -274,8 +277,8 @@ internal sealed class ShellCommandTool : ITool
             $"Pseudo terminal: {result.PseudoTerminal}{Environment.NewLine}" +
             CreateBackgroundTerminalLines(result) +
             CreateExitCodeLine(result) +
-            $"STDOUT:{Environment.NewLine}{result.StandardOutput}{Environment.NewLine}{Environment.NewLine}" +
-            $"STDERR:{Environment.NewLine}{result.StandardError}";
+            $"STDOUT:{Environment.NewLine}{standardOutput}{Environment.NewLine}{Environment.NewLine}" +
+            $"STDERR:{Environment.NewLine}{standardError}";
         string message = CreateResultMessage(result);
         if (IsUnsupportedSandboxResult(result))
         {
@@ -292,7 +295,7 @@ internal sealed class ShellCommandTool : ITool
             result,
             ToolJsonContext.Default.ShellCommandExecutionResult,
             new ToolRenderPayload(
-                $"Shell command: {result.Command}",
+                $"Shell command: {SuspiciousUnicodeText.RenderVisible(result.Command)}",
                 renderText));
     }
 
@@ -369,12 +372,12 @@ internal sealed class ShellCommandTool : ITool
     {
         if (!result.Background)
         {
-            return $"Executed shell command '{result.Command}' with exit code {result.ExitCode}.";
+            return $"Executed shell command '{SuspiciousUnicodeText.RenderVisible(result.Command)}' with exit code {result.ExitCode}.";
         }
 
         return result.TerminalAction switch
         {
-            "start" => $"Started background terminal '{result.TerminalId}' for command '{result.Command}'.",
+            "start" => $"Started background terminal '{result.TerminalId}' for command '{SuspiciousUnicodeText.RenderVisible(result.Command)}'.",
             "read" => $"Read background terminal '{result.TerminalId}' with status '{result.TerminalStatus}'.",
             "stop" => $"Stopped background terminal '{result.TerminalId}'.",
             _ => $"Updated background terminal '{result.TerminalId}' with status '{result.TerminalStatus}'."

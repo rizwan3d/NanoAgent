@@ -54,6 +54,32 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_NormalizeCommandBeforeExecution()
+    {
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ExecuteAsync(
+                It.Is<ShellCommandExecutionRequest>(request =>
+                    request.Command == "echo one&& echo two"),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ShellCommandExecutionResult(
+                "echo one&& echo two",
+                ".",
+                0,
+                "one",
+                string.Empty));
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "command": "echo one\uFF06\uFF06 echo two" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        shellCommandService.VerifyAll();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_RecordTerminalHistory_When_CommandRuns()
     {
         Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
