@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
@@ -30,6 +31,20 @@ internal sealed class AgentTurnService : IAgentTurnService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        if (CustomSlashCommandService.TryExpand(
+                request.Session.WorkspacePath,
+                request.UserInput,
+                out CustomSlashCommandResolution? customCommand,
+                out string? customCommandError))
+        {
+            return customCommand is null
+                ? ConversationTurnResult.AssistantMessage(customCommandError ?? "Custom command could not be expanded.")
+                : await ProcessWithOptionalAttachmentsAsync(
+                    customCommand.ExpandedPrompt,
+                    request,
+                    cancellationToken);
+        }
 
         if (TryParseDirectShellCommand(request.UserInput, out string? command))
         {

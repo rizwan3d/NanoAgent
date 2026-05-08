@@ -299,6 +299,33 @@ nanoai --section <section-guid>
 
 Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
 
+### Custom Slash Commands
+
+Project commands live in `.nanoagent/commands/*.md`. User commands live in `~/.nanoagent/commands/*.md`. Subdirectories create namespaces with `:`, so `.nanoagent/commands/review/security.md` is available as `/review:security`.
+
+Each command file can include front matter:
+
+```markdown
+---
+name: security-review
+description: Review changed files for security risks
+args: ["scope"]
+---
+
+Review $scope for authentication, injection, secrets, unsafe deserialization, and permission bypasses.
+Return findings by severity.
+```
+
+Run commands with any arguments after the name:
+
+```text
+/security-review latest diff
+/fix-tests NanoAgent.Tests
+/release-check v0.0.16
+```
+
+Use `$ARGUMENTS` for the full argument string, or name positional arguments in `args` and reference them as `$scope` or `${scope}`. Project commands override user commands with the same name. Built-in command names are reserved.
+
 `/setting` is a keyboard-friendly settings hub. Use it with no arguments to pick a settings area, or jump directly with commands such as `/setting model`, `/setting profile`, `/setting thinking`, `/setting budget status`, `/setting workspace custom`, `/setting permissions`, `/setting tools`, and `/setting summary`. Setting submenus use picker-style rows; Esc returns to the settings menu. `/setting permissions` writes default and sandbox changes to `.nanoagent/agent-profile.json`; direct commands like `/permissions` and `/rules` still keep their original text output.
 
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.

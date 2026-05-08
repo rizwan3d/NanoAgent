@@ -1,4 +1,5 @@
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 
 namespace NanoAgent.CLI;
@@ -203,6 +204,11 @@ public static partial class Program
                 state.HasFatalError
                     ? "NanoAgent backend failed to start. Use /exit and try again."
                     : "NanoAgent is still starting up. Please wait.");
+            return;
+        }
+
+        if (TryStartCustomSlashCommand(state, command))
+        {
             return;
         }
 
@@ -411,6 +417,29 @@ public static partial class Program
                 });
             }
         });
+    }
+
+    private static bool TryStartCustomSlashCommand(AppState state, string command)
+    {
+        if (!CustomSlashCommandService.TryExpand(
+                state.RootDirectory,
+                command,
+                out CustomSlashCommandResolution? resolution,
+                out string? error))
+        {
+            return false;
+        }
+
+        if (resolution is null)
+        {
+            state.AddSystemMessage(error ?? "Custom command could not be expanded.");
+            return true;
+        }
+
+        state.ConversationScrollOffset = 0;
+        state.AddMessage(Role.User, command);
+        StartConversation(state, resolution.ExpandedPrompt);
+        return true;
     }
 
     private static void StartModelSelection(AppState state)
