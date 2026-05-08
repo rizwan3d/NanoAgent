@@ -107,6 +107,58 @@ public sealed class AgentTurnServiceTests
     }
 
     [Fact]
+    public async Task RunTurnAsync_Should_ExpandCustomSlashCommand()
+    {
+        string workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-custom-turn-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(workspaceRoot, ".nanoagent", "commands"));
+        await File.WriteAllTextAsync(
+            Path.Combine(workspaceRoot, ".nanoagent", "commands", "security-review.md"),
+            """
+            ---
+            name: security-review
+            args: ["scope"]
+            ---
+
+            Review $scope.
+            Full scope: $ARGUMENTS.
+            """);
+
+        try
+        {
+            ReplSessionContext session = CreateSession(workspaceRoot);
+            RecordingProgressSink progressSink = new();
+            Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+            conversationPipeline
+                .Setup(pipeline => pipeline.ProcessAsync(
+                    "Review latest.\nFull scope: latest diff.",
+                    session,
+                    progressSink,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(ConversationTurnResult.AssistantMessage("Done."));
+
+            AgentTurnService sut = new(
+                conversationPipeline.Object,
+                new BuiltInAgentProfileResolver());
+
+            ConversationTurnResult result = await sut.RunTurnAsync(
+                new AgentTurnRequest(session, "/security-review latest diff", progressSink),
+                CancellationToken.None);
+
+            result.ResponseText.Should().Be("Done.");
+            conversationPipeline.VerifyAll();
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task RunTurnAsync_Should_ReturnHelpfulMessage_When_DirectShellCommandIsEmpty()
     {
         ReplSessionContext session = CreateSession();

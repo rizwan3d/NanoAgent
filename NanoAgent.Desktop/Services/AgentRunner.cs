@@ -1,4 +1,5 @@
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Desktop.Models;
 using DesktopChatMessage = NanoAgent.Desktop.Models.ChatMessage;
@@ -46,9 +47,23 @@ public sealed class AgentRunner : IAsyncDisposable
             Directory.SetCurrentDirectory(normalizedDirectory);
             try
             {
-                AgentRunOutput output = prompt.TrimStart().StartsWith("/", StringComparison.Ordinal)
-                    ? await RunCommandAsync(prompt, activity, cancellationToken)
-                    : await RunTurnAsync(prompt, cancellationToken);
+                AgentRunOutput output;
+                if (CustomSlashCommandService.TryExpand(
+                        normalizedDirectory,
+                        prompt,
+                        out CustomSlashCommandResolution? customCommand,
+                        out string? customCommandError))
+                {
+                    output = customCommand is null
+                        ? new AgentRunOutput(customCommandError ?? "Custom command could not be expanded.")
+                        : await RunTurnAsync(customCommand.ExpandedPrompt, cancellationToken);
+                }
+                else
+                {
+                    output = prompt.TrimStart().StartsWith("/", StringComparison.Ordinal)
+                        ? await RunCommandAsync(prompt, activity, cancellationToken)
+                        : await RunTurnAsync(prompt, cancellationToken);
+                }
 
                 return new AgentRunResult(
                     output.ResponseText,

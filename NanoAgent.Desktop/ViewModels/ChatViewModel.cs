@@ -3,6 +3,7 @@ using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Desktop.Models;
 using NanoAgent.Desktop.Services;
@@ -357,6 +358,7 @@ public partial class ChatViewModel : ViewModelBase
     partial void OnActiveProjectChanged(ProjectInfo? value)
     {
         NotifyCommandStatesChanged();
+        RefreshPromptCommandSuggestions();
     }
 
     partial void OnActiveSelectionPromptChanged(DesktopSelectionPrompt? value)
@@ -970,12 +972,13 @@ public partial class ChatViewModel : ViewModelBase
     private IReadOnlyList<DesktopCommandSuggestionDescriptor> GetMatchingPromptCommandSuggestions()
     {
         string input = Prompt ?? string.Empty;
-        if (!IsPromptCommandSuggestionInput(input))
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> availableSuggestions = GetPromptCommandSuggestionDescriptors();
+        if (!IsPromptCommandSuggestionInput(input, availableSuggestions))
         {
             return [];
         }
 
-        return PromptCommandSuggestionDescriptors
+        return availableSuggestions
             .Where(suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase))
             .ToArray();
     }
@@ -1023,7 +1026,31 @@ public partial class ChatViewModel : ViewModelBase
         return 0;
     }
 
-    private static bool IsPromptCommandSuggestionInput(string input)
+    private IReadOnlyList<DesktopCommandSuggestionDescriptor> GetPromptCommandSuggestionDescriptors()
+    {
+        if (ActiveProject is null)
+        {
+            return PromptCommandSuggestionDescriptors;
+        }
+
+        DesktopCommandSuggestionDescriptor[] customSuggestions = CustomSlashCommandService
+            .List(ActiveProject.Path)
+            .Select(static suggestion => new DesktopCommandSuggestionDescriptor(
+                suggestion.Command,
+                suggestion.Usage,
+                suggestion.Description,
+                suggestion.RequiresArgument))
+            .ToArray();
+
+        return PromptCommandSuggestionDescriptors
+            .Concat(customSuggestions)
+            .OrderBy(static suggestion => suggestion.Command, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsPromptCommandSuggestionInput(
+        string input,
+        IReadOnlyList<DesktopCommandSuggestionDescriptor> availableSuggestions)
     {
         if (string.IsNullOrEmpty(input) ||
             !input.StartsWith("/", StringComparison.Ordinal) ||
@@ -1033,7 +1060,7 @@ public partial class ChatViewModel : ViewModelBase
         }
 
         return input.Length == 1 ||
-            PromptCommandSuggestionDescriptors.Any(
+            availableSuggestions.Any(
                 suggestion => suggestion.Command.StartsWith(input, StringComparison.OrdinalIgnoreCase));
     }
 

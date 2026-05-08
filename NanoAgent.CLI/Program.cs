@@ -1,4 +1,5 @@
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using Spectre.Console;
@@ -272,6 +273,32 @@ public static partial class Program
             string normalizedPrompt = prompt.Trim();
             if (normalizedPrompt.StartsWith("/", StringComparison.Ordinal))
             {
+                if (CustomSlashCommandService.TryExpand(
+                        Directory.GetCurrentDirectory(),
+                        normalizedPrompt,
+                        out CustomSlashCommandResolution? customCommand,
+                        out string? customCommandError))
+                {
+                    if (customCommand is null)
+                    {
+                        WriteSingleTurnError(
+                            jsonOutput,
+                            "custom_command_error",
+                            customCommandError ?? "Custom command could not be expanded.");
+                        return 1;
+                    }
+
+                    ConversationTurnResult customResult = await backend.RunTurnAsync(
+                        customCommand.ExpandedPrompt,
+                        uiBridge,
+                        cancellation.Token);
+
+                    Console.WriteLine(jsonOutput
+                        ? CliJsonOutputWriter.FormatTurn(customResult, sessionInfo)
+                        : customResult.ResponseText);
+                    return 0;
+                }
+
                 BackendCommandResult commandResult = await backend.RunCommandAsync(
                     normalizedPrompt,
                     cancellation.Token);
