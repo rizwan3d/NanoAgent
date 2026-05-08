@@ -535,10 +535,10 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         {
             string? path = line switch
             {
-                _ when line.StartsWith("*** Add File: ", StringComparison.Ordinal) => line["*** Add File: ".Length..].Trim(),
-                _ when line.StartsWith("*** Delete File: ", StringComparison.Ordinal) => line["*** Delete File: ".Length..].Trim(),
-                _ when line.StartsWith("*** Update File: ", StringComparison.Ordinal) => line["*** Update File: ".Length..].Trim(),
-                _ when line.StartsWith("*** Move to: ", StringComparison.Ordinal) => line["*** Move to: ".Length..].Trim(),
+                _ when TryReadPatchHeaderPath(line, "*** Add File:", out string? headerPath) => headerPath,
+                _ when TryReadPatchHeaderPath(line, "*** Delete File:", out string? headerPath) => headerPath,
+                _ when TryReadPatchHeaderPath(line, "*** Update File:", out string? headerPath) => headerPath,
+                _ when TryReadPatchHeaderPath(line, "*** Move to:", out string? headerPath) => headerPath,
                 _ => null
             };
 
@@ -550,6 +550,21 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         }
 
         return paths;
+    }
+
+    private static bool TryReadPatchHeaderPath(
+        string line,
+        string header,
+        out string? path)
+    {
+        path = null;
+        if (!line.StartsWith(header, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        path = line[header.Length..].Trim();
+        return !string.IsNullOrWhiteSpace(path);
     }
 
     private PermissionEvaluationResult EvaluateShellPolicy(

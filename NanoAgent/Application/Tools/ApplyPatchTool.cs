@@ -7,7 +7,13 @@ namespace NanoAgent.Application.Tools;
 
 internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService) : ITool
 {
-    public string Description => "Apply a focused multi-file patch from the current session working directory within the workspace. Patch text must start with *** Begin Patch and end with *** End Patch.";
+    public string Description => """
+        Apply a focused multi-file patch from the current session working directory within the workspace.
+        Patch text uses the apply_patch format: start with *** Begin Patch, include one or more
+        *** Add File, *** Delete File, or *** Update File sections, and end with *** End Patch.
+        Add-file content lines must be prefixed with +. Update sections may include @@ context
+        labels, +/-/space lines, an optional *** Move to header, and *** End of File anchors.
+        """;
 
     public string Name => AgentToolNames.ApplyPatch;
 
@@ -29,7 +35,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
           "properties": {
             "patch": {
               "type": "string",
-              "description": "Patch text using the apply_patch format. File paths in patch headers are relative to the current session working directory. The first non-empty line must be exactly *** Begin Patch and the final non-empty line must be exactly *** End Patch."
+              "description": "Patch text using the apply_patch format. File paths in *** Add File, *** Delete File, *** Update File, and *** Move to headers are relative to the current session working directory. The patch must include *** Begin Patch, one or more file sections, and *** End Patch. Prefix added lines with '+', including all new lines in Add File sections."
             }
           },
           "required": ["patch"],
@@ -122,10 +128,10 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
 
         for (int index = 0; index < lines.Length; index++)
         {
-            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Add File: ", session);
-            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Delete File: ", session);
-            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Update File: ", session);
-            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Move to: ", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Add File:", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Delete File:", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Update File:", session);
+            lines[index] = ResolvePatchHeaderPath(lines[index], "*** Move to:", session);
         }
 
         return string.Join("\n", lines);
@@ -147,7 +153,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             return line;
         }
 
-        return header + session.ResolvePathFromWorkingDirectory(path);
+        return header + " " + session.ResolvePathFromWorkingDirectory(path);
     }
 
     private static string BuildPatchRepairGuidance(string parserMessage)

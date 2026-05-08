@@ -293,7 +293,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         result.Files.Select(static file => file.Path).Should().BeEquivalentTo(["src/Program.cs", "src/Notes.txt"]);
         (await File.ReadAllTextAsync(existingFile, CancellationToken.None)).Should().Contain("// done");
         (await File.ReadAllTextAsync(Path.Combine(_workspaceRoot, "src", "Notes.txt"), CancellationToken.None))
-            .Should().Be("remember the tests");
+            .Should().Be("remember the tests\n");
     }
 
     [Fact]
@@ -383,6 +383,99 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
             .Be("{}");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RejectEmptyPatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<FormatException>()
+            .WithMessage("*at least one*");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_UseUpdateHunkContextLabel()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "script.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "def other():\n    print(\"Hi\")\n\ndef greet():\n    print(\"Hi\")\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: script.py
+            @@ def greet():
+            -    print("Hi")
+            +    print("Hello")
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("def other():\n    print(\"Hi\")\n\ndef greet():\n    print(\"Hello\")\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_UseEndOfFileAnchor()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "target\nmiddle\ntarget\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -target
+            +tail
+            *** End of File
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("target\nmiddle\ntail\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AddFinalNewline_ForUpdatesByDefault()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+            @@
+            -{}
+            +{"enabled":true}
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{\"enabled\":true}\n");
     }
 
     [Fact]
