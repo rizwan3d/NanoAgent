@@ -7,7 +7,9 @@ public sealed record ConversationResponse(
     int? CompletionTokens = null,
     int? PromptTokens = null,
     int? TotalTokens = null,
-    int? CachedPromptTokens = null)
+    int? CachedPromptTokens = null,
+    string? ReasoningContent = null,
+    string? ReasoningDetailsJson = null)
 {
     public bool HasToolCalls => ToolCalls.Count > 0;
 }

@@ -103,6 +103,78 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_ReplayAssistantReasoningMetadata_When_RequestContainsThinkingHistory()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_reasoning_replay",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Done."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "http://127.0.0.1:1234/v1"),
+                "test-key",
+                "deepseek-v4-pro",
+                [
+                    ConversationRequestMessage.User("Inspect the file."),
+                    ConversationRequestMessage.AssistantToolCalls(
+                        [
+                            new ConversationToolCall(
+                                "call_1",
+                                "file_read",
+                                """{"path":"README.md"}""")
+                        ],
+                        content: "I will inspect README.md.",
+                        reasoningContent: "The next step is to read README.md before answering."),
+                    ConversationRequestMessage.ToolResult("call_1", """{"content":"hello"}"""),
+                    ConversationRequestMessage.AssistantMessage(
+                        "I found the file.",
+                        reasoningDetailsJson: """
+                            [
+                              {
+                                "type": "reasoning.text",
+                                "text": "Router reasoning block"
+                              }
+                            ]
+                            """),
+                    ConversationRequestMessage.User("Continue.")
+                ],
+                "You are helpful.",
+                [CreateToolDefinition("file_read")],
+                "on"),
+            CancellationToken.None);
+
+        using JsonDocument requestDocument = JsonDocument.Parse(handler.RequestBody!);
+        JsonElement messages = requestDocument.RootElement.GetProperty("messages");
+
+        JsonElement toolCallAssistant = messages[2];
+        toolCallAssistant.GetProperty("role").GetString().Should().Be("assistant");
+        toolCallAssistant.GetProperty("reasoning_content").GetString()
+            .Should()
+            .Be("The next step is to read README.md before answering.");
+        toolCallAssistant.TryGetProperty("reasoning_details", out _).Should().BeFalse();
+
+        JsonElement reasoningDetailsAssistant = messages[4];
+        reasoningDetailsAssistant.GetProperty("role").GetString().Should().Be("assistant");
+        reasoningDetailsAssistant.GetProperty("reasoning_details")[0]
+            .GetProperty("text")
+            .GetString()
+            .Should()
+            .Be("Router reasoning block");
+        reasoningDetailsAssistant.TryGetProperty("reasoning_content", out _).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToGoogleAiStudioEndpoint_When_GoogleAiStudioProviderIsSelected()
     {
         RecordingHandler handler = new("""

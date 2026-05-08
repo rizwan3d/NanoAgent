@@ -17,7 +17,11 @@ internal sealed record OpenAiChatCompletionRequestMessage(
     [property: JsonPropertyName("tool_call_id")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ToolCallId = null,
     [property: JsonPropertyName("tool_calls")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<OpenAiChatCompletionToolCall>? ToolCalls = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<OpenAiChatCompletionToolCall>? ToolCalls = null,
+    [property: JsonPropertyName("reasoning_content")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ReasoningContent = null,
+    [property: JsonPropertyName("reasoning_details")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] JsonElement? ReasoningDetails = null);
 
 internal sealed record OpenAiChatCompletionContentPart(
     [property: JsonPropertyName("type")] string Type,

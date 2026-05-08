@@ -47,6 +47,51 @@ public sealed class OpenAiConversationResponseMapperTests
     }
 
     [Fact]
+    public void Map_Should_PreserveAssistantReasoningMetadata_When_ResponseContainsThinkingFields()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiCompatible,
+            """
+            {
+              "id": "resp_reasoning",
+              "choices": [
+                {
+                  "message": {
+                    "content": "I need to inspect a file.",
+                    "reasoning_content": "The user asked for a code change, so I should inspect the relevant file first.",
+                    "reasoning_details": [
+                      {
+                        "type": "reasoning.text",
+                        "text": "Preserve this for providers that require reasoning replay."
+                      }
+                    ],
+                    "tool_calls": [
+                      {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": {
+                          "name": "file_read",
+                          "arguments": "{ \"path\": \"README.md\" }"
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("I need to inspect a file.");
+        response.ReasoningContent.Should().Be(
+            "The user asked for a code change, so I should inspect the relevant file first.");
+        response.ReasoningDetailsJson.Should().Contain("Preserve this");
+        response.ToolCalls.Should().ContainSingle();
+    }
+
+    [Fact]
     public void Map_Should_ReturnToolCalls_When_ResponseContainsFunctionCalls()
     {
         OpenAiConversationResponseMapper sut = new();
