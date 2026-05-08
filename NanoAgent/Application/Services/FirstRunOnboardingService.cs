@@ -198,73 +198,82 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             introMessage,
             cancellationToken);
 
-        OnboardingProviderChoice providerChoice = await PromptForProviderChoiceAsync(cancellationToken);
-
-        AgentProviderProfile profile = providerChoice switch
+        while (true)
         {
-            OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
-            OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
-            OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
-            OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
-            OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
-            OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
-            OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
-            OnboardingProviderChoice.Groq => _profileFactory.CreateGroq(),
-            OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
-            OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
-            OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
-            OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
-            OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
-                await PromptUntilValidAsync(
-                    promptCancellationToken => _textPrompt.PromptAsync(
-                        new TextPromptRequest(
-                            "Base URL",
-                            "Enter the OpenAI-compatible base URL, for example https://api.example.com/v1."),
-                        promptCancellationToken),
-                    _inputValidator.ValidateBaseUrl,
-                    cancellationToken)),
-            _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
-        };
+            OnboardingProviderChoice providerChoice = await PromptForProviderChoiceAsync(cancellationToken);
 
-        string providerSecret = profile.ProviderKind.GetDefaultApiKey() ??
-            providerChoice switch
+            try
             {
-                OnboardingProviderChoice.OpenAiChatGptAccount =>
-                    await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
-                OnboardingProviderChoice.AnthropicClaudeAccount =>
-                    await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
-                OnboardingProviderChoice.GitHubCopilot =>
-                    await AuthenticateGitHubCopilotAsync(cancellationToken),
-                _ => await PromptUntilValidAsync(
-                        cancellationToken => _secretPrompt.PromptAsync(
-                            new SecretPromptRequest(
-                                "API key",
-                                "Paste the API key for the selected provider."),
-                            cancellationToken),
-                        _inputValidator.ValidateApiKey,
-                        cancellationToken)
-            };
+                AgentProviderProfile profile = providerChoice switch
+                {
+                    OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
+                    OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
+                    OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
+                    OnboardingProviderChoice.GitHubCopilot => _profileFactory.CreateGitHubCopilot(),
+                    OnboardingProviderChoice.OpenRouter => _profileFactory.CreateOpenRouter(),
+                    OnboardingProviderChoice.KiloCode => _profileFactory.CreateKiloCode(),
+                    OnboardingProviderChoice.Cerebras => _profileFactory.CreateCerebras(),
+                    OnboardingProviderChoice.Groq => _profileFactory.CreateGroq(),
+                    OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
+                    OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
+                    OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
+                    OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
+                    OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
+                        await PromptUntilValidAsync(
+                            promptCancellationToken => _textPrompt.PromptAsync(
+                                new TextPromptRequest(
+                                    "Base URL",
+                                    "Enter the OpenAI-compatible base URL, for example https://api.example.com/v1."),
+                                promptCancellationToken),
+                            _inputValidator.ValidateBaseUrl,
+                            cancellationToken)),
+                    _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
+                };
 
-        string providerName = await CreateProviderNameAsync(profile, cancellationToken);
-        await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
-        await _configurationStore.SaveAsync(
-            new AgentConfiguration(
-                profile,
-                PreferredModelId: null,
-                ActiveProviderName: providerName),
-            cancellationToken);
-        await _secretStore.SaveAsync(providerSecret, cancellationToken);
+                string providerSecret = profile.ProviderKind.GetDefaultApiKey() ??
+                    providerChoice switch
+                    {
+                        OnboardingProviderChoice.OpenAiChatGptAccount =>
+                            await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
+                        OnboardingProviderChoice.AnthropicClaudeAccount =>
+                            await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
+                        OnboardingProviderChoice.GitHubCopilot =>
+                            await AuthenticateGitHubCopilotAsync(cancellationToken),
+                        _ => await PromptUntilValidAsync(
+                                cancellationToken => _secretPrompt.PromptAsync(
+                                    new SecretPromptRequest(
+                                        "API key",
+                                        "Paste the API key for the selected provider."),
+                                    cancellationToken),
+                                _inputValidator.ValidateApiKey,
+                                cancellationToken)
+                    };
 
-        await _statusMessageWriter.ShowSuccessAsync(
-            $"Onboarding complete. Provider: {profile.ProviderKind.ToDisplayName()}.",
-            cancellationToken);
+                string providerName = await CreateProviderNameAsync(profile, cancellationToken);
+                await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
+                await _configurationStore.SaveAsync(
+                    new AgentConfiguration(
+                        profile,
+                        PreferredModelId: null,
+                        ActiveProviderName: providerName),
+                    cancellationToken);
+                await _secretStore.SaveAsync(providerSecret, cancellationToken);
 
-        ApplicationLogMessages.OnboardingCompleted(_logger, profile.ProviderKind.ToDisplayName());
+                await _statusMessageWriter.ShowSuccessAsync(
+                    $"Onboarding complete. Provider: {profile.ProviderKind.ToDisplayName()}.",
+                    cancellationToken);
 
-        return new OnboardingResult(
-            profile,
-            WasOnboardedDuringCurrentRun: true,
-            ActiveProviderName: providerName);
+                ApplicationLogMessages.OnboardingCompleted(_logger, profile.ProviderKind.ToDisplayName());
+
+                return new OnboardingResult(
+                    profile,
+                    WasOnboardedDuringCurrentRun: true,
+                    ActiveProviderName: providerName);
+            }
+            catch (PromptCancelledException)
+            {
+            }
+        }
     }
 
     private async Task<string?> LoadProviderSecretAsync(

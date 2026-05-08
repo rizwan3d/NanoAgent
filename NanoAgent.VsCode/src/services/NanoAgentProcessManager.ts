@@ -3,10 +3,13 @@ import { spawn, ChildProcess } from 'child_process';
 import { LogService } from './LogService';
 import { EventEmitter } from 'events';
 
+export type NanoAgentProcessStatus = 'stopped' | 'starting' | 'running' | 'error';
+
 export class NanoAgentProcessManager extends EventEmitter {
     private process: ChildProcess | null = null;
     private logService: LogService;
     private isRestarting = false;
+    private status: NanoAgentProcessStatus = 'stopped';
 
     constructor() {
         super();
@@ -29,7 +32,7 @@ export class NanoAgentProcessManager extends EventEmitter {
         }
 
         this.logService.info(`Starting NanoAgent process: ${command} ${args.join(' ')}`, { cwd });
-        this.emit('status', 'starting');
+        this.setStatus('starting');
 
         try {
             this.process = spawn(command, args, {
@@ -42,14 +45,14 @@ export class NanoAgentProcessManager extends EventEmitter {
                 this.logService.error('Failed to start NanoAgent process. Ensure it is installed and in your PATH.', err);
                 vscode.window.showErrorMessage(`Failed to start NanoAgent: ${err.message}. Is nanoai installed?`);
                 this.process = null;
-                this.emit('status', 'error');
+                this.setStatus('error');
             });
 
             this.process.on('exit', (code, signal) => {
                 this.logService.info(`NanoAgent process exited with code ${code} and signal ${signal}`);
                 this.process = null;
                 if (!this.isRestarting) {
-                    this.emit('status', 'stopped');
+                    this.setStatus('stopped');
                     if (code !== 0 && code !== null) {
                         vscode.window.showErrorMessage(`NanoAgent process exited unexpectedly with code ${code}. Check logs for details.`);
                     }
@@ -70,10 +73,10 @@ export class NanoAgentProcessManager extends EventEmitter {
             }
 
             this.logService.info(`NanoAgent process started successfully (PID: ${this.process.pid}).`);
-            this.emit('status', 'running');
+            this.setStatus('running');
         } catch (error) {
             this.logService.error('Exception while starting NanoAgent process', error);
-            this.emit('status', 'error');
+            this.setStatus('error');
         }
     }
 
@@ -103,7 +106,7 @@ export class NanoAgentProcessManager extends EventEmitter {
         
         this.process = null;
         this.logService.info('NanoAgent process stopped.');
-        this.emit('status', 'stopped');
+        this.setStatus('stopped');
     }
 
     public async restart(): Promise<void> {
@@ -116,5 +119,14 @@ export class NanoAgentProcessManager extends EventEmitter {
 
     public getProcess(): ChildProcess | null {
         return this.process;
+    }
+
+    public getStatus(): NanoAgentProcessStatus {
+        return this.status;
+    }
+
+    private setStatus(status: NanoAgentProcessStatus) {
+        this.status = status;
+        this.emit('status', status);
     }
 }
