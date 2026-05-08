@@ -54,4 +54,8 @@ export class ChatPanel {
     public async submitMessage(text: string) {
         await this.controller.submitMessage(text);
     }
+
+    public prefillMessage(text: string) {
+        this.controller.prefillMessage(text);
+    }
 }

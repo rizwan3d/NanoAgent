@@ -33,6 +33,17 @@ export function registerChatCommands(
         await ChatPanel.currentPanel?.submitMessage(prompt);
     };
 
+    const prefillPrompt = async (prompt: string) => {
+        await openChat();
+
+        if (chatViewProvider.prefillMessage(prompt)) {
+            return;
+        }
+
+        ChatPanel.createOrShow(sessionManager);
+        ChatPanel.currentPanel?.prefillMessage(prompt);
+    };
+
     context.subscriptions.push(
         vscode.commands.registerCommand('nanoagent.openChat', openChat),
         vscode.commands.registerCommand('nanoagent.newChat', openChat),
@@ -87,14 +98,7 @@ export function registerChatCommands(
             }
         }),
         vscode.commands.registerCommand('nanoagent.planChanges', async () => {
-            const request = await vscode.window.showInputBox({
-                prompt: 'Describe the change you want NanoAgent to plan',
-                placeHolder: 'Add validation to the login flow'
-            });
-
-            if (request) {
-                await submitPrompt(`Plan the following change before editing:\n\n${request}`);
-            }
+            await prefillPrompt('Plan the following change before editing:\n\n');
         }),
         vscode.commands.registerCommand('nanoagent.applySuggestedChanges', async () => {
             await submitPrompt('Apply the suggested changes from the previous NanoAgent response.');

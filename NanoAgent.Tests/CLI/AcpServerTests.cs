@@ -61,9 +61,26 @@ public sealed class AcpServerTests
         messages.Should().Contain(message =>
             IsSessionUpdate(message, "session_info_update") &&
             message.GetProperty("params").GetProperty("update").GetProperty("modelId").GetString() == "gpt-test");
+        messages.Should().Contain(message =>
+            IsSessionUpdate(message, "session_info_update") &&
+            message.GetProperty("params")
+                .GetProperty("update")
+                .GetProperty("availableAgentProfiles")
+                .EnumerateArray()
+                .Any(profile => profile.GetProperty("name").GetString() == "custom-review"));
         messages.Should().Contain(message => IsSessionUpdate(message, "plan"));
         messages.Should().Contain(message => IsSessionUpdate(message, "tool_call"));
         messages.Should().Contain(message => IsSessionUpdate(message, "tool_call_update"));
+        JsonElement toolUpdate = messages.Single(message => IsSessionUpdate(message, "tool_call_update"));
+        toolUpdate
+            .GetProperty("params")
+            .GetProperty("update")
+            .GetProperty("content")[0]
+            .GetProperty("content")
+            .GetProperty("text")
+            .GetString()
+            .Should()
+            .Contain("\u2022 Ran dotnet test");
         messages.Should().Contain(message =>
             IsSessionUpdate(message, "agent_message_chunk") &&
             message.GetProperty("params").GetProperty("update").GetProperty("content").GetProperty("text").GetString() == "Done.");
@@ -237,9 +254,103 @@ public sealed class AcpServerTests
             IsMethod(message, "session/request_text") &&
             message.GetProperty("params").GetProperty("label").GetString() == "API key" &&
             message.GetProperty("params").GetProperty("isSecret").GetBoolean());
+        IndexOfMessage(messages, message =>
+                IsMethod(message, "session/request_permission") &&
+                message.GetProperty("params").GetProperty("toolCall").GetProperty("title").GetString() == "Choose provider")
+            .Should()
+            .BeLessThan(IndexOfMessage(messages, message =>
+                IsMethod(message, "session/request_text") &&
+                message.GetProperty("params").GetProperty("label").GetString() == "API key"));
 
         FindResponse(messages, 2).GetProperty("result").GetProperty("sessionId").GetString().Should().Be("sess-prompt");
         backend.SelectedProvider.Should().Be("OpenAI");
+        backend.ApiKey.Should().Be("sk-test");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_IncludePermissionDefaultAndTimeoutMetadata()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        PermissionMetadataBackend backend = new();
+        ScriptedAcpTransport transport = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            transport.Input,
+            transport.Output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ => backend);
+
+        Task runTask = sut.RunAsync(CancellationToken.None);
+
+        await transport.SendAsync("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}""");
+        await transport.SendAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+            JsonSerializer.Serialize(cwd) +
+            "}}");
+        await transport.WaitForSessionNewAsync();
+        transport.CompleteInput();
+        await runTask;
+
+        JsonElement permissionRequest = transport.Messages.Single(message =>
+            IsMethod(message, "session/request_permission") &&
+            message.GetProperty("params").GetProperty("toolCall").GetProperty("title").GetString() == "Approve shell command?");
+        JsonElement parameters = permissionRequest.GetProperty("params");
+        parameters.GetProperty("allowCancellation").GetBoolean().Should().BeTrue();
+        parameters.GetProperty("defaultOptionId").GetString().Should().Be("0");
+        parameters.GetProperty("autoSelectAfterMilliseconds").GetInt32().Should().Be(10_000);
+
+        JsonElement content = parameters
+            .GetProperty("toolCall")
+            .GetProperty("content")[0];
+        content.GetProperty("type").GetString().Should().Be("content");
+        content.GetProperty("content").GetProperty("type").GetString().Should().Be("text");
+        content.GetProperty("content").GetProperty("text").GetString().Should().Contain("Tool: shell_command");
+        backend.SelectedChoice.Should().Be("allow");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_HandleOpenAiCompatibleOnboardingPromptSequenceBeforeSessionExists()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        CompatiblePromptingBackend backend = new();
+        ScriptedAcpTransport transport = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            transport.Input,
+            transport.Output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ => backend);
+
+        Task runTask = sut.RunAsync(CancellationToken.None);
+
+        await transport.SendAsync("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}""");
+        await transport.SendAsync(
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+            JsonSerializer.Serialize(cwd) +
+            "}}");
+        await transport.WaitForSessionNewAsync();
+        transport.CompleteInput();
+        await runTask;
+
+        IReadOnlyList<JsonElement> messages = transport.Messages;
+        int providerIndex = IndexOfMessage(messages, message =>
+            IsMethod(message, "session/request_permission") &&
+            message.GetProperty("params").GetProperty("toolCall").GetProperty("title").GetString() == "Choose provider");
+        int baseUrlIndex = IndexOfMessage(messages, message =>
+            IsMethod(message, "session/request_text") &&
+            message.GetProperty("params").GetProperty("label").GetString() == "Base URL");
+        int apiKeyIndex = IndexOfMessage(messages, message =>
+            IsMethod(message, "session/request_text") &&
+            message.GetProperty("params").GetProperty("label").GetString() == "API key");
+
+        providerIndex.Should().BeLessThan(baseUrlIndex);
+        baseUrlIndex.Should().BeLessThan(apiKeyIndex);
+        backend.SelectedProvider.Should().Be("OpenAI-compatible provider");
+        backend.BaseUrl.Should().Be("https://compatible.example.com/v1");
         backend.ApiKey.Should().Be("sk-test");
     }
 
@@ -286,6 +397,21 @@ public sealed class AcpServerTests
     {
         return message.TryGetProperty("method", out JsonElement method) &&
             method.GetString() == methodName;
+    }
+
+    private static int IndexOfMessage(
+        IReadOnlyList<JsonElement> messages,
+        Func<JsonElement, bool> predicate)
+    {
+        for (int index = 0; index < messages.Count; index++)
+        {
+            if (predicate(messages[index]))
+            {
+                return index;
+            }
+        }
+
+        throw new InvalidOperationException("Expected ACP message was not found.");
     }
 
     private static IReadOnlyList<JsonElement> ParseJsonLines(string output)
@@ -358,14 +484,24 @@ public sealed class AcpServerTests
             Inputs.Add(input);
             uiBridge.ShowExecutionPlan(new ExecutionPlanProgress(["Inspect context"], 0));
 
-            ConversationToolCall toolCall = new("call-1", "file_read", """{"path":"README.md"}""");
+            ConversationToolCall toolCall = new("call-1", "shell_command", """{"command":"dotnet test"}""");
             uiBridge.ShowToolCalls([toolCall]);
             uiBridge.ShowToolResults(new ToolExecutionBatchResult(
                 [
                     new ToolInvocationResult(
                         "call-1",
-                        "file_read",
-                        ToolResult.Success("Read complete.", "{}"))
+                        "shell_command",
+                        ToolResult.Success(
+                            "Command complete.",
+                            """
+                            {
+                              "Command": "dotnet test",
+                              "WorkingDirectory": ".",
+                              "ExitCode": 0,
+                              "StandardOutput": "Passed!\n",
+                              "StandardError": ""
+                            }
+                            """))
                 ]));
 
             return Task.FromResult(ConversationTurnResult.AssistantMessage("Done."));
@@ -389,7 +525,14 @@ public sealed class AcpServerTests
                 "build",
                 "Untitled section",
                 IsResumedSection: false,
-                ConversationHistory: []);
+                ConversationHistory: [])
+            {
+                AvailableAgentProfiles =
+                [
+                    new BackendAgentProfileInfo("build", "primary", "Default build profile"),
+                    new BackendAgentProfileInfo("custom-review", "primary", "Workspace custom review profile")
+                ]
+            };
         }
     }
 
@@ -432,6 +575,158 @@ public sealed class AcpServerTests
                 "off",
                 "build",
                 "Prompted session",
+                IsResumedSection: false,
+                ConversationHistory: []);
+        }
+
+        public Task<BackendCommandResult> RunCommandAsync(
+            string commandText,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BackendCommandResult> SelectModelAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IReadOnlyList<ConversationAttachment> attachments,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class PermissionMetadataBackend : INanoAgentBackend
+    {
+        public string SelectedChoice { get; private set; } = string.Empty;
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public async Task<BackendSessionInfo> InitializeAsync(
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            SelectedChoice = await uiBridge.RequestSelectionAsync(
+                new SelectionPromptRequest<string>(
+                    "Approve shell command?",
+                    [
+                        new SelectionPromptOption<string>("Allow once", "allow"),
+                        new SelectionPromptOption<string>("Deny once", "deny")
+                    ],
+                    "Tool: shell_command\nCommand: dotnet test",
+                    DefaultIndex: 0,
+                    AllowCancellation: true,
+                    AutoSelectAfter: TimeSpan.FromSeconds(10)),
+                cancellationToken);
+
+            return new BackendSessionInfo(
+                "sess-permission",
+                "nanoai --section sess-permission",
+                "OpenAI",
+                "gpt-test",
+                ActiveModelContextWindowTokens: null,
+                ["gpt-test"],
+                "off",
+                "build",
+                "Permission session",
+                IsResumedSection: false,
+                ConversationHistory: []);
+        }
+
+        public Task<BackendCommandResult> RunCommandAsync(
+            string commandText,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<BackendCommandResult> SelectModelAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IReadOnlyList<ConversationAttachment> attachments,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class CompatiblePromptingBackend : INanoAgentBackend
+    {
+        public string ApiKey { get; private set; } = string.Empty;
+
+        public string BaseUrl { get; private set; } = string.Empty;
+
+        public string SelectedProvider { get; private set; } = string.Empty;
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public async Task<BackendSessionInfo> InitializeAsync(
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            SelectedProvider = await uiBridge.RequestSelectionAsync(
+                new SelectionPromptRequest<string>(
+                    "Choose provider",
+                    [new SelectionPromptOption<string>("OpenAI-compatible provider", "OpenAI-compatible provider")],
+                    "Pick a provider."),
+                cancellationToken);
+
+            BaseUrl = await uiBridge.RequestTextAsync(
+                new TextPromptRequest(
+                    "Base URL",
+                    "Enter the OpenAI-compatible base URL."),
+                isSecret: false,
+                cancellationToken);
+
+            ApiKey = await uiBridge.RequestTextAsync(
+                new TextPromptRequest(
+                    "API key",
+                    "Paste the API key."),
+                isSecret: true,
+                cancellationToken);
+
+            return new BackendSessionInfo(
+                "sess-compatible",
+                "nanoai --section sess-compatible",
+                SelectedProvider,
+                "gpt-test",
+                ActiveModelContextWindowTokens: null,
+                ["gpt-test"],
+                "off",
+                "build",
+                "Compatible session",
                 IsResumedSection: false,
                 ConversationHistory: []);
         }
@@ -517,9 +812,18 @@ public sealed class AcpServerTests
                 }
                 else if (methodName == "session/request_text")
                 {
+                    string label = message
+                        .GetProperty("params")
+                        .GetProperty("label")
+                        .GetString() ?? string.Empty;
+                    string value = label == "Base URL"
+                        ? "https://compatible.example.com/v1"
+                        : "sk-test";
                     Respond(
                         message,
-                        """{"outcome":{"outcome":"submitted","value":"sk-test"}}""");
+                        """{"outcome":{"outcome":"submitted","value":""" +
+                        JsonSerializer.Serialize(value) +
+                        "}}");
                 }
             }
 

@@ -32,4 +32,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.controller.submitMessage(text);
         return true;
     }
+
+    public prefillMessage(text: string): boolean {
+        if (!this.controller) {
+            return false;
+        }
+
+        this.controller.prefillMessage(text);
+        return true;
+    }
 }

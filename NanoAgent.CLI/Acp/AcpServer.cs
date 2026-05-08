@@ -476,6 +476,7 @@ internal sealed class AcpServer : IAsyncDisposable
             Directory.SetCurrentDirectory(session.WorkingDirectory);
 
             string responseText;
+            ConversationTurnMetrics? metrics = null;
             if (prompt.Attachments.Count == 0 &&
                 prompt.Text.StartsWith("/", StringComparison.Ordinal))
             {
@@ -494,6 +495,7 @@ internal sealed class AcpServer : IAsyncDisposable
                     session.Bridge,
                     promptCancellation.Token);
                 responseText = result.ResponseText;
+                metrics = result.Metrics;
             }
 
             await session.Bridge.FlushAsync();
@@ -505,10 +507,16 @@ internal sealed class AcpServer : IAsyncDisposable
 
             await SendResultAsync(
                 id,
-                static writer =>
+                writer =>
                 {
                     writer.WriteStartObject();
                     writer.WriteString("stopReason", "end_turn");
+                    if (metrics is not null)
+                    {
+                        writer.WritePropertyName("metrics");
+                        WritePromptMetrics(writer, metrics);
+                    }
+
                     writer.WriteEndObject();
                 },
                 cancellationToken);
@@ -702,9 +710,44 @@ internal sealed class AcpServer : IAsyncDisposable
         }
 
         writer.WriteEndArray();
+        writer.WriteNumber("totalEstimatedOutputTokens", sessionInfo.TotalEstimatedOutputTokens);
+        writer.WriteNumber("sectionEstimatedContextTokens", sessionInfo.SectionEstimatedContextTokens);
         writer.WriteString("thinkingMode", sessionInfo.ThinkingMode);
         writer.WriteString("agentProfileName", sessionInfo.AgentProfileName);
+        writer.WritePropertyName("availableAgentProfiles");
+        writer.WriteStartArray();
+        foreach (BackendAgentProfileInfo profile in sessionInfo.AvailableAgentProfiles)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", profile.Name);
+            writer.WriteString("mode", profile.Mode);
+            writer.WriteString("description", profile.Description);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
         writer.WriteString("sectionTitle", sessionInfo.SectionTitle);
+    }
+
+    private static void WritePromptMetrics(
+        Utf8JsonWriter writer,
+        ConversationTurnMetrics metrics)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("elapsedMilliseconds", metrics.Elapsed.TotalMilliseconds);
+        writer.WriteNumber("estimatedInputTokens", metrics.EstimatedInputTokens);
+        writer.WriteNumber("estimatedOutputTokens", metrics.EstimatedOutputTokens);
+        writer.WriteNumber("displayedEstimatedOutputTokens", metrics.DisplayedEstimatedOutputTokens);
+        writer.WriteNumber("estimatedTotalTokens", metrics.EstimatedTotalTokens);
+        writer.WriteNumber("cachedInputTokens", metrics.CachedInputTokens);
+        writer.WriteNumber("providerRetryCount", metrics.ProviderRetryCount);
+        writer.WriteNumber("toolRoundCount", metrics.ToolRoundCount);
+        if (metrics.SessionEstimatedOutputTokens is not null)
+        {
+            writer.WriteNumber("sessionEstimatedOutputTokens", metrics.SessionEstimatedOutputTokens.Value);
+        }
+
+        writer.WriteEndObject();
     }
 
     internal async Task<JsonElement> SendClientRequestAsync(
@@ -1582,11 +1625,19 @@ internal sealed class AcpServer : IAsyncDisposable
                     continue;
                 }
 
+                IReadOnlyList<string> formattedMessages = _toolOutputFormatter.FormatResults(
+                    new ToolExecutionBatchResult([result]));
+                string content = formattedMessages.Count == 0
+                    ? result.ToDisplayText()
+                    : string.Join(
+                        Environment.NewLine + Environment.NewLine,
+                        formattedMessages);
+
                 EnqueueNotification(token => _server.SendToolCallUpdateAsync(
                     sessionId,
                     result.ToolCallId,
                     result.Result.IsSuccess,
-                    result.ToDisplayText(),
+                    content,
                     token));
             }
         }
@@ -1618,6 +1669,7 @@ internal sealed class AcpServer : IAsyncDisposable
         {
             string sessionId = SessionId ?? string.Empty;
             string toolCallId = "prompt-" + Guid.NewGuid().ToString("N");
+            int defaultIndex = Math.Clamp(request.DefaultIndex, 0, request.Options.Count - 1);
 
             JsonElement result = await _server.SendClientRequestAsync(
                 "session/request_permission",
@@ -1625,6 +1677,16 @@ internal sealed class AcpServer : IAsyncDisposable
                 {
                     writer.WriteStartObject();
                     writer.WriteString("sessionId", sessionId);
+                    writer.WriteBoolean("allowCancellation", request.AllowCancellation);
+                    writer.WriteString("defaultOptionId", defaultIndex.ToString());
+                    if (request.AutoSelectAfter is { } autoSelectAfter &&
+                        autoSelectAfter > TimeSpan.Zero)
+                    {
+                        writer.WriteNumber(
+                            "autoSelectAfterMilliseconds",
+                            (long)Math.Ceiling(autoSelectAfter.TotalMilliseconds));
+                    }
+
                     writer.WritePropertyName("toolCall");
                     writer.WriteStartObject();
                     writer.WriteString("toolCallId", toolCallId);
@@ -1741,17 +1803,12 @@ internal sealed class AcpServer : IAsyncDisposable
 
         private void EnqueueSessionText(string message)
         {
-            string? sessionId = SessionId;
-            if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(message))
+            if (string.IsNullOrWhiteSpace(message))
             {
-                if (!string.IsNullOrWhiteSpace(message))
-                {
-                    _error.WriteLine(message.Trim());
-                }
-
                 return;
             }
 
+            string sessionId = SessionId ?? string.Empty;
             EnqueueNotification(token => _server.SendAgentMessageChunkAsync(sessionId, message.Trim(), token));
         }
 
