@@ -531,7 +531,9 @@ public sealed class ReplSessionContext
         string userInput,
         string assistantResponse,
         IReadOnlyList<ConversationToolCall>? toolCalls = null,
-        IReadOnlyList<string>? toolOutputMessages = null)
+        IReadOnlyList<string>? toolOutputMessages = null,
+        string? assistantReasoningContent = null,
+        string? assistantReasoningDetailsJson = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
         ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
@@ -544,7 +546,10 @@ public sealed class ReplSessionContext
 
         _conversationTurns.Add(turn);
         _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
-        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(turn.AssistantResponse));
+        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(
+            turn.AssistantResponse,
+            assistantReasoningContent,
+            assistantReasoningDetailsJson));
         IsPersistedStateDirty = true;
     }
 

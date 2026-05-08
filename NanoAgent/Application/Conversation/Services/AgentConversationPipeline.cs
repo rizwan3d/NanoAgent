@@ -216,7 +216,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 normalizedInput,
                 result.AssistantMessage,
                 result.ToolCalls,
-                CreateToolOutputMessages(batchResult));
+                CreateToolOutputMessages(batchResult),
+                result.AssistantReasoningContent,
+                result.AssistantReasoningDetailsJson);
 
             ConversationTurnResult turnResult = ConversationTurnResult.AssistantMessage(
                 result.AssistantMessage,
@@ -309,7 +311,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             normalizedInput,
             executionResult.AssistantMessage,
             executionResult.ToolCalls,
-            CreateToolOutputMessages(batchResult));
+            CreateToolOutputMessages(batchResult),
+            executionResult.AssistantReasoningContent,
+            executionResult.AssistantReasoningDetailsJson);
 
         return ConversationTurnResult.AssistantMessage(
             executionResult.AssistantMessage,
@@ -754,7 +758,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
                 messages.Add(ConversationRequestMessage.AssistantToolCalls(
                     response.ToolCalls,
-                    response.AssistantMessage));
+                    response.AssistantMessage,
+                    response.ReasoningContent,
+                    response.ReasoningDetailsJson));
 
                 foreach (ToolInvocationResult invocationResult in toolExecutionResult.Results)
                 {
@@ -804,7 +810,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 telemetry.EstimatedInputTokens,
                 totalCachedInputTokens,
                 telemetry.ProviderRetryCount,
-                telemetry.ToolRoundCount);
+                telemetry.ToolRoundCount,
+                response.ReasoningContent,
+                response.ReasoningDetailsJson);
         }
 
         throw new ConversationResponseException(
@@ -1067,6 +1075,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         {
             AddEstimate(message.Role);
             AddEstimate(message.Content);
+            AddEstimate(message.ReasoningContent);
+            AddEstimate(message.ReasoningDetailsJson);
             AddEstimate(message.ToolCallId);
 
             foreach (ConversationAttachment attachment in message.Attachments)
@@ -1409,7 +1419,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             int estimatedInputTokens,
             int cachedInputTokens,
             int providerRetryCount,
-            int toolRoundCount)
+            int toolRoundCount,
+            string? assistantReasoningContent = null,
+            string? assistantReasoningDetailsJson = null)
         {
             ArgumentException.ThrowIfNullOrWhiteSpace(assistantMessage);
             ArgumentNullException.ThrowIfNull(toolCalls);
@@ -1424,9 +1436,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CachedInputTokens = Math.Max(0, cachedInputTokens);
             ProviderRetryCount = Math.Max(0, providerRetryCount);
             ToolRoundCount = Math.Max(0, toolRoundCount);
+            AssistantReasoningContent = assistantReasoningContent;
+            AssistantReasoningDetailsJson = assistantReasoningDetailsJson;
         }
 
         public string AssistantMessage { get; }
+
+        public string? AssistantReasoningContent { get; }
+
+        public string? AssistantReasoningDetailsJson { get; }
 
         public IReadOnlyList<ToolInvocationResult> ExecutedToolResults { get; }
 

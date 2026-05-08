@@ -16,7 +16,10 @@ internal sealed record OpenAiChatCompletionResponseMessage(
     [property: JsonPropertyName("content")] JsonElement Content,
     [property: JsonPropertyName("tool_calls")] IReadOnlyList<OpenAiChatCompletionToolCall>? ToolCalls,
     [property: JsonPropertyName("function_call")] OpenAiChatCompletionFunctionCall? FunctionCall,
-    [property: JsonPropertyName("refusal")] string? Refusal);
+    [property: JsonPropertyName("refusal")] string? Refusal,
+    [property: JsonPropertyName("reasoning_content")] string? ReasoningContent = null,
+    [property: JsonPropertyName("reasoning")] JsonElement? Reasoning = null,
+    [property: JsonPropertyName("reasoning_details")] JsonElement? ReasoningDetails = null);
 
 internal sealed record OpenAiChatCompletionToolCall(
     [property: JsonPropertyName("id")] string? Id,

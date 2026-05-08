@@ -1608,18 +1608,28 @@ public sealed class AgentConversationPipelineTests
                     "plan_call_1",
                     AgentToolNames.PlanningMode,
                     """{ "objective": "Update the README." }""")],
-                "resp_1"))
+                "resp_1",
+                ReasoningContent: "The request needs a plan before writing files."))
             .Returns(new ConversationResponse(
                 null,
                 [new ConversationToolCall(
                     "exec_call_1",
                     AgentToolNames.FileWrite,
                     """{ "path": "README.md", "content": "hello" }""")],
-                "resp_2"))
+                "resp_2",
+                ReasoningDetailsJson: """
+                    [
+                      {
+                        "type": "reasoning.text",
+                        "text": "The plan is active, so the README write is the next tool call."
+                      }
+                    ]
+                    """))
             .Returns(new ConversationResponse(
                 "Implemented the requested change.",
                 [],
-                "resp_3"));
+                "resp_3",
+                ReasoningContent: "The requested README update has been completed."));
 
         Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
         toolExecutionPipeline
@@ -1703,10 +1713,12 @@ public sealed class AgentConversationPipelineTests
         requests.Should().HaveCount(3);
         requests[1].Messages.Should().HaveCount(3);
         requests[1].Messages[1].Role.Should().Be("assistant");
+        requests[1].Messages[1].ReasoningContent.Should().Be("The request needs a plan before writing files.");
         requests[1].Messages[1].ToolCalls.Should().ContainSingle();
         requests[1].Messages[1].ToolCalls[0].Name.Should().Be(AgentToolNames.PlanningMode);
         requests[1].Messages[2].Role.Should().Be("tool");
         requests[2].Messages.Should().HaveCount(5);
+        requests[2].Messages[3].ReasoningDetailsJson.Should().Contain("README write is the next tool call");
 
         using JsonDocument toolFeedbackDocument = JsonDocument.Parse(requests[2].Messages[^1].Content!);
         JsonElement toolFeedback = toolFeedbackDocument.RootElement;
@@ -1719,6 +1731,7 @@ public sealed class AgentConversationPipelineTests
         toolFeedback.GetProperty("Data").GetProperty("Code").GetString().Should().Be("ok");
         session.ConversationHistory.Should().HaveCount(2);
         session.ConversationHistory[1].Content.Should().Be("Implemented the requested change.");
+        session.ConversationHistory[1].ReasoningContent.Should().Be("The requested README update has been completed.");
 
         ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(session.SectionCreatedAtUtc.AddMinutes(1));
         snapshot.Turns.Should().ContainSingle();
