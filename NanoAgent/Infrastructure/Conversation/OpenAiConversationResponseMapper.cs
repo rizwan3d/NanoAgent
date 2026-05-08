@@ -98,7 +98,9 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             response?.Usage?.CompletionTokens,
             response?.Usage?.PromptTokens,
             response?.Usage?.TotalTokens,
-            response?.Usage?.PromptTokensDetails?.CachedTokens);
+            response?.Usage?.PromptTokensDetails?.CachedTokens,
+            ExtractReasoningContent(message),
+            ExtractReasoningDetailsJson(message));
     }
 
     private static ConversationResponse MapResponsesPayload(ConversationProviderPayload payload)
@@ -166,6 +168,34 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             promptTokens,
             totalTokens,
             cachedPromptTokens);
+    }
+
+    private static string? ExtractReasoningDetailsJson(OpenAiChatCompletionResponseMessage message)
+    {
+        JsonElement? reasoningDetails = message.ReasoningDetails;
+        if (reasoningDetails is null ||
+            reasoningDetails.Value.ValueKind is JsonValueKind.Undefined or JsonValueKind.Null)
+        {
+            return null;
+        }
+
+        return reasoningDetails.Value.GetRawText();
+    }
+
+    private static string? ExtractReasoningContent(OpenAiChatCompletionResponseMessage message)
+    {
+        if (message.ReasoningContent is not null)
+        {
+            return message.ReasoningContent;
+        }
+
+        JsonElement? reasoning = message.Reasoning;
+        if (reasoning is null || reasoning.Value.ValueKind != JsonValueKind.String)
+        {
+            return null;
+        }
+
+        return reasoning.Value.GetString();
     }
 
     private static void ExtractResponsesOutputItem(

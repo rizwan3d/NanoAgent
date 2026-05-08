@@ -1139,6 +1139,11 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
     {
         ArgumentNullException.ThrowIfNull(message);
 
+        JsonElement? reasoningDetails = CreateReasoningDetailsElement(message.ReasoningDetailsJson);
+        string? reasoningContent = reasoningDetails is null
+            ? message.ReasoningContent
+            : null;
+
         if (message.ToolCalls.Count > 0)
         {
             OpenAiChatCompletionToolCall[] toolCalls = message.ToolCalls
@@ -1154,13 +1159,35 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
                 message.Role,
                 CreateChatCompletionContentElement(message),
                 null,
-                toolCalls);
+                toolCalls,
+                reasoningContent,
+                reasoningDetails);
         }
 
         return new OpenAiChatCompletionRequestMessage(
             message.Role,
             CreateChatCompletionContentElement(message),
-            message.ToolCallId);
+            message.ToolCallId,
+            ReasoningContent: reasoningContent,
+            ReasoningDetails: reasoningDetails);
+    }
+
+    private static JsonElement? CreateReasoningDetailsElement(string? reasoningDetailsJson)
+    {
+        if (string.IsNullOrWhiteSpace(reasoningDetailsJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(reasoningDetailsJson);
+            return document.RootElement.Clone();
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private static JsonElement? CreateChatCompletionContentElement(ConversationRequestMessage message)

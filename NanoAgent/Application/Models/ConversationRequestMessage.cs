@@ -13,7 +13,9 @@ public sealed class ConversationRequestMessage
         string? content,
         string? toolCallId,
         IReadOnlyList<ConversationToolCall>? toolCalls,
-        IReadOnlyList<ConversationAttachment>? attachments)
+        IReadOnlyList<ConversationAttachment>? attachments,
+        string? reasoningContent = null,
+        string? reasoningDetailsJson = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(role);
 
@@ -44,6 +46,7 @@ public sealed class ConversationRequestMessage
                 }
 
                 EnsureNoToolMetadata(toolCallId, normalizedToolCalls, normalizedRole);
+                EnsureNoReasoningMetadata(reasoningContent, reasoningDetailsJson, normalizedRole);
                 break;
 
             case AssistantRole:
@@ -75,6 +78,7 @@ public sealed class ConversationRequestMessage
                 }
 
                 EnsureNoAttachments(normalizedAttachments, normalizedRole);
+                EnsureNoReasoningMetadata(reasoningContent, reasoningDetailsJson, normalizedRole);
                 break;
 
             default:
@@ -91,6 +95,8 @@ public sealed class ConversationRequestMessage
         ToolCallId = string.IsNullOrWhiteSpace(toolCallId)
             ? null
             : toolCallId.Trim();
+        ReasoningContent = reasoningContent;
+        ReasoningDetailsJson = reasoningDetailsJson;
         Attachments = normalizedAttachments;
         ToolCalls = normalizedToolCalls;
     }
@@ -99,24 +105,47 @@ public sealed class ConversationRequestMessage
 
     public string? Content { get; }
 
+    public string? ReasoningContent { get; }
+
+    public string? ReasoningDetailsJson { get; }
+
     public string Role { get; }
 
     public string? ToolCallId { get; }
 
     public IReadOnlyList<ConversationToolCall> ToolCalls { get; }
 
-    public static ConversationRequestMessage AssistantMessage(string content)
+    public static ConversationRequestMessage AssistantMessage(
+        string content,
+        string? reasoningContent = null,
+        string? reasoningDetailsJson = null)
     {
-        return new ConversationRequestMessage(AssistantRole, content, null, null, null);
+        return new ConversationRequestMessage(
+            AssistantRole,
+            content,
+            null,
+            null,
+            null,
+            reasoningContent,
+            reasoningDetailsJson);
     }
 
     public static ConversationRequestMessage AssistantToolCalls(
         IReadOnlyList<ConversationToolCall> toolCalls,
-        string? content = null)
+        string? content = null,
+        string? reasoningContent = null,
+        string? reasoningDetailsJson = null)
     {
         ArgumentNullException.ThrowIfNull(toolCalls);
 
-        return new ConversationRequestMessage(AssistantRole, content, null, toolCalls, null);
+        return new ConversationRequestMessage(
+            AssistantRole,
+            content,
+            null,
+            toolCalls,
+            null,
+            reasoningContent,
+            reasoningDetailsJson);
     }
 
     public static ConversationRequestMessage ToolResult(
@@ -162,6 +191,19 @@ public sealed class ConversationRequestMessage
             throw new ArgumentException(
                 $"{role} messages cannot include attachments.",
                 nameof(attachments));
+        }
+    }
+
+    private static void EnsureNoReasoningMetadata(
+        string? reasoningContent,
+        string? reasoningDetailsJson,
+        string role)
+    {
+        if (reasoningContent is not null || reasoningDetailsJson is not null)
+        {
+            throw new ArgumentException(
+                $"{role} messages cannot include provider reasoning metadata.",
+                nameof(reasoningContent));
         }
     }
 }
