@@ -15,4 +15,6 @@ public sealed class ApplicationOptions
     public ModelSelectionOptions ModelSelection { get; set; } = new();
 
     public PermissionSettings Permissions { get; set; } = new();
+
+    public ToolExecutionSettings Tools { get; set; } = new();
 }

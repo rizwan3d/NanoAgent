@@ -45,6 +45,28 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
             failures.Add($"{ApplicationOptions.SectionName}:Permissions must be provided.");
         }
 
+        if (options.Tools is null)
+        {
+            failures.Add($"{ApplicationOptions.SectionName}:Tools must be provided.");
+        }
+        else
+        {
+            if (options.Tools.DefaultTimeoutSeconds <= 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:DefaultTimeoutSeconds must be greater than zero.");
+            }
+
+            if (options.Tools.MaxConcurrentBackgroundTerminalsPerSession <= 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:MaxConcurrentBackgroundTerminalsPerSession must be greater than zero.");
+            }
+
+            if (options.Tools.CompletedBackgroundTerminalTtlSeconds <= 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:CompletedBackgroundTerminalTtlSeconds must be greater than zero.");
+            }
+        }
+
         if (options.Hooks is null)
         {
             failures.Add($"{ApplicationOptions.SectionName}:Hooks must be provided.");

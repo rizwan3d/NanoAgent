@@ -11,10 +11,12 @@ using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
 
-internal sealed class ShellCommandService : IShellCommandService
+internal sealed class ShellCommandService : IShellCommandService, IDisposable
 {
     private const int MaxOutputCharacters = 8_000;
     private const int MaxBackgroundOutputCharacters = 16_000;
+    private const int DefaultCompletedBackgroundTerminalTtlSeconds = 300;
+    private const int DefaultMaxConcurrentBackgroundTerminalsPerSession = 4;
     private const string RunningStatus = "running";
     private const string ExitedStatus = "exited";
     private const string FailedStatus = "failed";
@@ -22,19 +24,38 @@ internal sealed class ShellCommandService : IShellCommandService
     private const string StoppedStatus = "stopped";
 
     private readonly ConcurrentDictionary<string, BackgroundTerminal> _backgroundTerminals = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _backgroundTerminalGate = new();
+    private readonly TimeSpan _completedBackgroundTerminalTtl;
+    private readonly EventHandler _processExitHandler;
+    private readonly int _maxConcurrentBackgroundTerminalsPerSession;
     private readonly IProcessRunner _processRunner;
     private readonly PermissionSettings _permissionSettings;
+    private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
     private int _backgroundTerminalSequence;
+    private bool _disposed;
 
     public ShellCommandService(
         IProcessRunner processRunner,
         IWorkspaceRootProvider workspaceRootProvider,
-        PermissionSettings? permissionSettings = null)
+        PermissionSettings? permissionSettings = null,
+        ToolExecutionSettings? toolExecutionSettings = null,
+        TimeProvider? timeProvider = null)
     {
         _processRunner = processRunner;
         _workspaceRootProvider = workspaceRootProvider;
         _permissionSettings = permissionSettings ?? new PermissionSettings();
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _maxConcurrentBackgroundTerminalsPerSession = Math.Max(
+            1,
+            toolExecutionSettings?.MaxConcurrentBackgroundTerminalsPerSession ??
+            DefaultMaxConcurrentBackgroundTerminalsPerSession);
+        _completedBackgroundTerminalTtl = TimeSpan.FromSeconds(Math.Max(
+            1,
+            toolExecutionSettings?.CompletedBackgroundTerminalTtlSeconds ??
+            DefaultCompletedBackgroundTerminalTtlSeconds));
+        _processExitHandler = (_, _) => StopAllBackgroundTerminals();
+        AppDomain.CurrentDomain.ProcessExit += _processExitHandler;
     }
 
     public async Task<ShellCommandExecutionResult> ExecuteAsync(
@@ -43,6 +64,7 @@ internal sealed class ShellCommandService : IShellCommandService
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
 
         ShellCommandExecutionRequest normalizedRequest = NormalizeRequest(request);
 
@@ -116,6 +138,7 @@ internal sealed class ShellCommandService : IShellCommandService
     {
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
 
         ShellCommandExecutionRequest normalizedRequest = NormalizeRequest(request);
 
@@ -140,18 +163,38 @@ internal sealed class ShellCommandService : IShellCommandService
 
         try
         {
-            BackgroundTerminal terminal = StartBackgroundTerminal(
-                normalizedRequest,
-                prepared);
-            _backgroundTerminals[terminal.Id] = terminal;
+            lock (_backgroundTerminalGate)
+            {
+                RemoveExpiredCompletedTerminals();
+                string sessionId = NormalizeSessionId(normalizedRequest.SessionId);
+                int runningCount = _backgroundTerminals.Values.Count(terminal =>
+                    string.Equals(terminal.SessionId, sessionId, StringComparison.Ordinal) &&
+                    terminal.IsRunning);
 
-            return Task.FromResult(CreateBackgroundResult(
-                terminal,
-                terminalAction: "start",
-                terminalStatus: terminal.Status,
-                exitCode: 0,
-                standardOutput: string.Empty,
-                standardError: string.Empty));
+                if (runningCount >= _maxConcurrentBackgroundTerminalsPerSession)
+                {
+                    return Task.FromResult(CreateExecutionFailureResult(
+                        normalizedRequest,
+                        prepared.WorkingDirectory,
+                        prepared.SandboxPlan.Enforcement,
+                        $"Maximum background terminals per session reached ({_maxConcurrentBackgroundTerminalsPerSession}). Stop one with /terminals stop <id> before starting another.",
+                        background: true,
+                        terminalAction: "start"));
+                }
+
+                BackgroundTerminal terminal = StartBackgroundTerminal(
+                    normalizedRequest,
+                    prepared);
+                _backgroundTerminals[terminal.Id] = terminal;
+
+                return Task.FromResult(CreateBackgroundResult(
+                    terminal,
+                    terminalAction: "start",
+                    terminalStatus: terminal.Status,
+                    exitCode: 0,
+                    standardOutput: string.Empty,
+                    standardError: string.Empty));
+            }
         }
         catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
         {
@@ -180,6 +223,8 @@ internal sealed class ShellCommandService : IShellCommandService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        RemoveExpiredCompletedTerminals();
 
         if (!TryGetBackgroundTerminal(terminalId, out BackgroundTerminal? terminal))
         {
@@ -205,12 +250,6 @@ internal sealed class ShellCommandService : IShellCommandService
             standardOutput,
             standardError);
 
-        if (string.Equals(status, ExitedStatus, StringComparison.Ordinal) &&
-            _backgroundTerminals.TryRemove(activeTerminal.Id, out BackgroundTerminal? removedTerminal))
-        {
-            removedTerminal.Dispose();
-        }
-
         return result;
     }
 
@@ -219,6 +258,8 @@ internal sealed class ShellCommandService : IShellCommandService
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        RemoveExpiredCompletedTerminals();
 
         if (!_backgroundTerminals.TryRemove(NormalizeTerminalId(terminalId), out BackgroundTerminal? terminal))
         {
@@ -236,6 +277,25 @@ internal sealed class ShellCommandService : IShellCommandService
             standardError);
         terminal.Dispose();
         return result;
+    }
+
+    public Task<IReadOnlyList<BackgroundTerminalInfo>> ListBackgroundAsync(
+        string? sessionId,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfDisposed();
+        RemoveExpiredCompletedTerminals();
+
+        string normalizedSessionId = NormalizeSessionId(sessionId);
+        IReadOnlyList<BackgroundTerminalInfo> terminals = _backgroundTerminals.Values
+            .Where(terminal => string.Equals(terminal.SessionId, normalizedSessionId, StringComparison.Ordinal))
+            .Select(CreateBackgroundTerminalInfo)
+            .OrderBy(static terminal => terminal.StartedAtUtc)
+            .ThenBy(static terminal => terminal.Id, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        return Task.FromResult(terminals);
     }
 
     private static ShellCommandExecutionRequest NormalizeRequest(ShellCommandExecutionRequest request)
@@ -338,11 +398,10 @@ internal sealed class ShellCommandService : IShellCommandService
             EnableRaisingEvents = true
         };
 
-        process.Start();
-
         string terminalId = "terminal-" + Interlocked.Increment(ref _backgroundTerminalSequence).ToString("D", System.Globalization.CultureInfo.InvariantCulture);
         BackgroundTerminal terminal = new(
             terminalId,
+            NormalizeSessionId(request.SessionId),
             request.Command,
             ToWorkspaceRelativePath(prepared.WorkingDirectory),
             ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
@@ -351,7 +410,18 @@ internal sealed class ShellCommandService : IShellCommandService
                 : request.Justification.Trim(),
             ToWireValue(prepared.EffectiveSandboxMode),
             prepared.SandboxPlan.Enforcement,
-            process);
+            process,
+            _timeProvider);
+        try
+        {
+            process.Start();
+        }
+        catch
+        {
+            terminal.Dispose();
+            throw;
+        }
+
         terminal.StartReaders();
         return terminal;
     }
@@ -433,6 +503,30 @@ internal sealed class ShellCommandService : IShellCommandService
             TerminalAction: terminalAction);
     }
 
+    private BackgroundTerminalInfo CreateBackgroundTerminalInfo(BackgroundTerminal terminal)
+    {
+        string status = terminal.Status;
+        int? exitCode = string.Equals(status, ExitedStatus, StringComparison.Ordinal)
+            ? terminal.ExitCodeOrDefault()
+            : null;
+        DateTimeOffset? completedAtUtc = terminal.CompletedAtUtc;
+        DateTimeOffset? expiresAtUtc = string.Equals(status, ExitedStatus, StringComparison.Ordinal) &&
+                                       completedAtUtc is not null
+            ? completedAtUtc.Value + _completedBackgroundTerminalTtl
+            : null;
+
+        return new BackgroundTerminalInfo(
+            terminal.Id,
+            terminal.SessionId,
+            terminal.Command,
+            terminal.WorkingDirectory,
+            status,
+            exitCode,
+            terminal.StartedAtUtc,
+            completedAtUtc,
+            expiresAtUtc);
+    }
+
     private bool TryGetBackgroundTerminal(
         string terminalId,
         out BackgroundTerminal? terminal)
@@ -440,6 +534,58 @@ internal sealed class ShellCommandService : IShellCommandService
         return _backgroundTerminals.TryGetValue(
             NormalizeTerminalId(terminalId),
             out terminal);
+    }
+
+    private void RemoveExpiredCompletedTerminals()
+    {
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+        foreach (BackgroundTerminal terminal in _backgroundTerminals.Values)
+        {
+            if (!terminal.IsExpired(now, _completedBackgroundTerminalTtl))
+            {
+                continue;
+            }
+
+            if (_backgroundTerminals.TryRemove(terminal.Id, out BackgroundTerminal? removedTerminal))
+            {
+                removedTerminal.Dispose();
+            }
+        }
+    }
+
+    private void StopAllBackgroundTerminals()
+    {
+        foreach (KeyValuePair<string, BackgroundTerminal> item in _backgroundTerminals.ToArray())
+        {
+            if (!_backgroundTerminals.TryRemove(item.Key, out BackgroundTerminal? terminal))
+            {
+                continue;
+            }
+
+            try
+            {
+                terminal.Stop();
+            }
+            catch
+            {
+            }
+            finally
+            {
+                terminal.Dispose();
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        AppDomain.CurrentDomain.ProcessExit -= _processExitHandler;
+        StopAllBackgroundTerminals();
     }
 
     private IReadOnlyDictionary<string, string> BuildSandboxEnvironment(
@@ -578,6 +724,18 @@ internal sealed class ShellCommandService : IShellCommandService
             : terminalId.Trim();
     }
 
+    private static string NormalizeSessionId(string? sessionId)
+    {
+        return string.IsNullOrWhiteSpace(sessionId)
+            ? string.Empty
+            : sessionId.Trim();
+    }
+
+    private void ThrowIfDisposed()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
     private static bool IsSandboxRunnerEnforcement(string enforcement)
     {
         return string.Equals(
@@ -601,6 +759,8 @@ internal sealed class ShellCommandService : IShellCommandService
         private readonly StringBuilder _standardError = new();
         private readonly StringBuilder _standardOutput = new();
         private readonly object _syncRoot = new();
+        private readonly TimeProvider _timeProvider;
+        private DateTimeOffset? _completedAtUtc;
         private bool _stopped;
         private Task _standardErrorTask = Task.CompletedTask;
         private int _standardErrorCursor;
@@ -609,15 +769,18 @@ internal sealed class ShellCommandService : IShellCommandService
 
         public BackgroundTerminal(
             string id,
+            string sessionId,
             string command,
             string workingDirectory,
             string sandboxPermissions,
             string? justification,
             string sandboxMode,
             string sandboxEnforcement,
-            Process process)
+            Process process,
+            TimeProvider timeProvider)
         {
             Id = id;
+            SessionId = sessionId;
             Command = command;
             WorkingDirectory = workingDirectory;
             SandboxPermissions = sandboxPermissions;
@@ -625,13 +788,25 @@ internal sealed class ShellCommandService : IShellCommandService
             SandboxMode = sandboxMode;
             SandboxEnforcement = sandboxEnforcement;
             Process = process;
+            _timeProvider = timeProvider;
+            StartedAtUtc = timeProvider.GetUtcNow();
+            process.Exited += (_, _) => MarkCompleted();
         }
 
         public string Command { get; }
 
+        public DateTimeOffset? CompletedAtUtc
+        {
+            get
+            {
+                _ = Status;
+                return _completedAtUtc;
+            }
+        }
+
         public string Id { get; }
 
-        public bool IsRunning => !_stopped && !Process.HasExited;
+        public bool IsRunning => string.Equals(Status, RunningStatus, StringComparison.Ordinal);
 
         public string? Justification { get; }
 
@@ -643,6 +818,10 @@ internal sealed class ShellCommandService : IShellCommandService
 
         public string SandboxPermissions { get; }
 
+        public string SessionId { get; }
+
+        public DateTimeOffset StartedAtUtc { get; }
+
         public string Status
         {
             get
@@ -652,9 +831,13 @@ internal sealed class ShellCommandService : IShellCommandService
                     return StoppedStatus;
                 }
 
-                return Process.HasExited
-                    ? ExitedStatus
-                    : RunningStatus;
+                if (HasExited())
+                {
+                    MarkCompleted();
+                    return ExitedStatus;
+                }
+
+                return RunningStatus;
             }
         }
 
@@ -690,7 +873,7 @@ internal sealed class ShellCommandService : IShellCommandService
         {
             try
             {
-                return Process.HasExited
+                return HasExited()
                     ? Process.ExitCode
                     : 0;
             }
@@ -703,27 +886,40 @@ internal sealed class ShellCommandService : IShellCommandService
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             _stopped = true;
+            KillIfRunning();
+            await WaitForExitAsync(cancellationToken);
+            await CompleteReadersAsync(cancellationToken);
+        }
+
+        public void Stop()
+        {
+            _stopped = true;
+            KillIfRunning();
             try
             {
-                if (!Process.HasExited)
-                {
-                    Process.Kill(entireProcessTree: true);
-                }
+                Process.WaitForExit(milliseconds: 2_000);
             }
             catch (InvalidOperationException)
             {
             }
-            catch (Win32Exception)
-            {
-            }
-
-            await WaitForExitAsync(cancellationToken);
-            await CompleteReadersAsync(cancellationToken);
         }
 
         public async Task CompleteReadersAsync(CancellationToken cancellationToken)
         {
             await Task.WhenAll(_standardOutputTask, _standardErrorTask).WaitAsync(cancellationToken);
+        }
+
+        public bool IsExpired(
+            DateTimeOffset now,
+            TimeSpan ttl)
+        {
+            if (string.Equals(Status, RunningStatus, StringComparison.Ordinal) ||
+                _completedAtUtc is null)
+            {
+                return false;
+            }
+
+            return now - _completedAtUtc.Value >= ttl;
         }
 
         public void Dispose()
@@ -739,6 +935,48 @@ internal sealed class ShellCommandService : IShellCommandService
             }
             catch (InvalidOperationException)
             {
+            }
+        }
+
+        private bool HasExited()
+        {
+            try
+            {
+                return Process.HasExited;
+            }
+            catch (InvalidOperationException)
+            {
+                return true;
+            }
+        }
+
+        private void KillIfRunning()
+        {
+            try
+            {
+                if (!HasExited())
+                {
+                    Process.Kill(entireProcessTree: true);
+                }
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Win32Exception)
+            {
+            }
+        }
+
+        private void MarkCompleted()
+        {
+            if (_completedAtUtc is not null)
+            {
+                return;
+            }
+
+            lock (_syncRoot)
+            {
+                _completedAtUtc ??= _timeProvider.GetUtcNow();
             }
         }
 

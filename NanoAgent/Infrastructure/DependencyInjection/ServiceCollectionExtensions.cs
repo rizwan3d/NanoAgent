@@ -43,6 +43,9 @@ public static class ServiceCollectionExtensions
             AgentProfileConfigurationReader.LoadToolAuditSettings(
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
+        services.AddSingleton(static serviceProvider =>
+            ApplicationSettingsFactory.CreateToolExecutionSettings(
+                serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceSettingsWriter, WorkspaceSettingsWriter>();
         services.AddSingleton<ICodebaseIndexService, WorkspaceCodebaseIndexService>();

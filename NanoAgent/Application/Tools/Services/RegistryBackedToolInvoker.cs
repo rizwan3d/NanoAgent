@@ -10,6 +10,7 @@ namespace NanoAgent.Application.Tools.Services;
 internal sealed class RegistryBackedToolInvoker : IToolInvoker
 {
     private static readonly TimeSpan AgentDelegateTimeout = TimeSpan.FromMinutes(10);
+    private const int FallbackDefaultTimeoutSeconds = 180;
 
     private readonly TimeSpan _defaultTimeout;
     private readonly ILifecycleHookService _lifecycleHookService;
@@ -23,13 +24,15 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
         IPermissionEvaluator permissionEvaluator,
         IPermissionApprovalPrompt permissionApprovalPrompt,
         TimeSpan? defaultTimeout = null,
-        ILifecycleHookService? lifecycleHookService = null)
+        ILifecycleHookService? lifecycleHookService = null,
+        ToolExecutionSettings? toolExecutionSettings = null)
     {
         _toolRegistry = toolRegistry;
         _permissionEvaluator = permissionEvaluator;
         _permissionApprovalPrompt = permissionApprovalPrompt;
         _lifecycleHookService = lifecycleHookService ?? DisabledLifecycleHookService.Instance;
-        _defaultTimeout = defaultTimeout ?? TimeSpan.FromSeconds(30);
+        _defaultTimeout = defaultTimeout ?? TimeSpan.FromSeconds(
+            Math.Max(1, toolExecutionSettings?.DefaultTimeoutSeconds ?? FallbackDefaultTimeoutSeconds));
     }
 
     public async Task<ToolInvocationResult> InvokeAsync(

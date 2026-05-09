@@ -61,6 +61,19 @@ internal static class ApplicationSettingsFactory
             TimeSpan.FromSeconds(options.ModelSelection.CacheDurationSeconds));
     }
 
+    public static ToolExecutionSettings CreateToolExecutionSettings(ApplicationOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        ToolExecutionSettings configured = options.Tools ?? new ToolExecutionSettings();
+        return new ToolExecutionSettings
+        {
+            DefaultTimeoutSeconds = Math.Max(1, configured.DefaultTimeoutSeconds),
+            MaxConcurrentBackgroundTerminalsPerSession = Math.Max(1, configured.MaxConcurrentBackgroundTerminalsPerSession),
+            CompletedBackgroundTerminalTtlSeconds = Math.Max(1, configured.CompletedBackgroundTerminalTtlSeconds)
+        };
+    }
+
     public static PermissionSettings CreatePermissionSettings(
         ApplicationOptions options,
         bool autoApproveAllToolsOverride = false)

@@ -353,6 +353,124 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task StartBackgroundAsync_Should_EnforceMaxConcurrentTerminalsPerSession()
+    {
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            },
+            new ToolExecutionSettings
+            {
+                MaxConcurrentBackgroundTerminalsPerSession = 1
+            });
+        string command = CreateSleepCommand(seconds: 30);
+
+        ShellCommandExecutionResult first = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest(command, null, SessionId: "session-a"),
+            CancellationToken.None);
+
+        first.TerminalStatus.Should().Be("running");
+        first.TerminalId.Should().NotBeNullOrWhiteSpace();
+
+        try
+        {
+            IReadOnlyList<BackgroundTerminalInfo> listed = await sut.ListBackgroundAsync(
+                "session-a",
+                CancellationToken.None);
+            listed.Should().ContainSingle(terminal =>
+                terminal.Id == first.TerminalId &&
+                terminal.Status == "running");
+
+            ShellCommandExecutionResult rejected = await sut.StartBackgroundAsync(
+                new ShellCommandExecutionRequest(command, null, SessionId: "session-a"),
+                CancellationToken.None);
+
+            rejected.TerminalStatus.Should().Be("failed");
+            rejected.ExitCode.Should().Be(126);
+            rejected.StandardError.Should().Contain("Maximum background terminals per session reached (1)");
+        }
+        finally
+        {
+            await sut.StopBackgroundAsync(
+                first.TerminalId!,
+                CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task CompletedBackgroundTerminal_Should_RemainReadableUntilTtlExpires()
+    {
+        ManualTimeProvider timeProvider = new(new DateTimeOffset(2026, 5, 9, 12, 0, 0, TimeSpan.Zero));
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            },
+            new ToolExecutionSettings
+            {
+                CompletedBackgroundTerminalTtlSeconds = 5
+            },
+            timeProvider);
+        string command = OperatingSystem.IsWindows()
+            ? "Write-Output done"
+            : "printf '%s\\n' done";
+
+        ShellCommandExecutionResult started = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest(command, null, SessionId: "session-a"),
+            CancellationToken.None);
+
+        started.TerminalId.Should().NotBeNullOrWhiteSpace();
+        string terminalId = started.TerminalId!;
+
+        ShellCommandExecutionResult completed = started;
+        for (int attempt = 0; attempt < 50; attempt++)
+        {
+            completed = await sut.ReadBackgroundAsync(
+                terminalId,
+                CancellationToken.None);
+            if (completed.TerminalStatus == "exited")
+            {
+                break;
+            }
+
+            await Task.Delay(100);
+        }
+
+        completed.TerminalStatus.Should().Be("exited");
+        completed.StandardOutput.Should().Contain("done");
+
+        IReadOnlyList<BackgroundTerminalInfo> retained = await sut.ListBackgroundAsync(
+            "session-a",
+            CancellationToken.None);
+        retained.Should().ContainSingle(terminal =>
+            terminal.Id == terminalId &&
+            terminal.Status == "exited" &&
+            terminal.ExpiresAtUtc == timeProvider.GetUtcNow().AddSeconds(5));
+
+        ShellCommandExecutionResult secondRead = await sut.ReadBackgroundAsync(
+            terminalId,
+            CancellationToken.None);
+        secondRead.TerminalStatus.Should().Be("exited");
+
+        timeProvider.Advance(TimeSpan.FromSeconds(6));
+
+        IReadOnlyList<BackgroundTerminalInfo> expired = await sut.ListBackgroundAsync(
+            "session-a",
+            CancellationToken.None);
+        expired.Should().BeEmpty();
+
+        ShellCommandExecutionResult missing = await sut.ReadBackgroundAsync(
+            terminalId,
+            CancellationToken.None);
+        missing.TerminalStatus.Should().Be("not_found");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
@@ -373,6 +491,33 @@ public sealed class ShellCommandServiceTests : IDisposable
         public string GetWorkspaceRoot()
         {
             return _workspaceRoot;
+        }
+    }
+
+    private static string CreateSleepCommand(int seconds)
+    {
+        return OperatingSystem.IsWindows()
+            ? $"Start-Sleep -Seconds {seconds}"
+            : $"sleep {seconds}";
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow;
+
+        public ManualTimeProvider(DateTimeOffset utcNow)
+        {
+            _utcNow = utcNow;
+        }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            return _utcNow;
+        }
+
+        public void Advance(TimeSpan value)
+        {
+            _utcNow += value;
         }
     }
 }

@@ -52,8 +52,8 @@ internal sealed class ShellCommandTool : ITool
             },
             "terminal_action": {
               "type": "string",
-              "enum": ["run", "start", "read", "stop"],
-              "description": "Use 'run' for foreground execution, 'start' to create a background terminal, 'read' to collect new output from a background terminal, or 'stop' to terminate one. Defaults to 'run'."
+              "enum": ["run", "start", "read", "stop", "list"],
+              "description": "Use 'run' for foreground execution, 'start' to create a background terminal, 'read' to collect new output from a background terminal, 'stop' to terminate one, or 'list' to show active and recently completed terminals. Defaults to 'run'."
             },
             "terminal_id": {
               "type": "string",
@@ -110,6 +110,11 @@ internal sealed class ShellCommandTool : ITool
         if (string.Equals(terminalAction, "stop", StringComparison.Ordinal))
         {
             return await StopBackgroundTerminalAsync(context, cancellationToken);
+        }
+
+        if (string.Equals(terminalAction, "list", StringComparison.Ordinal))
+        {
+            return await ListBackgroundTerminalsAsync(context, cancellationToken);
         }
 
         if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "command", out string? command))
@@ -174,7 +179,8 @@ internal sealed class ShellCommandTool : ITool
             justification,
             prefixRule,
             pseudoTerminal,
-            terminalAction);
+            terminalAction,
+            context.Session.SessionId);
         ShellCommandExecutionResult result = string.Equals(terminalAction, "start", StringComparison.Ordinal)
             ? await _shellCommandService.StartBackgroundAsync(executionRequest, cancellationToken)
             : await _shellCommandService.ExecuteAsync(executionRequest, cancellationToken);
@@ -237,6 +243,25 @@ internal sealed class ShellCommandTool : ITool
             terminalId!,
             cancellationToken);
         return CreateBackgroundTerminalToolResult(context, result);
+    }
+
+    private async Task<ToolResult> ListBackgroundTerminalsAsync(
+        ToolExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        IReadOnlyList<BackgroundTerminalInfo> terminals = await _shellCommandService.ListBackgroundAsync(
+            context.Session.SessionId,
+            cancellationToken);
+        BackgroundTerminalListResult result = new(terminals);
+        return ToolResultFactory.Success(
+            terminals.Count == 0
+                ? "No background terminals are active for this session."
+                : $"Listed {terminals.Count} background terminal(s) for this session.",
+            result,
+            ToolJsonContext.Default.BackgroundTerminalListResult,
+            new ToolRenderPayload(
+                "Background terminals",
+                FormatBackgroundTerminalList(terminals)));
     }
 
     private ToolResult CreateBackgroundTerminalToolResult(
@@ -306,7 +331,8 @@ internal sealed class ShellCommandTool : ITool
         string? justification,
         IReadOnlyList<string> prefixRule,
         bool pseudoTerminal,
-        string terminalAction)
+        string terminalAction,
+        string sessionId)
     {
         return new ShellCommandExecutionRequest(
             command,
@@ -316,7 +342,8 @@ internal sealed class ShellCommandTool : ITool
             prefixRule,
             string.Equals(terminalAction, "start", StringComparison.Ordinal)
                 ? false
-                : pseudoTerminal);
+                : pseudoTerminal,
+            sessionId);
     }
 
     private static bool TryGetTerminalAction(
@@ -333,18 +360,42 @@ internal sealed class ShellCommandTool : ITool
             : requestedAction.Trim().ToLowerInvariant();
         error = null;
 
-        if (terminalAction is "run" or "start" or "read" or "stop")
+        if (terminalAction is "run" or "start" or "read" or "stop" or "list")
         {
             return true;
         }
 
         error = ToolResultFactory.InvalidArguments(
             "invalid_terminal_action",
-            $"Tool 'shell_command' received invalid terminal_action '{requestedAction}'. Expected 'run', 'start', 'read', or 'stop'.",
+            $"Tool 'shell_command' received invalid terminal_action '{requestedAction}'. Expected 'run', 'start', 'read', 'stop', or 'list'.",
             new ToolRenderPayload(
                 "Invalid shell_command arguments",
-                "terminal_action must be 'run', 'start', 'read', or 'stop'."));
+                "terminal_action must be 'run', 'start', 'read', 'stop', or 'list'."));
         return false;
+    }
+
+    private static string FormatBackgroundTerminalList(IReadOnlyList<BackgroundTerminalInfo> terminals)
+    {
+        if (terminals.Count == 0)
+        {
+            return "No background terminals are active for this session.";
+        }
+
+        return string.Join(
+            Environment.NewLine,
+            terminals.Select(FormatBackgroundTerminal));
+    }
+
+    private static string FormatBackgroundTerminal(BackgroundTerminalInfo terminal)
+    {
+        string exitCode = terminal.ExitCode is null
+            ? "pending"
+            : terminal.ExitCode.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string expires = terminal.ExpiresAtUtc is null
+            ? string.Empty
+            : $", expires {terminal.ExpiresAtUtc.Value:u}";
+
+        return $"{terminal.Id} [{terminal.Status}, exit {exitCode}{expires}] {terminal.WorkingDirectory}: {SuspiciousUnicodeText.RenderVisible(terminal.Command)}";
     }
 
     private static string CreateBackgroundTerminalLines(ShellCommandExecutionResult result)
