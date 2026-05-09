@@ -6,4 +6,5 @@ public sealed record ShellCommandExecutionRequest(
     ShellCommandSandboxPermissions SandboxPermissions = ShellCommandSandboxPermissions.UseDefault,
     string? Justification = null,
     IReadOnlyList<string>? PrefixRule = null,
-    bool PseudoTerminal = false);
+    bool PseudoTerminal = false,
+    string? SessionId = null);

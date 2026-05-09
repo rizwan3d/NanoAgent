@@ -291,6 +291,7 @@ nanoai --section <section-guid>
 | `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
 | `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
 | `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
+| `/terminals [stop <id>\|stop all]` | List or stop background terminals for the current session. |
 | `/init [recommended\|minimal\|custom]` | Choose and initialize workspace-local NanoAgent files. |
 | `/update [now]` | Check for updates. Use `/update now` to install without another prompt. |
 | `/undo` | Roll back the most recent tracked edit transaction. |
@@ -331,6 +332,24 @@ Use `$ARGUMENTS` for the full argument string, or name positional arguments in `
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 Start input with `!` to run the rest as a local shell command directly, for example `!git status --short`.
+
+### Tool Runtime Settings
+
+Workspace `agent-profile.json` can tune tool timeouts and background terminal retention:
+
+```json
+{
+  "Application": {
+    "Tools": {
+      "defaultTimeoutSeconds": 180,
+      "maxConcurrentBackgroundTerminalsPerSession": 4,
+      "completedBackgroundTerminalTtlSeconds": 300
+    }
+  }
+}
+```
+
+Completed background terminals remain readable until `completedBackgroundTerminalTtlSeconds` expires. Running background terminals are stopped when the NanoAgent process exits.
 
 ## VS Code Extension
 

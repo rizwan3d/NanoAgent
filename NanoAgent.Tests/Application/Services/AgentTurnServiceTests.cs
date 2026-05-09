@@ -342,6 +342,13 @@ public sealed class AgentTurnServiceTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<IReadOnlyList<BackgroundTerminalInfo>> ListBackgroundAsync(
+            string? sessionId,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class RecordingProgressSink : IConversationProgressSink
