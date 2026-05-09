@@ -324,6 +324,41 @@ public sealed class ShellCommandToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ListBackgroundTerminals_ForCurrentSession()
+    {
+        ReplSessionContext session = TestSessionFactory.Create();
+        Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);
+        shellCommandService
+            .Setup(service => service.ListBackgroundAsync(
+                session.SessionId,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new BackgroundTerminalInfo(
+                    "terminal-1",
+                    session.SessionId,
+                    "npm run dev",
+                    ".",
+                    "running",
+                    null,
+                    DateTimeOffset.Parse("2026-05-09T12:00:00Z"),
+                    null,
+                    null)
+            ]);
+
+        ShellCommandTool sut = new(shellCommandService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "terminal_action": "list" }""", session),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.Message.Should().Contain("Listed 1 background terminal");
+        result.RenderPayload!.Text.Should().Contain("terminal-1");
+        result.RenderPayload.Text.Should().Contain("npm run dev");
+        shellCommandService.VerifyAll();
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ReturnNotFound_When_BackgroundTerminalIsMissing()
     {
         Mock<IShellCommandService> shellCommandService = new(MockBehavior.Strict);

@@ -99,6 +99,29 @@ public sealed class RegistryBackedToolInvokerTests
     }
 
     [Fact]
+    public async Task InvokeAsync_Should_UseConfiguredDefaultToolTimeout()
+    {
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([new SlowTool()], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce),
+            toolExecutionSettings: new ToolExecutionSettings
+            {
+                DefaultTimeoutSeconds = 1
+            });
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", "slow_tool", "{}"),
+            Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("slow_tool"),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.ExecutionError);
+        result.Result.Message.Should().Contain("timed out after 1 seconds");
+    }
+
+    [Fact]
     public async Task InvokeAsync_Should_ExecuteTool_When_ApprovalPromptAllowsOnce()
     {
         ApprovalTool tool = new();

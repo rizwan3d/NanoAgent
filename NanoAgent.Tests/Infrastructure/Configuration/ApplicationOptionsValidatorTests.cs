@@ -137,4 +137,30 @@ public sealed class ApplicationOptionsValidatorTests
         result.Failed.Should().BeTrue();
         result.Failures.Should().Contain(failure => failure.Contains("MaxToolRoundsPerTurn"));
     }
+
+    [Fact]
+    public void Validate_Should_ReturnFailure_When_ToolRuntimeSettingsAreInvalid()
+    {
+        ApplicationOptions options = new()
+        {
+            Defaults = new ApplicationDefaultsOptions(),
+            ModelSelection = new ModelSelectionOptions
+            {
+                CacheDurationSeconds = 300
+            },
+            Tools = new NanoAgent.Application.Models.ToolExecutionSettings
+            {
+                DefaultTimeoutSeconds = 0,
+                MaxConcurrentBackgroundTerminalsPerSession = 0,
+                CompletedBackgroundTerminalTtlSeconds = 0
+            }
+        };
+
+        ValidateOptionsResult result = _sut.Validate(Options.DefaultName, options);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().Contain(failure => failure.Contains("DefaultTimeoutSeconds"));
+        result.Failures.Should().Contain(failure => failure.Contains("MaxConcurrentBackgroundTerminalsPerSession"));
+        result.Failures.Should().Contain(failure => failure.Contains("CompletedBackgroundTerminalTtlSeconds"));
+    }
 }

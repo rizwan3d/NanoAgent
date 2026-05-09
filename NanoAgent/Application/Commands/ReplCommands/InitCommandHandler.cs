@@ -585,6 +585,13 @@ internal sealed class InitCommandHandler : IReplCommandHandler
     private const string AgentProfileTemplate =
         """
         {
+          "Application": {
+            "Tools": {
+              "defaultTimeoutSeconds": 180,
+              "maxConcurrentBackgroundTerminalsPerSession": 4,
+              "completedBackgroundTerminalTtlSeconds": 300
+            }
+          },
           "memory": {
             "requireApprovalForWrites": true,
             "allowAutoFailureObservation": true,
