@@ -58,6 +58,19 @@ public sealed class AppState
 
     public CancellationTokenSource LifetimeCancellation { get; } = new();
 
+    public CancellationTokenSource? TurnCancellation { get; set; }
+
+    public void CancelTurn()
+    {
+        TurnCancellation?.Cancel();
+    }
+
+    public void ResetTurnCancellation()
+    {
+        TurnCancellation?.Dispose();
+        TurnCancellation = null;
+    }
+
     public List<ChatMessage> Messages { get; } = [];
 
     public int ConversationScrollOffset { get; set; }
