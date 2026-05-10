@@ -1,0 +1,70 @@
+name: vscode-extension-ci
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/vscode-extension-ci.yml
+      - NanoAgent.VsCode/**
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/vscode-extension-ci.yml
+      - NanoAgent.VsCode/**
+
+concurrency:
+  group: vscode-extension-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  EXTENSION_DIR: NanoAgent.VsCode
+  NODE_VERSION: 20.x
+
+jobs:
+  build:
+    name: Build VS Code extension
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ${{ env.EXTENSION_DIR }}/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm ci
+
+      - name: Lint
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm run lint
+
+      - name: Bundle
+        working-directory: ${{ env.EXTENSION_DIR }}
+        run: npm run package
+
+      - name: Package VSIX
+        working-directory: ${{ env.EXTENSION_DIR }}
+        shell: bash
+        run: >
+          mkdir -p ../artifacts/vscode &&
+          npx @vscode/vsce package
+          --no-dependencies
+          --githubBranch master
+          --out ../artifacts/vscode/nanoagent.vsix
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: vscode-extension
+          path: artifacts/vscode/nanoagent.vsix
+          if-no-files-found: error
+          retention-days: 14
