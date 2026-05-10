@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 
 namespace NanoAgent.CLI;
 
@@ -48,8 +48,12 @@ public static partial class Program
                     continue;
                 }
 
-                state.Running = false;
-                return;
+                if (TryCancelActiveTurn(state))
+                {
+                    continue;
+                }
+
+                continue;
             }
 
             if (key.Key == ConsoleKey.F2)
@@ -142,6 +146,39 @@ public static partial class Program
                 inputBatchStartIndex,
                 inputBatchEndIndex - inputBatchStartIndex);
         }
+    }
+
+    private static bool TryCancelActiveTurn(AppState state)
+    {
+        if (!state.IsBusy && !state.IsStreaming)
+        {
+            return false;
+        }
+
+        // If a backend operation is in flight (non-streaming busy), cancel the token
+        if (state.IsBusy && !state.IsStreaming)
+        {
+            state.CancelTurn();
+            return true;
+        }
+
+        // If streaming, the backend task is already done - clean up UI directly
+        if (state.IsStreaming)
+        {
+            state.IsStreaming = false;
+            state.StreamingMessageId = null;
+            state.StreamQueue.Clear();
+            state.ClearBusyWhenStreamCompletes = false;
+            state.IsBusy = false;
+            state.CurrentTurnStartedAt = null;
+            state.PendingCompletionNote = null;
+            state.ActivityText = state.IsReady ? "Ready" : "Idle";
+            state.ResetTurnCancellation();
+            state.AddSystemMessage("Turn cancelled.");
+            return true;
+        }
+
+        return false;
     }
 
     private static bool HandleInputEditingKey(AppState state, ConsoleKeyInfo key)
