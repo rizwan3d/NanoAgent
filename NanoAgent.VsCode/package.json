@@ -44,6 +44,7 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:nanoagent.openChat",
+    "onCommand:nanoagent.showTerminals",
     "onView:nanoagent.chatView"
   ],
   "main": "./dist/extension.js",
@@ -118,6 +119,11 @@
         "title": "NanoAgent: Apply Suggested Changes"
       },
       {
+        "command": "nanoagent.showTerminals",
+        "title": "NanoAgent: Show Background Terminals",
+        "icon": "$(terminal)"
+      },
+      {
         "command": "nanoagent.openLogs",
         "title": "NanoAgent: Open Logs"
       },
@@ -143,6 +149,11 @@
           "command": "nanoagent.start",
           "when": "view == nanoagent.chatView",
           "group": "navigation@2"
+        },
+        {
+          "command": "nanoagent.showTerminals",
+          "when": "view == nanoagent.chatView",
+          "group": "navigation@3"
         }
       ]
     },

@@ -113,6 +113,7 @@ const CHAT_COMMANDS: ChatCommandSuggestion[] = [
     { command: '/session', usage: '/session', description: 'Show session info and stats.', insertText: '/session' },
     { command: '/setting', usage: '/setting [area]', description: 'Open configurable NanoAgent settings.', insertText: '/setting ' },
     { command: '/share', usage: '/share', description: 'Share the current session as a secret GitHub gist.', insertText: '/share' },
+    { command: '/terminals', usage: '/terminals [stop <id>|stop all]', description: 'List or stop background terminals.', insertText: '/terminals' },
     { command: '/thinking', usage: '/thinking [on|off]', description: 'Show or set thinking mode.', insertText: '/thinking ' },
     { command: '/tree', usage: '/tree', description: 'Navigate saved sessions and forks.', insertText: '/tree' },
     { command: '/undo', usage: '/undo', description: 'Roll back the most recent tracked edit.', insertText: '/undo' },
@@ -1821,6 +1822,13 @@ function getChatWebviewContent() {
                                 <span class="settings-action-main">
                                     <span class="settings-action-title">Tools</span>
                                     <span class="settings-action-description">Show MCP servers, custom tools, and dynamic tool status.</span>
+                                </span>
+                                <span class="settings-action-value">view</span>
+                            </button>
+                            <button class="settings-action" data-command="/terminals">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Background Terminals</span>
+                                    <span class="settings-action-description">List running terminals and stop them with /terminals stop.</span>
                                 </span>
                                 <span class="settings-action-value">view</span>
                             </button>
