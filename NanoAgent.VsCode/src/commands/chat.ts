@@ -125,6 +125,9 @@ export function registerChatCommands(
         }),
         vscode.commands.registerCommand('nanoagent.applySuggestedChanges', async () => {
             await submitPrompt('Apply the suggested changes from the previous NanoAgent response.');
+        }),
+        vscode.commands.registerCommand('nanoagent.showTerminals', async () => {
+            await submitPrompt('/terminals');
         })
     );
 }
