@@ -50,4 +50,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.controller.showSettings();
         return true;
     }
+
+    public async startNewSession(): Promise<boolean> {
+        if (!this.controller) {
+            return false;
+        }
+
+        await this.controller.startNewSession();
+        return true;
+    }
 }

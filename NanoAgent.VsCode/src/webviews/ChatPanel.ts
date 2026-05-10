@@ -62,4 +62,8 @@ export class ChatPanel {
     public showSettings() {
         this.controller.showSettings();
     }
+
+    public async startNewSession() {
+        await this.controller.startNewSession();
+    }
 }
