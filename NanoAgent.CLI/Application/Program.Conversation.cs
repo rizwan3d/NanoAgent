@@ -61,6 +61,9 @@ public static partial class Program
         string prompt,
         IReadOnlyList<ConversationAttachment>? attachments = null)
     {
+        state.ResetTurnCancellation();
+        state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+
         state.IsBusy = true;
         state.ClearBusyWhenStreamCompletes = false;
         state.CurrentTurnStartedAt = DateTimeOffset.UtcNow;
@@ -75,7 +78,7 @@ public static partial class Program
                     prompt,
                     attachments ?? [],
                     state.UiBridge,
-                    state.LifetimeCancellation.Token);
+                    state.TurnCancellation.Token);
 
                 state.UiBridge.Enqueue(appState =>
                 {
@@ -106,6 +109,19 @@ public static partial class Program
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
             {
+            }
+            catch (OperationCanceledException) when (state.TurnCancellation?.IsCancellationRequested == true)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ClearBusyWhenStreamCompletes = false;
+                    appState.CurrentTurnStartedAt = null;
+                    appState.PendingCompletionNote = null;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.AddSystemMessage("Turn cancelled.");
+                });
             }
             catch (Exception exception)
             {
@@ -369,6 +385,9 @@ public static partial class Program
 
     private static void StartCommand(AppState state, string command)
     {
+        state.ResetTurnCancellation();
+        state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+
         state.IsBusy = true;
         state.ActivityText = $"Running {FormatCommandActivity(command)}";
 
@@ -378,7 +397,7 @@ public static partial class Program
             {
                 BackendCommandResult result = await state.Backend.RunCommandAsync(
                     command,
-                    state.LifetimeCancellation.Token);
+                    state.TurnCancellation.Token);
 
                 state.UiBridge.Enqueue(appState =>
                 {
@@ -406,6 +425,16 @@ public static partial class Program
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
             {
+            }
+            catch (OperationCanceledException) when (state.TurnCancellation?.IsCancellationRequested == true)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.AddSystemMessage("Turn cancelled.");
+                });
             }
             catch (Exception exception)
             {
@@ -444,6 +473,9 @@ public static partial class Program
 
     private static void StartModelSelection(AppState state)
     {
+        state.ResetTurnCancellation();
+        state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+
         state.IsBusy = true;
         state.ActivityText = "Choosing model";
 
@@ -452,7 +484,7 @@ public static partial class Program
             try
             {
                 BackendCommandResult result = await state.Backend.SelectModelAsync(
-                    state.LifetimeCancellation.Token);
+                    state.TurnCancellation.Token);
 
                 state.UiBridge.Enqueue(appState =>
                 {
@@ -465,6 +497,16 @@ public static partial class Program
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
             {
+            }
+            catch (OperationCanceledException) when (state.TurnCancellation?.IsCancellationRequested == true)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    appState.IsBusy = false;
+                    appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.AddSystemMessage("Turn cancelled.");
+                });
             }
             catch (Exception exception)
             {
