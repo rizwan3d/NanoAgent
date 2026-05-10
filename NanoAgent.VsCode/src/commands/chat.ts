@@ -22,6 +22,17 @@ export function registerChatCommands(
         await sessionManager.ensureStarted();
     };
 
+    const newChat = async () => {
+        await openChat();
+
+        if (await chatViewProvider.startNewSession()) {
+            return;
+        }
+
+        ChatPanel.createOrShow(sessionManager);
+        await ChatPanel.currentPanel?.startNewSession();
+    };
+
     const submitPrompt = async (prompt: string) => {
         await openChat();
 
@@ -57,7 +68,7 @@ export function registerChatCommands(
 
     context.subscriptions.push(
         vscode.commands.registerCommand('nanoagent.openChat', openChat),
-        vscode.commands.registerCommand('nanoagent.newChat', openChat),
+        vscode.commands.registerCommand('nanoagent.newChat', newChat),
         vscode.commands.registerCommand('nanoagent.openSettings', openSettings),
         vscode.commands.registerCommand('nanoagent.sendSelection', async () => {
             const selectedText = getSelectedText();

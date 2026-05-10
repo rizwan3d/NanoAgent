@@ -166,6 +166,38 @@ export class SessionManager extends EventEmitter {
         await this.ensureSession(client);
     }
 
+    public async startNewSession(): Promise<string> {
+        const client = await this.getReadyClient();
+        await this.closeCurrentSession(client);
+        return this.createSession(client);
+    }
+
+    public async loadSession(sessionId: string): Promise<void> {
+        const normalizedSessionId = sessionId.trim();
+        if (!normalizedSessionId) {
+            throw new Error('Session id is required.');
+        }
+
+        const client = await this.getReadyClient();
+        await this.closeCurrentSession(client);
+
+        this.sessionPromise = client
+            .sendRequest<void>('session/load', {
+                cwd: this.getWorkingDirectory(),
+                sessionId: normalizedSessionId
+            })
+            .then(() => {
+                this.sessionId = normalizedSessionId;
+                return normalizedSessionId;
+            })
+            .catch((error) => {
+                this.sessionPromise = null;
+                throw this.normalizeError(error);
+            });
+
+        await this.sessionPromise;
+    }
+
     public async sendPrompt(text: string): Promise<SessionPromptResult> {
         const runPrompt = this.promptTail.then(
             () => this.sendPromptCore(text),
@@ -372,6 +404,10 @@ export class SessionManager extends EventEmitter {
             return this.sessionId;
         }
 
+        return this.createSession(client);
+    }
+
+    private createSession(client: AcpClient): Promise<string> {
         if (!this.sessionPromise) {
             this.sessionPromise = client
                 .sendRequest<SessionNewResult>('session/new', {
@@ -392,6 +428,30 @@ export class SessionManager extends EventEmitter {
         }
 
         return this.sessionPromise;
+    }
+
+    private async closeCurrentSession(client: AcpClient): Promise<void> {
+        const sessionId = this.sessionId;
+        this.sessionId = null;
+        this.sessionPromise = null;
+        this.currentSessionInfo = null;
+        this.currentPromptState = {
+            isRunning: false,
+            isCancelling: false
+        };
+        this.emit('sessionInfoChanged', null);
+        this.emit('promptStateChanged', this.currentPromptState);
+        this.rejectPendingClientRequests(new Error('NanoAgent session closed.'));
+
+        if (!sessionId) {
+            return;
+        }
+
+        try {
+            await client.sendRequest('session/close', { sessionId });
+        } catch (error) {
+            this.logService.warn('Failed to close NanoAgent ACP session', error);
+        }
     }
 
     private async handleClientRequest(message: AcpRequest): Promise<void> {

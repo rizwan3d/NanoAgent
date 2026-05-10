@@ -187,6 +187,10 @@ export class ChatWebviewController {
         }
     }
 
+    public async startNewSession() {
+        await this.startNewChatSession();
+    }
+
     public prefillMessage(text: string) {
         this.webview.postMessage({ command: 'prefillComposer', text });
     }
@@ -273,6 +277,16 @@ export class ChatWebviewController {
 
         if (trimmedText === '/models') {
             await this.handleModelSelection();
+            return;
+        }
+
+        if (trimmedText === '/new') {
+            await this.startNewChatSession();
+            return;
+        }
+
+        if (trimmedText.startsWith('/resume ')) {
+            await this.resumeChatSession(trimmedText.slice('/resume '.length).trim());
             return;
         }
 
@@ -395,6 +409,50 @@ export class ChatWebviewController {
             const message = error instanceof Error ? error.message : 'Unable to list files.';
             this.postSystemMessage(`Error listing files: ${message}`);
         }
+    }
+
+    private async startNewChatSession() {
+        this.clearSessionActivity();
+
+        try {
+            const sessionId = await this.sessionManager.startNewSession();
+            this.currentSessionInfo = this.sessionManager.getSessionInfo();
+            this.webview.postMessage({ command: 'clearMessages' });
+            this.postSystemMessage(`Started new NanoAgent session: ${sessionId}`);
+            this.postInitialState();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unable to start a new NanoAgent session.';
+            LogService.getInstance().error('New session failed', error);
+            this.postSystemMessage(`Error: ${message}`);
+        }
+    }
+
+    private async resumeChatSession(sessionId: string) {
+        if (!sessionId) {
+            this.postSystemMessage('Usage: /resume <session-id>');
+            return;
+        }
+
+        this.clearSessionActivity();
+
+        try {
+            await this.sessionManager.loadSession(sessionId);
+            this.currentSessionInfo = this.sessionManager.getSessionInfo();
+            this.webview.postMessage({ command: 'clearMessages' });
+            this.postSystemMessage(`Resumed NanoAgent session: ${sessionId}`);
+            this.postInitialState();
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unable to resume NanoAgent session.';
+            LogService.getInstance().error('Resume session failed', error);
+            this.postSystemMessage(`Error: ${message}`);
+        }
+    }
+
+    private clearSessionActivity() {
+        this.currentPlan = null;
+        this.toolCalls.clear();
+        this.webview.postMessage({ command: 'setPlan', plan: null });
+        this.webview.postMessage({ command: 'clearToolCalls' });
     }
 
     private async readWorkspaceFile(requestedPath: string) {
@@ -2172,6 +2230,10 @@ function getChatWebviewContent() {
                 updateComposerState();
             } else if (message.command === 'setToolCall') {
                 setToolCall(message.toolCall);
+            } else if (message.command === 'clearToolCalls') {
+                toolCalls.clear();
+                toolMessageElements.clear();
+                renderTools();
             } else if (message.command === 'setPlan') {
                 renderPlan(message.plan);
             } else if (message.command === 'showClientRequest') {
