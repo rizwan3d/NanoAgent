@@ -22,9 +22,6 @@ public static partial class SecretRedactor
         redacted = SensitiveAssignmentRegex().Replace(
             redacted,
             match => $"{match.Groups[1].Value}{Redacted}");
-        redacted = DotEnvAssignmentRegex().Replace(
-            redacted,
-            match => $"{match.Groups[1].Value}{Redacted}");
         return redacted;
     }
 
@@ -63,7 +60,7 @@ public static partial class SecretRedactor
         RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.CultureInvariant)]
     private static partial Regex PrivateKeyBlockRegex();
 
-    [GeneratedRegex(@"Bearer\s+[A-Za-z0-9._~+/=-]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"Bearer\s+[A-Za-z0-9._~+/-]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex BearerTokenRegex();
 
     [GeneratedRegex(@"\bsk-[A-Za-z0-9_-]{8,}\b", RegexOptions.CultureInvariant)]
@@ -75,7 +72,7 @@ public static partial class SecretRedactor
     [GeneratedRegex(@"\bAIza[0-9A-Za-z_-]{16,}\b", RegexOptions.CultureInvariant)]
     private static partial Regex GoogleApiKeyRegex();
 
-    [GeneratedRegex(@"\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|token|secret|password|passwd|authorization|credential|private[_-]?key|client[_-]?secret)[A-Za-z0-9_.-]*\b\s*[:=]\s*[""']?)[^ \t\r\n\\,""'}]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    [GeneratedRegex(@"\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|authorization|credential|client[_-]?secret|private[_-]?key|token(?:[_-]?(?:key|token|secret|id|value|string))?|secret(?:[_-]?(?:key|token|secret|id|value|string))?)\b\s*[:=]\s*[""']?)[^ \t\r\n\\,\""'}]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SensitiveAssignmentRegex();
 
     [GeneratedRegex(@"(?m)^(\s*(?:export\s+)?[A-Z][A-Z0-9_]{1,}\s*=\s*).+$", RegexOptions.CultureInvariant)]
