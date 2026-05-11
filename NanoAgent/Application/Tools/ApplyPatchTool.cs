@@ -8,11 +8,58 @@ namespace NanoAgent.Application.Tools;
 internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService) : ITool
 {
     public string Description => """
-        Apply a focused multi-file patch from the current session working directory within the workspace.
-        Patch text uses the apply_patch format: start with *** Begin Patch, include one or more
-        *** Add File, *** Delete File, or *** Update File sections, and end with *** End Patch.
-        Add-file content lines must be prefixed with +. Update sections may include @@ context
-        labels, +/-/space lines, an optional *** Move to header, and *** End of File anchors.
+        Use the `apply_patch` tool to edit files.
+
+        A valid patch MUST have this exact outer structure:
+        
+        *** Begin Patch
+        [file operations]
+        *** End Patch
+        
+        Each file operation MUST start with exactly one action      header:
+        
+        *** Add File: <path>
+        *** Delete File: <path>
+        *** Update File: <path>
+        
+        Rules:
+        
+        1. `*** Add File: <path>`
+           - Creates a new file.
+           - Every file-content line that follows MUST start        with `+`.
+           - Lines without `+` are invalid.
+        
+        2. `*** Delete File: <path>`
+           - Deletes an existing file.
+           - No content lines may follow this operation.
+        
+        3. `*** Update File: <path>`
+           - Edits an existing file.
+           - May include:
+             *** Move to: <new path>
+           - `*** Move to:` is only valid inside an `Update         File` operation.
+        
+        Example:
+        
+        *** Begin Patch
+        *** Add File: hello.txt
+        +Hello world
+        
+        *** Update File: src/app.py
+        *** Move to: src/main.py
+        @@ def greet():
+        -print("Hi")
+        +print("Hello, world!")
+        
+        *** Delete File: obsolete.txt
+        *** End Patch
+        
+        Mandatory requirements:
+        - Every operation MUST include an action header.
+        - New files MUST use `+` at the start of every content      line.
+        - Delete operations MUST NOT include file content.
+        - Patches missing `*** Begin Patch` or `*** End Patch`      are invalid.
+        - Patches with unknown headers are invalid.
         """;
 
     public string Name => AgentToolNames.ApplyPatch;
@@ -35,7 +82,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
           "properties": {
             "patch": {
               "type": "string",
-              "description": "Patch text using the apply_patch format. File paths in *** Add File, *** Delete File, *** Update File, and *** Move to headers are relative to the current session working directory. The patch must include *** Begin Patch, one or more file sections, and *** End Patch. Prefix added lines with '+', including all new lines in Add File sections."
+              "description": "Patch text in apply_patch format. File paths in headers (*** Add File, *** Delete File, *** Update File, *** Move to) are relative to the current session working directory. The patch must include *** Begin Patch, then one or more file sections, then *** End Patch. Prefix added lines with '+', including all lines in Add File sections."
             }
           },
           "required": ["patch"],
