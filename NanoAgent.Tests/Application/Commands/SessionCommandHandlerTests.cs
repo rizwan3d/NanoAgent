@@ -218,6 +218,13 @@ public sealed class SessionCommandHandlerTests : IDisposable
             throw new NotSupportedException();
         }
 
+        public Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+            ReplSessionContext currentSession,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
         public void EnsureTitleGenerationStarted(
             ReplSessionContext session,
             string firstUserPrompt)
@@ -277,6 +284,13 @@ public sealed class SessionCommandHandlerTests : IDisposable
     {
         public Task<ReplSessionContext> CreateAsync(
             CreateSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+            ReplSessionContext currentSession,
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();

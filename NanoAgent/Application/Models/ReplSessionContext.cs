@@ -36,6 +36,7 @@ public sealed class ReplSessionContext
     private bool _sectionTitleGenerationStarted;
     private readonly Stack<WorkspaceFileEditTransaction> _undoFileEditTransactions = new();
     private readonly List<PermissionRule> _permissionOverrides = [];
+    private SessionContext _sessionContext = SessionContext.Empty;
 
     public ReplSessionContext(
         AgentProviderProfile providerProfile,
@@ -45,7 +46,9 @@ public sealed class ReplSessionContext
         string? reasoningEffort = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
-        string? activeProviderName = null)
+        string? activeProviderName = null,
+        string? parentSessionId = null,
+        SessionContext? sessionContext = null)
         : this(
             DefaultApplicationName,
             providerProfile,
@@ -55,7 +58,9 @@ public sealed class ReplSessionContext
             reasoningEffort: reasoningEffort,
             workspacePath: workspacePath,
             modelContextWindowTokens: modelContextWindowTokens,
-            activeProviderName: activeProviderName)
+            activeProviderName: activeProviderName,
+            parentSessionId: parentSessionId,
+            sessionContext: sessionContext)
     {
     }
 
@@ -77,7 +82,9 @@ public sealed class ReplSessionContext
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
-        string? activeProviderName = null)
+        string? activeProviderName = null,
+        string? parentSessionId = null,
+        SessionContext? sessionContext = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -118,6 +125,7 @@ public sealed class ReplSessionContext
         ActiveModelId = normalizedActiveModelId;
         ReasoningEffort = ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
         WorkspacePath = NormalizeWorkspacePath(workspacePath);
+        ParentSessionId = NormalizeOptionalSessionId(parentSessionId);
         SectionId = NormalizeSectionId(sectionId);
         SectionTitle = NormalizeSectionTitle(sectionTitle);
         SectionCreatedAtUtc = sectionCreatedAtUtc ?? DateTimeOffset.UtcNow;
@@ -126,6 +134,7 @@ public sealed class ReplSessionContext
         IsResumedSection = isResumedSection;
         PendingExecutionPlan = pendingExecutionPlan;
         RestoreSessionState(sessionState);
+        _sessionContext = sessionContext ?? SessionContext.Empty;
 
         if (SectionUpdatedAtUtc < SectionCreatedAtUtc)
         {
@@ -199,7 +208,23 @@ public sealed class ReplSessionContext
 
     public string SectionId { get; }
 
+    /// <summary>
+    /// For backward compatibility, SessionId returns SectionId.
+    /// Use ParentSessionId to get the parent session ID for multi-section sessions.
+    /// </summary>
     public string SessionId => SectionId;
+
+    /// <summary>
+    /// The ID of the parent session that contains this section.
+    /// Null when the section is standalone (not grouped under a multi-section session).
+    /// </summary>
+    public string? ParentSessionId { get; }
+
+    /// <summary>
+    /// Accumulated context from completed sections in the same parent session.
+    /// Empty when this is a standalone section or the first section in a session.
+    /// </summary>
+    public SessionContext SessionContext => _sessionContext;
 
     public string WorkspacePath { get; }
 
@@ -227,6 +252,34 @@ public sealed class ReplSessionContext
     public string SectionResumeCommand => $"nanoai --section {SectionId}";
 
     public int TotalEstimatedOutputTokens { get; private set; }
+
+    /// <summary>
+    /// Creates a <see cref="SessionContext"/> from the current section's completed state
+    /// (file contexts, edit contexts, terminal history, and conversation summary).
+    /// This is used to accumulate context when completing a section within a session.
+    /// </summary>
+    public SessionContext CreateCompletedSectionContext()
+    {
+        lock (_syncRoot)
+        {
+            string summary = CreateSectionSummary();
+            return new SessionContext(
+                _fileContexts.ToArray(),
+                _editContexts.ToArray(),
+                _terminalHistory.ToArray(),
+                string.IsNullOrWhiteSpace(summary) ? [] : [summary]);
+        }
+    }
+
+    /// <summary>
+    /// Sets the accumulated session context from completed sections
+    /// in the same parent session.
+    /// </summary>
+    public void SetSessionContext(SessionContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        _sessionContext = context;
+    }
 
     public IDisposable BeginFileEditTransactionBatch()
     {
@@ -691,7 +744,8 @@ public sealed class ReplSessionContext
         if (_fileContexts.Count == 0 &&
             _editContexts.Count == 0 &&
             _terminalHistory.Count == 0 &&
-            IsWorkspaceRootWorkingDirectory())
+            IsWorkspaceRootWorkingDirectory() &&
+            _sessionContext.IsEmpty)
         {
             return null;
         }
@@ -704,6 +758,8 @@ public sealed class ReplSessionContext
         AppendFileContextPrompt(builder);
         AppendEditContextPrompt(builder);
         AppendTerminalHistoryPrompt(builder);
+
+        AppendSessionContextPrompt(builder);
 
         return builder.ToString().Trim();
     }
@@ -763,7 +819,8 @@ public sealed class ReplSessionContext
             SessionState,
             WorkspacePath,
             _modelContextWindowTokens,
-            ActiveProviderName);
+            ActiveProviderName,
+            ParentSessionId);
     }
 
     public IReadOnlyList<ConversationRequestMessage> GetConversationHistory(int maxHistoryTurns)
@@ -1357,6 +1414,106 @@ public sealed class ReplSessionContext
         }
     }
 
+    private void AppendSessionContextPrompt(StringBuilder builder)
+    {
+        if (_sessionContext.IsEmpty)
+        {
+            return;
+        }
+
+        builder.AppendLine();
+        builder.AppendLine("Completed section context (from previous sections in this session):");
+        builder.AppendLine("Use this for continuity across sections; files or terminal state may have changed since the previous section ended.");
+
+        if (_sessionContext.CompletedSectionSummaries.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Completed section summaries:");
+            foreach (string summary in _sessionContext.CompletedSectionSummaries)
+            {
+                builder.Append("- ").AppendLine(summary);
+            }
+        }
+
+        if (_sessionContext.Files.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Files known from previous sections:");
+            foreach (SessionFileContext file in TakeLatest(_sessionContext.Files, MaxPromptFileContextEntries))
+            {
+                builder
+                    .Append("- ")
+                    .Append(file.Path)
+                    .Append(" [")
+                    .Append(file.Activity)
+                    .Append(", ")
+                    .Append(FormatTimestamp(file.ObservedAtUtc))
+                    .Append("]: ")
+                    .AppendLine(FormatPromptField(file.Summary));
+            }
+        }
+
+        if (_sessionContext.Edits.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Edits from previous sections:");
+            foreach (SessionEditContext edit in TakeLatest(_sessionContext.Edits, MaxPromptEditContextEntries))
+            {
+                string paths = edit.Paths.Count == 0
+                    ? "(paths unavailable)"
+                    : string.Join(", ", edit.Paths);
+
+                builder
+                    .Append("- ")
+                    .Append(FormatTimestamp(edit.EditedAtUtc))
+                    .Append(": ")
+                    .Append(edit.Description)
+                    .Append(" on ")
+                    .Append(paths)
+                    .Append(" (+")
+                    .Append(edit.AddedLineCount.ToString(CultureInfo.InvariantCulture))
+                    .Append(" -")
+                    .Append(edit.RemovedLineCount.ToString(CultureInfo.InvariantCulture))
+                    .AppendLine(").");
+            }
+        }
+
+        if (_sessionContext.TerminalHistory.Count > 0)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Terminal history from previous sections:");
+            foreach (SessionTerminalCommand command in TakeLatest(_sessionContext.TerminalHistory, MaxPromptTerminalHistoryEntries))
+            {
+                builder
+                    .Append("- ")
+                    .Append(FormatTimestamp(command.ExecutedAtUtc))
+                    .Append(": `")
+                    .Append(command.Command)
+                    .Append("` in ")
+                    .Append(command.WorkingDirectory)
+                    .Append(" exited ")
+                    .Append(command.ExitCode.ToString(CultureInfo.InvariantCulture));
+                builder.AppendLine();
+            }
+        }
+    }
+
+    private string CreateSectionSummary()
+    {
+        int turnCount = _conversationTurns.Count;
+        if (turnCount == 0)
+        {
+            return string.Empty;
+        }
+
+        string firstUserPrompt = _conversationTurns[0].UserInput;
+        string normalizedPrompt = firstUserPrompt.Length > 120
+            ? firstUserPrompt[..117].TrimEnd() + "..."
+            : firstUserPrompt;
+
+        return $"Section \"{SectionTitle}\": {turnCount} turn(s), started with \"{normalizedPrompt}\".";
+    }
+
     private static IReadOnlyList<T> TakeLatest<T>(
         IReadOnlyList<T> values,
         int maxCount)
@@ -1496,6 +1653,23 @@ public sealed class ReplSessionContext
         return string.IsNullOrWhiteSpace(sectionTitle)
             ? DefaultSectionTitle
             : sectionTitle.Trim();
+    }
+
+    private static string? NormalizeOptionalSessionId(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        if (!Guid.TryParse(sessionId.Trim(), out Guid parsedSessionId))
+        {
+            throw new ArgumentException(
+                "Session id must be a valid GUID.",
+                nameof(sessionId));
+        }
+
+        return parsedSessionId.ToString("D");
     }
 
     private static string NormalizeWorkspacePath(string? workspacePath)

@@ -43,6 +43,28 @@ internal sealed class SessionAppService : ISessionAppService
         return session;
     }
 
+    public async Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+        ReplSessionContext currentSession,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(currentSession);
+
+        IAgentProfile profile = currentSession.AgentProfile;
+
+        ReplSessionContext session = await _sectionService.CreateNewWithinSessionAsync(
+            ApplicationIdentity.ProductName,
+            currentSession.ProviderProfile,
+            currentSession.ActiveModelId,
+            currentSession.AvailableModelIds,
+            profile,
+            currentSession.ModelContextWindowTokens,
+            currentSession.ActiveProviderName,
+            currentSession,
+            cancellationToken);
+
+        return session;
+    }
+
     public void EnsureTitleGenerationStarted(
         ReplSessionContext session,
         string firstUserPrompt)

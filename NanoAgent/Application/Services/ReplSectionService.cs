@@ -26,6 +26,7 @@ internal sealed class ReplSectionService : IReplSectionService
     private static readonly TimeSpan TitleGenerationTimeout = TimeSpan.FromSeconds(30);
 
     private readonly IConversationSectionStore _sectionStore;
+    private readonly ISessionStore _sessionStore;
     private readonly IApiKeySecretStore _secretStore;
     private readonly IConversationProviderClient _providerClient;
     private readonly IConversationResponseMapper _responseMapper;
@@ -37,6 +38,7 @@ internal sealed class ReplSectionService : IReplSectionService
 
     public ReplSectionService(
         IConversationSectionStore sectionStore,
+        ISessionStore sessionStore,
         IApiKeySecretStore secretStore,
         IConversationProviderClient providerClient,
         IConversationResponseMapper responseMapper,
@@ -45,6 +47,7 @@ internal sealed class ReplSectionService : IReplSectionService
         ILogger<ReplSectionService> logger)
     {
         _sectionStore = sectionStore;
+        _sessionStore = sessionStore;
         _secretStore = secretStore;
         _providerClient = providerClient;
         _responseMapper = responseMapper;
@@ -84,6 +87,95 @@ internal sealed class ReplSectionService : IReplSectionService
         await _sectionStore.SaveAsync(
             session.CreateSectionSnapshot(now),
             cancellationToken);
+
+        // Create a session record linking this section to a new session
+        SessionRecord sessionRecord = SessionRecord.CreateWithSection(session.SectionId);
+        await _sessionStore.SaveAsync(sessionRecord, cancellationToken);
+
+        session.MarkSectionPersisted(now);
+        return session;
+    }
+
+    public async Task<ReplSessionContext> CreateNewWithinSessionAsync(
+        string applicationName,
+        AgentProviderProfile providerProfile,
+        string activeModelId,
+        IReadOnlyList<string> availableModelIds,
+        IAgentProfile agentProfile,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        string? activeProviderName,
+        ReplSessionContext completedSection,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
+        ArgumentNullException.ThrowIfNull(providerProfile);
+        ArgumentException.ThrowIfNullOrWhiteSpace(activeModelId);
+        ArgumentNullException.ThrowIfNull(availableModelIds);
+        ArgumentNullException.ThrowIfNull(agentProfile);
+        ArgumentNullException.ThrowIfNull(completedSection);
+
+        DateTimeOffset now = _timeProvider.GetUtcNow();
+
+        // Extract completed context from the current section
+        SessionContext completedContext = completedSection.CreateCompletedSectionContext();
+
+        // Determine the parent session ID
+        string? parentSessionId = completedSection.ParentSessionId;
+        SessionContext accumulatedContext;
+
+        if (parentSessionId is not null)
+        {
+            // Load existing session record and update it
+            SessionRecord? existingSession = await _sessionStore.LoadAsync(parentSessionId, cancellationToken);
+            if (existingSession is not null)
+            {
+                SessionRecord updatedSession = existingSession.WithNewSection(
+                    Guid.NewGuid().ToString("D"),
+                    completedContext,
+                    now);
+                await _sessionStore.SaveAsync(updatedSession, cancellationToken);
+                accumulatedContext = updatedSession.AccumulatedContext;
+            }
+            else
+            {
+                // Session record missing; create a new one
+                accumulatedContext = completedContext;
+            }
+        }
+        else
+        {
+            // First section within a session; create the session record
+            accumulatedContext = completedContext;
+        }
+
+        // Create the new section with the accumulated context
+        ReplSessionContext session = new(
+            applicationName,
+            providerProfile,
+            activeModelId,
+            availableModelIds,
+            sectionCreatedAtUtc: now,
+            sectionUpdatedAtUtc: now,
+            agentProfile: agentProfile,
+            modelContextWindowTokens: modelContextWindowTokens,
+            activeProviderName: activeProviderName,
+            parentSessionId: parentSessionId,
+            sessionContext: accumulatedContext);
+
+        await _sectionStore.SaveAsync(
+            session.CreateSectionSnapshot(now),
+            cancellationToken);
+
+        // Ensure the session record exists and links this new section
+        if (parentSessionId is not null)
+        {
+            SessionRecord? existingSession = await _sessionStore.LoadAsync(parentSessionId, cancellationToken);
+            if (existingSession is not null)
+            {
+                SessionRecord updatedSession = existingSession.WithUpdatedTimestamp(now);
+                await _sessionStore.SaveAsync(updatedSession, cancellationToken);
+            }
+        }
 
         session.MarkSectionPersisted(now);
         return session;
@@ -134,6 +226,19 @@ internal sealed class ReplSectionService : IReplSectionService
 
         EnsureWorkspaceMatches(snapshot);
 
+        // If the section has a parent session, try to load the accumulated context
+        SessionContext? sessionContext = null;
+        if (snapshot.ParentSessionId is not null)
+        {
+            SessionRecord? parentSession = await _sessionStore.LoadAsync(
+                snapshot.ParentSessionId,
+                cancellationToken);
+            if (parentSession is not null)
+            {
+                sessionContext = parentSession.AccumulatedContext;
+            }
+        }
+
         ReplSessionContext session = new(
             applicationName,
             snapshot.ProviderProfile,
@@ -152,7 +257,9 @@ internal sealed class ReplSectionService : IReplSectionService
             sessionState: snapshot.SessionState,
             workspacePath: snapshot.WorkspacePath,
             modelContextWindowTokens: snapshot.ModelContextWindowTokens,
-            activeProviderName: snapshot.ActiveProviderName);
+            activeProviderName: snapshot.ActiveProviderName,
+            parentSessionId: snapshot.ParentSessionId,
+            sessionContext: sessionContext);
 
         if (!session.HasGeneratedSectionTitle &&
             session.TryGetFirstUserPrompt(out string? firstUserPrompt) &&
