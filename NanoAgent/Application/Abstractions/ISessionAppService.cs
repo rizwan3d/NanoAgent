@@ -7,6 +7,14 @@ public interface ISessionAppService
         CreateSessionRequest request,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Creates a new section within the same session, accumulating context
+    /// from the completed section.
+    /// </summary>
+    Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+        ReplSessionContext currentSession,
+        CancellationToken cancellationToken);
+
     void EnsureTitleGenerationStarted(
         ReplSessionContext session,
         string firstUserPrompt);

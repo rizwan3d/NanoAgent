@@ -21,7 +21,8 @@ public sealed class ConversationSectionSnapshot
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
-        string? activeProviderName = null)
+        string? activeProviderName = null,
+        string? parentSessionId = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sectionId);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -76,6 +77,7 @@ public sealed class ConversationSectionSnapshot
         WorkspacePath = string.IsNullOrWhiteSpace(workspacePath)
             ? null
             : Path.GetFullPath(workspacePath.Trim());
+        ParentSessionId = NormalizeOptionalSessionId(parentSessionId);
     }
 
     public string ActiveModelId { get; }
@@ -109,6 +111,12 @@ public sealed class ConversationSectionSnapshot
     public DateTimeOffset UpdatedAtUtc { get; }
 
     public string? WorkspacePath { get; }
+
+    /// <summary>
+    /// The ID of the parent session that contains this section.
+    /// Null when the section is standalone (legacy format).
+    /// </summary>
+    public string? ParentSessionId { get; }
 
     private static Dictionary<string, int> NormalizeModelContextWindowTokens(
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
@@ -154,5 +162,22 @@ public sealed class ConversationSectionSnapshot
         return string.IsNullOrWhiteSpace(normalized)
             ? null
             : normalized;
+    }
+
+    private static string? NormalizeOptionalSessionId(string? sessionId)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            return null;
+        }
+
+        if (!Guid.TryParse(sessionId.Trim(), out Guid parsedSessionId))
+        {
+            throw new ArgumentException(
+                "Session id must be a valid GUID.",
+                nameof(sessionId));
+        }
+
+        return parsedSessionId.ToString("D");
     }
 }

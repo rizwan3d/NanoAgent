@@ -15,6 +15,21 @@ public interface IReplSectionService
         string? activeProviderName,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Creates a new section within an existing session, accumulating context
+    /// from the completed section into the session.
+    /// </summary>
+    Task<ReplSessionContext> CreateNewWithinSessionAsync(
+        string applicationName,
+        AgentProviderProfile providerProfile,
+        string activeModelId,
+        IReadOnlyList<string> availableModelIds,
+        IAgentProfile agentProfile,
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        string? activeProviderName,
+        ReplSessionContext completedSection,
+        CancellationToken cancellationToken);
+
     void EnsureTitleGenerationStarted(
         ReplSessionContext session,
         string firstUserPrompt);
