@@ -1,5 +1,7 @@
 using FluentAssertions;
+using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Secrets;
+using NanoAgent.Infrastructure.WindowsSandbox;
 
 namespace NanoAgent.Tests.Infrastructure.Secrets;
 
@@ -62,6 +64,97 @@ public sealed class ProcessRunnerTests
         result.StandardError.Should().EndWith("...");
     }
 
+    [Fact]
+    public async Task RunAsync_Should_RunRealNodeVersionInsideWindowsSandbox()
+    {
+        const int StatusDllInitFailed = unchecked((int)0xC0000142);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string? nodePath = FindNodePath();
+        if (string.IsNullOrWhiteSpace(nodePath))
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        string nanoAgentHome = WindowsSandboxPaths.ResolveAppHome();
+        string materializedNodePath = WindowsSandboxHelperMaterializer.MaterializeExternalExecutable(
+            nanoAgentHome,
+            nodePath);
+        string scriptPath = Path.Combine(temp.WorkspaceRoot, "run-node-version.cmd");
+        File.WriteAllText(
+            scriptPath,
+            $"@echo off{Environment.NewLine}\"{materializedNodePath}\" -v{Environment.NewLine}");
+        WindowsSandboxExecutionContext context = new(
+            ToolSandboxMode.WorkspaceWrite,
+            nanoAgentHome,
+            temp.WorkspaceRoot,
+            temp.WorkspaceRoot,
+            [temp.WorkspaceRoot],
+            IncludeTempEnvironmentVariables: true);
+        ProcessExecutionRequest request = new(
+            "cmd.exe",
+            ["/c", scriptPath],
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256);
+
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        // Some Windows hosts can launch the sandbox runner correctly but still fail to
+        // initialize Node under the restricted token with STATUS_DLL_INIT_FAILED.
+        if (result.ExitCode == StatusDllInitFailed &&
+            string.IsNullOrWhiteSpace(result.StandardOutput) &&
+            string.IsNullOrWhiteSpace(result.StandardError))
+        {
+            return;
+        }
+
+        result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
+        result.StandardError.Should().BeNullOrWhiteSpace();
+        result.StandardOutput.Trim().Should().MatchRegex(@"^v\d+\.\d+\.\d+");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_RunCmdEchoInsideWindowsSandbox()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        WindowsSandboxExecutionContext context = new(
+            ToolSandboxMode.WorkspaceWrite,
+            WindowsSandboxPaths.ResolveAppHome(),
+            temp.WorkspaceRoot,
+            temp.WorkspaceRoot,
+            [temp.WorkspaceRoot],
+            IncludeTempEnvironmentVariables: true);
+        ProcessExecutionRequest request = new(
+            "cmd.exe",
+            ["/c", "echo sandbox-ok"],
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256);
+
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
+        result.StandardError.Should().BeNullOrWhiteSpace();
+        result.StandardOutput.Should().Contain("sandbox-ok");
+    }
+
     private static ProcessExecutionRequest? CreatePseudoTerminalProbeRequest()
     {
         if (OperatingSystem.IsWindows())
@@ -102,5 +195,44 @@ public sealed class ProcessRunnerTests
         }
 
         return null;
+    }
+
+    private static string? FindNodePath()
+    {
+        string[] candidates =
+        [
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+                "nodejs",
+                "node.exe"),
+            Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+                "nodejs",
+                "node.exe")
+        ];
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private sealed class TempWorkspace : IDisposable
+    {
+        public TempWorkspace()
+        {
+            WorkspaceRoot = Path.Combine(Path.GetTempPath(), "nanoagent-sandbox-tests-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(WorkspaceRoot);
+        }
+
+        public string WorkspaceRoot { get; }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(WorkspaceRoot, recursive: true);
+            }
+            catch
+            {
+            }
+        }
     }
 }

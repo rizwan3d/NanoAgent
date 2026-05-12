@@ -2,6 +2,7 @@ using NanoAgent.Application.Backend;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Infrastructure.WindowsSandbox;
 using Spectre.Console;
 using System.Text;
 
@@ -83,6 +84,10 @@ public static partial class Program
     public static async Task<int> Main(string[]? args)
     {
         Console.OutputEncoding = Encoding.UTF8;
+        if (TryHandleWindowsSandboxRunnerInvocation(args ?? [], out int runnerExitCode))
+        {
+            return runnerExitCode;
+        }
 
         CliInvocation invocation;
         try
@@ -129,6 +134,75 @@ public static partial class Program
             invocation.ProviderAuthKey,
             invocation.AutoApproveAllTools);
         return 0;
+    }
+
+    private static bool TryHandleWindowsSandboxRunnerInvocation(
+        IReadOnlyList<string> args,
+        out int exitCode)
+    {
+        exitCode = 0;
+
+        if (!args.Any(arg => string.Equals(
+                arg,
+                WindowsSandboxProcessRunner.RunnerCommandArgument,
+                StringComparison.Ordinal)))
+        {
+            return false;
+        }
+
+        if (!TryReadRunnerPipeArgument(args, "--pipe-in", out string? pipeIn) ||
+            !TryReadRunnerPipeArgument(args, "--pipe-out", out string? pipeOut))
+        {
+            Console.Error.WriteLine("Missing required pipe arguments for Windows sandbox runner mode.");
+            exitCode = 2;
+            return true;
+        }
+
+        exitCode = WindowsSandboxProcessRunner.RunPipeRunner(
+            WindowsSandboxRunnerClient.ParsePipeArgument(pipeIn!),
+            WindowsSandboxRunnerClient.ParsePipeArgument(pipeOut!));
+        return true;
+    }
+
+    private static bool TryReadRunnerPipeArgument(
+        IReadOnlyList<string> args,
+        string optionName,
+        out string? value)
+    {
+        value = null;
+
+        for (int index = 0; index < args.Count; index++)
+        {
+            string arg = args[index];
+            if (string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase))
+            {
+                int valueIndex = index + 1;
+                if (valueIndex >= args.Count || string.IsNullOrWhiteSpace(args[valueIndex]))
+                {
+                    return false;
+                }
+
+                value = args[valueIndex].Trim();
+                return true;
+            }
+
+            string prefix = optionName + "=";
+            if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            string candidate = arg[prefix.Length..].Trim();
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return false;
+            }
+
+            value = candidate;
+            return true;
+        }
+
+        return false;
     }
 
     private static async Task<int> RunAcpAsync(
