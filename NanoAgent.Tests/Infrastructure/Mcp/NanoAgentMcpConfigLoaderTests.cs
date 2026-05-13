@@ -226,9 +226,9 @@ public sealed class NanoAgentMcpConfigLoaderTests : IDisposable
             return Path.Combine(Path.GetDirectoryName(_mcpConfigurationFilePath)!, "logs");
         }
 
-        public string GetSectionsDirectoryPath()
+        public string GetSessionsDirectoryPath()
         {
-            return Path.Combine(Path.GetDirectoryName(_mcpConfigurationFilePath)!, "sections");
+            return Path.Combine(Path.GetDirectoryName(_mcpConfigurationFilePath)!, "sessions");
         }
     }
 }

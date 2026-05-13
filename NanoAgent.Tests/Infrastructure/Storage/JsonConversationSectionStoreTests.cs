@@ -14,7 +14,7 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
     {
         _tempRoot = Path.Combine(
             Path.GetTempPath(),
-            $"NanoAgent-Sections-{Guid.NewGuid():N}");
+            $"NanoAgent-sessions-{Guid.NewGuid():N}");
 
         Directory.CreateDirectory(_tempRoot);
     }
@@ -113,7 +113,7 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
         StubUserDataPathProvider pathProvider = new(_tempRoot);
         JsonConversationSectionStore sut = new(pathProvider);
         string sectionId = Guid.NewGuid().ToString("D");
-        string sectionsDirectory = pathProvider.GetSectionsDirectoryPath();
+        string sectionsDirectory = pathProvider.GetSessionsDirectoryPath();
         Directory.CreateDirectory(sectionsDirectory);
 
         await File.WriteAllTextAsync(
@@ -181,9 +181,9 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
             return Path.Combine(_root, "logs");
         }
 
-        public string GetSectionsDirectoryPath()
+        public string GetSessionsDirectoryPath()
         {
-            return Path.Combine(_root, "sections");
+            return Path.Combine(_root, "sessions");
         }
     }
 }

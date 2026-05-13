@@ -18,7 +18,7 @@ public sealed class SectionHistoryService
         }
 
         string normalizedWorkspacePath = NormalizePath(workspacePath);
-        string sectionsDirectory = GetSectionsDirectoryPath();
+        string sectionsDirectory = GetSessionsDirectoryPath();
         if (!Directory.Exists(sectionsDirectory))
         {
             return [];
@@ -69,7 +69,7 @@ public sealed class SectionHistoryService
         }
 
         string filePath = Path.Combine(
-            GetSectionsDirectoryPath(),
+            GetSessionsDirectoryPath(),
             $"{parsedSectionId:D}.json");
 
         if (!File.Exists(filePath))
@@ -153,7 +153,7 @@ public sealed class SectionHistoryService
         }
     }
 
-    private static string GetSectionsDirectoryPath()
+    private static string GetSessionsDirectoryPath()
     {
         string root = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         if (string.IsNullOrWhiteSpace(root))
