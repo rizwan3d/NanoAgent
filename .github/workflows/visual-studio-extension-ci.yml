@@ -1,0 +1,94 @@
+name: visual-studio-extension-ci
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/visual-studio-extension-ci.yml
+      - Directory.Build.props
+      - LICENSE.txt
+      - global.json
+      - NanoAgent/**
+      - NanoAgent.CLI/**
+      - NanoAgent.VS/**
+  push:
+    branches:
+      - master
+    paths:
+      - .github/workflows/visual-studio-extension-ci.yml
+      - Directory.Build.props
+      - LICENSE.txt
+      - global.json
+      - NanoAgent/**
+      - NanoAgent.CLI/**
+      - NanoAgent.VS/**
+
+concurrency:
+  group: visual-studio-extension-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  CONFIGURATION: Release
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  EXTENSION_PROJECT: NanoAgent.VS/NanoAgent.VS.csproj
+
+jobs:
+  build:
+    name: Build Visual Studio extension
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            NanoAgent/packages.lock.json
+            NanoAgent.CLI/packages.lock.json
+            NanoAgent.VS/packages.lock.json
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Resolve Visual Studio version
+        id: vs
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found."
+          }
+
+          $installation = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -format json | ConvertFrom-Json | Select-Object -First 1
+          if ($null -eq $installation) {
+            throw "A Visual Studio installation with MSBuild was not found."
+          }
+
+          $visualStudioVersion = "{0}.0" -f ([version]$installation.installationVersion).Major
+          "visual_studio_version=$visualStudioVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build VSIX
+        shell: pwsh
+        run: >
+          msbuild ${{ env.EXTENSION_PROJECT }}
+          /restore
+          /m
+          /p:Configuration=${{ env.CONFIGURATION }}
+          /p:VisualStudioVersion=${{ steps.vs.outputs.visual_studio_version }}
+          /p:DeployExtension=false
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-studio-extension
+          path: NanoAgent.VS/bin/Release/NanoAgent.VS.vsix
+          if-no-files-found: error
+          retention-days: 14
