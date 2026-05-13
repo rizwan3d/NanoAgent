@@ -7,7 +7,7 @@ internal sealed class UserDataPathProvider : IUserDataPathProvider
 {
     private const string ConfigurationFileName = "agent-profile.json";
     private const string LogsDirectoryName = "logs";
-    private const string SectionsDirectoryName = "sections";
+    private const string SessionsDirectoryName = "sessions";
 
     public string GetConfigurationFilePath()
     {
@@ -28,11 +28,11 @@ internal sealed class UserDataPathProvider : IUserDataPathProvider
             LogsDirectoryName);
     }
 
-    public string GetSectionsDirectoryPath()
+    public string GetSessionsDirectoryPath()
     {
         return Path.Combine(
             GetApplicationDirectoryPath(),
-            SectionsDirectoryName);
+            SessionsDirectoryName);
     }
 
     private string GetApplicationDirectoryPath()

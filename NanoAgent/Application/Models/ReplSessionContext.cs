@@ -249,7 +249,9 @@ public sealed class ReplSessionContext
 
     public DateTimeOffset SectionUpdatedAtUtc { get; private set; }
 
-    public string SectionResumeCommand => $"nanoai --section {SectionId}";
+    public string SessionResumeCommand => $"nanoai --session {SessionId}";
+
+    public string SectionResumeCommand => SessionResumeCommand;
 
     public int TotalEstimatedOutputTokens { get; private set; }
 
