@@ -1,0 +1,261 @@
+name: visual-studio-extension-cd
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref to build and publish
+        required: false
+        default: master
+        type: string
+      version:
+        description: Extension version to publish. Defaults to the tag version or the VSIX manifest version.
+        required: false
+        type: string
+
+concurrency:
+  group: visual-studio-extension-cd-${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  CONFIGURATION: Release
+  DOTNET_NOLOGO: true
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  EXTENSION_DIR: NanoAgent.VS
+  EXTENSION_PROJECT: NanoAgent.VS/NanoAgent.VS.csproj
+  EXTENSION_MANIFEST: NanoAgent.VS/source.extension.vsixmanifest
+  EXTENSION_OVERVIEW: NanoAgent.VS/overview.md
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+jobs:
+  package:
+    name: Package Visual Studio extension
+    runs-on: windows-2022
+    permissions:
+      contents: read
+    outputs:
+      extension_version: ${{ steps.version.outputs.extension_version }}
+      vsix_name: ${{ steps.version.outputs.vsix_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            NanoAgent/packages.lock.json
+            NanoAgent.CLI/packages.lock.json
+            NanoAgent.VS/packages.lock.json
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Resolve Visual Studio tooling
+        id: vs
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found."
+          }
+
+          $installation = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -format json | ConvertFrom-Json | Select-Object -First 1
+          if ($null -eq $installation) {
+            throw "A Visual Studio installation with MSBuild was not found."
+          }
+
+          $installationPath = $installation.installationPath
+          $visualStudioVersion = "{0}.0" -f ([version]$installation.installationVersion).Major
+          $vsixPublisherPath = Join-Path $installationPath "VSSDK\VisualStudioIntegration\Tools\Bin\VsixPublisher.exe"
+
+          if (-not (Test-Path $vsixPublisherPath)) {
+            throw "VsixPublisher.exe was not found at $vsixPublisherPath."
+          }
+
+          "visual_studio_version=$visualStudioVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "vsix_publisher_path=$vsixPublisherPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Resolve extension version
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          [xml]$manifest = Get-Content $env:EXTENSION_MANIFEST
+          $identity = $manifest.PackageManifest.Metadata.Identity
+
+          $version = $env:INPUT_VERSION
+          $releaseRef = $env:RELEASE_REF
+
+          if ([string]::IsNullOrWhiteSpace($version) -and $releaseRef -match '^refs/tags/[vV].+$') {
+            $version = $releaseRef.Substring($releaseRef.LastIndexOf('/') + 1)
+          }
+          elseif ([string]::IsNullOrWhiteSpace($version) -and $releaseRef -match '^[vV][0-9].*') {
+            $version = $releaseRef
+          }
+          elseif ([string]::IsNullOrWhiteSpace($version) -and $env:GITHUB_REF_TYPE -eq 'tag') {
+            $version = $env:GITHUB_REF_NAME
+          }
+
+          if (-not [string]::IsNullOrWhiteSpace($version)) {
+            $version = $version.Trim()
+            if ($version.StartsWith('v', [System.StringComparison]::OrdinalIgnoreCase)) {
+              $version = $version.Substring(1)
+            }
+          }
+          else {
+            $version = $identity.Version
+          }
+
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "Unable to resolve an extension version."
+          }
+
+          if ($version -notmatch '^[0-9]+(\.[0-9]+){1,3}(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+            throw "Resolved extension version '$version' is not a valid VSIX version."
+          }
+
+          $identity.Version = $version
+          $manifest.Save((Resolve-Path $env:EXTENSION_MANIFEST))
+
+          $vsixName = "NanoAgent.VS-$version.vsix"
+          "extension_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "vsix_name=$vsixName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Build VSIX
+        shell: pwsh
+        run: >
+          msbuild ${{ env.EXTENSION_PROJECT }}
+          /restore
+          /m
+          /p:Configuration=${{ env.CONFIGURATION }}
+          /p:VisualStudioVersion=${{ steps.vs.outputs.visual_studio_version }}
+          /p:DeployExtension=false
+
+      - name: Stage VSIX artifact
+        shell: pwsh
+        run: |
+          $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts/visual-studio"
+          New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
+
+          $sourcePath = Join-Path $env:GITHUB_WORKSPACE "${{ env.EXTENSION_DIR }}/bin/${{ env.CONFIGURATION }}/NanoAgent.VS.vsix"
+          $destinationPath = Join-Path $artifactDir "${{ steps.version.outputs.vsix_name }}"
+
+          if (-not (Test-Path $sourcePath)) {
+            throw "The VSIX package was not found at $sourcePath."
+          }
+
+          Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
+
+      - name: Upload VSIX artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: visual-studio-extension-${{ steps.version.outputs.extension_version }}
+          path: artifacts/visual-studio/${{ steps.version.outputs.vsix_name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish Visual Studio extension
+    needs: package
+    runs-on: windows-2022
+    environment:
+      name: visual-studio-marketplace
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Resolve Visual Studio tooling
+        id: vs
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          if (-not (Test-Path $vswhere)) {
+            throw "vswhere.exe was not found."
+          }
+
+          $installation = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -format json | ConvertFrom-Json | Select-Object -First 1
+          if ($null -eq $installation) {
+            throw "A Visual Studio installation with MSBuild was not found."
+          }
+
+          $vsixPublisherPath = Join-Path $installation.installationPath "VSSDK\VisualStudioIntegration\Tools\Bin\VsixPublisher.exe"
+          if (-not (Test-Path $vsixPublisherPath)) {
+            throw "VsixPublisher.exe was not found at $vsixPublisherPath."
+          }
+
+          "vsix_publisher_path=$vsixPublisherPath" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Download VSIX artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: visual-studio-extension-${{ needs.package.outputs.extension_version }}
+          path: artifacts/visual-studio
+
+      - name: Publish to Visual Studio Marketplace
+        shell: pwsh
+        env:
+          VS_MARKETPLACE_PAT: ${{ secrets.VS_MARKETPLACE_PAT }}
+          VS_MARKETPLACE_PUBLISHER: ${{ vars.VS_MARKETPLACE_PUBLISHER }}
+          VS_MARKETPLACE_EXTENSION_NAME: ${{ vars.VS_MARKETPLACE_EXTENSION_NAME }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PAT)) {
+            throw "VS_MARKETPLACE_PAT is required to publish the Visual Studio extension."
+          }
+
+          $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "rizwan3d" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
+          $extensionName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_EXTENSION_NAME)) { "nanoagent-vs" } else { $env:VS_MARKETPLACE_EXTENSION_NAME.Trim() }
+          $vsixPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/visual-studio/${{ needs.package.outputs.vsix_name }}"
+
+          if (-not (Test-Path $vsixPath)) {
+            throw "The VSIX artifact was not found at $vsixPath."
+          }
+
+          $publishDir = Join-Path $env:RUNNER_TEMP "nanoagent-vs-publish"
+          New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
+
+          $overviewPath = Join-Path $publishDir "overview.md"
+          Copy-Item -LiteralPath (Join-Path $env:GITHUB_WORKSPACE $env:EXTENSION_OVERVIEW) -Destination $overviewPath -Force
+
+          $publishManifestPath = Join-Path $publishDir "publishManifest.json"
+          @"
+          {
+            "`$schema": "http://json.schemastore.org/vsix-publish",
+            "categories": [ "coding" ],
+            "identity": {
+              "internalName": "$extensionName"
+            },
+            "overview": "overview.md",
+            "priceCategory": "free",
+            "publisher": "$publisherName",
+            "private": false,
+            "qna": true,
+            "repo": "https://github.com/Rizwan3D/NanoAgent"
+          }
+          "@ | Set-Content -Path $publishManifestPath -Encoding UTF8
+
+          & "${{ steps.vs.outputs.vsix_publisher_path }}" publish `
+            -payload $vsixPath `
+            -publishManifest $publishManifestPath `
+            -personalAccessToken $env:VS_MARKETPLACE_PAT
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "VsixPublisher.exe failed to publish the extension."
+          }
