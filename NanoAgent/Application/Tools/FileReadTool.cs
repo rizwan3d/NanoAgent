@@ -86,7 +86,7 @@ internal sealed class FileReadTool : ITool
             ToolJsonContext.Default.WorkspaceFileReadResult,
             new ToolRenderPayload(
                 $"File: {result.Path}",
-                result.Content));
+                MarkdownCodeBlock.Wrap(result.Content, "text")));
     }
 
 }
