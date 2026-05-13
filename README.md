@@ -24,6 +24,7 @@
   </a>
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent">
     <img src="https://img.shields.io/badge/Install-VSCode-0969da?style=for-the-badge" alt="View NanoAgent releases">
+  </a>
   <a href="#cli-install">
     <img src="https://img.shields.io/badge/Install-CLI-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
   </a>
