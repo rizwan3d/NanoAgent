@@ -75,7 +75,7 @@ class AcpClient(
             val errorReader = process!!.errorStream.bufferedReader()
 
             // Read stderr in background
-            Thread.startVirtualThread {
+            Thread {
                 try {
                     errorReader.lines().forEach { line ->
                         if (line.isNotBlank()) {
@@ -84,10 +84,10 @@ class AcpClient(
                     }
                 } catch (_: IOException) {
                 }
-            }
+            }.also { it.isDaemon = true; it.start() }
 
             // Start response reader thread
-            readerThread = Thread.ofVirtual().start {
+            readerThread = Thread {
                 try {
                     readResponses()
                 } catch (e: IOException) {
@@ -96,7 +96,7 @@ class AcpClient(
                         onDisconnect?.invoke(e)
                     }
                 }
-            }
+            }.also { it.isDaemon = true; it.start() }
 
             // Send initialize request
             sendRequest("initialize", mapOf("protocolVersion" to 1))
@@ -380,6 +380,11 @@ class AcpClient(
                 val content = update.getAsJsonObject("content")
                 val text = content.get("text").asString
                 onReasoningMessage?.invoke(text)
+            }
+            SessionUpdateKind.USER_MESSAGE_CHUNK -> {
+                val content = update.getAsJsonObject("content")
+                val text = content.get("text").asString
+                onAgentMessage?.invoke(text)
             }
             SessionUpdateKind.SESSION_INFO_UPDATE -> {
                 try {

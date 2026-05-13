@@ -372,3 +372,6 @@ FodyWeavers.xsd
 # JetBrains plugin build output
 NanoAgent.JetBrains/build/
 NanoAgent.JetBrains/.gradle/
+NanoAgent.JetBrains/.intellijPlatform/
+NanoAgent.JetBrains/.kotlin/
+.idea/

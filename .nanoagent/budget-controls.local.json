@@ -7,12 +7,12 @@
   },
   "spentUsd": 0,
   "source": "local",
-  "updatedAtUtc": "2026-05-08T12:10:37.0538688+00:00",
+  "updatedAtUtc": "2026-05-13T11:32:46.8485003+00:00",
   "usage": {
-    "cachedInputTokens": 6994688,
-    "inputTokens": 7318786,
-    "outputTokens": 15514,
+    "cachedInputTokens": 30378368,
+    "inputTokens": 31785270,
+    "outputTokens": 227346,
     "totalCostUsd": 0,
-    "updatedAtUtc": "2026-05-08T12:10:37.0538688+00:00"
+    "updatedAtUtc": "2026-05-13T11:32:46.8485002+00:00"
   }
 }
