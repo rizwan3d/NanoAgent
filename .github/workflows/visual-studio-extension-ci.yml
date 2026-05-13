@@ -58,6 +58,12 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Build NanoAgent CLI payload
+        run: >
+          dotnet build NanoAgent.CLI/NanoAgent.CLI.csproj
+          --configuration ${{ env.CONFIGURATION }}
+          --nologo
+
       - name: Resolve Visual Studio version
         id: vs
         shell: pwsh
@@ -82,6 +88,7 @@ jobs:
           /restore
           /m
           /p:Configuration=${{ env.CONFIGURATION }}
+          /p:BuildNanoAgentCliProject=false
           /p:VisualStudioVersion=${{ steps.vs.outputs.visual_studio_version }}
           /p:DeployExtension=false
 

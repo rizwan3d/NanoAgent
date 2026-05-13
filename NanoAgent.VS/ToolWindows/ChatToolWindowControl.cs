@@ -68,6 +68,8 @@ namespace NanoAgent.VS.ToolWindows
 
         private async Task InitializeAsync()
         {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
             _workingDirectory = ResolveWorkingDirectory();
             string cliExePath = ResolveCliExecutable();
 
@@ -90,8 +92,9 @@ namespace NanoAgent.VS.ToolWindows
         {
             _log.Warn("NanoAgent ACP server exited.");
             _hostInitialized = false;
-            Dispatcher.Invoke(() =>
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async delegate
             {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 SetStatus("Stopped", "#FF8F8F8F");
                 _promptRunning = false;
                 UpdateInputState();
@@ -101,20 +104,31 @@ namespace NanoAgent.VS.ToolWindows
         private void OnHostError(string error)
         {
             _log.Error($"NanoAgent ACP error: {error}");
-            Dispatcher.Invoke(() => AddSystemMessage($"Backend error: {error}"));
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async delegate
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                AddSystemMessage($"Backend error: {error}");
+            });
         }
 
         private async void OnNotificationReceived(string method, Dictionary<string, object?>? parameters)
         {
-            await Dispatcher.InvokeAsync(async () =>
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            try
             {
-                try { await HandleNotificationAsync(method, parameters); }
-                catch (Exception ex) { _log.Error($"Notification failed: {method}", ex); }
-            });
+                await HandleNotificationAsync(method, parameters);
+            }
+            catch (Exception ex)
+            {
+                _log.Error($"Notification failed: {method}", ex);
+            }
         }
 
         private async Task HandleNotificationAsync(string method, Dictionary<string, object?>? parameters)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             switch (method)
             {
                 case VsProtocol.MessageChunk:
@@ -547,25 +561,22 @@ namespace NanoAgent.VS.ToolWindows
             {
                 await _agentService.InitializeAsync(_workingDirectory);
                 _hostInitialized = true;
-
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    SetStatus("Ready", "#FF73C991");
-                });
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                SetStatus("Ready", "#FF73C991");
             }
             catch (Exception ex)
             {
                 _log.Error("Failed to initialize backend session", ex);
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    SetStatus("Error", "#FFF48771");
-                    AddSystemMessage($"Failed to initialize backend session: {ex.Message}");
-                });
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                SetStatus("Error", "#FFF48771");
+                AddSystemMessage($"Failed to initialize backend session: {ex.Message}");
             }
         }
 
         private static string ResolveCliExecutable()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
+
             NanoAgentOptionsPage? options = GetOptionsPageOrNull();
             string? configuredPath = options?.NanoAgentCliPath?.Trim();
             if (!string.IsNullOrWhiteSpace(configuredPath))
