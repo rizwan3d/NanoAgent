@@ -38,7 +38,7 @@ internal sealed class NewSessionCommandHandler : IReplCommandHandler
 
         return ReplCommandResult.SwitchSession(
             next,
-            $"Started new section within session.\nNew section: {next.SectionId}\nResume command: {next.SectionResumeCommand}\nAccumulated context from previous section is available.");
+            $"Started new section within session.\nNew section: {next.SectionId}\nResume command: {next.SessionResumeCommand}\nAccumulated context from previous section is available.");
     }
 }
 
