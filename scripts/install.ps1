@@ -191,12 +191,6 @@ function Save-UrlToFile {
     throw $lastError
 }
 
-function Test-Sha256Required {
-    $value = $env:NANOAGENT_REQUIRE_SHA256
-
-    return $value -in @('1', 'true', 'TRUE', 'True', 'yes', 'YES', 'Yes')
-}
-
 function Get-ExpectedSha256 {
     param(
         [Parameter(Mandatory = $true)]
@@ -286,12 +280,7 @@ function Test-ArchiveSha256 {
         $expectedSha256 = Get-ReleaseAssetSha256 -Tag $Tag -FileName $AssetName
 
         if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
-            if (Test-Sha256Required) {
-                Fail-Install "Unable to download $ChecksumsName from $checksumsUrl, and no GitHub release metadata digest was found. $($_.Exception.Message)"
-            }
-
-            Write-Status "$ChecksumsName was not found for $Tag; continuing without checksum verification. Set NANOAGENT_REQUIRE_SHA256=1 to require it."
-            return
+            Fail-Install "Unable to download $ChecksumsName from $checksumsUrl, and no GitHub release metadata digest was found. Checksum verification is mandatory. $($_.Exception.Message)"
         }
 
         Write-Status "Using SHA256 digest from GitHub release metadata for $AssetName."
