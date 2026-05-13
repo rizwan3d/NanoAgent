@@ -47,7 +47,7 @@ Release downloads are published at:
 https://github.com/rizwan3d/NanoAgent/releases/latest
 ```
 
-New release assets include `SHA256SUMS` beside the downloads. The release pipeline verifies every checksum matches its asset before publishing. For manual downloads, compare the published SHA256 hash with your downloaded file before running it.
+New release assets include `SHA256SUMS` beside the downloads. The release pipeline verifies every checksum matches its asset before publishing, and GitHub release workflows also generate artifact attestations that establish SLSA build provenance for the checksummed assets. For manual downloads, compare the published SHA256 hash with your downloaded file before running it. To verify provenance with GitHub CLI, run `gh attestation verify path/to/asset -R rizwan3d/NanoAgent`.
 
 ### CLI
 
@@ -435,7 +435,7 @@ code --install-extension nanoagent-<version>.vsix
 
 ### Extension Publishing
 
-The release workflow `.github/workflows/release.yml` packages the extension as `NanoAgent.VsCode-<version>.vsix` and publishes it to GitHub Releases with the CLI and desktop assets. The signed release variant `.github/workflows/release-signing.yml` does the same when that workflow is used.
+The release workflow `.github/workflows/release.yml` packages the extension as `NanoAgent.VsCode-<version>.vsix` and publishes it to GitHub Releases with the CLI and desktop assets. The signed release variant `.github/workflows/release-signing.yml` does the same when that workflow is used. Both workflows publish `SHA256SUMS` and GitHub artifact attestations for the generated release assets.
 
 The Marketplace CD workflow `.github/workflows/vscode-extension-cd.yml` publishes the extension to the Visual Studio Marketplace. It runs for `v*` tags and manual dispatch. For tag builds, the workflow removes the leading `v` and applies that value to `NanoAgent.VsCode/package.json` with `npm version --no-git-tag-version` before packaging.
 
