@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Configuration;
 using NanoAgent.Application.Backend;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
+using NanoAgent.Infrastructure.Configuration;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
@@ -628,7 +630,12 @@ internal sealed class AcpServer : IAsyncDisposable
 
         string[] backendArgs = CreateBackendArgs(sectionId);
         INanoAgentBackend backend = _backendFactory(backendArgs, sessionMcpServers);
-        AcpUiBridge bridge = new(this, _error, _providerAuthKey);
+        ToolExecutionSettings toolExecutionSettings = LoadToolExecutionSettings(cwd);
+        AcpUiBridge bridge = new(
+            this,
+            _error,
+            _providerAuthKey,
+            GetAcpRequestTimeout(toolExecutionSettings));
 
         try
         {
@@ -882,9 +889,40 @@ internal sealed class AcpServer : IAsyncDisposable
         writer.WriteEndObject();
     }
 
+    private static ToolExecutionSettings LoadToolExecutionSettings(string workspaceRoot)
+    {
+        IConfiguration configuration = new ConfigurationBuilder()
+            .AddJsonFile(
+                Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+                optional: true,
+                reloadOnChange: false)
+            .AddJsonFile(
+                Path.Combine(workspaceRoot, ".nanoagent", "agent-profile.json"),
+                optional: true,
+                reloadOnChange: false)
+            .Build();
+
+        ToolExecutionSettings configured = new();
+        configuration.GetSection($"{ApplicationOptions.SectionName}:Tools").Bind(configured);
+
+        return ApplicationSettingsFactory.CreateToolExecutionSettings(
+            new ApplicationOptions
+            {
+                Tools = configured
+            });
+    }
+
+    private static TimeSpan GetAcpRequestTimeout(ToolExecutionSettings settings)
+    {
+        return settings.AcpRequestTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(settings.AcpRequestTimeoutSeconds)
+            : Timeout.InfiniteTimeSpan;
+    }
+
     internal async Task<JsonElement> SendClientRequestAsync(
         string method,
         Action<Utf8JsonWriter> writeParams,
+        TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         long id = Interlocked.Increment(ref _nextRequestId);
@@ -919,7 +957,15 @@ internal sealed class AcpServer : IAsyncDisposable
                 },
                 cancellationToken);
 
-            return await completion.Task;
+            return timeout == Timeout.InfiniteTimeSpan
+                ? await completion.Task.WaitAsync(cancellationToken)
+                : await completion.Task.WaitAsync(timeout, cancellationToken);
+        }
+        catch (TimeoutException)
+        {
+            _pendingRequests.TryRemove(key, out _);
+            throw new TimeoutException(
+                $"ACP request '{method}' timed out after {timeout.TotalSeconds:0} seconds.");
         }
         catch
         {
@@ -1692,6 +1738,7 @@ internal sealed class AcpServer : IAsyncDisposable
         private readonly object _providerAuthKeySync = new();
         private readonly object _tailSync = new();
         private readonly IToolOutputFormatter _toolOutputFormatter = new ToolOutputFormatter();
+        private readonly TimeSpan _requestTimeout;
         private string? _providerAuthKey;
         private bool _providerAuthKeyConsumed;
         private Task _tail = Task.CompletedTask;
@@ -1699,11 +1746,13 @@ internal sealed class AcpServer : IAsyncDisposable
         public AcpUiBridge(
             AcpServer server,
             TextWriter error,
-            string? providerAuthKey)
+            string? providerAuthKey,
+            TimeSpan requestTimeout)
         {
             _server = server;
             _error = error;
             _providerAuthKey = NormalizeOrNull(providerAuthKey);
+            _requestTimeout = requestTimeout;
         }
 
         public string? SessionId { get; set; }
@@ -1905,6 +1954,7 @@ internal sealed class AcpServer : IAsyncDisposable
                     writer.WriteEndArray();
                     writer.WriteEndObject();
                 },
+                _requestTimeout,
                 cancellationToken);
 
             if (!TryGetProperty(result, "outcome", out JsonElement outcome) ||
@@ -1960,6 +2010,7 @@ internal sealed class AcpServer : IAsyncDisposable
                         writer.WriteBoolean("allowCancellation", request.AllowCancellation);
                         writer.WriteEndObject();
                     },
+                    _requestTimeout,
                     cancellationToken);
 
                 if (!TryGetProperty(result, "outcome", out JsonElement outcome) ||

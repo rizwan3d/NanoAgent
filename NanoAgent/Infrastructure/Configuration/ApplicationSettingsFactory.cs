@@ -68,9 +68,12 @@ internal static class ApplicationSettingsFactory
         ToolExecutionSettings configured = options.Tools ?? new ToolExecutionSettings();
         return new ToolExecutionSettings
         {
+            AcpRequestTimeoutSeconds = Math.Max(0, configured.AcpRequestTimeoutSeconds),
+            HttpClientTimeoutSeconds = Math.Max(0, configured.HttpClientTimeoutSeconds),
             DefaultTimeoutSeconds = Math.Max(1, configured.DefaultTimeoutSeconds),
             MaxConcurrentBackgroundTerminalsPerSession = Math.Max(1, configured.MaxConcurrentBackgroundTerminalsPerSession),
-            CompletedBackgroundTerminalTtlSeconds = Math.Max(1, configured.CompletedBackgroundTerminalTtlSeconds)
+            CompletedBackgroundTerminalTtlSeconds = Math.Max(1, configured.CompletedBackgroundTerminalTtlSeconds),
+            AgentOrchestrationTimeoutSeconds = Math.Max(0, configured.AgentOrchestrationTimeoutSeconds)
         };
     }
 

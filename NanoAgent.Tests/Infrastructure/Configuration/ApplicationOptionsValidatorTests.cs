@@ -163,4 +163,33 @@ public sealed class ApplicationOptionsValidatorTests
         result.Failures.Should().Contain(failure => failure.Contains("MaxConcurrentBackgroundTerminalsPerSession"));
         result.Failures.Should().Contain(failure => failure.Contains("CompletedBackgroundTerminalTtlSeconds"));
     }
+
+    [Fact]
+    public void Validate_Should_ReturnFailure_When_OptionalToolTimeoutSettingsAreNegative()
+    {
+        ApplicationOptions options = new()
+        {
+            Defaults = new ApplicationDefaultsOptions(),
+            ModelSelection = new ModelSelectionOptions
+            {
+                CacheDurationSeconds = 300
+            },
+            Tools = new NanoAgent.Application.Models.ToolExecutionSettings
+            {
+                DefaultTimeoutSeconds = 180,
+                MaxConcurrentBackgroundTerminalsPerSession = 4,
+                CompletedBackgroundTerminalTtlSeconds = 300,
+                HttpClientTimeoutSeconds = -1,
+                AcpRequestTimeoutSeconds = -1,
+                AgentOrchestrationTimeoutSeconds = -1
+            }
+        };
+
+        ValidateOptionsResult result = _sut.Validate(Options.DefaultName, options);
+
+        result.Failed.Should().BeTrue();
+        result.Failures.Should().Contain(failure => failure.Contains("HttpClientTimeoutSeconds"));
+        result.Failures.Should().Contain(failure => failure.Contains("AcpRequestTimeoutSeconds"));
+        result.Failures.Should().Contain(failure => failure.Contains("AgentOrchestrationTimeoutSeconds"));
+    }
 }
