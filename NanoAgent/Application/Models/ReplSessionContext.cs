@@ -601,8 +601,8 @@ public sealed class ReplSessionContext
         _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
         _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(
             turn.AssistantResponse,
-            assistantReasoningContent,
-            assistantReasoningDetailsJson));
+            turn.AssistantReasoningContent,
+            turn.AssistantReasoningDetailsJson));
         IsPersistedStateDirty = true;
     }
 
