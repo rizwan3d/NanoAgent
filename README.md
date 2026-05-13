@@ -94,6 +94,8 @@ NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max si
 
 Download the latest desktop build from [GitHub Releases](https://github.com/rizwan3d/NanoAgent/releases/latest), or install the CLI:
 
+Release assets also publish `SHA256SUMS` and GitHub artifact attestations so you can verify both checksums and build provenance.
+
 ### Desktop App
 
 | Platform | Architecture | Download|
