@@ -315,6 +315,61 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_ApplyConfiguredAcpRequestTimeoutFromAgentProfile()
+    {
+        string originalDirectory = Directory.GetCurrentDirectory();
+        using TempWorkspace workspace = TempWorkspace.Create();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, ".nanoagent"));
+        File.WriteAllText(
+            Path.Combine(workspace.Path, ".nanoagent", "agent-profile.json"),
+            """
+            {
+              "Application": {
+                "Tools": {
+                  "acpRequestTimeoutSeconds": 1
+                }
+              }
+            }
+            """);
+
+        PromptingBackend backend = new();
+        NonResponsiveAcpTransport transport = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            transport.Input,
+            transport.Output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ => backend);
+
+        Task runTask = sut.RunAsync(CancellationToken.None);
+
+        try
+        {
+            await transport.SendAsync("""{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}""");
+            await transport.SendAsync(
+                "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(workspace.Path) +
+                "}}");
+            await transport.WaitForMethodAsync("session/request_permission");
+            transport.CompleteInput();
+            await runTask;
+
+            JsonElement response = FindResponse(transport.Messages, 2);
+            response.GetProperty("error")
+                .GetProperty("message")
+                .GetString()
+                .Should()
+                .Contain("ACP request 'session/request_permission' timed out after 1 seconds.");
+        }
+        finally
+        {
+            Directory.SetCurrentDirectory(originalDirectory);
+        }
+    }
+
+    [Fact]
     public async Task RunAsync_Should_HandleOpenAiCompatibleOnboardingPromptSequenceBeforeSessionExists()
     {
         string cwd = Directory.GetCurrentDirectory();
@@ -1009,6 +1064,151 @@ public sealed class AcpServerTests
                 }
 
                 return Task.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class NonResponsiveAcpTransport
+    {
+        private readonly Channel<string?> _input = Channel.CreateUnbounded<string?>();
+        private readonly Dictionary<string, TaskCompletionSource> _methodWaiters = new(StringComparer.Ordinal);
+        private readonly List<JsonElement> _messages = [];
+
+        public NonResponsiveAcpTransport()
+        {
+            Input = new ChannelTextReader(_input.Reader);
+            Output = new SilentTextWriter(this);
+        }
+
+        public TextReader Input { get; }
+
+        public IReadOnlyList<JsonElement> Messages => _messages;
+
+        public TextWriter Output { get; }
+
+        public void CompleteInput()
+        {
+            _input.Writer.TryComplete();
+        }
+
+        public ValueTask SendAsync(string line)
+        {
+            return _input.Writer.WriteAsync(line);
+        }
+
+        public Task WaitForMethodAsync(string methodName)
+        {
+            lock (_methodWaiters)
+            {
+                if (_messages.Any(message => IsMethod(message, methodName)))
+                {
+                    return Task.CompletedTask;
+                }
+
+                if (!_methodWaiters.TryGetValue(methodName, out TaskCompletionSource? waiter))
+                {
+                    waiter = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                    _methodWaiters[methodName] = waiter;
+                }
+
+                return waiter.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }
+
+        private void HandleOutputLine(string line)
+        {
+            using JsonDocument document = JsonDocument.Parse(line);
+            JsonElement message = document.RootElement.Clone();
+            _messages.Add(message);
+
+            if (!message.TryGetProperty("method", out JsonElement method))
+            {
+                return;
+            }
+
+            string? methodName = method.GetString();
+            if (string.IsNullOrWhiteSpace(methodName))
+            {
+                return;
+            }
+
+            lock (_methodWaiters)
+            {
+                if (_methodWaiters.TryGetValue(methodName, out TaskCompletionSource? waiter))
+                {
+                    waiter.TrySetResult();
+                }
+            }
+        }
+
+        private sealed class ChannelTextReader : TextReader
+        {
+            private readonly ChannelReader<string?> _reader;
+
+            public ChannelTextReader(ChannelReader<string?> reader)
+            {
+                _reader = reader;
+            }
+
+            public override async ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken)
+            {
+                try
+                {
+                    return await _reader.ReadAsync(cancellationToken);
+                }
+                catch (ChannelClosedException)
+                {
+                    return null;
+                }
+            }
+        }
+
+        private sealed class SilentTextWriter : TextWriter
+        {
+            private readonly NonResponsiveAcpTransport _transport;
+
+            public SilentTextWriter(NonResponsiveAcpTransport transport)
+            {
+                _transport = transport;
+            }
+
+            public override Encoding Encoding => Encoding.UTF8;
+
+            public override Task WriteLineAsync(string? value)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    _transport.HandleOutputLine(value);
+                }
+
+                return Task.CompletedTask;
+            }
+        }
+    }
+
+    private sealed class TempWorkspace : IDisposable
+    {
+        private TempWorkspace(string path)
+        {
+            Path = path;
+        }
+
+        public string Path { get; }
+
+        public static TempWorkspace Create()
+        {
+            string path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "nanoagent-acp-tests-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(path);
+            return new TempWorkspace(path);
+        }
+
+        public void Dispose()
+        {
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
             }
         }
     }

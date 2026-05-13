@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.BudgetControls;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.CodeIntelligence;
@@ -68,40 +69,54 @@ public static class ServiceCollectionExtensions
             ApplicationSettingsFactory.CreatePermissionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value,
                 serviceProvider.GetService<BackendRuntimeOptions>()?.AutoApproveAllTools == true));
-        services.AddHttpClient<IWebRunService, WebRunService>(client =>
+        services.AddHttpClient<IWebRunService, WebRunService>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(20);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(20));
         });
-        services.AddHttpClient<IApplicationUpdateService, GitHubApplicationUpdateService>(client =>
+        services.AddHttpClient<IApplicationUpdateService, GitHubApplicationUpdateService>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(20);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(20));
         });
-        services.AddHttpClient<IBudgetControlsUsageService, BudgetControlsUsageService>(client =>
+        services.AddHttpClient<IBudgetControlsUsageService, BudgetControlsUsageService>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(20);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(20));
         });
-        services.AddHttpClient<IOpenAiCodexClientVersionProvider, GitHubOpenAiCodexClientVersionProvider>(client =>
+        services.AddHttpClient<IOpenAiCodexClientVersionProvider, GitHubOpenAiCodexClientVersionProvider>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(10);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(10));
         });
-        services.AddHttpClient<OpenAiChatGptAccountCredentialService>(client =>
+        services.AddHttpClient<OpenAiChatGptAccountCredentialService>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(30));
         });
-        services.AddHttpClient<AnthropicClaudeAccountCredentialService>(client =>
+        services.AddHttpClient<AnthropicClaudeAccountCredentialService>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(30));
         });
-        services.AddHttpClient<GitHubCopilotCredentialService>(client =>
+        services.AddHttpClient<GitHubCopilotCredentialService>((serviceProvider, client) =>
         {
-            client.Timeout = TimeSpan.FromSeconds(30);
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(30));
         });
         services.AddTransient<IOpenAiChatGptAccountCredentialService>(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
@@ -115,10 +130,12 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
         services.AddTransient<IGitHubCopilotAuthenticator>(serviceProvider =>
             serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
-        services.AddHttpClient("NanoAgent.Mcp", client =>
+        services.AddHttpClient("NanoAgent.Mcp", (serviceProvider, client) =>
         {
-            client.Timeout = Timeout.InfiniteTimeSpan;
-            client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                Timeout.InfiniteTimeSpan);
         });
         services.AddSingleton<IAgentConfigurationStore, JsonAgentConfigurationStore>();
         services.AddSingleton<IApiKeySecretStore, ApiKeySecretStore>();
@@ -135,13 +152,17 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IPlatformCredentialStore>(CreatePlatformCredentialStore());
         services.AddSingleton<ILoggerProvider, DailyFileLoggerProvider>();
         services.AddSingleton<IValidateOptions<ApplicationOptions>, ApplicationOptionsValidator>();
-        services.AddHttpClient<IConversationProviderClient, OpenAiCompatibleConversationProviderClient>(client =>
+        services.AddHttpClient<IConversationProviderClient, OpenAiCompatibleConversationProviderClient>((serviceProvider, client) =>
         {
-            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.Timeout = ResolveHttpClientTimeout(
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                Timeout.InfiniteTimeSpan);
         });
-        services.AddHttpClient<IModelProviderClient, OpenAiCompatibleModelProviderClient>(client =>
+        services.AddHttpClient<IModelProviderClient, OpenAiCompatibleModelProviderClient>((serviceProvider, client) =>
         {
-            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.Timeout = ResolveHttpClientTimeout(
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                Timeout.InfiniteTimeSpan);
         });
 
         services
@@ -174,5 +195,25 @@ public static class ServiceCollectionExtensions
         }
 
         return _ => new UnsupportedPlatformCredentialStore();
+    }
+
+    private static void ConfigureHttpClient(
+        HttpClient client,
+        ToolExecutionSettings settings,
+        TimeSpan defaultTimeout)
+    {
+        client.Timeout = ResolveHttpClientTimeout(settings, defaultTimeout);
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("NanoAgent/1.0");
+    }
+
+    private static TimeSpan ResolveHttpClientTimeout(
+        ToolExecutionSettings settings,
+        TimeSpan defaultTimeout)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        return settings.HttpClientTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(settings.HttpClientTimeoutSeconds)
+            : defaultTimeout;
     }
 }

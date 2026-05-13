@@ -51,6 +51,16 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
         }
         else
         {
+            if (options.Tools.AcpRequestTimeoutSeconds < 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:AcpRequestTimeoutSeconds must be zero or greater.");
+            }
+
+            if (options.Tools.HttpClientTimeoutSeconds < 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:HttpClientTimeoutSeconds must be zero or greater.");
+            }
+
             if (options.Tools.DefaultTimeoutSeconds <= 0)
             {
                 failures.Add($"{ApplicationOptions.SectionName}:Tools:DefaultTimeoutSeconds must be greater than zero.");
@@ -64,6 +74,11 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
             if (options.Tools.CompletedBackgroundTerminalTtlSeconds <= 0)
             {
                 failures.Add($"{ApplicationOptions.SectionName}:Tools:CompletedBackgroundTerminalTtlSeconds must be greater than zero.");
+            }
+
+            if (options.Tools.AgentOrchestrationTimeoutSeconds < 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:AgentOrchestrationTimeoutSeconds must be zero or greater.");
             }
         }
 
