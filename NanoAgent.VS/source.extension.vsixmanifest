@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PackageManifest Version="2.0.0" xmlns="http://schemas.microsoft.com/developer/vsx-schema/2011" xmlns:d="http://schemas.microsoft.com/developer/vsx-schema-design/2011">
   <Metadata>
-    <Identity Id="NanoAgent.VS.5292ff0d-f5b5-4e1e-a565-91e6f73df142" Version="1.0.4" Language="en-US" Publisher="Muhammad Rizwan" />
+    <Identity Id="NanoAgent.VS.5292ff0d-f5b5-4e1e-a565-91e6f73df142" Version="1.0.4" Language="en-US" Publisher="rizwan3d" />
     <DisplayName>NanoAgent for Visual Studio</DisplayName>
     <Description>AI-powered coding assistant for Visual Studio. Chat with NanoAgent directly in your IDE with support for model selection, profile switching, tool execution, and session management through the NanoAgent ACP server.</Description>
     <MoreInfo>https://github.com/Rizwan3D/NanoAgent</MoreInfo>

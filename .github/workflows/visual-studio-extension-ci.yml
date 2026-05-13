@@ -4,22 +4,12 @@ on:
   pull_request:
     paths:
       - .github/workflows/visual-studio-extension-ci.yml
-      - Directory.Build.props
-      - LICENSE.txt
-      - global.json
-      - NanoAgent/**
-      - NanoAgent.CLI/**
       - NanoAgent.VS/**
   push:
     branches:
       - master
     paths:
       - .github/workflows/visual-studio-extension-ci.yml
-      - Directory.Build.props
-      - LICENSE.txt
-      - global.json
-      - NanoAgent/**
-      - NanoAgent.CLI/**
       - NanoAgent.VS/**
 
 concurrency:

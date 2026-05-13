@@ -98,9 +98,11 @@ jobs:
         shell: pwsh
         env:
           INPUT_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+          VS_MARKETPLACE_PUBLISHER: ${{ vars.VS_MARKETPLACE_PUBLISHER }}
         run: |
           [xml]$manifest = Get-Content $env:EXTENSION_MANIFEST
           $identity = $manifest.PackageManifest.Metadata.Identity
+          $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "rizwan3d" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
 
           $version = $env:INPUT_VERSION
           $releaseRef = $env:RELEASE_REF
@@ -134,6 +136,7 @@ jobs:
           }
 
           $identity.Version = $version
+          $identity.Publisher = $publisherName
           $manifest.Save((Resolve-Path $env:EXTENSION_MANIFEST))
 
           $vsixName = "NanoAgent.VS-$version.vsix"
