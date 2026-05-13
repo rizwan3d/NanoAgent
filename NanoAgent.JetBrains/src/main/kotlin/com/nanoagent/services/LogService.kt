@@ -11,7 +11,7 @@ import com.intellij.openapi.diagnostic.Logger
 enum class LogLevel { DEBUG, INFO, WARN, ERROR }
 
 class LogService {
-    private val logger = Logger.getInstance(NanoAgent::class.java)
+    private val logger = Logger.getInstance(LogService::class.java)
 
     companion object {
         private var level: LogLevel = LogLevel.INFO

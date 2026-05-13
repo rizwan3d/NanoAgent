@@ -99,7 +99,7 @@ data class AcpSessionInfo(
     val sectionResumeCommand: String?,
     val providerName: String?,
     val modelId: String?,
-    val activeModelContextWindowTokens: <redacted>,
+    val activeModelContextWindowTokens: Int?,
     val availableModelIds: List<String>?,
     val availableAgentProfiles: List<String>?,
     val thinkingMode: String?,
@@ -166,7 +166,7 @@ data class AcpTextPromptRequest(
     val label: String,
     val description: String? = null,
     val defaultValue: String? = null,
-    @SerializedName("isSecret") val secretFlag: <redacted> = false,
+    @SerializedName("isSecret") val secretFlag: Boolean = false,
     val allowCancellation: Boolean = true
 )
 

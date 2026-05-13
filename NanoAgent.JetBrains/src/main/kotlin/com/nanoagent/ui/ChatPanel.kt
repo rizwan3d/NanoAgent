@@ -41,6 +41,29 @@ import javax.swing.text.html.HTMLEditorKit
  */
 class ChatPanel(private val project: Project) : BorderLayoutPanel() {
 
+    /**
+     * Public accessor for the session manager, used by editor actions.
+     */
+    fun getSessionManager(): SessionManager = sessionManager
+
+    /**
+     * Public method to send a text prompt programmatically (used by editor actions).
+     */
+    fun sendTextPrompt(text: String) {
+        if (!connected || isRunning) return
+        val escaped = text.replace("\\", "\\\\").replace("\"", "\\\"")
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                sessionManager.sendPrompt(text).get()
+            } catch (e: Exception) {
+                logger.warn("Failed to send prompt from editor action", e)
+                SwingUtilities.invokeLater {
+                    appendSystemMessage("Error: ${e.message}")
+                }
+            }
+        }
+    }
+
     private val logger = Logger.getInstance(ChatPanel::class.java)
     private val nanoAgentPlugin = NanoAgentPlugin.getInstance()
     private val processManager = nanoAgentPlugin.createProcessManager()
@@ -1126,9 +1149,20 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
         val escaped = htmlEscape(text)
         // Simple pattern for file:line:column references
         return escaped.replace(
-            Regex("([\\w./\\\\-]+\\.\\w{1,15})(?::(\\d+))?(?::(\\d+))?"),
-            "<a href='$1'>$1${if (groupValues[2].isNotEmpty()) ":" + groupValues[2] else ""}${if (groupValues[3].isNotEmpty()) ":" + groupValues[3] else ""}</a>"
-        )
+            Regex("([\\w./\\\\-]+\\.\\w{1,15})(?::(\\d+))?(?::(\\d+))?")
+        ) { matchResult ->
+            val groups = matchResult.groupValues
+            val fileRef = buildString {
+                append(groups[1])
+                if (groups[2].isNotEmpty()) {
+                    append(":").append(groups[2])
+                    if (groups[3].isNotEmpty()) {
+                        append(":").append(groups[3])
+                    }
+                }
+            }
+            "<a href='${groups[1]}'>$fileRef</a>"
+        }
     }
 
     private data class MessageElement(
