@@ -70,6 +70,7 @@ internal static class ApplicationSettingsFactory
         {
             AcpRequestTimeoutSeconds = Math.Max(0, configured.AcpRequestTimeoutSeconds),
             HttpClientTimeoutSeconds = Math.Max(0, configured.HttpClientTimeoutSeconds),
+            McpRequestTimeoutSeconds = Math.Max(0, configured.McpRequestTimeoutSeconds),
             DefaultTimeoutSeconds = Math.Max(1, configured.DefaultTimeoutSeconds),
             MaxConcurrentBackgroundTerminalsPerSession = Math.Max(1, configured.MaxConcurrentBackgroundTerminalsPerSession),
             CompletedBackgroundTerminalTtlSeconds = Math.Max(1, configured.CompletedBackgroundTerminalTtlSeconds),

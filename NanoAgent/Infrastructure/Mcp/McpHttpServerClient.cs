@@ -8,16 +8,19 @@ internal sealed class McpHttpServerClient : IMcpServerClient
 {
     private readonly HttpClient _httpClient;
     private readonly McpServerConfiguration _configuration;
+    private readonly TimeSpan _requestTimeout;
     private readonly SemaphoreSlim _requestGate = new(1, 1);
     private int _nextRequestId;
     private string? _sessionId;
 
     public McpHttpServerClient(
         HttpClient httpClient,
-        McpServerConfiguration configuration)
+        McpServerConfiguration configuration,
+        TimeSpan requestTimeout)
     {
         _httpClient = httpClient;
         _configuration = configuration;
+        _requestTimeout = requestTimeout;
     }
 
     public string Endpoint => _configuration.Url ?? string.Empty;
@@ -80,16 +83,19 @@ internal sealed class McpHttpServerClient : IMcpServerClient
         Action<Utf8JsonWriter>? writeParams,
         CancellationToken cancellationToken)
     {
+        using CancellationTokenSource? timeoutSource = CreateRequestTimeoutSource(cancellationToken);
+        CancellationToken requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
+
         int requestId = Interlocked.Increment(ref _nextRequestId);
         string payload = McpJson.BuildRequest(requestId, method, writeParams);
 
-        await _requestGate.WaitAsync(cancellationToken);
+        await _requestGate.WaitAsync(requestCancellationToken);
         try
         {
             JsonElement response = await SendPayloadAsync(
                 payload,
                 expectResponse: true,
-                cancellationToken);
+                requestCancellationToken);
             if (response.TryGetProperty("error", out _))
             {
                 throw new McpProtocolException(McpJson.GetJsonRpcErrorMessage(response));
@@ -114,13 +120,16 @@ internal sealed class McpHttpServerClient : IMcpServerClient
         Action<Utf8JsonWriter>? writeParams,
         CancellationToken cancellationToken)
     {
-        await _requestGate.WaitAsync(cancellationToken);
+        using CancellationTokenSource? timeoutSource = CreateRequestTimeoutSource(cancellationToken);
+        CancellationToken requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
+
+        await _requestGate.WaitAsync(requestCancellationToken);
         try
         {
             await SendPayloadAsync(
                 McpJson.BuildNotification(method, writeParams),
                 expectResponse: false,
-                cancellationToken);
+                requestCancellationToken);
         }
         finally
         {
@@ -175,6 +184,18 @@ internal sealed class McpHttpServerClient : IMcpServerClient
 
         using JsonDocument document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private CancellationTokenSource? CreateRequestTimeoutSource(CancellationToken cancellationToken)
+    {
+        if (_requestTimeout == Timeout.InfiniteTimeSpan)
+        {
+            return null;
+        }
+
+        CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(_requestTimeout);
+        return timeoutSource;
     }
 
     private void AddConfiguredHeaders(HttpRequestMessage request)

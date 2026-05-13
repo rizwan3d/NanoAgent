@@ -180,6 +180,7 @@ public sealed class ApplicationOptionsValidatorTests
                 MaxConcurrentBackgroundTerminalsPerSession = 4,
                 CompletedBackgroundTerminalTtlSeconds = 300,
                 HttpClientTimeoutSeconds = -1,
+                McpRequestTimeoutSeconds = -1,
                 AcpRequestTimeoutSeconds = -1,
                 AgentOrchestrationTimeoutSeconds = -1
             }
@@ -189,6 +190,7 @@ public sealed class ApplicationOptionsValidatorTests
 
         result.Failed.Should().BeTrue();
         result.Failures.Should().Contain(failure => failure.Contains("HttpClientTimeoutSeconds"));
+        result.Failures.Should().Contain(failure => failure.Contains("McpRequestTimeoutSeconds"));
         result.Failures.Should().Contain(failure => failure.Contains("AcpRequestTimeoutSeconds"));
         result.Failures.Should().Contain(failure => failure.Contains("AgentOrchestrationTimeoutSeconds"));
     }

@@ -9,6 +9,7 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
     private readonly NanoAgentMcpConfigLoader _configLoader;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<McpDynamicToolProvider> _logger;
+    private readonly ToolExecutionSettings _toolExecutionSettings;
     private readonly object _gate = new();
     private bool _initialized;
     private IReadOnlyList<ITool> _tools = [];
@@ -18,10 +19,12 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
     public McpDynamicToolProvider(
         NanoAgentMcpConfigLoader configLoader,
         IHttpClientFactory httpClientFactory,
+        ToolExecutionSettings toolExecutionSettings,
         ILogger<McpDynamicToolProvider> logger)
     {
         _configLoader = configLoader;
         _httpClientFactory = httpClientFactory;
+        _toolExecutionSettings = toolExecutionSettings;
         _logger = logger;
     }
 
@@ -157,18 +160,26 @@ internal sealed class McpDynamicToolProvider : IDynamicToolProvider, IAsyncDispo
     {
         if (!string.IsNullOrWhiteSpace(configuration.Command))
         {
-            return new McpStdioServerClient(configuration);
+            return new McpStdioServerClient(configuration, GetRequestTimeout());
         }
 
         if (!string.IsNullOrWhiteSpace(configuration.Url))
         {
             return new McpHttpServerClient(
                 _httpClientFactory.CreateClient("NanoAgent.Mcp"),
-                configuration);
+                configuration,
+                GetRequestTimeout());
         }
 
         throw new InvalidOperationException(
             "Configure either 'command' for stdio MCP or 'url' for streamable HTTP MCP.");
+    }
+
+    private TimeSpan GetRequestTimeout()
+    {
+        return _toolExecutionSettings.McpRequestTimeoutSeconds > 0
+            ? TimeSpan.FromSeconds(_toolExecutionSettings.McpRequestTimeoutSeconds)
+            : Timeout.InfiniteTimeSpan;
     }
 
     private static string GetTransportKind(McpServerConfiguration configuration)

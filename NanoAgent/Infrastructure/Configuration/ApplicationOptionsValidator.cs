@@ -61,6 +61,11 @@ public sealed class ApplicationOptionsValidator : IValidateOptions<ApplicationOp
                 failures.Add($"{ApplicationOptions.SectionName}:Tools:HttpClientTimeoutSeconds must be zero or greater.");
             }
 
+            if (options.Tools.McpRequestTimeoutSeconds < 0)
+            {
+                failures.Add($"{ApplicationOptions.SectionName}:Tools:McpRequestTimeoutSeconds must be zero or greater.");
+            }
+
             if (options.Tools.DefaultTimeoutSeconds <= 0)
             {
                 failures.Add($"{ApplicationOptions.SectionName}:Tools:DefaultTimeoutSeconds must be greater than zero.");

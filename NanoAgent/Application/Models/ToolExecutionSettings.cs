@@ -6,6 +6,8 @@ public sealed class ToolExecutionSettings
 
     public int HttpClientTimeoutSeconds { get; set; }
 
+    public int McpRequestTimeoutSeconds { get; set; }
+
     public int DefaultTimeoutSeconds { get; set; } = 180;
 
     public int MaxConcurrentBackgroundTerminalsPerSession { get; set; } = 4;
