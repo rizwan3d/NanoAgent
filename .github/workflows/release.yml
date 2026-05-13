@@ -322,6 +322,10 @@ jobs:
     name: Publish GitHub release
     needs: publish
     runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout
@@ -378,6 +382,11 @@ jobs:
               xargs -0 sha256sum
           ) > "$release_dir/SHA256SUMS"
 
+      - name: Attest release artifacts
+        uses: actions/attest@59d89421af93a897026c735860bf21b6eb4f7b26 # v4.1.0
+        with:
+          subject-checksums: ./artifacts/release-assets/SHA256SUMS
+
       - name: Create release notes
         id: release_notes
         shell: bash
@@ -412,6 +421,7 @@ jobs:
             echo
             echo "- SHA256 hashes are published in SHA256SUMS."
             echo "- The install scripts verify downloaded CLI archives against SHA256SUMS when it is available."
+            echo "- GitHub artifact attestations establish SLSA build provenance for the checksummed release assets."
             echo
             echo "## Commit messages"
             echo
