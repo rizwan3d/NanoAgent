@@ -209,8 +209,15 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             ? "Patch text is not valid apply_patch format."
             : parserMessage.Trim();
 
+        string extraHint = normalizedMessage.Contains(
+            "Blank lines inside update patches",
+            StringComparison.Ordinal)
+            ? " To preserve an empty line in the target file, prefix it with a space for context, '+' for an added blank line, or '-' for a removed blank line."
+            : string.Empty;
+
         return
             $"{normalizedMessage} " +
+            extraHint +
             "Call apply_patch again with corrected patch text. " +
             "The patch argument must include the complete intended patch, its first non-empty line must be exactly '*** Begin Patch', and its final non-empty line must be exactly '*** End Patch'.";
     }

@@ -93,6 +93,28 @@ public sealed class ApplyPatchToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ExplainHowToEncodeBlankLinesInsideUpdateHunks()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ApplyPatchWithTrackingAsync(
+                "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n\n+new\n*** End Patch",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FormatException(
+                "Blank lines inside update patches must either be prefixed with ' ', '+', or '-', or be placed between hunks or operations."));
+
+        ApplyPatchTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "patch": "*** Begin Patch\n*** Update File: README.md\n@@\n-old\n\n+new\n*** End Patch" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("prefix it with a space for context");
+        result.Message.Should().Contain("Call apply_patch again with corrected patch text.");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ResolvePatchPathsFromSessionWorkingDirectory()
     {
         string workspaceRoot = Path.Combine(
