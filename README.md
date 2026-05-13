@@ -63,6 +63,10 @@ Use `nanoai` when you want a keyboard-first agent for interactive work, one-shot
 
 Use the VS Code extension to chat with NanoAgent, send selections, review files, review Git diffs, and apply suggested changes from inside the editor.
 
+### Visual Studio
+
+Use the Visual Studio extension to keep a NanoAgent tool window inside Visual Studio while driving the local NanoAgent CLI over ACP.
+
 ### CI Review Automation
 
 Use the included GitHub Actions, GitLab CI, and Bitbucket Pipelines examples to run NanoAgent against pull request and merge request diffs, then post review comments back to your platform.
@@ -119,7 +123,7 @@ nanoai
 
 ## Documentation
 
-The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code setup, ACP integration, CI review automation, codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
+The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
 
 ## License
 

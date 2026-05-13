@@ -30,7 +30,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  SOLUTION_FILE: NanoAgent.slnx
+  SOLUTION_FILE: NanoAgent.CrossPlatform.slnx
 
 jobs:
   validate:

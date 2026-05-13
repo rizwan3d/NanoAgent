@@ -1,6 +1,6 @@
 # NanoAgent Documentation
 
-NanoAgent is an AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app, the `nanoai` terminal command, a VS Code extension, and an ACP-compatible editor server.
+NanoAgent is an AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app, the `nanoai` terminal command, a VS Code extension, a Visual Studio extension, and an ACP-compatible editor server.
 
 This guide contains the setup, reference, and technical material for NanoAgent. The root README is the product overview; this document is the handbook for installation, daily use, safety controls, integration, automation, and advanced workspace customization.
 
@@ -11,6 +11,7 @@ This guide contains the setup, reference, and technical material for NanoAgent. 
 - [Desktop Workflow](#desktop-workflow)
 - [Terminal Workflow](#terminal-workflow)
 - [VS Code Extension](#vs-code-extension)
+- [Visual Studio Extension](#visual-studio-extension)
 - [ACP Editor Integration](#acp-editor-integration)
 - [Review Automation](#review-automation)
 - [Codebase Indexing](#codebase-indexing)
@@ -439,6 +440,50 @@ VSCE_PAT
 ```
 
 Create this token in Azure DevOps with Marketplace Manage scope and access to the `rizwan3d` Visual Studio Marketplace publisher. The workflow publishes through `@vscode/vsce`, uploads the generated `.vsix` artifact, and uses the `vscode-marketplace` GitHub environment for deployment approval or environment-level protection rules if configured.
+
+## Visual Studio Extension
+
+NanoAgent includes a Visual Studio extension in `NanoAgent.VS`. It opens a tool window inside Visual Studio and starts the local NanoAgent CLI over ACP.
+
+Before first use:
+
+- Install the NanoAgent CLI so `nanoai.exe` is available on `PATH`, or set an explicit CLI path in the NanoAgent Visual Studio options page.
+- Run `nanoai` once and complete provider onboarding.
+
+### Local Build
+
+Build the VSIX from a Developer PowerShell for Visual Studio:
+
+```powershell
+msbuild NanoAgent.VS/NanoAgent.VS.csproj /restore /p:Configuration=Release /p:DeployExtension=false
+```
+
+The package is written to:
+
+```text
+NanoAgent.VS/bin/Release/NanoAgent.VS.vsix
+```
+
+### CI and CD
+
+The CI workflow `.github/workflows/visual-studio-extension-ci.yml` builds the extension on `windows-2022` with MSBuild from the installed Visual Studio toolchain, disables experimental-instance deployment with `/p:DeployExtension=false`, and uploads the built `.vsix` as a workflow artifact.
+
+The CD workflow `.github/workflows/visual-studio-extension-cd.yml` packages and publishes the extension for `v*` tags and manual dispatch. It resolves the version from the tag or workflow input, updates `NanoAgent.VS/source.extension.vsixmanifest`, builds `NanoAgent.VS-<version>.vsix`, uploads that artifact, and publishes through `VsixPublisher.exe` to the Visual Studio Marketplace.
+
+Required repository secret:
+
+```text
+VS_MARKETPLACE_PAT
+```
+
+Optional repository variables:
+
+```text
+VS_MARKETPLACE_PUBLISHER
+VS_MARKETPLACE_EXTENSION_NAME
+```
+
+If the optional variables are unset, the workflow defaults to publisher `rizwan3d` and extension internal name `nanoagent-vs`. The publish job uses the `visual-studio-marketplace` GitHub environment so approval or environment protection rules can be applied separately from the VS Code marketplace flow.
 
 ## ACP Editor Integration
 
@@ -1083,13 +1128,14 @@ Requirements:
 
 - .NET SDK compatible with `net10.0`.
 - Node.js 20 or newer for the VS Code extension.
+- Visual Studio 2022 or newer on Windows for `NanoAgent.VS`.
 - Platform toolchains needed by your target desktop/CLI build.
 
 Commands:
 
 ```bash
-dotnet restore NanoAgent.CLI/NanoAgent.CLI.sln
-dotnet build NanoAgent.CLI/NanoAgent.CLI.sln
+dotnet restore NanoAgent.CrossPlatform.slnx
+dotnet build NanoAgent.CrossPlatform.slnx
 dotnet test NanoAgent.Tests/NanoAgent.Tests.csproj
 ```
 
@@ -1103,6 +1149,12 @@ npm run package
 npm run package:vsix
 ```
 
+Visual Studio extension command:
+
+```powershell
+msbuild NanoAgent.VS/NanoAgent.VS.csproj /restore /p:Configuration=Release /p:DeployExtension=false
+```
+
 The main projects are:
 
 | Project | Purpose |
@@ -1110,6 +1162,7 @@ The main projects are:
 | `NanoAgent` | Core application, domain, infrastructure, tools, providers, storage. |
 | `NanoAgent.CLI` | Terminal UI and one-shot CLI. |
 | `NanoAgent.Desktop` | Desktop app. |
+| `NanoAgent.VS` | Visual Studio extension that hosts NanoAgent inside a Visual Studio tool window. |
 | `NanoAgent.VsCode` | VS Code extension that drives NanoAgent through ACP mode. |
 | `NanoAgent.Tests` | Test suite. |
 
