@@ -343,6 +343,7 @@ Workspace `agent-profile.json` can tune tool timeouts and background terminal re
   "Application": {
     "Tools": {
       "httpClientTimeoutSeconds": 0,
+      "mcpRequestTimeoutSeconds": 0,
       "acpRequestTimeoutSeconds": 0,
       "agentOrchestrationTimeoutSeconds": 0,
       "defaultTimeoutSeconds": 180,
@@ -353,7 +354,7 @@ Workspace `agent-profile.json` can tune tool timeouts and background terminal re
 }
 ```
 
-Set `httpClientTimeoutSeconds` to override the default timeout used by NanoAgent-managed `HttpClient` instances. Set `acpRequestTimeoutSeconds` to cap ACP editor prompt requests such as permission or text-entry requests. Set `agentOrchestrationTimeoutSeconds` to add an orchestration-wide timeout for `agent_orchestrate`. A value of `0` keeps the existing default behavior for each setting.
+Set `httpClientTimeoutSeconds` to override the default timeout used by NanoAgent-managed `HttpClient` instances. Set `mcpRequestTimeoutSeconds` to cap individual MCP request/response cycles for both stdio and HTTP MCP servers. Set `acpRequestTimeoutSeconds` to cap ACP editor prompt requests such as permission or text-entry requests. Set `agentOrchestrationTimeoutSeconds` to add an orchestration-wide timeout for `agent_orchestrate`. A value of `0` keeps the existing default behavior for each setting.
 
 Completed background terminals remain readable until `completedBackgroundTerminalTtlSeconds` expires. Running background terminals are stopped when the NanoAgent process exits.
 
