@@ -80,7 +80,7 @@ internal sealed class JsonSessionStore : ISessionStore
         string normalizedSessionId = NormalizeSessionId(sessionId);
 
         string sessionsDir = Path.Combine(
-            _pathProvider.GetSectionsDirectoryPath(),
+            _pathProvider.GetSessionsDirectoryPath(),
             "..",
             "sessions");
 

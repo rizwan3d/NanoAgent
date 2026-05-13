@@ -8,11 +8,12 @@ namespace NanoAgent.Tests.Application.Models;
 public sealed class ReplSessionContextTests
 {
     [Fact]
-    public void SectionResumeCommand_Should_UseCliExecutableName()
+    public void SessionResumeCommand_Should_UseCliExecutableName()
     {
         ReplSessionContext session = CreateSession();
 
-        session.SectionResumeCommand.Should().Be($"nanoai --section {session.SectionId}");
+        session.SessionResumeCommand.Should().Be($"nanoai --session {session.SectionId}");
+        session.SectionResumeCommand.Should().Be(session.SessionResumeCommand);
     }
 
     [Fact]

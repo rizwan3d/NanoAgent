@@ -42,7 +42,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
         string message =
             "Current configuration:\n" +
             $"Session: {context.Session.SessionId}\n" +
-            $"Resume command: {context.Session.SectionResumeCommand}\n" +
+            $"Resume command: {context.Session.SessionResumeCommand}\n" +
             $"Saved provider: {savedProvider}\n" +
             $"Provider: {context.Session.ProviderName}\n" +
             $"Base URL: {baseUrl}\n" +

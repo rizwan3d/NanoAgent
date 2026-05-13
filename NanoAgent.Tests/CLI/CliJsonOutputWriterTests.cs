@@ -64,7 +64,7 @@ public sealed class CliJsonOutputWriterTests
     {
         return new BackendSessionInfo(
             "sess-test",
-            "nanoai --section sess-test",
+            "nanoai --session sess-test",
             "OpenAI",
             "gpt-test",
             ActiveModelContextWindowTokens: 128000,

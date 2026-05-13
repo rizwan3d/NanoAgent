@@ -249,12 +249,12 @@ nanoai "Find risky changes in this branch"
 git diff --stat | nanoai --stdin --profile review
 ```
 
-### Resume a Section
+### Resume a Session
 
-When you exit, NanoAgent prints a section resume command. You can also resume directly:
+When you exit, NanoAgent prints a session resume command. You can also resume directly:
 
 ```bash
-nanoai --section <section-guid>
+nanoai --session <session-guid>
 ```
 
 ### CLI Options
@@ -268,8 +268,8 @@ nanoai --section <section-guid>
 | `-y, --yes` | Approve promptable tool requests for this run while preserving explicit deny rules. |
 | `-p, --prompt <text>` | Run one prompt and print the response. |
 | `--provider-auth-key <key>` | Use this key when provider API-key onboarding asks for a credential. |
-| `--section <id>` | Resume an existing section. |
-| `--session <id>` | Alias for `--section`. |
+| `--session <id>` | Resume an existing session. |
+| `--section <id>` | Compatibility alias for `--session`. |
 | `--profile <name>` | Start with a profile. |
 | `--thinking <on\|off>` | Start with thinking on or off. |
 | `-h, --help` | Show CLI help. |
