@@ -133,19 +133,6 @@ download_to_file() {
   fail "Neither curl nor wget is available. Install one of them and try again."
 }
 
-sha256_required() {
-  local value="${NANOAGENT_REQUIRE_SHA256:-${NanoAgent_REQUIRE_SHA256:-}}"
-
-  case "$value" in
-    1|true|TRUE|True|yes|YES|Yes)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
-}
-
 compute_sha256() {
   local path="$1"
 
@@ -232,12 +219,7 @@ verify_archive_sha256() {
     expected_sha256="$(resolve_release_asset_sha256 "$tag" "$asset_name" || true)"
 
     if [[ -z "$expected_sha256" ]]; then
-      if sha256_required; then
-        fail "Unable to download ${CHECKSUMS_NAME} from ${checksums_url}, and no GitHub release metadata digest was found."
-      fi
-
-      log "${CHECKSUMS_NAME} was not found for ${tag}; continuing without checksum verification. Set NANOAGENT_REQUIRE_SHA256=1 to require it."
-      return
+      fail "Unable to download ${CHECKSUMS_NAME} from ${checksums_url}, and no GitHub release metadata digest was found. Checksum verification is mandatory."
     fi
 
     log "Using SHA256 digest from GitHub release metadata for ${asset_name}."
@@ -347,7 +329,7 @@ single_quote() {
 
 fish_quote() {
   printf "'"
-  printf '%s' "$1" | sed "s/[\\']/\\\\&/g"
+  printf '%s' "$1" | sed "s/[\\']/\\&/g"
   printf "'"
 }
 
