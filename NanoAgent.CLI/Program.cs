@@ -11,7 +11,6 @@ namespace NanoAgent.CLI;
 public static partial class Program
 {
     private const double EstimatedLiveTokensPerSecond = 4d;
-    private const int HeaderDividerWidth = 53;
     private const int HeaderPanelSize = 9;
     private const int InputCursorBlinkIntervalMilliseconds = 500;
     private const int InputCursorColumnWidth = 1;
@@ -21,7 +20,6 @@ public static partial class Program
     private const int PasteContinuationReadTimeoutMilliseconds = 40;
     private const int MaxSlashCommandSuggestionCount = 8;
     private const int TerminalSequenceReadTimeoutMilliseconds = 25;
-    private const string RepositoryUrl = "github.com/rizwan3d/NanoAgent";
     private const string EnableAlternateScreenSequence = "\u001b[?1049h";
     private const string DisableAlternateScreenSequence = "\u001b[?1049l";
     private const string EnableBracketedPasteSequence = "\u001b[?2004h";
@@ -29,8 +27,6 @@ public static partial class Program
     private const string EnableWheelScrollingSequence = "\u001b[?1007h";
     private const string DisableWheelScrollingSequence = "\u001b[?1007l";
     private const string DisableMouseTrackingSequence = "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l";
-    private const string SponsorName = "ALFAIN Technologies (PVT) Limited";
-    private const string SponsorUrl = "https://alfain.co/";
     private const int StdInputHandle = -10;
     private const uint EnableVirtualTerminalInput = 0x0200;
     private static uint? s_originalInputMode;
