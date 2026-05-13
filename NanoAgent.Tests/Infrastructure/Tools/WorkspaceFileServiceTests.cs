@@ -479,6 +479,54 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_AllowBlankSeparatorLine_BeforeFirstHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+
+            @@
+            -{}
+            +{"enabled":true}
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{\"enabled\":true}\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AllowBlankSeparatorLine_BeforeEndPatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: settings.json
+            @@
+            -{}
+            +{"enabled":true}
+
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("{\"enabled\":true}\n");
+    }
+
+    [Fact]
     public async Task WriteFileWithTrackingAsync_Should_ReturnUndoableBeforeAndAfterStates()
     {
         WorkspaceFileService sut = CreateSut();

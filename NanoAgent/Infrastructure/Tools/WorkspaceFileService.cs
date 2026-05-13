@@ -1030,6 +1030,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                !IsPatchOperationBoundary(lines[lineIndex]))
         {
             string line = lines[lineIndex];
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                if (CanSkipBlankUpdatePatchLine(lines, lineIndex, currentHunkLines))
+                {
+                    lineIndex++;
+                    continue;
+                }
+
+                throw new FormatException(
+                    "Blank lines inside update patches must either be prefixed with ' ', '+', or '-', or be placed between hunks or operations.");
+            }
+
             if (string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal))
             {
                 if (currentHunkLines is null || currentHunkLines.Count == 0)
@@ -1116,6 +1128,34 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             moveToPath,
             [],
             hunks);
+    }
+
+    private static bool CanSkipBlankUpdatePatchLine(
+        IReadOnlyList<string> lines,
+        int lineIndex,
+        List<PatchLine>? currentHunkLines)
+    {
+        int nextNonBlankLineIndex = lineIndex + 1;
+        while (nextNonBlankLineIndex < lines.Count &&
+               string.IsNullOrWhiteSpace(lines[nextNonBlankLineIndex]))
+        {
+            nextNonBlankLineIndex++;
+        }
+
+        if (nextNonBlankLineIndex >= lines.Count)
+        {
+            return true;
+        }
+
+        string nextLine = lines[nextNonBlankLineIndex];
+        bool isBoundary = nextLine.StartsWith("@@", StringComparison.Ordinal) ||
+                          IsPatchOperationBoundary(nextLine);
+        if (!isBoundary)
+        {
+            return false;
+        }
+
+        return currentHunkLines is null || currentHunkLines.Count > 0;
     }
 
     private static string StripPatchHeredoc(string patch)
