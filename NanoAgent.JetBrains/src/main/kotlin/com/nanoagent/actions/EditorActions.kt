@@ -26,7 +26,7 @@ import java.io.InputStreamReader
  * - Apply Suggested Changes
  */
 
-open class EditorActionBase : AnAction(), DumbAware {
+abstract class EditorActionBase : AnAction(), DumbAware {
     protected val logService = LogService()
 
     protected fun getChatPanel(project: Project): ChatPanel? {

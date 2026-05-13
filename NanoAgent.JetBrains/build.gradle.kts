@@ -1,8 +1,9 @@
 import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     id("org.jetbrains.intellij.platform") version "2.16.0"
-    kotlin("jvm") version "2.0.21"
+    kotlin("jvm") version "2.1.20"
 }
 
 repositories {
@@ -14,10 +15,9 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        create(IntelliJPlatformType.IC, "2024.1.7")
+        create(IntelliJPlatformType.IntellijIdeaCommunity, "2024.1.7")
         pluginVerifier()
         zipSigner()
-        instrumentationTools()
     }
 }
 
@@ -54,10 +54,10 @@ intellijPlatform {
     }
 
     pluginVerification {
-        ides {
-            ide(IntelliJPlatformType.IC, "2024.1.7")
-        }
-    }
+       ides {
+            create(IntelliJPlatformType.IntellijIdeaCommunity, "2024.1.7")
+       }
+   }
 }
 
 kotlin {
@@ -65,9 +65,22 @@ kotlin {
 }
 
 tasks {
+    runIde {
+        // JVM memory and GC settings for development
+        jvmArgs("-Xmx2048m", "-XX:+UseG1GC")
+
+        // Enable internal IDE features for plugin development
+        jvmArgumentProviders += CommandLineArgumentProvider {
+            listOf("-Didea.is.internal=true")
+        }
+
+        // Auto-save logs to a file for easier debugging
+        systemProperty("idea.log.debug", "true")
+    }
+
     withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-        kotlinOptions {
-            jvmTarget = "17"
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
         }
     }
 }
