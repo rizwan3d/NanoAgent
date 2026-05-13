@@ -36,7 +36,8 @@ public sealed class AgentOrchestrateToolTests
         AgentOrchestrateTool sut = new(
             serviceProvider,
             new BuiltInAgentProfileResolver(new FixedWorkspaceRootProvider(workspace.Path)),
-            new HeuristicTokenEstimator());
+            new HeuristicTokenEstimator(),
+            new ToolExecutionSettings());
 
         using JsonDocument schema = JsonDocument.Parse(sut.Schema);
         string[] agentNames = schema.RootElement
@@ -93,7 +94,8 @@ public sealed class AgentOrchestrateToolTests
         AgentOrchestrateTool sut = new(
             serviceProvider,
             new BuiltInAgentProfileResolver(),
-            new HeuristicTokenEstimator());
+            new HeuristicTokenEstimator(),
+            new ToolExecutionSettings());
 
         Task<ToolResult> runTask = sut.ExecuteAsync(
             CreateContext(
@@ -165,7 +167,8 @@ public sealed class AgentOrchestrateToolTests
         AgentOrchestrateTool sut = new(
             serviceProvider,
             new BuiltInAgentProfileResolver(),
-            new HeuristicTokenEstimator());
+            new HeuristicTokenEstimator(),
+            new ToolExecutionSettings());
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext(
@@ -209,7 +212,8 @@ public sealed class AgentOrchestrateToolTests
         AgentOrchestrateTool sut = new(
             serviceProvider,
             new BuiltInAgentProfileResolver(),
-            new HeuristicTokenEstimator());
+            new HeuristicTokenEstimator(),
+            new ToolExecutionSettings());
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext(
@@ -226,6 +230,53 @@ public sealed class AgentOrchestrateToolTests
         result.Status.Should().Be(ToolResultStatus.PermissionDenied);
         result.JsonResult.Should().Contain("readonly_profile_cannot_orchestrate_edits");
         conversationPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_RespectConfiguredOrchestrationTimeout()
+    {
+        ReplSessionContext parentSession = CreateSession(BuiltInAgentProfiles.Build);
+
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        conversationPipeline
+            .Setup(pipeline => pipeline.ProcessAsync(
+                It.IsAny<string>(),
+                It.IsAny<ReplSessionContext>(),
+                It.IsAny<IConversationProgressSink>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<string, ReplSessionContext, IConversationProgressSink, CancellationToken>(async (_, _, _, token) =>
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), token);
+                return ConversationTurnResult.AssistantMessage("Completed late.");
+            });
+
+        using ServiceProvider serviceProvider = new ServiceCollection()
+            .AddSingleton(conversationPipeline.Object)
+            .BuildServiceProvider();
+        AgentOrchestrateTool sut = new(
+            serviceProvider,
+            new BuiltInAgentProfileResolver(),
+            new HeuristicTokenEstimator(),
+            new ToolExecutionSettings
+            {
+                AgentOrchestrationTimeoutSeconds = 1
+            });
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext(
+                parentSession,
+                """
+                {
+                  "tasks": [
+                    { "agent": "general", "task": "Edit parser" }
+                  ]
+                }
+                """),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.ExecutionError);
+        result.JsonResult.Should().Contain("agent_orchestration_timeout");
+        result.Message.Should().Contain("timed out after 1 seconds");
     }
 
     private static ToolExecutionContext CreateContext(
