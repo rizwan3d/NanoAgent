@@ -19,15 +19,18 @@ internal sealed class AgentOrchestrateTool : ITool
     private readonly IServiceProvider _serviceProvider;
     private readonly IAgentProfileResolver _profileResolver;
     private readonly ITokenEstimator _tokenEstimator;
+    private readonly ToolExecutionSettings _toolExecutionSettings;
 
     public AgentOrchestrateTool(
         IServiceProvider serviceProvider,
         IAgentProfileResolver profileResolver,
-        ITokenEstimator tokenEstimator)
+        ITokenEstimator tokenEstimator,
+        ToolExecutionSettings toolExecutionSettings)
     {
         _serviceProvider = serviceProvider;
         _profileResolver = profileResolver;
         _tokenEstimator = tokenEstimator;
+        _toolExecutionSettings = toolExecutionSettings;
     }
 
     public string Description =>
@@ -85,11 +88,31 @@ internal sealed class AgentOrchestrateTool : ITool
                     "Use read-only subagents for parallel_readonly, or use auto/sequential for editing-capable work."));
         }
 
-        AgentOrchestrationTaskResult[] taskResults = await ExecuteRequestsAsync(
-            context.Session,
-            requests,
-            strategy,
-            cancellationToken);
+        using CancellationTokenSource? timeoutSource = CreateTimeoutSource(cancellationToken);
+        CancellationToken executionCancellationToken = timeoutSource?.Token ?? cancellationToken;
+
+        AgentOrchestrationTaskResult[] taskResults;
+        try
+        {
+            taskResults = await ExecuteRequestsAsync(
+                context.Session,
+                requests,
+                strategy,
+                executionCancellationToken);
+        }
+        catch (OperationCanceledException) when (
+            !cancellationToken.IsCancellationRequested &&
+            timeoutSource is not null &&
+            timeoutSource.IsCancellationRequested)
+        {
+            int timeoutSeconds = _toolExecutionSettings.AgentOrchestrationTimeoutSeconds;
+            return ToolResultFactory.ExecutionError(
+                "agent_orchestration_timeout",
+                $"Subagent orchestration timed out after {timeoutSeconds} seconds.",
+                new ToolRenderPayload(
+                    "Subagent orchestration timed out",
+                    $"The delegated tasks did not finish within {timeoutSeconds} seconds."));
+        }
 
         AgentOrchestrationResult result = new(strategy, taskResults);
         string message = result.FailedTaskCount == 0
@@ -634,6 +657,18 @@ internal sealed class AgentOrchestrateTool : ITool
         }
 
         return builder.ToString();
+    }
+
+    private CancellationTokenSource? CreateTimeoutSource(CancellationToken cancellationToken)
+    {
+        if (_toolExecutionSettings.AgentOrchestrationTimeoutSeconds <= 0)
+        {
+            return null;
+        }
+
+        CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(TimeSpan.FromSeconds(_toolExecutionSettings.AgentOrchestrationTimeoutSeconds));
+        return timeoutSource;
     }
 
     private sealed record OrchestrationTaskRequest(
