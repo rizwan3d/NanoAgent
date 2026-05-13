@@ -8,5 +8,5 @@ public interface IUserDataPathProvider
 
     string GetLogsDirectoryPath();
 
-    string GetSectionsDirectoryPath();
+    string GetSessionsDirectoryPath();
 }

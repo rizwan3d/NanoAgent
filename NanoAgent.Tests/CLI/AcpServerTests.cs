@@ -627,7 +627,7 @@ public sealed class AcpServerTests
         {
             return new BackendSessionInfo(
                 _sessionId,
-                $"nanoai --section {_sessionId}",
+                $"nanoai --session {_sessionId}",
                 "OpenAI",
                 "gpt-test",
                 ActiveModelContextWindowTokens: null,
@@ -660,7 +660,7 @@ public sealed class AcpServerTests
         {
             return Task.FromResult(new BackendSessionInfo(
                 "sess-history",
-                "nanoai --section sess-history",
+                "nanoai --session sess-history",
                 "OpenAI",
                 "gpt-test",
                 ActiveModelContextWindowTokens: null,
@@ -740,7 +740,7 @@ public sealed class AcpServerTests
 
             return new BackendSessionInfo(
                 "sess-prompt",
-                "nanoai --section sess-prompt",
+                "nanoai --session sess-prompt",
                 SelectedProvider,
                 "gpt-test",
                 ActiveModelContextWindowTokens: null,
@@ -810,7 +810,7 @@ public sealed class AcpServerTests
 
             return new BackendSessionInfo(
                 "sess-permission",
-                "nanoai --section sess-permission",
+                "nanoai --session sess-permission",
                 "OpenAI",
                 "gpt-test",
                 ActiveModelContextWindowTokens: null,
@@ -892,7 +892,7 @@ public sealed class AcpServerTests
 
             return new BackendSessionInfo(
                 "sess-compatible",
-                "nanoai --section sess-compatible",
+                "nanoai --session sess-compatible",
                 SelectedProvider,
                 "gpt-test",
                 ActiveModelContextWindowTokens: null,

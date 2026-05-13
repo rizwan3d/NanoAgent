@@ -253,7 +253,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     {
         return new BackendSessionInfo(
             session.SessionId,
-            session.SectionResumeCommand,
+            session.SessionResumeCommand,
             session.ProviderName,
             session.ActiveModelId,
             session.ActiveModelContextWindowTokens,

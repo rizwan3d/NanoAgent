@@ -58,7 +58,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "F3 - Pin or hide the latest plan in the terminal view.\n" +
             "/ - Open command suggestions in the terminal input.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
-            "Start with --section <section-guid> to resume a saved section.\n" +
+            "Start with --session <session-guid> to resume a saved session. --section also works as a compatibility alias.\n" +
             "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +
             "Invoke subagents for one turn with @<subagent-name>; primary agents can also delegate focused work with agent_delegate or coordinate several tasks with agent_orchestrate.";
 

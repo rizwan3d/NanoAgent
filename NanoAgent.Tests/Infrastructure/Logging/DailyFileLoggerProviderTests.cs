@@ -113,9 +113,9 @@ public sealed class DailyFileLoggerProviderTests : IDisposable
             return _logsDirectoryPath;
         }
 
-        public string GetSectionsDirectoryPath()
+        public string GetSessionsDirectoryPath()
         {
-            return Path.Combine(_logsDirectoryPath, "..", "sections");
+            return Path.Combine(_logsDirectoryPath, "..", "sessions");
         }
     }
 

@@ -48,7 +48,7 @@ internal sealed class JsonConversationSectionStore : IConversationSectionStore
     public async Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
         CancellationToken cancellationToken)
     {
-        string directoryPath = _pathProvider.GetSectionsDirectoryPath();
+        string directoryPath = _pathProvider.GetSessionsDirectoryPath();
         if (!Directory.Exists(directoryPath))
         {
             return [];
@@ -107,7 +107,7 @@ internal sealed class JsonConversationSectionStore : IConversationSectionStore
     {
         string normalizedSectionId = NormalizeSectionId(sectionId);
         return Path.Combine(
-            _pathProvider.GetSectionsDirectoryPath(),
+            _pathProvider.GetSessionsDirectoryPath(),
             $"{normalizedSectionId}.json");
     }
 

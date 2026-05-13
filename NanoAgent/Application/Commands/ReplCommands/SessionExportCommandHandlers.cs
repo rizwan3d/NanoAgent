@@ -391,7 +391,7 @@ internal sealed class SessionInfoCommandHandler : IReplCommandHandler
             "Session info:\n" +
             $"Title: {session.SectionTitle}\n" +
             $"Session: {session.SessionId}\n" +
-            $"Resume command: {session.SectionResumeCommand}\n" +
+            $"Resume command: {session.SessionResumeCommand}\n" +
             $"Provider: {session.ProviderName}\n" +
             $"Model: {session.ActiveModelId}\n" +
             $"Profile: {session.AgentProfile.Name}\n" +
