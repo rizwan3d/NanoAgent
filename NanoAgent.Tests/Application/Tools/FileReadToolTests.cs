@@ -41,7 +41,7 @@ public sealed class FileReadToolTests
         result.Message.Should().Contain("README.md");
         result.JsonResult.Should().Contain("\"Path\":\"README.md\"");
         result.RenderPayload.Should().NotBeNull();
-        result.RenderPayload!.Text.Should().Be("hello");
+        result.RenderPayload!.Text.Should().Be("```text\nhello\n```");
     }
 
     [Fact]
@@ -67,6 +67,29 @@ public sealed class FileReadToolTests
         result.JsonResult.Should().Contain("redacted");
         result.JsonResult.Should().NotContain("postgres://");
         result.RenderPayload!.Text.Should().NotContain("development");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_UseLongerMarkdownFence_When_FileContainsTripleBackticks()
+    {
+        const string fileContent = "alpha\n```\nbeta";
+
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ReadFileAsync("notes.md", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WorkspaceFileReadResult("notes.md", fileContent, fileContent.Length));
+
+        FileReadTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": "notes.md" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        using JsonDocument jsonResult = JsonDocument.Parse(result.JsonResult);
+        jsonResult.RootElement.GetProperty("Content").GetString().Should().Be(fileContent);
+        result.RenderPayload.Should().NotBeNull();
+        result.RenderPayload!.Text.Should().Be("````text\nalpha\n```\nbeta\n````");
     }
 
     private static ToolExecutionContext CreateContext(string argumentsJson)
