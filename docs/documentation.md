@@ -47,7 +47,7 @@ Release downloads are published at:
 https://github.com/rizwan3d/NanoAgent/releases/latest
 ```
 
-New release assets include `SHA256SUMS` beside the downloads. For manual downloads, compare the published SHA256 hash with your downloaded file before running it.
+New release assets include `SHA256SUMS` beside the downloads. The release pipeline verifies every checksum matches its asset before publishing. For manual downloads, compare the published SHA256 hash with your downloaded file before running it.
 
 ### CLI
 
@@ -67,7 +67,7 @@ The installers show step status and download progress when run in an interactive
 
 Restart your terminal if `nanoai` is not found immediately after installation.
 
-The CLI install scripts verify the archive checksum before extraction using `SHA256SUMS`, or the SHA256 digest from GitHub release metadata for older releases. Set `NANOAGENT_REQUIRE_SHA256=1` to make checksum availability mandatory.
+The CLI install scripts verify the archive checksum against `SHA256SUMS`, or the SHA256 digest from GitHub release metadata, before extraction. Checksum verification is mandatory â€” installation fails if the checksum cannot be validated.
 
 ## First Run
 
@@ -1169,3 +1169,4 @@ The main projects are:
 ## License
 
 NanoAgent is licensed under the Apache License 2.0. See [../LICENSE](../LICENSE).
+
