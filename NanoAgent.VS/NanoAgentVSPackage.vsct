@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Symbols>
+    <!-- Package GUID (must match VSPackage.PackageGuidString) -->
+    <GuidSymbol name="guidNanoAgentVsPkg" value="{08b5699b-4adb-4433-9b60-bc4f5a3807df}"/>
+
+    <!-- Custom command set: groups and command IDs -->
+    <GuidSymbol name="guidNanoAgentVsCmdSet" value="{0A1B2C3D-4E5F-6789-0ABC-DEF012345678}">
+      <IDSymbol name="OtherWindowsGroup" value="0x1000" />
+      <IDSymbol name="ViewMenuGroup" value="0x1001" />
+      <IDSymbol name="ToolsMenuGroup" value="0x1002" />
+      <IDSymbol name="cmdidShowChatWindow" value="0x0100" />
+    </GuidSymbol>
+  </Symbols>
+
+  <Commands package="guidNanoAgentVsPkg">
+    <Groups>
+      <!-- Primary location: View -> Other Windows. -->
+      <Group guid="guidNanoAgentVsCmdSet" id="OtherWindowsGroup" priority="0x0100">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1"/>
+      </Group>
+
+      <!-- Diagnostic fallback: directly on View menu. If this appears but Other Windows does not, the issue is submenu placement/cache. -->
+      <Group guid="guidNanoAgentVsCmdSet" id="ViewMenuGroup" priority="0x7000">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW"/>
+      </Group>
+
+      <!-- Diagnostic fallback: Tools menu. If neither View nor Tools appears, the package/VSIX registration is not being picked up. -->
+      <Group guid="guidNanoAgentVsCmdSet" id="ToolsMenuGroup" priority="0x7000">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidShowChatWindow" priority="0x0100" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="OtherWindowsGroup"/>
+        <Strings>
+          <ButtonText>NanoAgent Chat</ButtonText>
+          <CommandName>NanoAgent.Chat.Show</CommandName>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <CommandPlacements>
+    <CommandPlacement guid="guidNanoAgentVsCmdSet" id="cmdidShowChatWindow" priority="0x0100">
+      <Parent guid="guidNanoAgentVsCmdSet" id="ViewMenuGroup"/>
+    </CommandPlacement>
+    <CommandPlacement guid="guidNanoAgentVsCmdSet" id="cmdidShowChatWindow" priority="0x0100">
+      <Parent guid="guidNanoAgentVsCmdSet" id="ToolsMenuGroup"/>
+    </CommandPlacement>
+  </CommandPlacements>
+
+</CommandTable>
