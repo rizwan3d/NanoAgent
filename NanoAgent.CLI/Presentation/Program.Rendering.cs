@@ -36,12 +36,8 @@ public static partial class Program
 
     private static IRenderable BuildHeader(AppState state)
     {
-        string statusHeader =
-            $"[bold cyan]NanoAgent[/]" +
-            $" ── [grey]GitHub:[/] [deepskyblue1]{Markup.Escape(RepositoryUrl)} [/]";
-
-        return new Panel(new Markup(BuildHeaderMarkup(state)))
-            .Header(statusHeader)
+        return new Panel(new Markup(CliBranding.BuildHeaderBodyMarkup()))
+            .Header(CliBranding.BuildStatusHeaderMarkup())
             .Border(BoxBorder.Square)
             .Expand();
     }
@@ -572,52 +568,6 @@ public static partial class Program
 
         return BuildFooterLineMarkup(
             "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
-    }
-
-    private static string BuildHeaderMarkup(AppState state)
-    {
-        (string Nano, string Agent)[] wordmark =
-        [
-            (
-                "███╗   ██╗  █████╗  ███╗   ██╗  ██████╗",
-                "  █████╗   ██████╗  ███████╗  ███╗   ██╗  ████████╗"
-            ),
-            (
-                "████╗  ██║ ██╔══██╗ ████╗  ██║ ██╔═══██╗",
-                " ██╔══██╗ ██╔════╝  ██╔════╝  ████╗  ██║  ╚══██╔══╝"
-            ),
-            (
-                "██╔██╗ ██║ ███████║ ██╔██╗ ██║ ██║   ██║",
-                " ███████║ ██║  ███╗ █████╗    ██╔██╗ ██║     ██║"
-            ),
-            (
-                "██║╚██╗██║ ██╔══██║ ██║╚██╗██║ ██║   ██║",
-                " ██╔══██║ ██║   ██║ ██╔══╝    ██║╚██╗██║     ██║"
-            ),
-            (
-                "██║ ╚████║ ██║  ██║ ██║ ╚████║ ╚██████╔╝",
-                " ██║  ██║ ╚██████╔╝ ███████╗  ██║ ╚████║     ██║"
-            ),
-            (
-                "╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝  ╚═════╝",
-                "  ╚═╝  ╚═╝  ╚═════╝  ╚══════╝  ╚═╝  ╚═══╝     ╚═╝"
-            )
-        ];
-
-        List<string> lines = [];
-
-        for (int index = 0; index < wordmark.Length; index++)
-        {
-            string accentColor = index < 3 ? "fuchsia" : "purple";
-            lines.Add(
-                $"[grey]  [/][{accentColor}]   [/][white]{Markup.Escape(wordmark[index].Nano)}[/][fuchsia]{Markup.Escape(wordmark[index].Agent)}[/]");
-        }
-
-        lines.Add(
-            $"[grey]  Sponsor:[/] [yellow]{Markup.Escape(SponsorName)}[/] [grey]([/][italic]{Markup.Escape(SponsorUrl)}[/][grey])[/]");
-        lines.Add("[grey]  [/]");
-
-        return string.Join('\n', lines);
     }
 
     private static string BuildInputLineMarkup(
