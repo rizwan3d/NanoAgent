@@ -10,6 +10,7 @@ internal sealed class McpStdioServerClient : IMcpServerClient
     private const int MaxStderrCharacters = 8_000;
 
     private readonly McpServerConfiguration _configuration;
+    private readonly TimeSpan _requestTimeout;
     private readonly ConcurrentDictionary<int, TaskCompletionSource<JsonElement>> _pendingRequests = new();
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private int _nextRequestId;
@@ -18,9 +19,12 @@ internal sealed class McpStdioServerClient : IMcpServerClient
     private Task? _stderrTask;
     private Task? _stdoutTask;
 
-    public McpStdioServerClient(McpServerConfiguration configuration)
+    public McpStdioServerClient(
+        McpServerConfiguration configuration,
+        TimeSpan requestTimeout)
     {
         _configuration = configuration;
+        _requestTimeout = requestTimeout;
     }
 
     public string Endpoint => string.Join(" ", new[] { _configuration.Command }.Concat(_configuration.Args).Where(static value => !string.IsNullOrWhiteSpace(value)));
@@ -197,6 +201,8 @@ internal sealed class McpStdioServerClient : IMcpServerClient
         CancellationToken cancellationToken)
     {
         EnsureProcessStarted();
+        using CancellationTokenSource? timeoutSource = CreateRequestTimeoutSource(cancellationToken);
+        CancellationToken requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
 
         int requestId = Interlocked.Increment(ref _nextRequestId);
         TaskCompletionSource<JsonElement> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -209,8 +215,8 @@ internal sealed class McpStdioServerClient : IMcpServerClient
 
         try
         {
-            await WriteLineAsync(payload, cancellationToken);
-            JsonElement response = await completion.Task.WaitAsync(cancellationToken);
+            await WriteLineAsync(payload, requestCancellationToken);
+            JsonElement response = await completion.Task.WaitAsync(requestCancellationToken);
             if (response.TryGetProperty("error", out _))
             {
                 throw new McpProtocolException(McpJson.GetJsonRpcErrorMessage(response));
@@ -236,10 +242,12 @@ internal sealed class McpStdioServerClient : IMcpServerClient
         CancellationToken cancellationToken)
     {
         EnsureProcessStarted();
+        using CancellationTokenSource? timeoutSource = CreateRequestTimeoutSource(cancellationToken);
+        CancellationToken requestCancellationToken = timeoutSource?.Token ?? cancellationToken;
 
         await WriteLineAsync(
             McpJson.BuildNotification(method, writeParams),
-            cancellationToken);
+            requestCancellationToken);
     }
 
     private async Task WriteLineAsync(
@@ -370,6 +378,18 @@ internal sealed class McpStdioServerClient : IMcpServerClient
 
         return new McpProtocolException(
             $"MCP server '{ServerName}' transport closed.{stderr}");
+    }
+
+    private CancellationTokenSource? CreateRequestTimeoutSource(CancellationToken cancellationToken)
+    {
+        if (_requestTimeout == Timeout.InfiniteTimeSpan)
+        {
+            return null;
+        }
+
+        CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(_requestTimeout);
+        return timeoutSource;
     }
 
     private static async Task WaitQuietlyAsync(Task task)

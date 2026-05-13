@@ -195,4 +195,24 @@ public sealed class ApplicationSettingsFactoryTests
             rule.Mode == PermissionMode.Deny &&
             rule.Tools.SequenceEqual(new[] { "blocked_tool" }));
     }
+
+    [Fact]
+    public void CreateToolExecutionSettings_Should_PreserveOptionalTimeouts_When_Configured()
+    {
+        ToolExecutionSettings settings = ApplicationSettingsFactory.CreateToolExecutionSettings(new ApplicationOptions
+        {
+            Tools = new ToolExecutionSettings
+            {
+                HttpClientTimeoutSeconds = 21,
+                McpRequestTimeoutSeconds = 34,
+                AcpRequestTimeoutSeconds = 55,
+                AgentOrchestrationTimeoutSeconds = 89
+            }
+        });
+
+        settings.HttpClientTimeoutSeconds.Should().Be(21);
+        settings.McpRequestTimeoutSeconds.Should().Be(34);
+        settings.AcpRequestTimeoutSeconds.Should().Be(55);
+        settings.AgentOrchestrationTimeoutSeconds.Should().Be(89);
+    }
 }
