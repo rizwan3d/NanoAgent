@@ -264,6 +264,27 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void CreateSectionSnapshot_Should_NormalizeAssistantReasoningBeforePersistingHistory()
+    {
+        ReplSessionContext session = CreateSession();
+
+        session.AddConversationTurn(
+            "say hi",
+            "Done.",
+            assistantReasoningContent: "  \nProvider reasoning with padding.  \n",
+            assistantReasoningDetailsJson: "  [{ \"summary\": \"Padded detail.\" }]  ");
+
+        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+            session.SectionCreatedAtUtc.AddMinutes(1));
+
+        snapshot.Turns.Should().ContainSingle();
+        snapshot.Turns[0].AssistantReasoningContent.Should().Be("Provider reasoning with padding.");
+        snapshot.Turns[0].AssistantReasoningDetailsJson.Should().Be("""[{ "summary": "Padded detail." }]""");
+        session.ConversationHistory[1].ReasoningContent.Should().Be("Provider reasoning with padding.");
+        session.ConversationHistory[1].ReasoningDetailsJson.Should().Be("""[{ "summary": "Padded detail." }]""");
+    }
+
+    [Fact]
     public void CreateSectionSnapshot_Should_RedactSecretsFromHistoryAndToolCalls()
     {
         ReplSessionContext session = CreateSession();
