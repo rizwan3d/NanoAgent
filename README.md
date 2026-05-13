@@ -30,6 +30,9 @@
   <a href="#desktop-app">
     <img src="https://img.shields.io/badge/Install-Desktop-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
   </a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent-vs">
+    <img src="https://img.shields.io/badge/Install-VS-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
+  </a>
 </p>
 
 ---
