@@ -6,6 +6,7 @@
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <RuntimeIdentifiers>win</RuntimeIdentifiers>
+    <BuildNanoAgentCliProject Condition="'$(BuildNanoAgentCliProject)' == ''">true</BuildNanoAgentCliProject>
     <NanoAgentCliProjectPath>..\NanoAgent.CLI\NanoAgent.CLI.csproj</NanoAgentCliProjectPath>
     <NanoAgentCliOutputDir>..\NanoAgent.CLI\bin\$(Configuration)\net10.0\</NanoAgentCliOutputDir>
   </PropertyGroup>
@@ -109,7 +110,10 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="BuildNanoAgentCliPayload" BeforeTargets="GetVsixSourceItems" Condition="Exists('$(NanoAgentCliProjectPath)')">
-    <MSBuild Projects="$(NanoAgentCliProjectPath)" Targets="Build" Properties="Configuration=$(Configuration)" />
+    <Exec Condition="'$(BuildNanoAgentCliProject)' == 'true'"
+          Command="dotnet build &quot;$(NanoAgentCliProjectPath)&quot; --configuration &quot;$(Configuration)&quot; --nologo" />
+    <Error Condition="!Exists('$(NanoAgentCliOutputDir)NanoAgent.CLI.exe') and !Exists('$(NanoAgentCliOutputDir)NanoAgent.CLI.dll')"
+           Text="NanoAgent CLI payload was not found in '$(NanoAgentCliOutputDir)'. Build NanoAgent.CLI first or set BuildNanoAgentCliProject=true." />
     <ItemGroup>
       <NanoAgentCliRootPayload Include="$(NanoAgentCliOutputDir)*.exe;$(NanoAgentCliOutputDir)*.dll;$(NanoAgentCliOutputDir)*.json" Exclude="$(NanoAgentCliOutputDir)**\*.pdb" />
       <NanoAgentCliRuntimePayload Include="$(NanoAgentCliOutputDir)runtimes\**\*" Exclude="$(NanoAgentCliOutputDir)**\*.pdb" />
