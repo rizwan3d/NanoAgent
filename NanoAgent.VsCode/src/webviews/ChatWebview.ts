@@ -138,7 +138,8 @@ export class ChatWebviewController {
             enableScripts: true
         };
 
-        this.webview.html = getChatWebviewContent();
+        const nonce = getNonce();
+        this.webview.html = getChatWebviewContent(nonce);
         this.registerSessionListeners();
 
         this.disposables.push(
@@ -701,7 +702,7 @@ export class ChatWebviewController {
     }
 }
 
-function getChatWebviewContent() {
+function getChatWebviewContent(nonce: string) {
     const commandSuggestionsJson = JSON.stringify(CHAT_COMMANDS);
 
     return `<!DOCTYPE html>
@@ -709,8 +710,10 @@ function getChatWebviewContent() {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'none'; style-src 'nonce-${nonce}'; script-src 'nonce-${nonce}'; img-src data:; connect-src 'none'; form-action 'none'; frame-ancestors 'none'; base-uri 'none';">
     <title>NanoAgent</title>
-    <style>
+    <style nonce="${nonce}">
         :root {
             color-scheme: dark;
             --app-bg: var(--vscode-editor-background, #1e1e1e);
@@ -1888,7 +1891,7 @@ function getChatWebviewContent() {
         </div>
     </div>
 
-    <script>
+    <script nonce="${nonce}">
         const api = acquireVsCodeApi();
         const commandSuggestions = ${commandSuggestionsJson};
         const messagesDiv = document.getElementById('messages');
@@ -3102,4 +3105,16 @@ function getChatWebviewContent() {
     </script>
 </body>
 </html>`;
+}
+
+
+function getNonce(): string {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    const array = new Uint8Array(32);
+    crypto.getRandomValues(array);
+    for (let i = 0; i < array.length; i++) {
+        result += chars[array[i] % chars.length];
+    }
+    return result;
 }
