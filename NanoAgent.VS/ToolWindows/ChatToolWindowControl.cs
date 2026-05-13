@@ -127,7 +127,7 @@ namespace NanoAgent.VS.ToolWindows
 
         private async Task HandleNotificationAsync(string method, Dictionary<string, object?>? parameters)
         {
-            ThreadHelper.ThrowIfNotOnUIThread();
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
             switch (method)
             {
@@ -267,7 +267,7 @@ namespace NanoAgent.VS.ToolWindows
             ScrollToBottom();
 
             if (text.StartsWith("/")) await HandleSlashCommand(text);
-            else await HandleUserPrompt(text);
+            else await HandleUserPromptAsync(text);
         }
 
         private async Task HandleSlashCommand(string command)
@@ -297,7 +297,7 @@ namespace NanoAgent.VS.ToolWindows
             await SendHostCommandAsync(command);
         }
 
-        private async Task HandleUserPrompt(string prompt)
+        private async Task HandleUserPromptAsync(string prompt)
         {
             _turnCts?.Cancel();
             _turnCts = new CancellationTokenSource();
