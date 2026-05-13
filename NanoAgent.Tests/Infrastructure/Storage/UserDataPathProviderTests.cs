@@ -29,13 +29,13 @@ public sealed class UserDataPathProviderTests
     }
 
     [Fact]
-    public void GetSectionsDirectoryPath_Should_ReturnStorageDirectorySectionsPath()
+    public void GetSessionsDirectoryPath_Should_ReturnStorageDirectorySectionsPath()
     {
         UserDataPathProvider sut = new();
 
-        string sectionsDirectoryPath = sut.GetSectionsDirectoryPath();
+        string sectionsDirectoryPath = sut.GetSessionsDirectoryPath();
 
-        Path.GetFileName(sectionsDirectoryPath).Should().Be("sections");
+        Path.GetFileName(sectionsDirectoryPath).Should().Be("sessions");
         sectionsDirectoryPath.Should().Contain("NanoAgent");
     }
 }

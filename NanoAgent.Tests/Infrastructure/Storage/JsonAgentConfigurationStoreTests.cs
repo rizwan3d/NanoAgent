@@ -627,9 +627,9 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             return Path.Combine(_root, "logs");
         }
 
-        public string GetSectionsDirectoryPath()
+        public string GetSessionsDirectoryPath()
         {
-            return Path.Combine(_root, "sections");
+            return Path.Combine(_root, "sessions");
         }
     }
 
