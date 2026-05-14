@@ -6,6 +6,7 @@ using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
 using NanoAgent.Infrastructure.Configuration;
+using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text;
@@ -21,8 +22,11 @@ internal sealed class AcpServer : IAsyncDisposable
     private const int JsonRpcMethodNotFound = -32601;
     private const int JsonRpcInvalidParams = -32602;
     private const int JsonRpcInternalError = -32603;
+    private const int JsonRpcUnauthorized = -32001;
     private const int ProtocolVersion = 1;
+    private const string AcpAuthenticationTokenEnvironmentVariable = "NANOAGENT_ACP_AUTH_TOKEN";
 
+    private readonly string? _acpAuthenticationToken;
     private readonly string[] _backendArgs;
     private readonly Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> _backendFactory;
     private readonly TextWriter _error;
@@ -40,6 +44,7 @@ internal sealed class AcpServer : IAsyncDisposable
     private readonly string _startupDirectory;
     private readonly ConcurrentDictionary<string, AcpSession> _sessions = new(StringComparer.Ordinal);
     private IReadOnlyList<BackendMcpServerConfiguration> _initializeMcpServers = [];
+    private bool _isAuthenticated;
     private long _nextRequestId;
 
     public AcpServer(
@@ -140,7 +145,8 @@ internal sealed class AcpServer : IAsyncDisposable
         string[] backendArgs,
         string? providerAuthKey,
         bool autoApproveAllTools,
-        Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory)
+        Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory,
+        string? acpAuthenticationToken = null)
     {
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _output = output ?? throw new ArgumentNullException(nameof(output));
@@ -149,6 +155,8 @@ internal sealed class AcpServer : IAsyncDisposable
         _providerAuthKey = NormalizeOrNull(providerAuthKey);
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
         _startupDirectory = Directory.GetCurrentDirectory();
+        _acpAuthenticationToken = NormalizeOrNull(acpAuthenticationToken) ??
+            LoadAcpAuthenticationToken(_startupDirectory);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -272,6 +280,16 @@ internal sealed class AcpServer : IAsyncDisposable
                 throw new AcpProtocolException(JsonRpcInvalidRequest, "JSON-RPC request is missing a method.");
             }
 
+            if (RequiresAuthentication &&
+                !_isAuthenticated &&
+                !string.Equals(method, "initialize", StringComparison.Ordinal) &&
+                !string.Equals(method, "authenticate", StringComparison.Ordinal))
+            {
+                throw new AcpProtocolException(
+                    JsonRpcUnauthorized,
+                    $"ACP authentication is required before calling '{method}'.");
+            }
+
             switch (method)
             {
                 case "initialize":
@@ -279,7 +297,7 @@ internal sealed class AcpServer : IAsyncDisposable
                     break;
 
                 case "authenticate":
-                    await HandleAuthenticateAsync(responseId, cancellationToken);
+                    await HandleAuthenticateAsync(root, responseId, cancellationToken);
                     break;
 
                 case "session/new":
@@ -372,14 +390,37 @@ internal sealed class AcpServer : IAsyncDisposable
                 writer.WriteEndObject();
                 writer.WritePropertyName("authMethods");
                 writer.WriteStartArray();
+                if (RequiresAuthentication)
+                {
+                    writer.WriteStringValue("token");
+                }
+
                 writer.WriteEndArray();
                 writer.WriteEndObject();
             },
             cancellationToken);
     }
 
-    private async Task HandleAuthenticateAsync(JsonElement? id, CancellationToken cancellationToken)
+    private async Task HandleAuthenticateAsync(
+        JsonElement root,
+        JsonElement? id,
+        CancellationToken cancellationToken)
     {
+        if (!RequiresAuthentication)
+        {
+            throw new AcpProtocolException(
+                JsonRpcInvalidRequest,
+                "ACP authentication is not configured for this server.");
+        }
+
+        string providedToken = ReadAuthenticationToken(root);
+        if (!SecureEquals(_acpAuthenticationToken, providedToken))
+        {
+            throw new AcpProtocolException(JsonRpcUnauthorized, "Invalid ACP authentication token.");
+        }
+
+        _isAuthenticated = true;
+
         await SendResultAsync(
             id,
             writer =>
@@ -910,6 +951,23 @@ internal sealed class AcpServer : IAsyncDisposable
             {
                 Tools = configured
             });
+    }
+
+    private static string? LoadAcpAuthenticationToken(string workspaceRoot)
+    {
+        string? configuredToken = new ConfigurationBuilder()
+            .AddJsonFile(
+                Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+                optional: true,
+                reloadOnChange: false)
+            .AddJsonFile(
+                Path.Combine(workspaceRoot, ".nanoagent", "agent-profile.json"),
+                optional: true,
+                reloadOnChange: false)
+            .Build()[$"{ApplicationOptions.SectionName}:Acp:AuthenticationToken"];
+
+        return NormalizeOrNull(Environment.GetEnvironmentVariable(AcpAuthenticationTokenEnvironmentVariable)) ??
+            NormalizeOrNull(configuredToken);
     }
 
     private static TimeSpan GetAcpRequestTimeout(ToolExecutionSettings settings)
@@ -1672,6 +1730,40 @@ internal sealed class AcpServer : IAsyncDisposable
         return string.IsNullOrWhiteSpace(value)
             ? null
             : value.Trim();
+    }
+
+    private bool RequiresAuthentication => !string.IsNullOrWhiteSpace(_acpAuthenticationToken);
+
+    private static string ReadAuthenticationToken(JsonElement root)
+    {
+        JsonElement parameters = GetRequiredParams(root);
+        if (parameters.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(parameters.GetString()))
+        {
+            return parameters.GetString()!.Trim();
+        }
+
+        if (TryGetString(parameters, "token", out string token))
+        {
+            return token;
+        }
+
+        throw new AcpProtocolException(
+            JsonRpcInvalidParams,
+            "authenticate requires a non-empty token parameter.");
+    }
+
+    private static bool SecureEquals(string? expected, string actual)
+    {
+        if (string.IsNullOrEmpty(expected))
+        {
+            return false;
+        }
+
+        byte[] expectedBytes = Encoding.UTF8.GetBytes(expected);
+        byte[] actualBytes = Encoding.UTF8.GetBytes(actual);
+        return expectedBytes.Length == actualBytes.Length &&
+            CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
     }
 
     private sealed record AcpPrompt(
