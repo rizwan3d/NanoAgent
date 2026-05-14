@@ -109,6 +109,14 @@ Release assets also publish `SHA256SUMS` and GitHub artifact attestations so you
 
 ### CLI Install
 
+NuGet / .NET tool:
+
+```bash
+dotnet tool install --global NanoAgent.CLI
+```
+
+Direct release installer:
+
 macOS / Linux:
 
 ```bash
@@ -126,6 +134,8 @@ Then start NanoAgent:
 ```bash
 nanoai
 ```
+
+The tag-based release workflows also publish `NanoAgent` and `NanoAgent.CLI` to NuGet.org.
 
 ## Documentation
 

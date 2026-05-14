@@ -51,6 +51,14 @@ New release assets include `SHA256SUMS` beside the downloads. The release pipeli
 
 ### CLI
 
+NuGet / .NET tool:
+
+```bash
+dotnet tool install --global NanoAgent.CLI
+```
+
+Direct release installer:
+
 macOS / Linux:
 
 ```bash
@@ -66,6 +74,8 @@ irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.
 The installers show step status and download progress when run in an interactive terminal. Set `NANOAGENT_NO_PROGRESS=1` to keep output compact in CI logs.
 
 Restart your terminal if `nanoai` is not found immediately after installation.
+
+The release workflows also pack `NanoAgent` and `NanoAgent.CLI` and publish those packages to NuGet.org for every `v*` tag release.
 
 The CLI install scripts verify the archive checksum against `SHA256SUMS`, or the SHA256 digest from GitHub release metadata, before extraction. Checksum verification is mandatory â€” installation fails if the checksum cannot be validated.
 
@@ -435,17 +445,18 @@ code --install-extension nanoagent-<version>.vsix
 
 ### Extension Publishing
 
-The release workflow `.github/workflows/release.yml` packages the extension as `NanoAgent.VsCode-<version>.vsix` and publishes it to GitHub Releases with the CLI and desktop assets. The signed release variant `.github/workflows/release-signing.yml` does the same when that workflow is used. Both workflows publish `SHA256SUMS` and GitHub artifact attestations for the generated release assets.
+The release workflow `.github/workflows/release.yml` packages the extension as `NanoAgent.VsCode-<version>.vsix` and publishes it to GitHub Releases with the CLI, desktop, and NuGet assets. The signed release variant `.github/workflows/release-signing.yml` does the same when that workflow is used. Both workflows publish `SHA256SUMS`, push the `NanoAgent` and `NanoAgent.CLI` packages to NuGet.org, and generate GitHub artifact attestations for the generated release assets.
 
 The Marketplace CD workflow `.github/workflows/vscode-extension-cd.yml` publishes the extension to the Visual Studio Marketplace. It runs for `v*` tags and manual dispatch. For tag builds, the workflow removes the leading `v` and applies that value to `NanoAgent.VsCode/package.json` with `npm version --no-git-tag-version` before packaging.
 
 Required repository secret:
 
 ```text
+NUGET_API_KEY
 VSCE_PAT
 ```
 
-Create this token in Azure DevOps with Marketplace Manage scope and access to the `rizwan3d` Visual Studio Marketplace publisher. The workflow publishes through `@vscode/vsce`, uploads the generated `.vsix` artifact, and uses the `vscode-marketplace` GitHub environment for deployment approval or environment-level protection rules if configured.
+Create `NUGET_API_KEY` in NuGet.org with push permission for the target packages. Create `VSCE_PAT` in Azure DevOps with Marketplace Manage scope and access to the `rizwan3d` Visual Studio Marketplace publisher. The release workflow publishes NuGet packages with `dotnet nuget push`, and the Marketplace workflow publishes through `@vscode/vsce`, uploads the generated `.vsix` artifact, and uses the `vscode-marketplace` GitHub environment for deployment approval or environment-level protection rules if configured.
 
 ## Visual Studio Extension
 
@@ -1159,6 +1170,8 @@ Commands:
 dotnet restore NanoAgent.CrossPlatform.slnx
 dotnet build NanoAgent.CrossPlatform.slnx
 dotnet test NanoAgent.Tests/NanoAgent.Tests.csproj
+dotnet pack NanoAgent/NanoAgent.csproj -c Release
+dotnet pack NanoAgent.CLI/NanoAgent.CLI.csproj -c Release
 ```
 
 VS Code extension commands:
