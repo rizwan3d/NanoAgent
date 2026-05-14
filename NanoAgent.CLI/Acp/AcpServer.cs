@@ -23,22 +23,23 @@ internal sealed class AcpServer : IAsyncDisposable
     private const int JsonRpcInvalidParams = -32602;
     private const int JsonRpcInternalError = -32603;
     private const int JsonRpcUnauthorized = -32001;
+    private const int JsonRpcRateLimitExceeded = -32002;
     private const int ProtocolVersion = 1;
     private const string AcpAuthenticationTokenEnvironmentVariable = "NANOAGENT_ACP_AUTH_TOKEN";
+    private const int DefaultMaxIncomingLineLength = 10 * 1024 * 1024;
+    private const int DefaultMaxRequestQueueDepth = 100;
+    private const int DefaultMaxRequestsPerWindow = 100;
 
     private readonly string? _acpAuthenticationToken;
     private readonly string[] _backendArgs;
     private readonly Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> _backendFactory;
     private readonly TextWriter _error;
     private readonly TextReader _input;
+    private readonly int _maxIncomingLineLength;
     private readonly TextWriter _output;
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new(StringComparer.Ordinal);
-    private readonly Channel<JsonElement> _requestQueue = Channel.CreateUnbounded<JsonElement>(
-        new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = true
-        });
+    private readonly Channel<JsonElement> _requestQueue;
+    private readonly SlidingWindowRequestLimiter _requestRateLimiter;
     private readonly SemaphoreSlim _outputLock = new(1, 1);
     private readonly string? _providerAuthKey;
     private readonly string _startupDirectory;
@@ -146,14 +147,33 @@ internal sealed class AcpServer : IAsyncDisposable
         string? providerAuthKey,
         bool autoApproveAllTools,
         Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory,
-        string? acpAuthenticationToken = null)
+        string? acpAuthenticationToken = null,
+        int maxIncomingLineLength = DefaultMaxIncomingLineLength,
+        int maxRequestQueueDepth = DefaultMaxRequestQueueDepth,
+        int maxRequestsPerWindow = DefaultMaxRequestsPerWindow,
+        TimeSpan? requestRateLimitWindow = null)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxIncomingLineLength, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxRequestQueueDepth, 1);
+        ArgumentOutOfRangeException.ThrowIfLessThan(maxRequestsPerWindow, 1);
+
         _input = input ?? throw new ArgumentNullException(nameof(input));
         _output = output ?? throw new ArgumentNullException(nameof(output));
         _error = error ?? throw new ArgumentNullException(nameof(error));
         _backendArgs = backendArgs ?? throw new ArgumentNullException(nameof(backendArgs));
         _providerAuthKey = NormalizeOrNull(providerAuthKey);
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
+        _maxIncomingLineLength = maxIncomingLineLength;
+        _requestQueue = Channel.CreateBounded<JsonElement>(
+            new BoundedChannelOptions(maxRequestQueueDepth)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                FullMode = BoundedChannelFullMode.Wait
+            });
+        _requestRateLimiter = new SlidingWindowRequestLimiter(
+            maxRequestsPerWindow,
+            requestRateLimitWindow ?? TimeSpan.FromSeconds(1));
         _startupDirectory = Directory.GetCurrentDirectory();
         _acpAuthenticationToken = NormalizeOrNull(acpAuthenticationToken) ??
             LoadAcpAuthenticationToken(_startupDirectory);
@@ -167,7 +187,21 @@ internal sealed class AcpServer : IAsyncDisposable
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                string? line = await _input.ReadLineAsync(cancellationToken);
+                string? line;
+                try
+                {
+                    line = await ReadLineWithLimitAsync(_input, _maxIncomingLineLength, cancellationToken);
+                }
+                catch (IncomingLineTooLongException)
+                {
+                    await SendErrorAsync(
+                        id: null,
+                        JsonRpcInvalidRequest,
+                        $"JSON-RPC message exceeds the maximum size of {_maxIncomingLineLength} characters.",
+                        cancellationToken);
+                    continue;
+                }
+
                 if (line is null)
                 {
                     break;
@@ -202,6 +236,16 @@ internal sealed class AcpServer : IAsyncDisposable
 
     private async Task ProcessIncomingLineAsync(string line, CancellationToken cancellationToken)
     {
+        if (Encoding.UTF8.GetByteCount(line) > _maxIncomingLineLength)
+        {
+            await SendErrorAsync(
+                id: null,
+                JsonRpcInvalidRequest,
+                $"JSON-RPC message exceeds the maximum size of {_maxIncomingLineLength} bytes.",
+                cancellationToken);
+            return;
+        }
+
         JsonDocument document;
         try
         {
@@ -233,6 +277,20 @@ internal sealed class AcpServer : IAsyncDisposable
             if (IsResponse(root))
             {
                 RouteResponse(root);
+                return;
+            }
+
+            if (!_requestRateLimiter.TryAcquire())
+            {
+                JsonElement? id = TryGetRequestId(root, out JsonElement requestId)
+                    ? requestId
+                    : null;
+
+                await SendErrorAsync(
+                    id,
+                    JsonRpcRateLimitExceeded,
+                    "ACP request rate limit exceeded.",
+                    cancellationToken);
                 return;
             }
 
@@ -1732,6 +1790,69 @@ internal sealed class AcpServer : IAsyncDisposable
             : value.Trim();
     }
 
+    private static async Task<string?> ReadLineWithLimitAsync(
+        TextReader reader,
+        int maxLineLength,
+        CancellationToken cancellationToken)
+    {
+        char[] buffer = new char[1];
+        StringBuilder line = new(Math.Min(maxLineLength, 4096));
+        bool exceeded = false;
+
+        while (true)
+        {
+            int read = await reader.ReadAsync(buffer.AsMemory(0, 1), cancellationToken);
+            if (read == 0)
+            {
+                if (line.Length == 0 && !exceeded)
+                {
+                    return null;
+                }
+
+                TrimTrailingCarriageReturn(line);
+                if (exceeded)
+                {
+                    throw new IncomingLineTooLongException(maxLineLength);
+                }
+
+                return line.ToString();
+            }
+
+            char current = buffer[0];
+            if (current == '\n')
+            {
+                TrimTrailingCarriageReturn(line);
+                if (exceeded)
+                {
+                    throw new IncomingLineTooLongException(maxLineLength);
+                }
+
+                return line.ToString();
+            }
+
+            if (exceeded)
+            {
+                continue;
+            }
+
+            if (line.Length >= maxLineLength)
+            {
+                exceeded = true;
+                continue;
+            }
+
+            line.Append(current);
+        }
+    }
+
+    private static void TrimTrailingCarriageReturn(StringBuilder line)
+    {
+        if (line.Length > 0 && line[^1] == '\r')
+        {
+            line.Length--;
+        }
+    }
+
     private bool RequiresAuthentication => !string.IsNullOrWhiteSpace(_acpAuthenticationToken);
 
     private static string ReadAuthenticationToken(JsonElement root)
@@ -1821,6 +1942,56 @@ internal sealed class AcpServer : IAsyncDisposable
         }
 
         public int Code { get; }
+    }
+
+    private sealed class IncomingLineTooLongException : Exception
+    {
+        public IncomingLineTooLongException(int maxLineLength)
+            : base($"Incoming ACP line exceeds the maximum size of {maxLineLength} characters.")
+        {
+        }
+    }
+
+    private sealed class SlidingWindowRequestLimiter
+    {
+        private readonly int _maxRequests;
+        private readonly Queue<DateTime> _requestTimes = new();
+        private readonly object _sync = new();
+        private readonly TimeSpan _window;
+
+        public SlidingWindowRequestLimiter(int maxRequests, TimeSpan window)
+        {
+            ArgumentOutOfRangeException.ThrowIfLessThan(maxRequests, 1);
+            if (window <= TimeSpan.Zero)
+            {
+                throw new ArgumentOutOfRangeException(nameof(window));
+            }
+
+            _maxRequests = maxRequests;
+            _window = window;
+        }
+
+        public bool TryAcquire()
+        {
+            DateTime now = DateTime.UtcNow;
+
+            lock (_sync)
+            {
+                while (_requestTimes.Count > 0 &&
+                    now - _requestTimes.Peek() >= _window)
+                {
+                    _requestTimes.Dequeue();
+                }
+
+                if (_requestTimes.Count >= _maxRequests)
+                {
+                    return false;
+                }
+
+                _requestTimes.Enqueue(now);
+                return true;
+            }
+        }
     }
 
     private sealed class AcpUiBridge : IUiBridge
