@@ -19,6 +19,7 @@ using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.OpenAi;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
+using NanoAgent.Infrastructure.Telemetry;
 using NanoAgent.Infrastructure.Tools;
 using NanoAgent.Infrastructure.Updates;
 
@@ -151,6 +152,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IProcessRunner, ProcessRunner>();
         services.AddSingleton<IPlatformCredentialStore>(CreatePlatformCredentialStore());
         services.AddSingleton<ILoggerProvider, DailyFileLoggerProvider>();
+        services.AddHttpClient<PostHogTelemetryService>((serviceProvider, client) =>
+        {
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(5));
+        });
+        services.AddSingleton<IProductTelemetry>(serviceProvider =>
+            serviceProvider.GetRequiredService<PostHogTelemetryService>());
         services.AddSingleton<IValidateOptions<ApplicationOptions>, ApplicationOptionsValidator>();
         services.AddHttpClient<IConversationProviderClient, OpenAiCompatibleConversationProviderClient>((serviceProvider, client) =>
         {

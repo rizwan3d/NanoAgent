@@ -24,7 +24,8 @@ export class NanoAgentProcessManager extends EventEmitter {
 
         const config = vscode.workspace.getConfiguration('nanoagent');
         const command = config.get<string>('command', 'nanoai');
-        const args = config.get<string[]>('args', ['--acp']);
+        const configuredArgs = config.get<string[]>('args', ['--acp']);
+        const args = this.ensureSurfaceArg(configuredArgs, 'vscode');
         
         let cwd = config.get<string>('workingDirectory');
         if (!cwd && vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
@@ -128,5 +129,14 @@ export class NanoAgentProcessManager extends EventEmitter {
     private setStatus(status: NanoAgentProcessStatus) {
         this.status = status;
         this.emit('status', status);
+    }
+
+    private ensureSurfaceArg(args: string[], surface: string): string[] {
+        const hasSurfaceArg = args.some((arg, index) =>
+            arg === '--surface' || arg.startsWith('--surface=') || (index > 0 && args[index - 1] === '--surface'));
+
+        return hasSurfaceArg
+            ? [...args]
+            : [...args, '--surface', surface];
     }
 }

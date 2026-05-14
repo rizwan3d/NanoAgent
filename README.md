@@ -16,6 +16,8 @@
   <a href="https://github.com/rizwan3d/NanoAgent"><img src="https://img.shields.io/github/v/release/rizwan3d/NanoAgent" alt="Version"></a>
   <a href="https://github.com/rizwan3d/NanoAgent/stargazers"><img src="https://img.shields.io/github/stars/rizwan3d/NanoAgent" alt="Stars"></a>
   <a href="https://github.com/rizwan3d/NanoAgent/issues"><img src="https://img.shields.io/github/issues/rizwan3d/NanoAgent" alt="Issues"></a>
+  <a href="https://github.com/rizwan3d/NanoAgent/releases"><img src="https://img.shields.io/github/downloads/rizwan3d/NanoAgent/total?label=downloads" alt="Downloads"></a>
+  <a href="https://github.com/rizwan3d/NanoAgent/forks"><img src="https://img.shields.io/github/forks/rizwan3d/NanoAgent" alt="Forks"></a>
 </p>
 
 <p align="center">
@@ -85,6 +87,27 @@ NanoAgent is designed for useful automation without silent surprises.
 - Tracked file edits can be undone and redone.
 - Secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
 - Your workspace stays local; prompts and selected context are sent only to the model provider you configure when needed for a request.
+
+## Telemetry
+
+NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.nanoagent/agent-profile.json` for the current workspace.
+
+Collected:
+- NanoAgent version
+- OS family
+- app surface such as CLI, Desktop, VS Code, Visual Studio, or JetBrains
+- feature names used
+- success and failure counts
+- token and duration buckets
+- daily runs and usage-time buckets
+
+Never collected:
+- prompts
+- source code
+- file paths
+- repository names or URLs
+- API keys
+- terminal output
 
 ## Provider Choice
 

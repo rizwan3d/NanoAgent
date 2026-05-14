@@ -79,6 +79,31 @@ public sealed class WorkspaceSettingsWriterTests : IDisposable
         permissions["sandboxMode"]!.GetValue<string>().Should().Be("WorkspaceWrite");
     }
 
+    [Fact]
+    public async Task SaveTelemetryEnabledAsync_Should_WriteTelemetryFlagToWorkspaceProfile()
+    {
+        WriteProfile(
+            """
+            {
+              "Application": {
+                "Permissions": {
+                  "defaultMode": "Ask"
+                }
+              }
+            }
+            """);
+        WorkspaceSettingsWriter sut = new();
+
+        await sut.SaveTelemetryEnabledAsync(
+            _workspaceRoot,
+            enabled: false,
+            CancellationToken.None);
+
+        JsonObject root = ReadProfile();
+        root["Application"]!["Permissions"]!["defaultMode"]!.GetValue<string>().Should().Be("Ask");
+        root["Application"]!["Telemetry"]!["Enabled"]!.GetValue<bool>().Should().BeFalse();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Telemetry;
 using NanoAgent.Application.UI;
 using NanoAgent.Domain.Models;
 
@@ -25,6 +26,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IApplicationUpdateService? _updateService;
     private IConfirmationPrompt? _confirmationPrompt;
     private IStatusMessageWriter? _statusMessageWriter;
+    private IProductTelemetry? _telemetry;
     private bool _updatePromptShown;
 
     public NanoAgentBackend(string[] args)
@@ -77,6 +79,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         _updateService = _host.Services.GetRequiredService<IApplicationUpdateService>();
         _confirmationPrompt = _host.Services.GetRequiredService<IConfirmationPrompt>();
         _statusMessageWriter = _host.Services.GetRequiredService<IStatusMessageWriter>();
+        _telemetry = _host.Services.GetRequiredService<IProductTelemetry>();
+        _telemetry.TrackAppStarted();
 
         if (!string.IsNullOrWhiteSpace(options.SectionId))
         {
@@ -128,10 +132,29 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
 
         ParsedReplCommand command = _commandParser.Parse(commandText);
-        ReplCommandResult result = await _commandDispatcher.DispatchAsync(
-            command,
-            _session,
-            cancellationToken);
+        string featureName = TelemetryFeatureNames.ForCommand(command.CommandName);
+        ReplCommandResult result;
+        try
+        {
+            result = await _commandDispatcher.DispatchAsync(
+                command,
+                _session,
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _telemetry?.TrackFeatureUsed(
+                featureName,
+                "command",
+                success: false,
+                exception: exception);
+            throw;
+        }
+
+        _telemetry?.TrackFeatureUsed(
+            featureName,
+            "command",
+            success: result.FeedbackKind != ReplFeedbackKind.Error);
 
         if (result.SessionOverride is not null &&
             !ReferenceEquals(result.SessionOverride, _session))
@@ -226,6 +249,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
     public async ValueTask DisposeAsync()
     {
+        _telemetry?.TrackAppStopped();
+
         if (_sessionAppService is not null && _session is not null)
         {
             try

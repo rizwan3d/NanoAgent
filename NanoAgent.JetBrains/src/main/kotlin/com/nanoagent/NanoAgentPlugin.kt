@@ -47,7 +47,7 @@ class NanoAgentPlugin : AppLifecycleListener {
     ): NanoAgentProcessManager {
         return NanoAgentProcessManager(
             nanoaiCommand = nanoaiCommand,
-            backendArgs = backendArgs
+            backendArgs = ensureSurfaceArg(backendArgs)
         )
     }
 
@@ -55,7 +55,7 @@ class NanoAgentPlugin : AppLifecycleListener {
      * Create a new ACP client connected to the NanoAgent CLI.
      */
     fun createClient(backendArgs: List<String> = emptyList()): AcpClient {
-        return AcpClient(nanoaiPath = DEFAULT_NANOAI_COMMAND, backendArgs = backendArgs)
+        return AcpClient(nanoaiPath = DEFAULT_NANOAI_COMMAND, backendArgs = ensureSurfaceArg(backendArgs))
     }
 
     override fun appStarted() {
@@ -75,5 +75,14 @@ class NanoAgentPlugin : AppLifecycleListener {
         processManagers.clear()
         logService.info("NanoAgent plugin shutting down")
         logger.info("NanoAgent plugin shut down")
+    }
+
+    private fun ensureSurfaceArg(backendArgs: List<String>): List<String> {
+        val hasSurface = backendArgs.any { it == "--surface" || it.startsWith("--surface=") }
+        return if (hasSurface) {
+            backendArgs
+        } else {
+            backendArgs + listOf("--surface", "jetbrains")
+        }
     }
 }

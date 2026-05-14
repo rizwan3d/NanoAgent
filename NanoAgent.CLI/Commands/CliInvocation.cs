@@ -21,7 +21,8 @@ internal sealed record CliInvocation(
         "--section",
         "--session",
         "--profile",
-        "--thinking"
+        "--thinking",
+        "--surface"
     ];
 
     public static CliInvocation Help { get; } = new(
