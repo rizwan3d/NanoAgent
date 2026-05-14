@@ -48,6 +48,11 @@ jobs:
       - name: Build
         run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ env.CONFIGURATION }} --no-restore
 
+      - name: Pack NuGet packages
+        run: |
+          dotnet pack NanoAgent/NanoAgent.csproj --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts/packages/nuget
+          dotnet pack NanoAgent.CLI/NanoAgent.CLI.csproj --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts/packages/nuget
+
       - name: Test with coverage
         run: >
           dotnet test ${{ env.TEST_PROJECT }}
@@ -105,5 +110,14 @@ jobs:
         with:
           name: coverage-report
           path: artifacts/coverage
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload NuGet packages
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: nuget-packages
+          path: artifacts/packages/nuget
           if-no-files-found: warn
           retention-days: 14

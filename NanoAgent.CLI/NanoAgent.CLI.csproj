@@ -9,6 +9,11 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
     <PackageIcon>logo.png</PackageIcon>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>nanoai</ToolCommandName>
+    <Description>Terminal UI, ACP server, and automation-friendly .NET tool for NanoAgent.</Description>
+    <PackageReadmeFile>README.NuGet.md</PackageReadmeFile>
+    <PackageTags>ai;agent;cli;dotnet-tool;developer-tools;terminal</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +30,7 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
     <None Include="Assets\logo.png" Pack="true" PackagePath="" />
+    <None Include="README.NuGet.md" Pack="true" PackagePath="" />
   </ItemGroup>
 
 </Project>
