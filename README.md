@@ -135,7 +135,7 @@ Then start NanoAgent:
 nanoai
 ```
 
-The tag-based release workflows also publish `NanoAgent` and `NanoAgent.CLI` to NuGet.org.
+The tag-based release workflows publish only `NanoAgent` to NuGet.org.
 
 ## Documentation
 
