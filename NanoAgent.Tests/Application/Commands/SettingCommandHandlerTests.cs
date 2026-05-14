@@ -325,6 +325,14 @@ public sealed class SettingCommandHandlerTests
         {
             return Task.CompletedTask;
         }
+
+        public Task SaveTelemetryEnabledAsync(
+            string workspacePath,
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class CapturingWorkspaceSettingsWriter : IWorkspaceSettingsWriter
@@ -353,6 +361,15 @@ public sealed class SettingCommandHandlerTests
                 ShellDefault = settings.ShellDefault,
                 ShellSafe = settings.ShellSafe
             };
+            return Task.CompletedTask;
+        }
+
+        public Task SaveTelemetryEnabledAsync(
+            string workspacePath,
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            WorkspacePath = workspacePath;
             return Task.CompletedTask;
         }
     }

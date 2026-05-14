@@ -206,11 +206,12 @@ public static partial class Program
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
+        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
         AcpServer server = new(
             Console.In,
             Console.Out,
             Console.Error,
-            args,
+            backendArgs,
             providerAuthKey,
             autoApproveAllTools);
 
@@ -253,8 +254,9 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
+        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
         INanoAgentBackend backend = new NanoAgentBackend(
-            args ?? [],
+            backendArgs,
             sessionMcpServers: [],
             autoApproveAllTools);
         AppState state = new(uiBridge, backend);
@@ -323,7 +325,11 @@ public static partial class Program
         }
 
         ConsoleBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs = [.. args, "--no-update-check"];
+        string[] backendArgs =
+        [
+            .. EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface),
+            "--no-update-check"
+        ];
         await using INanoAgentBackend backend = new NanoAgentBackend(
             backendArgs,
             sessionMcpServers: [],
@@ -626,5 +632,26 @@ public static partial class Program
                 state.AddMessage(role.Value, message.Content);
             }
         }
+    }
+
+    private static string[] EnsureSurfaceArg(
+        IReadOnlyList<string> args,
+        string appSurface)
+    {
+        for (int index = 0; index < args.Count; index++)
+        {
+            string arg = args[index];
+            if (string.Equals(arg, "--surface", StringComparison.OrdinalIgnoreCase))
+            {
+                return [.. args];
+            }
+
+            if (arg.StartsWith("--surface=", StringComparison.OrdinalIgnoreCase))
+            {
+                return [.. args];
+            }
+        }
+
+        return [.. args, "--surface", appSurface];
     }
 }
