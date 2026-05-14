@@ -16,5 +16,7 @@ public sealed class ApplicationOptions
 
     public PermissionSettings Permissions { get; set; } = new();
 
+    public TelemetryOptions Telemetry { get; set; } = new();
+
     public ToolExecutionSettings Tools { get; set; } = new();
 }

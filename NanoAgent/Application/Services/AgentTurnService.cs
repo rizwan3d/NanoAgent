@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Telemetry;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
@@ -14,16 +15,31 @@ internal sealed class AgentTurnService : IAgentTurnService
 
     private readonly IConversationPipeline _conversationPipeline;
     private readonly IAgentProfileResolver _profileResolver;
+    private readonly IProductTelemetry _telemetry;
     private readonly IShellCommandService? _shellCommandService;
 
     public AgentTurnService(
         IConversationPipeline conversationPipeline,
         IAgentProfileResolver profileResolver,
+        IProductTelemetry? telemetry = null,
         IShellCommandService? shellCommandService = null)
     {
         _conversationPipeline = conversationPipeline;
         _profileResolver = profileResolver;
+        _telemetry = telemetry ?? NoOpProductTelemetry.Instance;
         _shellCommandService = shellCommandService;
+    }
+
+    public AgentTurnService(
+        IConversationPipeline conversationPipeline,
+        IAgentProfileResolver profileResolver,
+        IShellCommandService? shellCommandService)
+        : this(
+            conversationPipeline,
+            profileResolver,
+            telemetry: null,
+            shellCommandService)
+    {
     }
 
     public async Task<ConversationTurnResult> RunTurnAsync(
@@ -31,76 +47,113 @@ internal sealed class AgentTurnService : IAgentTurnService
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
+        int attachmentCount = request.Attachments.Count;
+        string featureName = attachmentCount > 0
+            ? TelemetryFeatureNames.PromptWithAttachments
+            : TelemetryFeatureNames.Prompt;
 
-        if (CustomSlashCommandService.TryExpand(
-                request.Session.WorkspacePath,
-                request.UserInput,
-                out CustomSlashCommandResolution? customCommand,
-                out string? customCommandError))
+        try
         {
-            return customCommand is null
-                ? ConversationTurnResult.AssistantMessage(customCommandError ?? "Custom command could not be expanded.")
-                : await ProcessWithOptionalAttachmentsAsync(
-                    customCommand.ExpandedPrompt,
+            ConversationTurnResult result;
+
+            if (CustomSlashCommandService.TryExpand(
+                    request.Session.WorkspacePath,
+                    request.UserInput,
+                    out CustomSlashCommandResolution? customCommand,
+                    out string? customCommandError))
+            {
+                featureName = TelemetryFeatureNames.CustomCommand;
+                result = customCommand is null
+                    ? ConversationTurnResult.AssistantMessage(customCommandError ?? "Custom command could not be expanded.")
+                    : await ProcessWithOptionalAttachmentsAsync(
+                        customCommand.ExpandedPrompt,
+                        request,
+                        cancellationToken);
+            }
+            else if (TryParseDirectShellCommand(request.UserInput, out string? command))
+            {
+                featureName = TelemetryFeatureNames.DirectShell;
+                result = await RunDirectShellCommandAsync(
+                    ShellCommandText.NormalizeCommandText(command),
                     request,
                     cancellationToken);
-        }
+            }
+            else if (!TryParseLeadingAgentMention(
+                         request.UserInput,
+                         out string? agentName,
+                         out string? delegatedInput))
+            {
+                result = await ProcessWithOptionalAttachmentsAsync(
+                    request.UserInput,
+                    request,
+                    cancellationToken);
+            }
+            else
+            {
+                featureName = TelemetryFeatureNames.AgentMention;
 
-        if (TryParseDirectShellCommand(request.UserInput, out string? command))
-        {
-            return await RunDirectShellCommandAsync(
-                ShellCommandText.NormalizeCommandText(command),
-                request,
-                cancellationToken);
-        }
+                IAgentProfile mentionedProfile;
+                try
+                {
+                    mentionedProfile = _profileResolver.Resolve(agentName);
+                }
+                catch (ArgumentException)
+                {
+                    result = ConversationTurnResult.AssistantMessage(
+                        $"Unknown agent '@{agentName}'. Available subagents: {FormatProfileNames(_profileResolver.List().Where(static profile => profile.Mode == AgentProfileMode.Subagent))}.");
+                    _telemetry.TrackFeatureUsed(featureName, "turn", success: true, result.Metrics, attachmentCount);
+                    return result;
+                }
 
-        if (!TryParseLeadingAgentMention(
-                request.UserInput,
-                out string? agentName,
-                out string? delegatedInput))
-        {
-            return await ProcessWithOptionalAttachmentsAsync(
-                request.UserInput,
-                request,
-                cancellationToken);
-        }
+                if (mentionedProfile.Mode != AgentProfileMode.Subagent)
+                {
+                    result = ConversationTurnResult.AssistantMessage(
+                        $"Agent '@{mentionedProfile.Name}' is a primary profile. Use /profile {mentionedProfile.Name} to switch primary profiles.");
+                    _telemetry.TrackFeatureUsed(featureName, "turn", success: true, result.Metrics, attachmentCount);
+                    return result;
+                }
 
-        IAgentProfile mentionedProfile;
-        try
-        {
-            mentionedProfile = _profileResolver.Resolve(agentName);
-        }
-        catch (ArgumentException)
-        {
-            return ConversationTurnResult.AssistantMessage(
-                $"Unknown agent '@{agentName}'. Available subagents: {FormatProfileNames(_profileResolver.List().Where(static profile => profile.Mode == AgentProfileMode.Subagent))}.");
-        }
+                if (string.IsNullOrWhiteSpace(delegatedInput))
+                {
+                    result = ConversationTurnResult.AssistantMessage(
+                        $"Tell '@{mentionedProfile.Name}' what to do, for example: @{mentionedProfile.Name} inspect the authentication flow.");
+                    _telemetry.TrackFeatureUsed(featureName, "turn", success: true, result.Metrics, attachmentCount);
+                    return result;
+                }
 
-        if (mentionedProfile.Mode != AgentProfileMode.Subagent)
-        {
-            return ConversationTurnResult.AssistantMessage(
-                $"Agent '@{mentionedProfile.Name}' is a primary profile. Use /profile {mentionedProfile.Name} to switch primary profiles.");
-        }
+                IAgentProfile originalProfile = request.Session.AgentProfile;
+                request.Session.SetAgentProfile(mentionedProfile);
 
-        if (string.IsNullOrWhiteSpace(delegatedInput))
-        {
-            return ConversationTurnResult.AssistantMessage(
-                $"Tell '@{mentionedProfile.Name}' what to do, for example: @{mentionedProfile.Name} inspect the authentication flow.");
-        }
+                try
+                {
+                    result = await ProcessWithOptionalAttachmentsAsync(
+                        delegatedInput,
+                        request,
+                        cancellationToken);
+                }
+                finally
+                {
+                    request.Session.SetAgentProfile(originalProfile);
+                }
+            }
 
-        IAgentProfile originalProfile = request.Session.AgentProfile;
-        request.Session.SetAgentProfile(mentionedProfile);
-
-        try
-        {
-            return await ProcessWithOptionalAttachmentsAsync(
-                delegatedInput,
-                request,
-                cancellationToken);
+            _telemetry.TrackFeatureUsed(
+                featureName,
+                "turn",
+                success: true,
+                result.Metrics,
+                attachmentCount);
+            return result;
         }
-        finally
+        catch (Exception exception)
         {
-            request.Session.SetAgentProfile(originalProfile);
+            _telemetry.TrackFeatureUsed(
+                featureName,
+                "turn",
+                success: false,
+                attachmentCount: attachmentCount,
+                exception: exception);
+            throw;
         }
     }
 
@@ -324,5 +377,28 @@ internal sealed class AgentTurnService : IAgentTurnService
         return string.Join(
             ", ",
             profiles.Select(static profile => profile.Name));
+    }
+
+    private sealed class NoOpProductTelemetry : IProductTelemetry
+    {
+        public static NoOpProductTelemetry Instance { get; } = new();
+
+        public void TrackAppStarted()
+        {
+        }
+
+        public void TrackAppStopped()
+        {
+        }
+
+        public void TrackFeatureUsed(
+            string featureName,
+            string interactionKind,
+            bool success,
+            ConversationTurnMetrics? metrics = null,
+            int attachmentCount = 0,
+            Exception? exception = null)
+        {
+        }
     }
 }

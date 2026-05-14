@@ -48,7 +48,7 @@ namespace NanoAgent.VS.Services
                 throw new ObjectDisposedException(nameof(VsAgentService));
             }
 
-            _processManager.Start(executablePath, "--acp");
+            _processManager.Start(executablePath, "--acp", "--surface", "visual_studio");
             _loopCts = new CancellationTokenSource();
             _readLoop = Task.Run(() => ReadLoopAsync(_loopCts.Token));
         }

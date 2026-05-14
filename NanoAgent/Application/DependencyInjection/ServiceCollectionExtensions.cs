@@ -19,6 +19,7 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<IAgentProfileResolver, BuiltInAgentProfileResolver>();
+        services.AddSingleton<IProductTelemetry, NoOpProductTelemetry>();
         services.AddSingleton<IAgentTurnService, AgentTurnService>();
         services.AddSingleton<ISessionAppService, SessionAppService>();
         services.AddSingleton<IConversationPipeline, AgentConversationPipeline>();
@@ -61,5 +62,26 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IModelSelectionPolicy, ConfiguredOrFirstModelSelectionPolicy>();
 
         return services;
+    }
+
+    private sealed class NoOpProductTelemetry : IProductTelemetry
+    {
+        public void TrackAppStarted()
+        {
+        }
+
+        public void TrackAppStopped()
+        {
+        }
+
+        public void TrackFeatureUsed(
+            string featureName,
+            string interactionKind,
+            bool success,
+            Models.ConversationTurnMetrics? metrics = null,
+            int attachmentCount = 0,
+            Exception? exception = null)
+        {
+        }
     }
 }

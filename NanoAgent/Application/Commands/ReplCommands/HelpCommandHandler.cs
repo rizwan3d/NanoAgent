@@ -25,6 +25,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/compact [retained-turns] - Manually compact the session context.\n" +
             "/config - Show the current provider, session, config path, active profile, thinking, and active model.\n" +
             "/copy - Copy the last agent message to the clipboard.\n" +
+            "/disableanalytics - Disable product analytics for this workspace.\n" +
             "/deny <tool-or-tag> [pattern] - Add a session-scoped deny override.\n" +
             "/exit - Exit the interactive shell.\n" +
             "/export [json|html] [path] - Export the current session.\n" +
