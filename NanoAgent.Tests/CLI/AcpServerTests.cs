@@ -217,6 +217,65 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_RejectOversizedIncomingLine_AndContinueProcessing()
+    {
+        string oversizedLine = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + new string('a', 120) + "\"}";
+        string input = oversizedLine + Environment.NewLine +
+            """{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":1}}""";
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            autoApproveAllTools: false,
+            backendFactory: (_, _) => new FakeBackend(),
+            maxIncomingLineLength: 96);
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        messages.Should().Contain(message =>
+            message.GetProperty("error").GetProperty("code").GetInt32() == -32600 &&
+            message.GetProperty("error").GetProperty("message").GetString()!.Contains("maximum size of 96 characters"));
+        FindResponse(messages, 2).GetProperty("result").GetProperty("protocolVersion").GetInt32().Should().Be(1);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_RejectRequestsThatExceedRateLimit()
+    {
+        string input = string.Join(
+            Environment.NewLine,
+            """{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}""",
+            """{"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":1}}""");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            autoApproveAllTools: false,
+            backendFactory: (_, _) => new FakeBackend(),
+            maxRequestsPerWindow: 1,
+            requestRateLimitWindow: TimeSpan.FromMinutes(1));
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        FindResponse(messages, 1).GetProperty("result").GetProperty("protocolVersion").GetInt32().Should().Be(1);
+        FindResponse(messages, 2).GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32002);
+        FindResponse(messages, 2).GetProperty("error").GetProperty("message").GetString().Should().Be("ACP request rate limit exceeded.");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_ScopeInitializeAndSessionMcpServersToBackend()
     {
         string cwd = Directory.GetCurrentDirectory();
@@ -1142,10 +1201,53 @@ public sealed class AcpServerTests
         private sealed class ChannelTextReader : TextReader
         {
             private readonly ChannelReader<string?> _reader;
+            private int _position;
+            private string? _pending;
 
             public ChannelTextReader(ChannelReader<string?> reader)
             {
                 _reader = reader;
+            }
+
+            public override async ValueTask<int> ReadAsync(Memory<char> buffer, CancellationToken cancellationToken = default)
+            {
+                if (buffer.IsEmpty)
+                {
+                    return 0;
+                }
+
+                while (true)
+                {
+                    if (!string.IsNullOrEmpty(_pending) && _position < _pending.Length)
+                    {
+                        int count = Math.Min(buffer.Length, _pending.Length - _position);
+                        _pending.AsMemory(_position, count).CopyTo(buffer);
+                        _position += count;
+                        if (_position >= _pending.Length)
+                        {
+                            _pending = null;
+                            _position = 0;
+                        }
+
+                        return count;
+                    }
+
+                    try
+                    {
+                        string? next = await _reader.ReadAsync(cancellationToken);
+                        if (next is null)
+                        {
+                            return 0;
+                        }
+
+                        _pending = next + "\n";
+                        _position = 0;
+                    }
+                    catch (ChannelClosedException)
+                    {
+                        return 0;
+                    }
+                }
             }
 
             public override async ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken)
@@ -1260,10 +1362,53 @@ public sealed class AcpServerTests
         private sealed class ChannelTextReader : TextReader
         {
             private readonly ChannelReader<string?> _reader;
+            private int _position;
+            private string? _pending;
 
             public ChannelTextReader(ChannelReader<string?> reader)
             {
                 _reader = reader;
+            }
+
+            public override async ValueTask<int> ReadAsync(Memory<char> buffer, CancellationToken cancellationToken = default)
+            {
+                if (buffer.IsEmpty)
+                {
+                    return 0;
+                }
+
+                while (true)
+                {
+                    if (!string.IsNullOrEmpty(_pending) && _position < _pending.Length)
+                    {
+                        int count = Math.Min(buffer.Length, _pending.Length - _position);
+                        _pending.AsMemory(_position, count).CopyTo(buffer);
+                        _position += count;
+                        if (_position >= _pending.Length)
+                        {
+                            _pending = null;
+                            _position = 0;
+                        }
+
+                        return count;
+                    }
+
+                    try
+                    {
+                        string? next = await _reader.ReadAsync(cancellationToken);
+                        if (next is null)
+                        {
+                            return 0;
+                        }
+
+                        _pending = next + "\n";
+                        _position = 0;
+                    }
+                    catch (ChannelClosedException)
+                    {
+                        return 0;
+                    }
+                }
             }
 
             public override async ValueTask<string?> ReadLineAsync(CancellationToken cancellationToken)
