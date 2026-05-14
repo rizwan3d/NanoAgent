@@ -109,7 +109,7 @@ jobs:
           retention-days: 14
 
   pack-nuget:
-    name: Pack NuGet packages
+    name: Pack NanoAgent NuGet package
     needs: validate
     runs-on: ubuntu-24.04
     permissions:
@@ -137,7 +137,7 @@ jobs:
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
 
-      - name: Pack NuGet packages
+      - name: Pack NanoAgent NuGet package
         run: |
           dotnet pack NanoAgent/NanoAgent.csproj \
             --configuration ${{ env.CONFIGURATION }} \
@@ -145,18 +145,14 @@ jobs:
             --output ./artifacts/packages/nuget \
             /p:Version=${{ env.RELEASE_VERSION }} \
             /p:InformationalVersion=${{ env.RELEASE_TAG }}
-          dotnet pack NanoAgent.CLI/NanoAgent.CLI.csproj \
-            --configuration ${{ env.CONFIGURATION }} \
-            --no-restore \
-            --output ./artifacts/packages/nuget \
-            /p:Version=${{ env.RELEASE_VERSION }} \
-            /p:InformationalVersion=${{ env.RELEASE_TAG }}
 
-      - name: Upload NuGet packages
+      - name: Upload NanoAgent NuGet package
         uses: actions/upload-artifact@v6
         with:
           name: nuget-packages
-          path: ./artifacts/packages/nuget
+          path: |
+            ./artifacts/packages/nuget/NanoAgent.*.nupkg
+            ./artifacts/packages/nuget/NanoAgent.*.snupkg
           if-no-files-found: error
           retention-days: 14
 
@@ -372,7 +368,7 @@ jobs:
           retention-days: 14
 
   publish-nuget:
-    name: Publish NuGet packages
+    name: Publish NanoAgent NuGet package
     needs: pack-nuget
     environment:
       name: production-release
@@ -397,7 +393,7 @@ jobs:
           name: nuget-packages
           path: ./artifacts/packages/nuget
 
-      - name: Publish packages to NuGet.org
+      - name: Publish NanoAgent package to NuGet.org
         shell: bash
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
@@ -410,11 +406,11 @@ jobs:
           fi
 
           shopt -s nullglob
-          packages=(./artifacts/packages/nuget/*.nupkg)
-          symbols=(./artifacts/packages/nuget/*.snupkg)
+          packages=(./artifacts/packages/nuget/NanoAgent.[0-9]*.nupkg)
+          symbols=(./artifacts/packages/nuget/NanoAgent.[0-9]*.snupkg)
 
           if [[ "${#packages[@]}" -eq 0 ]]; then
-            echo "No NuGet packages were produced." >&2
+            echo "No NanoAgent NuGet packages were produced." >&2
             exit 1
           fi
 
