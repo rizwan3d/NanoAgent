@@ -25,16 +25,19 @@
     <img src="https://img.shields.io/badge/View-Releases-0969da?style=for-the-badge" alt="View NanoAgent releases">
   </a>
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent">
-    <img src="https://img.shields.io/badge/Install-VSCode-0969da?style=for-the-badge" alt="View NanoAgent releases">
+    <img src="https://img.shields.io/badge/Install-VSCode-0969da?style=for-the-badge" alt="Install NanoAgent VSCode">
   </a>
   <a href="#cli-install">
     <img src="https://img.shields.io/badge/Install-CLI-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
   </a>
   <a href="#desktop-app">
-    <img src="https://img.shields.io/badge/Install-Desktop-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
+    <img src="https://img.shields.io/badge/Install-Desktop-0969da?style=for-the-badge" alt="Install NanoAgent Desktop">
   </a>
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent-vs">
-    <img src="https://img.shields.io/badge/Install-VS-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
+    <img src="https://img.shields.io/badge/Install-VS-0969da?style=for-the-badge" alt="Install NanoAgent VS">
+  </a>
+  <a href="https://www.nuget.org/packages/NanoAgen">
+    <img src="https://img.shields.io/badge/Install-Nuget-0969da?style=for-the-badge" alt="Install NanoAgent Nuget">
   </a>
 </p>
 
