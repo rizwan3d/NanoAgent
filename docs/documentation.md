@@ -501,6 +501,8 @@ nanoai --acp
 
 ACP mode speaks line-delimited JSON-RPC on stdin/stdout, so compatible editors and tools can create NanoAgent sessions, send prompts, cancel active turns, and receive assistant message, plan, and tool progress updates.
 
+ACP does not open a network listener. It communicates only over the local child process stdin/stdout streams created by the host editor or tool.
+
 Example editor server configuration:
 
 ```json
@@ -513,6 +515,20 @@ Example editor server configuration:
   }
 }
 ```
+
+To require ACP authentication, set a process-level token with either `NANOAGENT_ACP_AUTH_TOKEN` or a workspace profile:
+
+```json
+{
+  "Application": {
+    "Acp": {
+      "authenticationToken": "replace-with-a-long-random-token"
+    }
+  }
+}
+```
+
+When an ACP authentication token is configured, `initialize` returns `"authMethods": ["token"]`. The client must then call `authenticate` with `{"token":"..."}` before sending `session/new`, `session/load`, `session/prompt`, or `session/close`. If no token is configured, `authMethods` is empty and `authenticate` is rejected instead of returning a misleading success response.
 
 Run `nanoai` once before ACP use so provider onboarding, credentials, and the default model are already configured. ACP mode currently supports one active NanoAgent session per process. It merges ACP client `mcpServers` with NanoAgent's user and workspace MCP configuration for that ACP session only, so editor-provided MCP tools do not become global configuration.
 
