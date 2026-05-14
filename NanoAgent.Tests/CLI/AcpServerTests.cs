@@ -101,6 +101,122 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_AdvertiseAndRequireAuthentication_WhenAcpTokenConfigured()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        bool backendCreated = false;
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            autoApproveAllTools: false,
+            backendFactory: (_, _) =>
+            {
+                backendCreated = true;
+                return new FakeBackend();
+            },
+            acpAuthenticationToken: "acp-secret");
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        JsonElement initialize = FindResponse(messages, 1);
+        initialize.GetProperty("result")
+            .GetProperty("authMethods")
+            .EnumerateArray()
+            .Select(static method => method.GetString())
+            .Should()
+            .Equal("token");
+
+        JsonElement sessionNew = FindResponse(messages, 2);
+        sessionNew.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32001);
+        sessionNew.GetProperty("error").GetProperty("message").GetString().Should().Contain("authentication is required");
+        backendCreated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_RejectAuthenticate_WhenTokenDoesNotMatch()
+    {
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"token":"wrong-token"}}
+            """);
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            autoApproveAllTools: false,
+            backendFactory: (_, _) => new FakeBackend(),
+            acpAuthenticationToken: "acp-secret");
+
+        await sut.RunAsync(CancellationToken.None);
+
+        JsonElement authenticate = FindResponse(ParseJsonLines(output.ToString()), 2);
+        authenticate.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32001);
+        authenticate.GetProperty("error").GetProperty("message").GetString().Should().Be("Invalid ACP authentication token.");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_AllowSessionMethods_AfterSuccessfulAuthentication()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":2,"method":"authenticate","params":{"token":"acp-secret"}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            autoApproveAllTools: false,
+            backendFactory: (_, _) => new FakeBackend(),
+            acpAuthenticationToken: "acp-secret");
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        FindResponse(messages, 2).GetProperty("result").ValueKind.Should().Be(JsonValueKind.Object);
+        FindResponse(messages, 3).GetProperty("result").GetProperty("sessionId").GetString().Should().Be("sess-test");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_ScopeInitializeAndSessionMcpServersToBackend()
     {
         string cwd = Directory.GetCurrentDirectory();
