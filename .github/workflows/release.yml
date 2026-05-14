@@ -374,6 +374,8 @@ jobs:
   publish-nuget:
     name: Publish NuGet packages
     needs: pack-nuget
+    environment:
+      name: production-release
     runs-on: ubuntu-24.04
     permissions:
       contents: read
