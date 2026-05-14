@@ -27,6 +27,7 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  NUGET_SOURCE: https://api.nuget.org/v3/index.json
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   SOLUTION_FILE: NanoAgent.CrossPlatform.slnx
@@ -106,6 +107,62 @@ jobs:
           name: release-test-results
           path: artifacts/test-results
           if-no-files-found: warn
+          retention-days: 14
+
+  pack-nuget:
+    name: Pack NuGet packages
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            NanoAgent/packages.lock.json
+            NanoAgent.CLI/packages.lock.json
+            NanoAgent.Desktop/packages.lock.json
+            NanoAgent.Tests/packages.lock.json
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
+
+      - name: Pack NuGet packages
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          dotnet pack NanoAgent/NanoAgent.csproj \
+            --configuration ${{ env.CONFIGURATION }} \
+            --no-restore \
+            --output ./artifacts/packages/nuget \
+            /p:Version=${{ env.RELEASE_VERSION }} \
+            /p:InformationalVersion=${{ env.RELEASE_TAG }}
+
+          dotnet pack NanoAgent.CLI/NanoAgent.CLI.csproj \
+            --configuration ${{ env.CONFIGURATION }} \
+            --no-restore \
+            --output ./artifacts/packages/nuget \
+            /p:Version=${{ env.RELEASE_VERSION }} \
+            /p:InformationalVersion=${{ env.RELEASE_TAG }}
+
+      - name: Upload NuGet packages
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: nuget-packages
+          path: ./artifacts/packages/nuget
+          if-no-files-found: error
           retention-days: 14
 
   release-approval:
@@ -621,9 +678,67 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish-nuget:
+    name: Publish NuGet packages
+    needs:
+      - pack-nuget
+      - release-approval
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@c2fa09f4bde5ebb9d1777cf28262a3eb3db3ced7 # v5
+        with:
+          global-json-file: global.json
+
+      - name: Download NuGet packages
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5
+        with:
+          name: nuget-packages
+          path: ./artifacts/packages/nuget
+
+      - name: Publish packages to NuGet.org
+        shell: bash
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${NUGET_API_KEY:-}" ]]; then
+            echo "NUGET_API_KEY is required to publish NuGet packages." >&2
+            exit 1
+          fi
+
+          shopt -s nullglob
+          packages=(./artifacts/packages/nuget/*.nupkg)
+          symbols=(./artifacts/packages/nuget/*.snupkg)
+
+          if [[ "${#packages[@]}" -eq 0 ]]; then
+            echo "No NuGet packages were produced." >&2
+            exit 1
+          fi
+
+          for package_path in "${packages[@]}"; do
+            dotnet nuget push "$package_path" \
+              --api-key "$NUGET_API_KEY" \
+              --source "${{ env.NUGET_SOURCE }}" \
+              --skip-duplicate
+          done
+
+          for symbol_path in "${symbols[@]}"; do
+            dotnet nuget push "$symbol_path" \
+              --api-key "$NUGET_API_KEY" \
+              --source "${{ env.NUGET_SOURCE }}" \
+              --skip-duplicate
+          done
+
   publish-release:
     name: Publish GitHub release
-    needs: publish
+    needs:
+      - publish
+      - publish-nuget
     runs-on: ubuntu-24.04
     permissions:
       attestations: write
@@ -662,7 +777,7 @@ jobs:
             cp "$asset_path" "$destination"
           done < <(
             find "$GITHUB_WORKSPACE/artifacts/release" -type f \
-              \( -name '*.zip' -o -name '*.exe' -o -name '*.sbom.cdx.json' \) |
+              \( -name '*.zip' -o -name '*.exe' -o -name '*.nupkg' -o -name '*.sbom.cdx.json' \) |
               sort
           )
 
