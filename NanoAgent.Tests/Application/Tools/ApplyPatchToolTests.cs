@@ -115,6 +115,27 @@ public sealed class ApplyPatchToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ExplainUpdateHunkPrefixes_When_LineIsMissingMarker()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ApplyPatchWithTrackingAsync(
+                "*** Begin Patch\n*** Update File: script.py\n@@ def greet():\ndef greet():\n-    print(\"Hi\")\n+    print(\"Hello\")\n*** End Patch",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new FormatException("Invalid update patch line: 'def greet():'"));
+
+        ApplyPatchTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "patch": "*** Begin Patch\n*** Update File: script.py\n@@ def greet():\ndef greet():\n-    print(\"Hi\")\n+    print(\"Hello\")\n*** End Patch" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("every file line must start with ' ' for context, '+' for additions, or '-' for removals");
+        result.Message.Should().Contain("The text after '@@' is only a locator");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ResolvePatchPathsFromSessionWorkingDirectory()
     {
         string workspaceRoot = Path.Combine(

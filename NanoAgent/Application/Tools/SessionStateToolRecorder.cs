@@ -227,7 +227,7 @@ internal static class SessionStateToolRecorder
             previewLines
                 .Take(MaxPreviewLines)
                 .Select(static line =>
-                    $"{line.Kind}@{line.LineNumber}: {NormalizeForState(line.Text, 160)}"));
+                    $"{line.Kind}@{line.LineNumber}: {NormalizePreviewLineForState(line.Text, 160)}"));
 
         return remainingPreviewLineCount > 0
             ? $"{preview} | ... {remainingPreviewLineCount} more"
@@ -281,6 +281,22 @@ internal static class SessionStateToolRecorder
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n')
             .Trim();
+
+        if (normalized.Length <= maxCharacters)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(0, maxCharacters - 3)].TrimEnd() + "...";
+    }
+
+    private static string NormalizePreviewLineForState(
+        string value,
+        int maxCharacters)
+    {
+        string normalized = SuspiciousUnicodeText.RenderVisible(SecretRedactor.Redact(value))
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
 
         if (normalized.Length <= maxCharacters)
         {

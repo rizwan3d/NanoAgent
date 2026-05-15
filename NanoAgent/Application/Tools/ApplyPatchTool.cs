@@ -35,6 +35,9 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
         
         3. `*** Update File: <path>`
            - Edits an existing file.
+           - Each hunk starts with `@@` or `@@ <anchor text>`.
+           - Every file line inside a hunk MUST start with ` `, `+`, or `-`.
+           - The text after `@@` is only a locator. If you want to keep that file line, repeat it with a leading space. If you want to change it, include `-old line` and `+new line` entries in the hunk.
            - May include:
              *** Move to: <new path>
            - `*** Move to:` is only valid inside an `Update         File` operation.
@@ -213,7 +216,11 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             "Blank lines inside update patches",
             StringComparison.Ordinal)
             ? " To preserve an empty line in the target file, prefix it with a space for context, '+' for an added blank line, or '-' for a removed blank line."
-            : string.Empty;
+            : normalizedMessage.Contains(
+                "Invalid update patch line:",
+                StringComparison.Ordinal)
+                ? " Inside an update hunk, every file line must start with ' ' for context, '+' for additions, or '-' for removals. The text after '@@' is only a locator; if you want that line to stay, repeat it with a leading space, or use '-' and '+' lines to replace it."
+                : string.Empty;
 
         return
             $"{normalizedMessage} " +

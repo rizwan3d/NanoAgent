@@ -1089,6 +1089,19 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 continue;
             }
 
+            if (currentHunkLines is not null &&
+                currentHunkLines.Count == 0 &&
+                !string.IsNullOrWhiteSpace(currentChangeContext) &&
+                string.Equals(line, currentChangeContext, StringComparison.Ordinal))
+            {
+                currentHunkLines.Add(new PatchLine(
+                    PatchLineKind.Context,
+                    line,
+                    NoNewlineAtEnd: false));
+                lineIndex++;
+                continue;
+            }
+
             if (line.Length == 0 || line[0] is not (' ' or '+' or '-'))
             {
                 throw new FormatException($"Invalid update patch line: '{line}'.");
@@ -1270,6 +1283,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         foreach (PatchHunk hunk in hunks)
         {
+            int? changeContextIndex = null;
             if (!string.IsNullOrWhiteSpace(hunk.ChangeContext))
             {
                 int contextIndex = SeekSequence(
@@ -1283,6 +1297,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                         $"Could not apply the requested patch because context '{hunk.ChangeContext}' was not found in '{path}'.");
                 }
 
+                changeContextIndex = contextIndex;
                 searchStart = contextIndex + 1;
             }
 
@@ -1304,10 +1319,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             string[] pattern = beforeLines;
             string[] replacementLines = afterLines;
+            int patternSearchStart = changeContextIndex is not null &&
+                                     beforeLines.Length > 0 &&
+                                     string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
+                ? changeContextIndex.Value
+                : searchStart;
             int matchIndex = SeekSequence(
                 originalLines,
                 pattern,
-                searchStart,
+                patternSearchStart,
                 hunk.IsEndOfFile);
 
             if (matchIndex < 0 &&
@@ -1323,7 +1343,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 matchIndex = SeekSequence(
                     originalLines,
                     pattern,
-                    searchStart,
+                    patternSearchStart,
                     hunk.IsEndOfFile);
             }
 
