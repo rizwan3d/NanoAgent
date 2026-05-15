@@ -429,6 +429,33 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptRepeatedHunkLabel_AsImplicitContextLine()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "script.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "def greet():\n    print(\"Hi\")\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: script.py
+            @@ def greet():
+            def greet():
+            -    print("Hi")
+            +    print("Hello")
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("def greet():\n    print(\"Hello\")\n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_UseEndOfFileAnchor()
     {
         WorkspaceFileService sut = CreateSut();
