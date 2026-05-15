@@ -36,7 +36,7 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent-vs">
     <img src="https://img.shields.io/badge/Install-VS-0969da?style=for-the-badge" alt="Install NanoAgent VS">
   </a>
-  <a href="https://www.nuget.org/packages/NanoAgen">
+  <a href="https://www.nuget.org/packages/NanoAgent/">
     <img src="https://img.shields.io/badge/Install-Nuget-0969da?style=for-the-badge" alt="Install NanoAgent Nuget">
   </a>
 </p>
