@@ -206,6 +206,7 @@ public sealed class UiBridge : IUiBridge
                 ? "Working"
                 : $"Plan {progress.CompletedTaskCount}/{progress.Tasks.Count}";
             state.LatestPlanText = description;
+            state.IsPlanPinned = true;
 
             state.AddSystemMessage(description);
         });
