@@ -721,6 +721,85 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             .WithMessage("*excluded by .nanoagent/.nanoignore*");
     }
 
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptCrlfLineEndings_InPatchText()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "src", "Program.cs");
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        await File.WriteAllTextAsync(
+            filePath,
+            "line1\nline2\nline3\n",
+            CancellationToken.None);
+
+        // Patch uses CRLF line endings
+        WorkspaceApplyPatchResult result = await sut.ApplyPatchAsync(
+            "*** Begin Patch\r\n*** Update File: src/Program.cs\r\n@@\r\n line1\r\n line2\r\n-line3\r\n+changed\r\n*** End Patch\r\n",
+            CancellationToken.None);
+
+        result.FileCount.Should().Be(1);
+        result.AddedLineCount.Should().Be(1);
+        result.RemovedLineCount.Should().Be(1);
+        string actualContent = await File.ReadAllTextAsync(filePath, CancellationToken.None);
+        actualContent.Should().Be("line1\nline2\nchanged\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptMixedLineEndings_InPatchText()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "keep\nremove\n",
+            CancellationToken.None);
+
+        // Header uses CRLF, hunk body uses LF
+        WorkspaceApplyPatchResult result = await sut.ApplyPatchAsync(
+            "*** Begin Patch\r\n*** Update File: notes.txt\r\n@@\r\n-remove\r\n+added\r\n*** End Patch\r\n",
+            CancellationToken.None);
+
+        result.FileCount.Should().Be(1);
+        string actualContent = await File.ReadAllTextAsync(filePath, CancellationToken.None);
+        actualContent.Should().Be("keep\nadded\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_HandleCrlfLineEndings_InExistingFile()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "config.ini");
+        // Existing file has CRLF line endings
+        await File.WriteAllTextAsync(
+            filePath,
+            "setting1=old\r\nsetting2=value\r\n",
+            CancellationToken.None);
+
+        WorkspaceApplyPatchResult result = await sut.ApplyPatchAsync(
+            "*** Begin Patch\n*** Update File: config.ini\n@@\n-setting1=old\n+setting1=new\n*** End Patch\n",
+            CancellationToken.None);
+
+        result.FileCount.Should().Be(1);
+        string actualContent = await File.ReadAllTextAsync(filePath, CancellationToken.None);
+        actualContent.Should().Be("setting1=new\nsetting2=value\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AddFile_WithCrlfPatchText()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceApplyPatchResult result = await sut.ApplyPatchAsync(
+            "*** Begin Patch\r\n*** Add File: readme.txt\r\n+hello world\r\n+second line\r\n*** End Patch\r\n",
+            CancellationToken.None);
+
+        result.FileCount.Should().Be(1);
+        result.AddedLineCount.Should().Be(2);
+        string actualContent = await File.ReadAllTextAsync(
+            Path.Combine(_workspaceRoot, "readme.txt"),
+            CancellationToken.None);
+        actualContent.Should().Be("hello world\nsecond line\n");
+    }
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
