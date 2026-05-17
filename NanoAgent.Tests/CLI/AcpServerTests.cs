@@ -611,13 +611,16 @@ public sealed class AcpServerTests
     public async Task RunAsync_Should_ReplayAssistantReasoningHistoryAsThinkingChunk()
     {
         string cwd = Directory.GetCurrentDirectory();
+        string sectionId = Guid.NewGuid().ToString("D");
         HistoryBackend backend = new();
         string input = string.Join(
             Environment.NewLine,
             """
             {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
             """,
-            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/load\",\"params\":{\"sessionId\":\"sess-history\",\"cwd\":" +
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/load\",\"params\":{\"sessionId\":\"" +
+                sectionId +
+                "\",\"cwd\":" +
                 JsonSerializer.Serialize(cwd) +
                 "}}");
 
@@ -656,6 +659,83 @@ public sealed class AcpServerTests
                 .GetString() == "I updated it.");
 
         thinkingIndex.Should().BeLessThan(assistantIndex);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_RejectSessionLoad_WhenSessionIdIsNotGuid()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        bool backendCreated = false;
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/load\",\"params\":{\"sessionId\":\"../other-session\",\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ =>
+            {
+                backendCreated = true;
+                return new FakeBackend();
+            });
+
+        await sut.RunAsync(CancellationToken.None);
+
+        JsonElement response = FindResponse(ParseJsonLines(output.ToString()), 2);
+        response.GetProperty("error").GetProperty("code").GetInt32().Should().Be(-32602);
+        response.GetProperty("error").GetProperty("message").GetString().Should().Be("sessionId must be a valid GUID.");
+        backendCreated.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_NormalizeGuidSessionId_ForSessionLoad()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        string normalizedSessionId = Guid.NewGuid().ToString("D");
+        string suppliedSessionId = "{" + normalizedSessionId.ToUpperInvariant() + "}";
+        string[]? capturedArgs = null;
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/load\",\"params\":{\"sessionId\":\"" +
+                suppliedSessionId +
+                "\",\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            (args, _) =>
+            {
+                capturedArgs = args;
+                return new FakeBackend(normalizedSessionId);
+            });
+
+        await sut.RunAsync(CancellationToken.None);
+
+        capturedArgs.Should().NotBeNull();
+        capturedArgs.Should().ContainInOrder("--section", normalizedSessionId);
+        FindResponse(ParseJsonLines(output.ToString()), 2).GetProperty("result").ValueKind.Should().Be(JsonValueKind.Null);
     }
 
     private static JsonElement FindResponse(IReadOnlyList<JsonElement> messages, int id)
