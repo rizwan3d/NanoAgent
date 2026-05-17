@@ -533,7 +533,7 @@ internal sealed class AcpServer : IAsyncDisposable
     {
         JsonElement parameters = GetRequiredParams(root);
         string cwd = ReadRequiredAbsolutePath(parameters, "cwd");
-        string sessionId = ReadRequiredString(parameters, "sessionId");
+        string sessionId = ReadRequiredGuidString(parameters, "sessionId");
         IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers = CreateSessionMcpServers(parameters);
 
         AcpSession session = await CreateSessionAsync(
@@ -1648,6 +1648,17 @@ internal sealed class AcpServer : IAsyncDisposable
         }
 
         return value.Trim();
+    }
+
+    private static string ReadRequiredGuidString(JsonElement element, string propertyName)
+    {
+        string value = ReadRequiredString(element, propertyName);
+        if (!Guid.TryParse(value, out Guid parsedGuid))
+        {
+            throw new AcpProtocolException(JsonRpcInvalidParams, $"{propertyName} must be a valid GUID.");
+        }
+
+        return parsedGuid.ToString("D");
     }
 
     private IReadOnlyList<BackendMcpServerConfiguration> CreateSessionMcpServers(JsonElement parameters)
