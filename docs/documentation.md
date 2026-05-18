@@ -1145,7 +1145,9 @@ Run `/permissions` and `/rules` to see active policy. You can approve the prompt
 
 ### Shell sandboxing fails on Windows
 
-Windows does not provide the same restricted shell runner used by Linux and macOS in this project. Restricted shell modes fail closed; approve an escalation request or use a less restrictive sandbox only when you trust the command.
+Foreground shell commands in `read-only` and `workspace-write` modes use the Windows sandbox runner. If a restricted command still fails, inspect `%APPDATA%\NanoAgent\.sandbox\sandbox.log`, rerun the Windows sandbox setup if prompted, and verify the working directory still exists.
+
+Restricted pseudo-terminal sessions and restricted background terminals are not wired to the Windows sandbox runner yet. Those requests fail closed; rerun without `pty`, use a foreground command, or approve sandbox escalation only when you trust the command.
 
 ### The agent cannot read a file
 
