@@ -67,8 +67,6 @@ public sealed class ProcessRunnerTests
     [Fact]
     public async Task RunAsync_Should_RunRealNodeVersionInsideWindowsSandbox()
     {
-        const int StatusDllInitFailed = unchecked((int)0xC0000142);
-
         if (!OperatingSystem.IsWindows())
         {
             return;
@@ -108,15 +106,6 @@ public sealed class ProcessRunnerTests
             context,
             timeout.Token);
 
-        // Some Windows hosts can launch the sandbox runner correctly but still fail to
-        // initialize Node under the restricted token with STATUS_DLL_INIT_FAILED.
-        if (result.ExitCode == StatusDllInitFailed &&
-            string.IsNullOrWhiteSpace(result.StandardOutput) &&
-            string.IsNullOrWhiteSpace(result.StandardError))
-        {
-            return;
-        }
-
         result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
         result.StandardError.Should().BeNullOrWhiteSpace();
         result.StandardOutput.Trim().Should().MatchRegex(@"^v\d+\.\d+\.\d+");
@@ -153,6 +142,74 @@ public sealed class ProcessRunnerTests
         result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
         result.StandardError.Should().BeNullOrWhiteSpace();
         result.StandardOutput.Should().Contain("sandbox-ok");
+    }
+
+    [Fact]
+    public async Task ExecuteWithStartupRetryAsync_Should_RetryStatusDllInitFailedOnce()
+    {
+        using TempNanoAgentHome nanoAgentHome = new();
+        int attempts = 0;
+
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.ExecuteWithStartupRetryAsync(
+            _ =>
+            {
+                attempts++;
+                return Task.FromResult(
+                    attempts == 1
+                        ? new ProcessExecutionResult(
+                            WindowsSandboxProcessRunner.StatusDllInitFailed,
+                            string.Empty,
+                            string.Empty)
+                        : new ProcessExecutionResult(
+                            0,
+                            "ok",
+                            string.Empty));
+            },
+            nanoAgentHome.Path,
+            CancellationToken.None);
+
+        attempts.Should().Be(2);
+        result.ExitCode.Should().Be(0);
+        result.StandardOutput.Should().Be("ok");
+    }
+
+    [Fact]
+    public async Task ExecuteWithStartupRetryAsync_Should_NotRetrySuccessfulLaunches()
+    {
+        using TempNanoAgentHome nanoAgentHome = new();
+        int attempts = 0;
+
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.ExecuteWithStartupRetryAsync(
+            _ =>
+            {
+                attempts++;
+                return Task.FromResult(new ProcessExecutionResult(0, "ok", string.Empty));
+            },
+            nanoAgentHome.Path,
+            CancellationToken.None);
+
+        attempts.Should().Be(1);
+        result.ExitCode.Should().Be(0);
+        result.StandardOutput.Should().Be("ok");
+    }
+
+    [Fact]
+    public void EnsureSandboxRuntimeLayout_Should_CreateCommonPowerShellAndNodeDirectories()
+    {
+        using TempNanoAgentHome nanoAgentHome = new();
+
+        WindowsSandboxProcessRunner.WindowsSandboxRuntimeLayout layout =
+            WindowsSandboxProcessRunner.EnsureSandboxRuntimeLayout(nanoAgentHome.Path);
+
+        layout.WritableDirectories.Should().NotBeEmpty();
+        Directory.Exists(layout.ProfileDir).Should().BeTrue();
+        Directory.Exists(layout.TempDir).Should().BeTrue();
+        Directory.Exists(layout.RoamingDir).Should().BeTrue();
+        Directory.Exists(layout.LocalAppDataDir).Should().BeTrue();
+        Directory.Exists(layout.WindowsPowerShellModulesDir).Should().BeTrue();
+        Directory.Exists(layout.PowerShellModulesDir).Should().BeTrue();
+        Directory.Exists(layout.NpmCacheDir).Should().BeTrue();
+        Directory.Exists(layout.CorepackHomeDir).Should().BeTrue();
     }
 
     private static ProcessExecutionRequest? CreatePseudoTerminalProbeRequest()
@@ -212,6 +269,30 @@ public sealed class ProcessRunnerTests
         ];
 
         return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private sealed class TempNanoAgentHome : IDisposable
+    {
+        public TempNanoAgentHome()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "nanoagent-sandbox-home-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+            catch
+            {
+            }
+        }
     }
 
     private sealed class TempWorkspace : IDisposable
