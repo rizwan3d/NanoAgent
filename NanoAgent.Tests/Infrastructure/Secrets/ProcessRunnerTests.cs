@@ -145,6 +145,131 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_UseWorkingDirectoryInsideWindowsSandbox()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        string workingDirectory = Path.Combine(temp.WorkspaceRoot, "nested");
+        Directory.CreateDirectory(workingDirectory);
+        WindowsSandboxExecutionContext context = CreateWindowsSandboxExecutionContext(temp.WorkspaceRoot);
+        ProcessExecutionRequest request = new(
+            "cmd.exe",
+            ["/c", "cd"],
+            WorkingDirectory: workingDirectory,
+            MaxOutputCharacters: 256);
+
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
+        result.StandardError.Should().BeNullOrWhiteSpace();
+        string.Equals(
+            result.StandardOutput.Trim(),
+            workingDirectory,
+            StringComparison.OrdinalIgnoreCase).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_PassCustomEnvironmentVariablesInsideWindowsSandbox()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        WindowsSandboxExecutionContext context = CreateWindowsSandboxExecutionContext(temp.WorkspaceRoot);
+        string variableName = "NANOAGENT_SANDBOX_TEST_VALUE";
+        string variableValue = "sandbox-env-ok";
+        ProcessExecutionRequest request = new(
+            "cmd.exe",
+            ["/c", $"echo %{variableName}%"],
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256,
+            EnvironmentVariables: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                [variableName] = variableValue
+            });
+
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
+        result.StandardError.Should().BeNullOrWhiteSpace();
+        result.StandardOutput.Trim().Should().Be(variableValue);
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_ForwardStandardInputInsideWindowsSandbox()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        WindowsSandboxExecutionContext context = CreateWindowsSandboxExecutionContext(temp.WorkspaceRoot);
+        ProcessExecutionRequest request = new(
+            "powershell",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "$value = [Console]::In.ReadToEnd(); [Console]::Out.Write($value)"
+            ],
+            StandardInput: "sandbox-stdin-ok",
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256);
+
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
+        result.StandardError.Should().BeNullOrWhiteSpace();
+        result.StandardOutput.Should().Be("sandbox-stdin-ok");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_PreserveStandardErrorAndExitCodeInsideWindowsSandbox()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        WindowsSandboxExecutionContext context = CreateWindowsSandboxExecutionContext(temp.WorkspaceRoot);
+        ProcessExecutionRequest request = new(
+            "cmd.exe",
+            ["/c", "echo sandbox-stderr 1>&2 & exit /b 7"],
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256);
+
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        result.ExitCode.Should().Be(7);
+        result.StandardOutput.Should().BeNullOrWhiteSpace();
+        result.StandardError.Should().Contain("sandbox-stderr");
+    }
+
+    [Fact]
     public async Task ExecuteWithStartupRetryAsync_Should_RetryStatusDllInitFailedOnce()
     {
         using TempNanoAgentHome nanoAgentHome = new();
@@ -269,6 +394,17 @@ public sealed class ProcessRunnerTests
         ];
 
         return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static WindowsSandboxExecutionContext CreateWindowsSandboxExecutionContext(string workspaceRoot)
+    {
+        return new WindowsSandboxExecutionContext(
+            ToolSandboxMode.WorkspaceWrite,
+            WindowsSandboxPaths.ResolveAppHome(),
+            workspaceRoot,
+            workspaceRoot,
+            [workspaceRoot],
+            IncludeTempEnvironmentVariables: true);
     }
 
     private sealed class TempNanoAgentHome : IDisposable
