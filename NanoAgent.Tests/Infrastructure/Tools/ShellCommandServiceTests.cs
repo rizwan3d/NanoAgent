@@ -3,6 +3,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Tools;
+using NanoAgent.Infrastructure.WindowsSandbox;
 using NanoAgent.Tests.Infrastructure.Secrets.TestDoubles;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
@@ -270,7 +271,7 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_RunWithoutOsSandbox_When_OsSandboxIsUnsupported()
+    public async Task ExecuteAsync_Should_RouteRestrictedWindowsCommands_ThroughWindowsSandboxRunner()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -278,23 +279,84 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         FakeProcessRunner processRunner = new();
-        processRunner.EnqueueResult(new ProcessExecutionResult(0, "10.0.103", string.Empty));
+        FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new();
+        windowsSandboxProcessRunner.EnqueueResult(new ProcessExecutionResult(0, "10.0.103", string.Empty));
         ShellCommandService sut = new(
             processRunner,
-            new StubWorkspaceRootProvider(_workspaceRoot));
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            windowsSandboxProcessRunner: windowsSandboxProcessRunner);
 
         ShellCommandExecutionResult result = await sut.ExecuteAsync(
             new ShellCommandExecutionRequest("dotnet --version", null),
             CancellationToken.None);
 
-        processRunner.Requests.Should().ContainSingle();
-        ProcessExecutionRequest request = processRunner.Requests[0];
+        processRunner.Requests.Should().BeEmpty();
+        windowsSandboxProcessRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = windowsSandboxProcessRunner.Requests[0].Request;
+        WindowsSandboxExecutionContext context = windowsSandboxProcessRunner.Requests[0].Context;
         request.FileName.Should().Be("powershell");
-        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("unsupported");
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-sandbox");
+        context.Mode.Should().Be(ToolSandboxMode.WorkspaceWrite);
+        context.PolicyCwd.Should().Be(Path.GetFullPath(_workspaceRoot));
+        context.CommandCwd.Should().Be(Path.GetFullPath(_workspaceRoot));
+        context.WritableRoots.Should().ContainSingle().Which.Should().Be(Path.GetFullPath(_workspaceRoot));
         result.ExitCode.Should().Be(0);
         result.StandardOutput.Should().Be("10.0.103");
         result.SandboxMode.Should().Be("workspace-write");
-        result.SandboxEnforcement.Should().Be("unsupported");
+        result.SandboxEnforcement.Should().Be("windows-sandbox");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_RejectPseudoTerminal_When_WindowsSandboxIsActive()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new();
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            windowsSandboxProcessRunner: windowsSandboxProcessRunner);
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("npm test", null, PseudoTerminal: true),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().BeEmpty();
+        windowsSandboxProcessRunner.Requests.Should().BeEmpty();
+        result.ExitCode.Should().Be(126);
+        result.SandboxEnforcement.Should().Be("windows-sandbox");
+        result.StandardError.Should().Contain("Pseudo-terminal mode is not supported");
+    }
+
+    [Fact]
+    public async Task StartBackgroundAsync_Should_RejectWindowsSandboxedBackgroundTerminals()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new();
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            windowsSandboxProcessRunner: windowsSandboxProcessRunner);
+
+        ShellCommandExecutionResult result = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest("npm run dev", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().BeEmpty();
+        windowsSandboxProcessRunner.Requests.Should().BeEmpty();
+        result.Background.Should().BeTrue();
+        result.TerminalStatus.Should().Be("failed");
+        result.SandboxEnforcement.Should().Be("windows-sandbox");
+        result.StandardError.Should().Contain("Background terminals are not supported");
     }
 
     [Fact]
@@ -518,6 +580,34 @@ public sealed class ShellCommandServiceTests : IDisposable
         public void Advance(TimeSpan value)
         {
             _utcNow += value;
+        }
+    }
+
+    private sealed class FakeWindowsSandboxProcessRunner : IWindowsSandboxProcessRunner
+    {
+        private readonly Queue<ProcessExecutionResult> _results = new();
+
+        public List<(ProcessExecutionRequest Request, WindowsSandboxExecutionContext Context)> Requests { get; } = [];
+
+        public void EnqueueResult(ProcessExecutionResult result)
+        {
+            _results.Enqueue(result);
+        }
+
+        public Task<ProcessExecutionResult> RunAsync(
+            ProcessExecutionRequest request,
+            WindowsSandboxExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Requests.Add((request, context));
+
+            if (_results.Count == 0)
+            {
+                throw new InvalidOperationException("No queued process result is available.");
+            }
+
+            return Task.FromResult(_results.Dequeue());
         }
     }
 }

@@ -4,6 +4,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
+using NanoAgent.Infrastructure.WindowsSandbox;
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -31,6 +32,7 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
     private readonly IProcessRunner _processRunner;
     private readonly PermissionSettings _permissionSettings;
     private readonly TimeProvider _timeProvider;
+    private readonly IWindowsSandboxProcessRunner? _windowsSandboxProcessRunner;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
     private int _backgroundTerminalSequence;
     private bool _disposed;
@@ -40,12 +42,14 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         IWorkspaceRootProvider workspaceRootProvider,
         PermissionSettings? permissionSettings = null,
         ToolExecutionSettings? toolExecutionSettings = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IWindowsSandboxProcessRunner? windowsSandboxProcessRunner = null)
     {
         _processRunner = processRunner;
         _workspaceRootProvider = workspaceRootProvider;
         _permissionSettings = permissionSettings ?? new PermissionSettings();
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _windowsSandboxProcessRunner = windowsSandboxProcessRunner;
         _maxConcurrentBackgroundTerminalsPerSession = Math.Max(
             1,
             toolExecutionSettings?.MaxConcurrentBackgroundTerminalsPerSession ??
@@ -78,43 +82,92 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         PreparedShellCommand prepared = PrepareShellCommand(normalizedRequest);
 
         ProcessExecutionResult result;
-        try
+        if (IsWindowsSandboxEnforcement(prepared.SandboxPlan.Enforcement))
         {
-            result = await _processRunner.RunAsync(
-                prepared.ProcessRequest,
-                cancellationToken);
+            if (prepared.ProcessRequest.UsePseudoTerminal)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    "Pseudo-terminal mode is not supported when Windows OS sandboxing is active. Re-run without 'pty' or request sandbox escalation.");
+            }
+
+            if (_windowsSandboxProcessRunner is null)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    "Windows OS sandboxing is not configured for shell execution.");
+            }
+
+            try
+            {
+                result = await _windowsSandboxProcessRunner.RunAsync(
+                    prepared.ProcessRequest,
+                    CreateWindowsSandboxExecutionContext(
+                        prepared.WorkingDirectory,
+                        prepared.EffectiveSandboxMode),
+                    cancellationToken);
+            }
+            catch (PlatformNotSupportedException exception)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    $"Unable to start Windows OS sandbox shell execution: {exception.Message}");
+            }
+            catch (Win32Exception exception)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    $"Unable to start Windows OS sandbox shell execution: {exception.Message}");
+            }
         }
-        catch (PlatformNotSupportedException exception) when (prepared.ProcessRequest.UsePseudoTerminal)
+        else
         {
-            return CreateExecutionFailureResult(
-                normalizedRequest,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                $"Unable to start PTY shell execution: {exception.Message}");
-        }
-        catch (Win32Exception exception) when (prepared.ProcessRequest.UsePseudoTerminal)
-        {
-            return CreateExecutionFailureResult(
-                normalizedRequest,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                $"Unable to start PTY shell execution: {exception.Message}");
-        }
-        catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
-        {
-            return CreateExecutionFailureResult(
-                normalizedRequest,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}");
-        }
-        catch (Win32Exception exception)
-        {
-            return CreateExecutionFailureResult(
-                normalizedRequest,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}");
+            try
+            {
+                result = await _processRunner.RunAsync(
+                    prepared.ProcessRequest,
+                    cancellationToken);
+            }
+            catch (PlatformNotSupportedException exception) when (prepared.ProcessRequest.UsePseudoTerminal)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    $"Unable to start PTY shell execution: {exception.Message}");
+            }
+            catch (Win32Exception exception) when (prepared.ProcessRequest.UsePseudoTerminal)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    $"Unable to start PTY shell execution: {exception.Message}");
+            }
+            catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}");
+            }
+            catch (Win32Exception exception)
+            {
+                return CreateExecutionFailureResult(
+                    normalizedRequest,
+                    prepared.WorkingDirectory,
+                    prepared.SandboxPlan.Enforcement,
+                    $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}");
+            }
         }
 
         return new ShellCommandExecutionResult(
@@ -150,6 +203,17 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         }
 
         PreparedShellCommand prepared = PrepareShellCommand(normalizedRequest);
+        if (IsWindowsSandboxEnforcement(prepared.SandboxPlan.Enforcement))
+        {
+            return Task.FromResult(CreateExecutionFailureResult(
+                normalizedRequest,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                "Background terminals are not supported when Windows OS sandboxing is active. Re-run in the foreground or request sandbox escalation.",
+                background: true,
+                terminalAction: "start"));
+        }
+
         if (prepared.ProcessRequest.UsePseudoTerminal)
         {
             return Task.FromResult(CreateExecutionFailureResult(
@@ -358,6 +422,24 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         }
 
         return _permissionSettings.SandboxMode;
+    }
+
+    private WindowsSandboxExecutionContext CreateWindowsSandboxExecutionContext(
+        string workingDirectory,
+        ToolSandboxMode effectiveSandboxMode)
+    {
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        IReadOnlyList<string> writableRoots = effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite
+            ? [workspaceRoot]
+            : [];
+
+        return new WindowsSandboxExecutionContext(
+            effectiveSandboxMode,
+            WindowsSandboxPaths.ResolveAppHome(),
+            workspaceRoot,
+            workingDirectory,
+            writableRoots,
+            IncludeTempEnvironmentVariables: effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite);
     }
 
     private ShellCommandExecutionResult CreateExecutionFailureResult(
@@ -745,7 +827,19 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
                string.Equals(
                    enforcement,
                    ShellCommandSandboxPlanner.SandboxExecEnforcement,
+                   StringComparison.Ordinal) ||
+               string.Equals(
+                   enforcement,
+                   ShellCommandSandboxPlanner.WindowsSandboxEnforcement,
                    StringComparison.Ordinal);
+    }
+
+    private static bool IsWindowsSandboxEnforcement(string enforcement)
+    {
+        return string.Equals(
+            enforcement,
+            ShellCommandSandboxPlanner.WindowsSandboxEnforcement,
+            StringComparison.Ordinal);
     }
 
     private sealed record PreparedShellCommand(

@@ -18,6 +18,7 @@ internal static class WindowsSandboxProcessRunner
     private const uint HandleFlagInherit = 0x00000001;
     private const int BufferSize = 4096;
     private const int CreateProcessWithLogonWCommandLineLimit = 1024;
+    internal const int StatusDllInitFailed = unchecked((int)0xC0000142);
 
     public static async Task<ProcessExecutionResult> RunAsync(
         ProcessExecutionRequest request,
@@ -82,9 +83,12 @@ internal static class WindowsSandboxProcessRunner
         {
             string sandboxGroupSid = SandboxGroupSids()[0];
             PrepareAcls(request, context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces);
-            ProcessExecutionResult result = await launcher(
-                request,
-                context,
+            ProcessExecutionResult result = await ExecuteWithStartupRetryAsync(
+                async innerCancellationToken => await launcher(
+                    request,
+                    context,
+                    innerCancellationToken),
+                context.NanoAgentHome,
                 cancellationToken);
             return result;
         }
@@ -604,6 +608,22 @@ internal static class WindowsSandboxProcessRunner
         IReadOnlyDictionary<string, string>? environmentVariables,
         string? nanoAgentHome)
     {
+        IReadOnlyDictionary<string, string> normalized = BuildSandboxEnvironmentMap(
+            environmentVariables,
+            nanoAgentHome);
+
+        string block = string.Join(
+            '\0',
+            normalized
+                .OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(static item => $"{item.Key}={item.Value}")) + "\0\0";
+        return Encoding.Unicode.GetBytes(block);
+    }
+
+    private static IReadOnlyDictionary<string, string> BuildSandboxEnvironmentMap(
+        IReadOnlyDictionary<string, string>? environmentVariables,
+        string? nanoAgentHome)
+    {
         Dictionary<string, string> merged = new(StringComparer.OrdinalIgnoreCase);
         foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables())
         {
@@ -629,12 +649,13 @@ internal static class WindowsSandboxProcessRunner
             ApplySandboxRuntimeEnvironment(merged, nanoAgentHome);
         }
 
-        string block = string.Join(
-            '\0',
-            merged
-                .OrderBy(static item => item.Key, StringComparer.OrdinalIgnoreCase)
-                .Select(static item => $"{item.Key}={item.Value}")) + "\0\0";
-        return Encoding.Unicode.GetBytes(block);
+        Dictionary<string, string> normalized = new(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, string> item in merged)
+        {
+            normalized[CanonicalizeWindowsEnvironmentKey(item.Key)] = item.Value;
+        }
+
+        return normalized;
     }
 
     private static void ApplySandboxRuntimeEnvironment(
@@ -643,22 +664,16 @@ internal static class WindowsSandboxProcessRunner
     {
         string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         string systemDir = Environment.SystemDirectory;
-        string profileDir = WindowsSandboxPaths.SandboxRuntimeProfileDir(nanoAgentHome);
-        string tempDir = WindowsSandboxPaths.SandboxRuntimeTempDir(nanoAgentHome);
-        string roamingDir = Path.Combine(profileDir, "AppData", "Roaming");
-        string localAppDataDir = Path.Combine(profileDir, "AppData", "Local");
+        WindowsSandboxRuntimeLayout layout = EnsureSandboxRuntimeLayout(nanoAgentHome);
 
-        Directory.CreateDirectory(profileDir);
-        Directory.CreateDirectory(tempDir);
-        Directory.CreateDirectory(roamingDir);
-        Directory.CreateDirectory(localAppDataDir);
-
-        environment["USERPROFILE"] = profileDir;
-        environment["HOME"] = profileDir;
-        environment["APPDATA"] = roamingDir;
-        environment["LOCALAPPDATA"] = localAppDataDir;
-        environment["TEMP"] = tempDir;
-        environment["TMP"] = tempDir;
+        environment["USERPROFILE"] = layout.ProfileDir;
+        environment["HOME"] = layout.ProfileDir;
+        environment["APPDATA"] = layout.RoamingDir;
+        environment["LOCALAPPDATA"] = layout.LocalAppDataDir;
+        environment["TEMP"] = layout.TempDir;
+        environment["TMP"] = layout.TempDir;
+        environment["NPM_CONFIG_CACHE"] = layout.NpmCacheDir;
+        environment["COREPACK_HOME"] = layout.CorepackHomeDir;
         if (!string.IsNullOrWhiteSpace(windowsDir))
         {
             environment["SystemRoot"] = windowsDir;
@@ -687,17 +702,186 @@ internal static class WindowsSandboxProcessRunner
 
         if (!string.IsNullOrWhiteSpace(pathValue))
         {
-            environment["PATH"] = pathValue;
+            environment["Path"] = pathValue;
         }
 
         environment.TryAdd("PATHEXT", ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC");
+        environment["PSModulePath"] = BuildPathVariable(
+            environment.TryGetValue("PSModulePath", out string? existingPsModulePath)
+                ? existingPsModulePath
+                : string.Empty,
+            [
+                layout.WindowsPowerShellModulesDir,
+                layout.PowerShellModulesDir
+            ]);
 
-        string? root = Path.GetPathRoot(profileDir);
+        string? root = Path.GetPathRoot(layout.ProfileDir);
         if (!string.IsNullOrWhiteSpace(root) && root!.Length >= 2)
         {
             environment["HOMEDRIVE"] = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            environment["HOMEPATH"] = profileDir[root.Length..];
+            environment["HOMEPATH"] = layout.ProfileDir[root.Length..];
         }
+    }
+
+    internal static async Task<ProcessExecutionResult> ExecuteWithStartupRetryAsync(
+        Func<CancellationToken, Task<ProcessExecutionResult>> launcher,
+        string nanoAgentHome,
+        CancellationToken cancellationToken)
+    {
+        TimeSpan[] retryDelays =
+        [
+            TimeSpan.Zero,
+            TimeSpan.FromMilliseconds(750),
+            TimeSpan.FromSeconds(2)
+        ];
+
+        ProcessExecutionResult result = new(0, string.Empty, string.Empty);
+        for (int attempt = 0; attempt < retryDelays.Length; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (attempt > 0)
+            {
+                EnsureSandboxRuntimeLayout(nanoAgentHome);
+                WindowsSandboxLog.Write(
+                    nanoAgentHome,
+                    $"command startup retry: attempt={attempt + 1}, previous_exit_code={result.ExitCode}, stdout_length={result.StandardOutput.Length}, stderr_length={result.StandardError.Length}, delay_ms={(int)retryDelays[attempt].TotalMilliseconds}");
+                if (retryDelays[attempt] > TimeSpan.Zero)
+                {
+                    await Task.Delay(retryDelays[attempt], cancellationToken);
+                }
+            }
+
+            result = await launcher(cancellationToken);
+            if (result.ExitCode != StatusDllInitFailed)
+            {
+                return result;
+            }
+        }
+
+        return result;
+    }
+
+    internal static WindowsSandboxRuntimeLayout EnsureSandboxRuntimeLayout(string nanoAgentHome)
+    {
+        WindowsSandboxPaths.EnsureStateDirectories(nanoAgentHome);
+
+        string runtimeDir = WindowsSandboxPaths.SandboxRuntimeDir(nanoAgentHome);
+        string profileDir = WindowsSandboxPaths.SandboxRuntimeProfileDir(nanoAgentHome);
+        string tempDir = WindowsSandboxPaths.SandboxRuntimeTempDir(nanoAgentHome);
+        string appDataDir = Path.Combine(profileDir, "AppData");
+        string roamingDir = Path.Combine(appDataDir, "Roaming");
+        string localAppDataDir = Path.Combine(appDataDir, "Local");
+        string documentsDir = Path.Combine(profileDir, "Documents");
+        string desktopDir = Path.Combine(profileDir, "Desktop");
+        string roamingMicrosoftDir = Path.Combine(roamingDir, "Microsoft");
+        string roamingWindowsPowerShellDir = Path.Combine(roamingMicrosoftDir, "Windows", "PowerShell");
+        string roamingPowerShellDir = Path.Combine(roamingMicrosoftDir, "PowerShell");
+        string roamingCryptoDir = Path.Combine(roamingMicrosoftDir, "Crypto");
+        string roamingProtectDir = Path.Combine(roamingMicrosoftDir, "Protect");
+        string roamingCredentialsDir = Path.Combine(roamingMicrosoftDir, "Credentials");
+        string localMicrosoftDir = Path.Combine(localAppDataDir, "Microsoft");
+        string localWindowsPowerShellDir = Path.Combine(localMicrosoftDir, "Windows", "PowerShell");
+        string localPowerShellDir = Path.Combine(localMicrosoftDir, "PowerShell");
+        string localCredentialsDir = Path.Combine(localMicrosoftDir, "Credentials");
+        string npmCacheDir = Path.Combine(localAppDataDir, "npm-cache");
+        string npmRoamingDir = Path.Combine(roamingDir, "npm");
+        string corepackHomeDir = Path.Combine(localAppDataDir, "Corepack");
+        string windowsPowerShellModulesDir = Path.Combine(documentsDir, "WindowsPowerShell", "Modules");
+        string powerShellModulesDir = Path.Combine(documentsDir, "PowerShell", "Modules");
+
+        string[] writableDirectories =
+        [
+            runtimeDir,
+            profileDir,
+            tempDir,
+            appDataDir,
+            roamingDir,
+            localAppDataDir,
+            documentsDir,
+            desktopDir,
+            roamingMicrosoftDir,
+            roamingWindowsPowerShellDir,
+            roamingPowerShellDir,
+            roamingCryptoDir,
+            roamingProtectDir,
+            roamingCredentialsDir,
+            localMicrosoftDir,
+            localWindowsPowerShellDir,
+            localPowerShellDir,
+            localCredentialsDir,
+            npmCacheDir,
+            npmRoamingDir,
+            corepackHomeDir,
+            windowsPowerShellModulesDir,
+            powerShellModulesDir
+        ];
+
+        foreach (string path in writableDirectories.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            Directory.CreateDirectory(path);
+        }
+
+        return new WindowsSandboxRuntimeLayout(
+            runtimeDir,
+            profileDir,
+            tempDir,
+            roamingDir,
+            localAppDataDir,
+            documentsDir,
+            desktopDir,
+            npmCacheDir,
+            corepackHomeDir,
+            windowsPowerShellModulesDir,
+            powerShellModulesDir,
+            writableDirectories.Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+    }
+
+    private static string BuildPathVariable(
+        string existingValue,
+        IEnumerable<string> requiredPrefixes)
+    {
+        string pathValue = existingValue;
+        foreach (string prefix in requiredPrefixes.Reverse())
+        {
+            if (!string.IsNullOrWhiteSpace(prefix) &&
+                !pathValue.Split(';', StringSplitOptions.RemoveEmptyEntries)
+                    .Any(existing => string.Equals(
+                        existing.Trim(),
+                        prefix,
+                        StringComparison.OrdinalIgnoreCase)))
+            {
+                pathValue = string.IsNullOrWhiteSpace(pathValue)
+                    ? prefix
+                    : prefix + ";" + pathValue;
+            }
+        }
+
+        return pathValue;
+    }
+
+    private static string CanonicalizeWindowsEnvironmentKey(string key)
+    {
+        return key.ToUpperInvariant() switch
+        {
+            "PATH" => "Path",
+            "PATHEXT" => "PATHEXT",
+            "SYSTEMROOT" => "SystemRoot",
+            "WINDIR" => "windir",
+            "COMSPEC" => "ComSpec",
+            "USERPROFILE" => "USERPROFILE",
+            "HOME" => "HOME",
+            "APPDATA" => "APPDATA",
+            "LOCALAPPDATA" => "LOCALAPPDATA",
+            "TEMP" => "TEMP",
+            "TMP" => "TMP",
+            "HOMEDRIVE" => "HOMEDRIVE",
+            "HOMEPATH" => "HOMEPATH",
+            "PSMODULEPATH" => "PSModulePath",
+            "NPM_CONFIG_CACHE" => "NPM_CONFIG_CACHE",
+            "COREPACK_HOME" => "COREPACK_HOME",
+            _ => key
+        };
     }
 
     private static ProcessExecutionRequest MaterializeExternalExecutableIfNeeded(
@@ -815,34 +999,16 @@ internal static class WindowsSandboxProcessRunner
         string sandboxGroupSid,
         List<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces)
     {
-        WindowsSandboxPaths.EnsureStateDirectories(nanoAgentHome);
+        WindowsSandboxRuntimeLayout layout = EnsureSandboxRuntimeLayout(nanoAgentHome);
         string sandboxDir = WindowsSandboxPaths.SandboxDir(nanoAgentHome);
         string sandboxSecretsDir = WindowsSandboxPaths.SandboxSecretsDir(nanoAgentHome);
-        string runtimeDir = WindowsSandboxPaths.SandboxRuntimeDir(nanoAgentHome);
-        string profileDir = WindowsSandboxPaths.SandboxRuntimeProfileDir(nanoAgentHome);
-        string tempDir = WindowsSandboxPaths.SandboxRuntimeTempDir(nanoAgentHome);
-        string[] writablePaths =
-        [
-            runtimeDir,
-            profileDir,
-            tempDir,
-            Path.Combine(profileDir, "AppData"),
-            Path.Combine(profileDir, "AppData", "Roaming"),
-            Path.Combine(profileDir, "AppData", "Local"),
-            Path.Combine(profileDir, "Documents"),
-            Path.Combine(profileDir, "Desktop")
-        ];
-        foreach (string path in writablePaths)
-        {
-            Directory.CreateDirectory(path);
-        }
 
         (string Path, FileSystemRights Rights)[] paths =
         [
             (nanoAgentHome, FileSystemRights.ReadAndExecute | FileSystemRights.ListDirectory),
             (sandboxDir, FileSystemRights.ReadAndExecute | FileSystemRights.ListDirectory),
             (sandboxSecretsDir, FileSystemRights.ReadAndExecute | FileSystemRights.ListDirectory),
-            .. writablePaths.Select(static path => (path, FileSystemRights.Modify | FileSystemRights.ReadAndExecute))
+            .. layout.WritableDirectories.Select(static path => (path, FileSystemRights.Modify | FileSystemRights.ReadAndExecute))
         ];
         string[] readableFiles =
         [
@@ -1275,7 +1441,7 @@ internal static class WindowsSandboxProcessRunner
                 IncludeTempEnvironmentVariables: true,
                 UsePrivateDesktop: payload.UsePrivateDesktop);
 
-            ProcessExecutionResult result = await RunRestrictedChildAsync(request, context, cancellationToken);
+            ProcessExecutionResult result = await RunSandboxUserChildAsync(request, context, cancellationToken);
             await WindowsSandboxFramedIpc.WriteAsync(
                 outboundClient,
                 new WindowsSandboxIpcMessage
@@ -1303,6 +1469,27 @@ internal static class WindowsSandboxProcessRunner
                 },
                 cancellationToken);
         }
+    }
+
+    private static Task<ProcessExecutionResult> RunSandboxUserChildAsync(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        // The helper already runs as the dedicated sandbox user with ACLs prepared for the
+        // selected policy. Launch the child directly under that identity so Node/PowerShell do
+        // not need to survive an extra nested restricted-token initialization step.
+        ProcessExecutionRequest sandboxedRequest = request with
+        {
+            EnvironmentVariables = BuildSandboxEnvironmentMap(
+                request.EnvironmentVariables,
+                context.NanoAgentHome)
+        };
+
+        WindowsSandboxLog.Write(context.NanoAgentHome, "restricted child launch path: sandbox-user-direct");
+        return new ProcessRunner().RunAsync(
+            sandboxedRequest,
+            cancellationToken);
     }
 
     private static async Task<string> ReadToEndCappedAsync(
@@ -1391,4 +1578,17 @@ internal static class WindowsSandboxProcessRunner
         return builder.ToString();
     }
 
+    internal sealed record WindowsSandboxRuntimeLayout(
+        string RuntimeDir,
+        string ProfileDir,
+        string TempDir,
+        string RoamingDir,
+        string LocalAppDataDir,
+        string DocumentsDir,
+        string DesktopDir,
+        string NpmCacheDir,
+        string CorepackHomeDir,
+        string WindowsPowerShellModulesDir,
+        string PowerShellModulesDir,
+        IReadOnlyList<string> WritableDirectories);
 }
