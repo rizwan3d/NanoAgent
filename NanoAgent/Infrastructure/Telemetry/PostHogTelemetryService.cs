@@ -19,9 +19,11 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
     private readonly bool _enabled;
     private readonly string _osFamily;
     private readonly string? _projectToken;
+    private readonly string? _sessionId;
     private readonly Task? _senderTask;
     private readonly TimeProvider _timeProvider;
     private readonly string _version;
+    private bool _personIdentified;
     private DateTimeOffset? _startedAtUtc;
 
     public PostHogTelemetryService(
@@ -63,6 +65,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
         }
 
         _distinctId = LoadOrCreateDistinctId(userDataPathProvider);
+        _sessionId = Guid.CreateVersion7().ToString();
         _queue = Channel.CreateUnbounded<TelemetryEnvelope>(
             new UnboundedChannelOptions
             {
@@ -84,6 +87,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             return;
         }
 
+        EnsurePersonIdentified();
         _startedAtUtc = _timeProvider.GetUtcNow();
         Enqueue(
             "nanoagent app started",
@@ -100,6 +104,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             return;
         }
 
+        EnsurePersonIdentified();
         TimeSpan usageTime = _timeProvider.GetUtcNow() - startedAtUtc;
         Enqueue(
             "nanoagent app stopped",
@@ -124,6 +129,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             return;
         }
 
+        EnsurePersonIdentified();
         Enqueue(
             "nanoagent feature used",
             ProductTelemetryHelpers.CreateFeatureProperties(
@@ -198,7 +204,10 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             properties[key] = value;
         }
 
-        properties["$process_person_profile"] = false;
+        if (!string.IsNullOrWhiteSpace(_sessionId))
+        {
+            properties["$session_id"] = _sessionId;
+        }
 
         StringContent content = new(
             CreatePayloadJson(
@@ -222,6 +231,22 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
         }
 
         _queue.Writer.TryWrite(new TelemetryEnvelope(eventName, properties));
+    }
+
+    private void EnsurePersonIdentified()
+    {
+        if (_personIdentified)
+        {
+            return;
+        }
+
+        _personIdentified = true;
+        Enqueue(
+            "$identify",
+            ProductTelemetryHelpers.CreateIdentifyProperties(
+                _version,
+                _osFamily,
+                _appSurface));
     }
 
     private static string LoadOrCreateDistinctId(IUserDataPathProvider userDataPathProvider)
@@ -293,6 +318,9 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
     {
         switch (value)
         {
+            case string stringValue:
+                writer.WriteStringValue(stringValue);
+                return;
             case bool boolValue:
                 writer.WriteBooleanValue(boolValue);
                 return;
@@ -308,10 +336,51 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             case long longValue:
                 writer.WriteNumberValue(longValue);
                 return;
+            case decimal decimalValue:
+                writer.WriteNumberValue(decimalValue);
+                return;
+            case float floatValue:
+                writer.WriteNumberValue(floatValue);
+                return;
+            case double doubleValue:
+                writer.WriteNumberValue(doubleValue);
+                return;
+            case Guid guidValue:
+                writer.WriteStringValue(guidValue);
+                return;
+            case DateTimeOffset dateTimeOffsetValue:
+                writer.WriteStringValue(dateTimeOffsetValue);
+                return;
+            case DateTime dateTimeValue:
+                writer.WriteStringValue(dateTimeValue);
+                return;
+            case IDictionary<string, object> dictionaryValue:
+                WriteObject(writer, dictionaryValue);
+                return;
             default:
                 writer.WriteStringValue(value.ToString());
                 return;
         }
+    }
+
+    private static void WriteObject(
+        Utf8JsonWriter writer,
+        IDictionary<string, object> properties)
+    {
+        writer.WriteStartObject();
+
+        foreach ((string key, object value) in properties)
+        {
+            if (value is null)
+            {
+                continue;
+            }
+
+            writer.WritePropertyName(key);
+            WriteValue(writer, value);
+        }
+
+        writer.WriteEndObject();
     }
 
     private sealed record TelemetryEnvelope(
