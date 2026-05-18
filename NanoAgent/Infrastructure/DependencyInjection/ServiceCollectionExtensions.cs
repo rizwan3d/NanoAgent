@@ -22,6 +22,7 @@ using NanoAgent.Infrastructure.Storage;
 using NanoAgent.Infrastructure.Telemetry;
 using NanoAgent.Infrastructure.Tools;
 using NanoAgent.Infrastructure.Updates;
+using NanoAgent.Infrastructure.WindowsSandbox;
 
 namespace NanoAgent.Infrastructure.DependencyInjection;
 
@@ -174,6 +175,7 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ToolExecutionSettings>(),
                 Timeout.InfiniteTimeSpan);
         });
+        services.AddSingleton<IWindowsSandboxProcessRunner, WindowsSandboxProcessRunnerAdapter>();
 
         services
             .AddOptions<ApplicationOptions>()
