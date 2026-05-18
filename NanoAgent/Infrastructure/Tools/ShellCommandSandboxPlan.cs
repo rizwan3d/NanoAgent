@@ -19,6 +19,7 @@ internal static class ShellCommandSandboxPlanner
     public const string UnsupportedEnforcement = "unsupported";
     public const string BubblewrapEnforcement = "bubblewrap";
     public const string SandboxExecEnforcement = "sandbox-exec";
+    public const string WindowsSandboxEnforcement = "windows-sandbox";
 
     public static ShellCommandSandboxPlan Create(
         ProcessExecutionRequest shellRequest,
@@ -54,6 +55,13 @@ internal static class ShellCommandSandboxPlanner
                 effectiveSandboxMode,
                 normalizedWorkspaceRoot,
                 normalizedWorkingDirectory);
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return new ShellCommandSandboxPlan(
+                shellRequest,
+                WindowsSandboxEnforcement);
         }
 
         return Unsupported(
