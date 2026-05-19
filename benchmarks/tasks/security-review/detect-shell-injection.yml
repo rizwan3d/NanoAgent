@@ -1,0 +1,23 @@
+{
+  "id": "detect-shell-injection",
+  "name": "Find the shell injection issue",
+  "suite": "security-review",
+  "workspace": "benchmarks/fixtures/unsafe-shell-sample",
+  "profile": "review",
+  "tags": ["regression"],
+  "prompt": "Review this tiny repository for the most important security issue. Put the finding first, cite the file, and explain the impact briefly.",
+  "response": {
+    "containsAny": [
+      "deploy.py",
+      "shell=True",
+      "subprocess.run",
+      "branch_name",
+      "command injection",
+      "shell injection"
+    ],
+    "containsAtLeast": 3,
+    "notContains": [
+      "no issues found"
+    ]
+  }
+}
