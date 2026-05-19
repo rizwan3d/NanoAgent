@@ -3,6 +3,7 @@ using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.WindowsSandbox;
+using NanoAgent.Infrastructure.Telemetry;
 using Spectre.Console;
 using System.Text;
 
@@ -74,7 +75,8 @@ public static partial class Program
         new("/tree", "/tree", "Navigate saved sessions.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
         new("/update", "/update [now]", "Check for updates.", false),
-        new("/use", "/use <model>", "Switch the active model directly.", true)
+        new("/use", "/use <model>", "Switch the active model directly.", true),
+        new("/version", "/version", "Show the current NanoAgent CLI version.", false)
     ];
 
     public static async Task<int> Main(string[]? args)
@@ -104,6 +106,12 @@ public static partial class Program
         if (invocation.ShowHelp)
         {
             WriteUsage(Console.Out);
+            return 0;
+        }
+
+        if (invocation.ShowVersion)
+        {
+            Console.Out.WriteLine(GetVersionText());
             return 0;
         }
 
@@ -463,8 +471,8 @@ public static partial class Program
     private static void WriteUsage(TextWriter writer)
     {
         writer.WriteLine(
-            """
-            NanoAgent CLI
+            $"""
+            {GetVersionText()}
 
             Usage:
               nanoai [options]                    Start the interactive terminal UI
@@ -486,11 +494,17 @@ public static partial class Program
               --session <id>       Alias for --section
               --profile <name>     Use an agent profile
               --thinking <effort>  Override thinking effort
+              -v, --version        Show version
               -h, --help           Show help
 
             Note:
               Run nanoai once to complete provider setup before using one-shot prompts.
             """);
+    }
+
+    private static string GetVersionText()
+    {
+        return $"NanoAgent CLI {ProductTelemetryHelpers.GetNanoAgentVersion()}";
     }
 
     private static void WriteFatalExitMessage(AppState state)

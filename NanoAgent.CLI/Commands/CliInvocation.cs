@@ -14,7 +14,8 @@ internal sealed record CliInvocation(
     string? Prompt,
     bool JsonOutput,
     bool AutoApproveAllTools,
-    bool ShowHelp)
+    bool ShowHelp,
+    bool ShowVersion)
 {
     private static readonly string[] BackendOptionsWithValues =
     [
@@ -32,7 +33,18 @@ internal sealed record CliInvocation(
         Prompt: null,
         JsonOutput: false,
         AutoApproveAllTools: false,
-        ShowHelp: true);
+        ShowHelp: true,
+        ShowVersion: false);
+
+    public static CliInvocation Version { get; } = new(
+        CliMode.Interactive,
+        [],
+        ProviderAuthKey: null,
+        Prompt: null,
+        JsonOutput: false,
+        AutoApproveAllTools: false,
+        ShowHelp: false,
+        ShowVersion: true);
 
     public static CliInvocation Parse(
         IReadOnlyList<string> args,
@@ -64,6 +76,11 @@ internal sealed record CliInvocation(
             if (IsHelpOption(arg))
             {
                 return Help;
+            }
+
+            if (IsVersionOption(arg))
+            {
+                return Version;
             }
 
             if (IsAcpOption(arg))
@@ -145,7 +162,8 @@ internal sealed record CliInvocation(
                 Prompt: null,
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
-                ShowHelp: false);
+                ShowHelp: false,
+                ShowVersion: false);
         }
 
         if (forceInteractive)
@@ -167,7 +185,8 @@ internal sealed record CliInvocation(
                 Prompt: null,
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
-                ShowHelp: false);
+                ShowHelp: false,
+                ShowVersion: false);
         }
 
         if (readPromptFromStandardInput)
@@ -204,7 +223,8 @@ internal sealed record CliInvocation(
                 Prompt: null,
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
-                ShowHelp: false);
+                ShowHelp: false,
+                ShowVersion: false);
         }
 
         return new CliInvocation(
@@ -214,13 +234,20 @@ internal sealed record CliInvocation(
             prompt,
             jsonOutput,
             autoApproveAllTools,
-            ShowHelp: false);
+            ShowHelp: false,
+            ShowVersion: false);
     }
 
     private static bool IsHelpOption(string arg)
     {
         return string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsVersionOption(string arg)
+    {
+        return string.Equals(arg, "-v", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsAcpOption(string arg)
