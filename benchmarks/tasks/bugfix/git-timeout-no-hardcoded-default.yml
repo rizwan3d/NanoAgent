@@ -1,0 +1,33 @@
+{
+  "id": "git-timeout-no-hardcoded-default",
+  "name": "Remove hardcoded git timeout fallback",
+  "suite": "swe-bench-lite-style",
+  "workspace": "benchmarks/fixtures/tiny-ts-bug",
+  "profile": "build",
+  "tags": [
+    "regression"
+  ],
+  "prompt": "The tiny project ignores the timeout passed to `resolveGitTimeout`. Fix the bug without changing config defaults, then run `node gitClient.js`.",
+  "validationCommands": [
+    {
+      "command": [
+        "node",
+        "gitClient.js"
+      ],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": [
+        "OK"
+      ]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": [
+      "gitClient.js"
+    ],
+    "changedFilesExclude": [
+      "config.json",
+      "validate-config.js"
+    ]
+  }
+}
