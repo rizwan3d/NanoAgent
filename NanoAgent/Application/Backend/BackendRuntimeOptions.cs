@@ -5,11 +5,13 @@ public sealed class BackendRuntimeOptions
     public BackendRuntimeOptions(
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers = null,
         bool autoApproveAllTools = false,
-        string? appSurface = null)
+        string? appSurface = null,
+        bool enableStartupPrompts = false)
     {
         SessionMcpServers = sessionMcpServers ?? [];
         AutoApproveAllTools = autoApproveAllTools;
         AppSurface = NormalizeAppSurface(appSurface);
+        EnableStartupPrompts = enableStartupPrompts;
     }
 
     public const string CliSurface = "cli";
@@ -21,6 +23,8 @@ public sealed class BackendRuntimeOptions
     public bool AutoApproveAllTools { get; }
 
     public string AppSurface { get; }
+
+    public bool EnableStartupPrompts { get; }
 
     public IReadOnlyList<BackendMcpServerConfiguration> SessionMcpServers { get; }
 

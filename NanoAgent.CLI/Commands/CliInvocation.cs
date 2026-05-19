@@ -22,7 +22,8 @@ internal sealed record CliInvocation(
         "--session",
         "--profile",
         "--thinking",
-        "--surface"
+        "--surface",
+        "--startup-prompts"
     ];
 
     public static CliInvocation Help { get; } = new(

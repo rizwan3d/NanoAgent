@@ -2,8 +2,8 @@ using System.ComponentModel;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
-using NanoAgent.Application.Models;
 using System.Text.Json;
+using NanoAgent.Application.Models;
 
 namespace NanoAgent.Infrastructure.WindowsSandbox;
 
@@ -21,35 +21,56 @@ internal static class WindowsSandboxSetupOrchestrator
         }
 
         payload.Version = WindowsSandboxPaths.SetupVersion;
+        if (IsSetupFresh(payload))
+        {
+            return;
+        }
+
+        RunSetup(payload, needsElevation);
+    }
+
+    internal static bool IsSetupFresh(WindowsSandboxSetupPayload payload)
+    {
+        ArgumentNullException.ThrowIfNull(payload);
+
         WindowsSandboxPaths.EnsureStateDirectories(payload.NanoAgentHome);
         string markerPath = WindowsSandboxPaths.SetupMarkerPath(payload.NanoAgentHome);
-        if (File.Exists(markerPath) && File.Exists(WindowsSandboxPaths.SandboxUsersPath(payload.NanoAgentHome)))
+        string usersPath = WindowsSandboxPaths.SandboxUsersPath(payload.NanoAgentHome);
+        if (!File.Exists(markerPath) || !File.Exists(usersPath))
+        {
+            return false;
+        }
+
+        try
         {
             WindowsSandboxSetupMarker? marker = JsonSerializer.Deserialize(
                 File.ReadAllText(markerPath),
                 WindowsSandboxJsonContext.Default.WindowsSandboxSetupMarker);
             WindowsSandboxUsersFile? users = JsonSerializer.Deserialize(
-                File.ReadAllText(WindowsSandboxPaths.SandboxUsersPath(payload.NanoAgentHome)),
+                File.ReadAllText(usersPath),
                 WindowsSandboxJsonContext.Default.WindowsSandboxUsersFile);
-            if (marker?.VersionMatches == true && users?.VersionMatches == true)
+            if (marker?.VersionMatches != true || users?.VersionMatches != true)
             {
-                // Check proxy/firewall mismatch — if offline settings changed, force refresh
-                var networkIdentity = WindowsSandboxSetupRoots.NetworkIdentityFromPolicy(
-                    ToolSandboxMode.ReadOnly, proxyEnforced: false);
-                var desiredSettings = new WindowsSandboxSetupRoots.OfflineProxySettings(
-                    payload.ProxyPorts ?? [],
-                    payload.AllowLocalBinding);
-                string? mismatch = marker.RequestMismatchReason(networkIdentity, desiredSettings);
-                if (mismatch is null)
-                {
-                    return;
-                }
-
-                // Proxy settings changed — fall through to setup refresh
+                return false;
             }
-        }
 
-        RunSetup(payload, needsElevation);
+            WindowsSandboxSetupRoots.SandboxNetworkIdentity networkIdentity =
+                WindowsSandboxSetupRoots.NetworkIdentityFromPolicy(
+                    ToolSandboxMode.ReadOnly,
+                    proxyEnforced: false);
+            WindowsSandboxSetupRoots.OfflineProxySettings desiredSettings = new(
+                payload.ProxyPorts ?? [],
+                payload.AllowLocalBinding);
+            return marker.RequestMismatchReason(networkIdentity, desiredSettings) is null;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+        catch (InvalidOperationException)
+        {
+            return false;
+        }
     }
 
     public static bool IsElevated()
