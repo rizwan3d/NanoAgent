@@ -1,0 +1,21 @@
+{
+  "id": "null-byte-env",
+  "name": "Fix null-byte environment trimming",
+  "suite": "swe-bench-lite-style",
+  "workspace": "benchmarks/fixtures/tiny-dotnet-bug",
+  "profile": "build",
+  "tags": ["regression"],
+  "prompt": "Fix the null-byte environment value handling bug in this tiny repo so that `dotnet run --project TinyDotnetBug.csproj` prints `OK`. Make the smallest correct change and run validation before you finish.",
+  "validationCommands": [
+    {
+      "command": ["dotnet", "run", "--project", "TinyDotnetBug.csproj"],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": ["OK"]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": ["Program.cs"],
+    "changedFilesExclude": ["TinyDotnetBug.csproj"]
+  }
+}

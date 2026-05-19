@@ -1,0 +1,21 @@
+{
+  "id": "minimal-config-change",
+  "name": "Make one minimal config edit",
+  "suite": "patch-quality",
+  "workspace": "benchmarks/fixtures/tiny-ts-bug",
+  "profile": "build",
+  "tags": ["regression"],
+  "prompt": "Only update the default git timeout in `config.json` from `5000` to `15000`. Do not change code paths or retry count. Run `node validate-config.js` before you finish.",
+  "validationCommands": [
+    {
+      "command": ["node", "validate-config.js"],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": ["OK"]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": ["config.json"],
+    "changedFilesExclude": ["gitClient.js", "validate-config.js"]
+  }
+}
