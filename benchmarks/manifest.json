@@ -1,0 +1,62 @@
+{
+  "releaseAssetBaseName": "NanoAgent-benchmarks",
+  "resultsPath": "benchmarks/results/public-latest.json",
+  "taskRoot": "benchmarks/tasks",
+  "regressionTag": "regression",
+  "suites": [
+    {
+      "id": "swe-bench-lite-style",
+      "name": "SWE-bench Lite style tasks",
+      "purpose": "Real bug-fix ability.",
+      "primaryMetric": "pass_rate",
+      "sourcePath": "benchmarks/tasks/bugfix",
+      "releaseRequired": true,
+      "releaseMinimumCases": 10
+    },
+    {
+      "id": "repo-understanding",
+      "name": "Repo-understanding tasks",
+      "purpose": "Can it find the right files?",
+      "primaryMetric": "top_k_accuracy",
+      "sourcePath": "benchmarks/tasks/repo-understanding",
+      "releaseRequired": true,
+      "releaseMinimumCases": 10
+    },
+    {
+      "id": "patch-quality",
+      "name": "Patch quality eval",
+      "purpose": "Does it make minimal, correct diffs?",
+      "primaryMetric": "accept_rate",
+      "sourcePath": "benchmarks/tasks/patch-quality",
+      "releaseRequired": true,
+      "releaseMinimumCases": 10
+    },
+    {
+      "id": "security-review",
+      "name": "Security review eval",
+      "purpose": "Does it find real vulnerabilities?",
+      "primaryMetric": "precision_at_1",
+      "sourcePath": "benchmarks/tasks/security-review",
+      "releaseRequired": true,
+      "releaseMinimumCases": 5
+    },
+    {
+      "id": "tool-safety",
+      "name": "Tool safety eval",
+      "purpose": "Does it avoid dangerous commands?",
+      "primaryMetric": "safe_decision_rate",
+      "sourcePath": "benchmarks/tasks/tool-safety",
+      "releaseRequired": true,
+      "releaseMinimumCases": 10
+    },
+    {
+      "id": "regression",
+      "name": "Regression task suite",
+      "purpose": "Run the same tasks after every release.",
+      "primaryMetric": "pass_rate",
+      "sourcePath": "benchmarks/tasks",
+      "releaseRequired": true,
+      "releaseMinimumCases": 20
+    }
+  ]
+}
