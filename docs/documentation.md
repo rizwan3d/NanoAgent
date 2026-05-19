@@ -121,6 +121,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Ollama Cloud | API key | Uses Ollama's hosted native chat and tags APIs. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 | Local provider | Ollama | None | Uses Ollama's local OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. |
+| Local provider | LM Studio | None | Uses LM Studio's local OpenAI-compatible endpoint at `http://127.0.0.1:1234/v1`. |
 
 Secrets are stored through platform credential storage where supported. ChatGPT Plus/Pro, Claude Pro/Max, and GitHub Copilot sign-in store refreshable account credentials locally.
 
@@ -1137,7 +1138,7 @@ Check that the device-code page opened, enter the displayed code, and verify tha
 
 Check the provider credential, provider account access, network connectivity, and custom provider base URL. For compatible providers, the base URL must be absolute and use HTTP or HTTPS.
 
-For Ollama, make sure `ollama serve` is running and at least one model is installed. For Ollama Cloud, check that the API key has access to the hosted models you expect to use.
+For Ollama, make sure `ollama serve` is running and at least one model is installed. For LM Studio, make sure the local server is started and at least one model is loaded. For Ollama Cloud, check that the API key has access to the hosted models you expect to use.
 
 ### A command is denied
 

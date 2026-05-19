@@ -40,6 +40,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateLmStudio()
+    {
+        return new AgentProviderProfile(ProviderKind.LmStudio, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateOllamaCloud()
     {
         return new AgentProviderProfile(ProviderKind.OllamaCloud, BaseUrl: null);
