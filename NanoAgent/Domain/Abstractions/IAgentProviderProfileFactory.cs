@@ -18,6 +18,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOllama();
 
+    AgentProviderProfile CreateLmStudio(string? baseUrl = null);
+
     AgentProviderProfile CreateOllamaCloud();
 
     AgentProviderProfile CreateCerebras();
