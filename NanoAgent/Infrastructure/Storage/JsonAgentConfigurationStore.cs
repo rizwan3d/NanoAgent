@@ -421,6 +421,11 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 : new AgentProviderProfile(
                     ProviderKind.OpenAiCompatible,
                     CompatibleProviderBaseUrlNormalizer.Normalize(baseUrl)),
+            ProviderKind.LmStudio => new AgentProviderProfile(
+                ProviderKind.LmStudio,
+                string.IsNullOrWhiteSpace(baseUrl)
+                    ? null
+                    : CompatibleProviderBaseUrlNormalizer.Normalize(baseUrl)),
             _ => new AgentProviderProfile(providerKind, BaseUrl: null)
         };
 
@@ -513,7 +518,11 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 ProviderKind.Groq => new AgentProviderProfile(ProviderKind.Groq, BaseUrl: null),
                 ProviderKind.OpenCodeZen => new AgentProviderProfile(ProviderKind.OpenCodeZen, BaseUrl: null),
                 ProviderKind.Ollama => new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null),
-                ProviderKind.LmStudio => new AgentProviderProfile(ProviderKind.LmStudio, BaseUrl: null),
+                ProviderKind.LmStudio => new AgentProviderProfile(
+                    ProviderKind.LmStudio,
+                    string.IsNullOrWhiteSpace(profile.BaseUrl)
+                        ? null
+                        : CompatibleProviderBaseUrlNormalizer.Normalize(profile.BaseUrl)),
                 ProviderKind.OllamaCloud => new AgentProviderProfile(ProviderKind.OllamaCloud, BaseUrl: null),
                 ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
                 ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),

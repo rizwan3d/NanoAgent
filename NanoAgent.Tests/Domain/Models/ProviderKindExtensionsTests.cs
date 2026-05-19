@@ -60,10 +60,10 @@ public sealed class ProviderKindExtensionsTests
 
     [Theory]
     [InlineData(ProviderKind.Ollama, "ollama")]
-    [InlineData(ProviderKind.LmStudio, "lm-studio")]
     [InlineData(ProviderKind.OpenAi, null)]
     [InlineData(ProviderKind.Anthropic, null)]
     [InlineData(ProviderKind.GitHubCopilot, null)]
+    [InlineData(ProviderKind.LmStudio, null)]
     [InlineData(ProviderKind.OpenAiCompatible, null)]
     public void GetDefaultApiKey_Should_ReturnExpected(ProviderKind kind, string? expected)
     {

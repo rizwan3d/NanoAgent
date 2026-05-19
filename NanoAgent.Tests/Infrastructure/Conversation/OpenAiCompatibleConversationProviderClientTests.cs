@@ -557,8 +557,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
 
         ConversationProviderPayload payload = await sut.SendAsync(
             new ConversationProviderRequest(
-                new AgentProviderProfile(ProviderKind.LmStudio, null),
-                "lm-studio",
+                new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
+                "lm-studio-key",
                 "qwen3-8b",
                 [
                     ConversationRequestMessage.User("Say hello.")
@@ -567,8 +567,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 []),
             CancellationToken.None);
 
-        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:1234/v1/chat/completions"));
-        handler.AuthorizationHeader.Should().Be("Bearer lm-studio");
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:4321/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer lm-studio-key");
         handler.RequestBody.Should().Contain("\"model\":\"qwen3-8b\"");
         payload.ProviderKind.Should().Be(ProviderKind.LmStudio);
         payload.ResponseId.Should().Be("req_789");
