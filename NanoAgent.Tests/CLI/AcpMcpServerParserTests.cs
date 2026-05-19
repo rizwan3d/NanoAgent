@@ -125,4 +125,95 @@ public sealed class AcpMcpServerParserTests
         result.Should().ContainSingle();
         result[0].HttpHeaders.Should().ContainKey("Authorization").WhoseValue.Should().Be("Bearer token123");
     }
+
+    [Fact]
+    public void Parse_Should_Apply_HttpTransportSpecificFields_FromSessionConfig()
+    {
+        using JsonDocument doc = JsonDocument.Parse(
+            """
+            {
+              "sessionConfig": {
+                "mcpServers": {
+                  "editor": {
+                    "type": "http",
+                    "url": "http://127.0.0.1:9876/mcp",
+                    "headers": [
+                      { "name": "X-Editor", "value": "nano" },
+                      { "name": "X-Count", "value": 5 }
+                    ],
+                    "envHttpHeaders": {
+                      "AUTH_HEADER": "EDITOR_TOKEN"
+                    },
+                    "envVars": ["EDITOR_TOKEN", 42],
+                    "enabledTools": "read_file",
+                    "disabledTools": ["write_file", false],
+                    "enabled": false,
+                    "required": true,
+                    "startupTimeoutSeconds": 15,
+                    "toolTimeoutSeconds": 45,
+                    "bearerTokenEnvVar": " MCP_TOKEN ",
+                    "defaultToolsApprovalMode": " auto ",
+                    "tools": {
+                      "read_file": { "approvalMode": "allow" },
+                      "write_file": { "approvalMode": "deny" }
+                    }
+                  }
+                }
+              }
+            }
+            """);
+
+        var result = AcpMcpServerParser.Parse(doc.RootElement, "ACP session");
+
+        result.Should().ContainSingle();
+        BackendMcpServerConfiguration server = result[0];
+        server.Name.Should().Be("editor");
+        server.Source.Should().Be("ACP session");
+        server.Url.Should().Be("http://127.0.0.1:9876/mcp");
+        server.Command.Should().BeNull();
+        server.IsAssigned(nameof(BackendMcpServerConfiguration.Command)).Should().BeTrue();
+        server.HttpHeaders.Should().Contain("X-Editor", "nano");
+        server.HttpHeaders.Should().Contain("X-Count", "5");
+        server.EnvHttpHeaders.Should().Contain("AUTH_HEADER", "EDITOR_TOKEN");
+        server.EnvVars.Should().Equal("EDITOR_TOKEN", "42");
+        server.EnabledTools.Should().Equal("read_file");
+        server.DisabledTools.Should().Equal("write_file", "false");
+        server.Enabled.Should().BeFalse();
+        server.Required.Should().BeTrue();
+        server.StartupTimeoutSeconds.Should().Be(15);
+        server.ToolTimeoutSeconds.Should().Be(45);
+        server.BearerTokenEnvVar.Should().Be("MCP_TOKEN");
+        server.DefaultToolsApprovalMode.Should().Be("auto");
+        server.ToolApprovalModes.Should().Contain("read_file", "allow");
+        server.ToolApprovalModes.Should().Contain("write_file", "deny");
+    }
+
+    [Fact]
+    public void Parse_Should_Apply_StdioTransportDefaults_WhenArgsAndUrlAreMissing()
+    {
+        using JsonDocument doc = JsonDocument.Parse(
+            """
+            {
+              "configuration": {
+                "mcpServers": [
+                  {
+                    "name": "stdio-server",
+                    "type": "stdio",
+                    "command": "node"
+                  }
+                ]
+              }
+            }
+            """);
+
+        var result = AcpMcpServerParser.Parse(doc.RootElement, "config");
+
+        result.Should().ContainSingle();
+        BackendMcpServerConfiguration server = result[0];
+        server.Command.Should().Be("node");
+        server.Url.Should().BeNull();
+        server.IsAssigned(nameof(BackendMcpServerConfiguration.Url)).Should().BeTrue();
+        server.Args.Should().BeEmpty();
+        server.IsAssigned(nameof(BackendMcpServerConfiguration.Args)).Should().BeTrue();
+    }
 }

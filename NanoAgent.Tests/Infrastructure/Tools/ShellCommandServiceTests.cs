@@ -491,11 +491,13 @@ public sealed class ShellCommandServiceTests : IDisposable
         string terminalId = started.TerminalId!;
 
         ShellCommandExecutionResult completed = started;
+        string output = string.Empty;
         for (int attempt = 0; attempt < 50; attempt++)
         {
             completed = await sut.ReadBackgroundAsync(
                 terminalId,
                 CancellationToken.None);
+            output += completed.StandardOutput;
             if (completed.TerminalStatus == "exited")
             {
                 break;
@@ -505,7 +507,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         completed.TerminalStatus.Should().Be("exited");
-        completed.StandardOutput.Should().Contain("done");
+        output.Should().Contain("done");
 
         IReadOnlyList<BackgroundTerminalInfo> retained = await sut.ListBackgroundAsync(
             "session-a",

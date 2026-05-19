@@ -65,6 +65,137 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_ForwardStandardInput_DirectExecution()
+    {
+        ProcessExecutionRequest request = OperatingSystem.IsWindows()
+            ? new ProcessExecutionRequest(
+                "powershell",
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "$value = [Console]::In.ReadToEnd(); [Console]::Out.Write($value)"
+                ],
+                StandardInput: "stdin-ok")
+            : new ProcessExecutionRequest(
+                "/bin/sh",
+                [
+                    "-c",
+                    "cat"
+                ],
+                StandardInput: "stdin-ok");
+
+        ProcessExecutionResult result = await new ProcessRunner().RunAsync(
+            request,
+            CancellationToken.None);
+
+        result.ExitCode.Should().Be(0);
+        result.StandardOutput.Should().Be("stdin-ok");
+        result.StandardError.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_UseWorkingDirectory_ForDirectExecution()
+    {
+        using TempWorkspace temp = new();
+        string workingDirectory = Path.Combine(temp.WorkspaceRoot, "nested");
+        Directory.CreateDirectory(workingDirectory);
+        ProcessExecutionRequest request = OperatingSystem.IsWindows()
+            ? new ProcessExecutionRequest(
+                "powershell",
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "[Console]::Out.Write((Get-Location).Path)"
+                ],
+                WorkingDirectory: workingDirectory)
+            : new ProcessExecutionRequest(
+                "/bin/sh",
+                [
+                    "-c",
+                    "pwd"
+                ],
+                WorkingDirectory: workingDirectory);
+
+        ProcessExecutionResult result = await new ProcessRunner().RunAsync(
+            request,
+            CancellationToken.None);
+
+        result.ExitCode.Should().Be(0);
+        string.Equals(
+            result.StandardOutput.Trim(),
+            workingDirectory,
+            StringComparison.OrdinalIgnoreCase).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_PassEnvironmentVariables_ForDirectExecution()
+    {
+        const string variableName = "NANOAGENT_PROCESS_RUNNER_TEST";
+        const string variableValue = "env-ok";
+        ProcessExecutionRequest request = OperatingSystem.IsWindows()
+            ? new ProcessExecutionRequest(
+                "powershell",
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    $"[Console]::Out.Write($env:{variableName})"
+                ],
+                EnvironmentVariables: new Dictionary<string, string>
+                {
+                    [variableName] = variableValue
+                })
+            : new ProcessExecutionRequest(
+                "/bin/sh",
+                [
+                    "-c",
+                    $"printf %s \"${variableName}\""
+                ],
+                EnvironmentVariables: new Dictionary<string, string>
+                {
+                    [variableName] = variableValue
+                });
+
+        ProcessExecutionResult result = await new ProcessRunner().RunAsync(
+            request,
+            CancellationToken.None);
+
+        result.ExitCode.Should().Be(0);
+        result.StandardOutput.Should().Be(variableValue);
+        result.StandardError.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_PreserveExitCodeAndStandardError_ForDirectExecution()
+    {
+        ProcessExecutionRequest request = OperatingSystem.IsWindows()
+            ? new ProcessExecutionRequest(
+                "powershell",
+                [
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "[Console]::Error.Write('stderr-ok'); exit 7"
+                ])
+            : new ProcessExecutionRequest(
+                "/bin/sh",
+                [
+                    "-c",
+                    "printf %s stderr-ok >&2; exit 7"
+                ]);
+
+        ProcessExecutionResult result = await new ProcessRunner().RunAsync(
+            request,
+            CancellationToken.None);
+
+        result.ExitCode.Should().Be(7);
+        result.StandardOutput.Should().BeEmpty();
+        result.StandardError.Should().Contain("stderr-ok");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_RunRealNodeVersionInsideWindowsSandbox()
     {
         if (!OperatingSystem.IsWindows())
