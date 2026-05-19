@@ -45,6 +45,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, SettingCommandHandler>();
         services.AddSingleton<IReplCommandHandler, TerminalsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, UseModelCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, VersionCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ExitCommandHandler>();
 
         return services;
