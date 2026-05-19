@@ -27,6 +27,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IConfirmationPrompt? _confirmationPrompt;
     private IStatusMessageWriter? _statusMessageWriter;
     private IProductTelemetry? _telemetry;
+    private IWindowsSandboxStartupService? _windowsSandboxStartupService;
     private bool _updatePromptShown;
 
     public NanoAgentBackend(string[] args)
@@ -80,7 +81,9 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         _confirmationPrompt = _host.Services.GetRequiredService<IConfirmationPrompt>();
         _statusMessageWriter = _host.Services.GetRequiredService<IStatusMessageWriter>();
         _telemetry = _host.Services.GetRequiredService<IProductTelemetry>();
+        _windowsSandboxStartupService = _host.Services.GetRequiredService<IWindowsSandboxStartupService>();
         _telemetry.TrackAppStarted();
+        await _windowsSandboxStartupService.EnsureReadyAsync(cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(options.SectionId))
         {
