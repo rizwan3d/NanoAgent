@@ -146,7 +146,7 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         StubUserDataPathProvider pathProvider = new(_tempRoot);
         JsonAgentConfigurationStore sut = new(pathProvider);
         AgentConfiguration configuration = new(
-            new AgentProviderProfile(ProviderKind.LmStudio, null),
+            new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
             "qwen3-8b",
             "on");
 
@@ -376,13 +376,14 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     public async Task LoadAsync_Should_CreateLmStudioEnvironmentConfiguration_When_ProviderIsSet()
     {
         using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "lm-studio");
+        using EnvironmentVariableScope baseUrl = new("NANOAGENT_BASE_URL", "http://127.0.0.1:4321");
         StubUserDataPathProvider pathProvider = new(_tempRoot);
         JsonAgentConfigurationStore sut = new(pathProvider);
 
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
 
         loadedConfiguration.Should().Be(new AgentConfiguration(
-            new AgentProviderProfile(ProviderKind.LmStudio, null),
+            new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
             PreferredModelId: null,
             ReasoningEffort: null));
     }

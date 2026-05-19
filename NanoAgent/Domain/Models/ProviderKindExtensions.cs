@@ -16,7 +16,6 @@ public static class ProviderKindExtensions
     private const string GroqBaseUrl = "https://api.groq.com/openai/v1";
     private const string OpenCodeZenBaseUrl = "https://opencode.ai/zen/v1";
     private const string OllamaApiKeyPlaceholder = "ollama";
-    private const string LmStudioApiKeyPlaceholder = "lm-studio";
 
     public static string ToDisplayName(this ProviderKind providerKind)
     {
@@ -68,7 +67,6 @@ public static class ProviderKindExtensions
         return providerKind switch
         {
             ProviderKind.Ollama => OllamaApiKeyPlaceholder,
-            ProviderKind.LmStudio => LmStudioApiKeyPlaceholder,
             _ => null
         };
     }

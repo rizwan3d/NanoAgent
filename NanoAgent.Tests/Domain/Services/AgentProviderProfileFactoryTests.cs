@@ -73,6 +73,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateLmStudio_Should_NormalizeCustomBaseUrl_When_BaseUrlIsProvided()
+    {
+        AgentProviderProfile profile = _sut.CreateLmStudio(" http://127.0.0.1:4321/ ");
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"));
+    }
+
+    [Fact]
     public void CreateOllamaCloud_Should_ReturnOllamaCloudProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateOllamaCloud();
