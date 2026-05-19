@@ -1,0 +1,13 @@
+{
+  "id": "locate-review-automation",
+  "name": "Locate review automation docs/config",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Where should I look for pull request review automation setup and examples?",
+  "response": {
+    "containsAny": ["docs/documentation.md", ".github/workflows", "Review", "ci"],
+    "containsAtLeast": 2
+  }
+}

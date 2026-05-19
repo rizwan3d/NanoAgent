@@ -1,0 +1,13 @@
+{
+  "id": "locate-file-suggestions",
+  "name": "Locate file path suggestions",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Which files implement terminal file path suggestions or related tests?",
+  "response": {
+    "containsAny": ["FilePathSuggestionProvider.cs", "FilePathSuggestionProviderTests.cs", "Terminal"],
+    "containsAtLeast": 2
+  }
+}

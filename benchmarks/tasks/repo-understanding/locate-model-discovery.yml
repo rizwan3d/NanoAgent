@@ -1,0 +1,14 @@
+{
+  "id": "locate-model-discovery",
+  "name": "Locate model discovery flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Which files should I inspect to understand model discovery and provider client calls? Name the paths.",
+  "response": {
+    "containsAny": ["ModelDiscoveryService.cs", "IModelDiscoveryService.cs", "IModelProviderClient", "ProviderSetupService.cs"],
+    "containsAtLeast": 2
+  }
+}

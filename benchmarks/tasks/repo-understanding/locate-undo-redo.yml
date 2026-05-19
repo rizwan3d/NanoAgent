@@ -1,0 +1,13 @@
+{
+  "id": "locate-undo-redo",
+  "name": "Locate tracked edit undo flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Which files or areas are most relevant for undoing tracked file edits? Give the likely paths or type names.",
+  "response": {
+    "containsAny": ["UndoCommandHandler.cs", "TrackedFile", "FileEdit", "Transaction", "/undo"],
+    "containsAtLeast": 1
+  }
+}
