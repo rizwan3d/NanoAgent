@@ -1,0 +1,13 @@
+{
+  "id": "locate-budget-controls",
+  "name": "Locate budget control flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Find the files most relevant to budget controls, local budget files, and cloud budget status.",
+  "response": {
+    "containsAny": ["Budget", "budget-controls.local.json", "IBudgetControlsConfigurationStore", "JsonBudgetControlsConfigurationStore.cs"],
+    "containsAtLeast": 2
+  }
+}

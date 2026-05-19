@@ -1,0 +1,13 @@
+{
+  "id": "locate-terminal-shell",
+  "name": "Locate direct shell input handling",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Where is direct terminal shell input handled and where are shell commands permissioned?",
+  "response": {
+    "containsAny": ["Program.cs", "Shell", "ToolPermissionEvaluator.cs", "Command", "Terminal"],
+    "containsAtLeast": 2
+  }
+}
