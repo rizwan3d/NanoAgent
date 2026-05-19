@@ -254,7 +254,9 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
+        string[] backendArgs = EnsureStartupPromptsArg(
+            EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface),
+            enabled: true);
         INanoAgentBackend backend = new NanoAgentBackend(
             backendArgs,
             sessionMcpServers: [],
@@ -653,5 +655,26 @@ public static partial class Program
         }
 
         return [.. args, "--surface", appSurface];
+    }
+
+    private static string[] EnsureStartupPromptsArg(
+        IReadOnlyList<string> args,
+        bool enabled)
+    {
+        for (int index = 0; index < args.Count; index++)
+        {
+            string arg = args[index];
+            if (string.Equals(arg, "--startup-prompts", StringComparison.OrdinalIgnoreCase))
+            {
+                return [.. args];
+            }
+
+            if (arg.StartsWith("--startup-prompts=", StringComparison.OrdinalIgnoreCase))
+            {
+                return [.. args];
+            }
+        }
+
+        return [.. args, "--startup-prompts", enabled ? "enabled" : "disabled"];
     }
 }
