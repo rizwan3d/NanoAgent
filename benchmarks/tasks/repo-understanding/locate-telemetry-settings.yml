@@ -1,0 +1,13 @@
+{
+  "id": "locate-telemetry-settings",
+  "name": "Locate telemetry settings",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Which files explain or implement telemetry settings and disabling analytics?",
+  "response": {
+    "containsAny": ["ProductTelemetryHelpers", "Telemetry", "disableanalytics", "docs/documentation.md"],
+    "containsAtLeast": 2
+  }
+}

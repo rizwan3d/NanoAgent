@@ -1,0 +1,14 @@
+{
+  "id": "locate-cli-invocation",
+  "name": "Locate CLI argument parsing",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Where are CLI startup arguments parsed and routed to single-turn or interactive mode? Name the files.",
+  "response": {
+    "containsAny": ["CliInvocation.cs", "Program.cs", "RunSingleTurnAsync", "WriteUsage"],
+    "containsAtLeast": 2
+  }
+}

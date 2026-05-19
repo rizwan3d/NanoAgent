@@ -1,0 +1,14 @@
+{
+  "id": "locate-version-command",
+  "name": "Locate version reporting files",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Which files implement the terminal version flag and in-session version command? Return the relevant paths.",
+  "response": {
+    "containsAny": ["CliInvocation.cs", "Program.cs", "VersionCommandHandler.cs", "CommandServiceCollectionExtensions.cs", "HelpCommandHandler.cs"],
+    "containsAtLeast": 3
+  }
+}
