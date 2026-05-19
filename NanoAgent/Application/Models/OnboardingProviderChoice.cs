@@ -15,5 +15,6 @@ public enum OnboardingProviderChoice
     OllamaCloud = 11,
     Cerebras = 12,
     Groq = 13,
-    OpenCodeZen = 14
+    OpenCodeZen = 14,
+    LmStudio = 15
 }

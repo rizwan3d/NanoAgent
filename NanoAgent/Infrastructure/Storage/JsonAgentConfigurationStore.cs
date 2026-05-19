@@ -453,10 +453,11 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             "groq" => ProviderKind.Groq,
             "opencodezen" or "opencode" => ProviderKind.OpenCodeZen,
             "ollama" => ProviderKind.Ollama,
+            "lmstudio" => ProviderKind.LmStudio,
             "ollamacloud" => ProviderKind.OllamaCloud,
             "openaichatgptaccount" or "chatgpt" => ProviderKind.OpenAiChatGptAccount,
             _ => throw new InvalidOperationException(
-                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code, cerebras, groq, opencode-zen, ollama, ollama-cloud.")
+                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code, cerebras, groq, opencode-zen, ollama, lm-studio, ollama-cloud.")
         };
     }
 
@@ -512,6 +513,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 ProviderKind.Groq => new AgentProviderProfile(ProviderKind.Groq, BaseUrl: null),
                 ProviderKind.OpenCodeZen => new AgentProviderProfile(ProviderKind.OpenCodeZen, BaseUrl: null),
                 ProviderKind.Ollama => new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null),
+                ProviderKind.LmStudio => new AgentProviderProfile(ProviderKind.LmStudio, BaseUrl: null),
                 ProviderKind.OllamaCloud => new AgentProviderProfile(ProviderKind.OllamaCloud, BaseUrl: null),
                 ProviderKind.GoogleAiStudio => new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null),
                 ProviderKind.Anthropic => new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null),
