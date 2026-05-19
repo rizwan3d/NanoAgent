@@ -20,7 +20,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   SOLUTION_FILE: NanoAgent.CrossPlatform.slnx
   TEST_PROJECT: NanoAgent.Tests/NanoAgent.Tests.csproj
-  COVERAGE_THRESHOLD: 60
+  COVERAGE_THRESHOLD: 65
 
 jobs:
   build-and-test:
