@@ -91,6 +91,26 @@ NanoAgent is designed for useful automation without silent surprises.
 - Secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
 - Your workspace stays local; prompts and selected context are sent only to the model provider you configure when needed for a request.
 
+## Benchmarks
+
+NanoAgent includes task-based benchmarks in [`benchmarks/`](benchmarks) so we can measure real coding-agent behavior, not just chat-style answers. The benchmark suites currently cover bug fixing, repository understanding, patch quality, security review, tool safety, and a regression bundle that reruns the same tasks over time.
+
+Tasks are defined in [`benchmarks/tasks/`](benchmarks/tasks) and grouped by [`benchmarks/manifest.json`](benchmarks/manifest.json). Each task can score the agent with response checks, validation commands, and diff constraints against small local fixtures or this repository itself.
+
+Run the full benchmark set locally with:
+
+```bash
+python benchmarks/scripts/run_benchmarks.py --all --system --skip-preflight
+```
+
+Run the regression-only suite with:
+
+```bash
+python benchmarks/scripts/run_benchmarks.py --suite regression --system --skip-preflight
+```
+
+Generated summaries are refreshed in [`benchmarks/results/latest.md`](benchmarks/results/latest.md) and [`benchmarks/results/latest.json`](benchmarks/results/latest.json).
+
 ## Telemetry
 
 NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.nanoagent/agent-profile.json` for the current workspace.
