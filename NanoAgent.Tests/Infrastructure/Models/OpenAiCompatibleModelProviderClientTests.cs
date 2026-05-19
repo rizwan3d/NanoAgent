@@ -262,12 +262,12 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
 
         IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
-            new AgentProviderProfile(ProviderKind.LmStudio, null),
-            "lm-studio",
+            new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
+            "lm-studio-key",
             CancellationToken.None);
 
-        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:1234/v1/models"));
-        handler.AuthorizationHeader.Should().Be("Bearer lm-studio");
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:4321/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer lm-studio-key");
         models.Should().ContainSingle().Which.Should().Be(new AvailableModel("qwen3-8b", 32768));
     }
 

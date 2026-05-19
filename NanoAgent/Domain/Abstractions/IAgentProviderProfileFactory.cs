@@ -18,7 +18,7 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOllama();
 
-    AgentProviderProfile CreateLmStudio();
+    AgentProviderProfile CreateLmStudio(string? baseUrl = null);
 
     AgentProviderProfile CreateOllamaCloud();
 

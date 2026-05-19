@@ -1036,7 +1036,18 @@ public sealed class FirstRunOnboardingServiceTests
         SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.LmStudio);
 
         Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        textPrompt
+            .Setup(prompt => prompt.PromptAsync(
+                It.Is<TextPromptRequest>(request =>
+                    request.Label == "Base URL" &&
+                    request.Description == "Enter the LM Studio base URL, or leave empty to use http://127.0.0.1:1234/v1."),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  ");
+
         Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        secretPrompt
+            .Setup(prompt => prompt.PromptAsync(It.IsAny<SecretPromptRequest>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync("  lm-studio-key  ");
         Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
 
         Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
@@ -1052,6 +1063,9 @@ public sealed class FirstRunOnboardingServiceTests
             .Returns(Task.CompletedTask);
 
         Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        inputValidator
+            .Setup(validator => validator.ValidateApiKey("  lm-studio-key  "))
+            .Returns(InputValidationResult.Success("lm-studio-key"));
 
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
@@ -1063,12 +1077,12 @@ public sealed class FirstRunOnboardingServiceTests
 
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
-        secretStore.Setup(store => store.SaveAsync("lm-studio", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "lm-studio", It.IsAny<CancellationToken>()))
+        secretStore.Setup(store => store.SaveAsync("lm-studio-key", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "lm-studio-key", It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
-        profileFactory.Setup(factory => factory.CreateLmStudio()).Returns(profile);
+        profileFactory.Setup(factory => factory.CreateLmStudio(string.Empty)).Returns(profile);
 
         FirstRunOnboardingService sut = CreateSut(
             selectionPrompt.Object,
@@ -1087,10 +1101,10 @@ public sealed class FirstRunOnboardingServiceTests
             profile,
             true,
             ActiveProviderName: "LM Studio"));
-        profileFactory.Verify(factory => factory.CreateLmStudio(), Times.Once);
-        textPrompt.VerifyNoOtherCalls();
-        secretPrompt.VerifyNoOtherCalls();
-        inputValidator.VerifyNoOtherCalls();
+        profileFactory.Verify(factory => factory.CreateLmStudio(string.Empty), Times.Once);
+        textPrompt.VerifyAll();
+        secretPrompt.VerifyAll();
+        inputValidator.VerifyAll();
         configurationStore.VerifyAll();
         secretStore.VerifyAll();
         statusMessageWriter.VerifyAll();
