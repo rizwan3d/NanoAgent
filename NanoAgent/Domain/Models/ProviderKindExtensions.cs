@@ -10,11 +10,13 @@ public static class ProviderKindExtensions
     private const string GitHubCopilotBaseUrl = "https://api.individual.githubcopilot.com";
     private const string KiloCodeBaseUrl = "https://api.kilo.ai/api/gateway";
     private const string OllamaBaseUrl = "http://127.0.0.1:11434/v1";
+    private const string LmStudioBaseUrl = "http://127.0.0.1:1234/v1";
     private const string OllamaCloudBaseUrl = "https://ollama.com";
     private const string CerebrasBaseUrl = "https://api.cerebras.ai/v1";
     private const string GroqBaseUrl = "https://api.groq.com/openai/v1";
     private const string OpenCodeZenBaseUrl = "https://opencode.ai/zen/v1";
     private const string OllamaApiKeyPlaceholder = "ollama";
+    private const string LmStudioApiKeyPlaceholder = "lm-studio";
 
     public static string ToDisplayName(this ProviderKind providerKind)
     {
@@ -29,6 +31,7 @@ public static class ProviderKindExtensions
             ProviderKind.OpenRouter => "OpenRouter",
             ProviderKind.KiloCode => "Kilo Code",
             ProviderKind.Ollama => "Ollama",
+            ProviderKind.LmStudio => "LM Studio",
             ProviderKind.OllamaCloud => "Ollama Cloud",
             ProviderKind.Cerebras => "Cerebras",
             ProviderKind.Groq => "Groq",
@@ -51,6 +54,7 @@ public static class ProviderKindExtensions
             ProviderKind.OpenRouter => OpenRouterBaseUrl,
             ProviderKind.KiloCode => KiloCodeBaseUrl,
             ProviderKind.Ollama => OllamaBaseUrl,
+            ProviderKind.LmStudio => LmStudioBaseUrl,
             ProviderKind.OllamaCloud => OllamaCloudBaseUrl,
             ProviderKind.Cerebras => CerebrasBaseUrl,
             ProviderKind.Groq => GroqBaseUrl,
@@ -64,6 +68,7 @@ public static class ProviderKindExtensions
         return providerKind switch
         {
             ProviderKind.Ollama => OllamaApiKeyPlaceholder,
+            ProviderKind.LmStudio => LmStudioApiKeyPlaceholder,
             _ => null
         };
     }

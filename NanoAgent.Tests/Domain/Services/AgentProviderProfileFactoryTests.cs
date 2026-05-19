@@ -65,6 +65,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateLmStudio_Should_ReturnLmStudioProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateLmStudio();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.LmStudio, null));
+    }
+
+    [Fact]
     public void CreateOllamaCloud_Should_ReturnOllamaCloudProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateOllamaCloud();

@@ -1028,6 +1028,75 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveLmStudioConfiguration_When_LmStudioIsSelected()
+    {
+        AgentProviderProfile profile = new(ProviderKind.LmStudio, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.LmStudio);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: LM Studio.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(profile, null, null, "LM Studio"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("lm-studio", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore.Setup(store => store.SaveAsync(It.IsAny<string?>(), "lm-studio", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory.Setup(factory => factory.CreateLmStudio()).Returns(profile);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            profile,
+            true,
+            ActiveProviderName: "LM Studio"));
+        profileFactory.Verify(factory => factory.CreateLmStudio(), Times.Once);
+        textPrompt.VerifyNoOtherCalls();
+        secretPrompt.VerifyNoOtherCalls();
+        inputValidator.VerifyNoOtherCalls();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveGoogleAiStudioConfiguration_When_GoogleAiStudioIsSelected()
     {
         AgentProviderProfile googleAiStudioProfile = new(ProviderKind.GoogleAiStudio, null);
@@ -1325,7 +1394,8 @@ public sealed class FirstRunOnboardingServiceTests
                 OnboardingProviderChoice.AnthropicClaudeAccount or
                 OnboardingProviderChoice.GitHubCopilot => OnboardingProviderSetupChoice.SubscriptionAccount,
             OnboardingProviderChoice.OpenAiCompatible => OnboardingProviderSetupChoice.OpenAiCompatible,
-            OnboardingProviderChoice.Ollama => OnboardingProviderSetupChoice.LocalProvider,
+            OnboardingProviderChoice.Ollama or
+                OnboardingProviderChoice.LmStudio => OnboardingProviderSetupChoice.LocalProvider,
             _ => OnboardingProviderSetupChoice.ApiKey
         };
 
