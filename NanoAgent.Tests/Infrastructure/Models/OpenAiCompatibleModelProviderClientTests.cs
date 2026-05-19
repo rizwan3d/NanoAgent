@@ -249,6 +249,29 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_RequestLmStudioModelsEndpoint_When_ProviderIsConfigured()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "qwen3-8b", "context_length": 32768 }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
+            "lm-studio-key",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:4321/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer lm-studio-key");
+        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("qwen3-8b", 32768));
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestOllamaCloudTagsEndpoint_When_ProviderIsConfigured()
     {
         RecordingHandler handler = new("""
