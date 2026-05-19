@@ -1,0 +1,13 @@
+{
+  "id": "locate-memory-files",
+  "name": "Locate team memory implementation",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Where should I look to understand team memory files and memory write permissions?",
+  "response": {
+    "containsAny": [".nanoagent/memory", "memory", "ToolPermissionEvaluator.cs", "Memory"],
+    "containsAtLeast": 2
+  }
+}

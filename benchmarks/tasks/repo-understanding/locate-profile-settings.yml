@@ -1,0 +1,13 @@
+{
+  "id": "locate-profile-settings",
+  "name": "Locate profile and profile switching",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Which files are relevant to profiles, profile switching, and profile permission overlays?",
+  "response": {
+    "containsAny": ["ProfileCommandHandler.cs", "AgentProfile", "AgentProfilePermissionOverlayTests.cs", "PermissionSettings.cs"],
+    "containsAtLeast": 2
+  }
+}
