@@ -1100,6 +1100,83 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     }
 
     [Fact]
+    public void Evaluate_Should_DenyDeletingLastProjectFile_When_AutoApproveAllToolsIsEnabled()
+    {
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, ".git"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, ".nanoagent"));
+        File.WriteAllText(Path.Combine(_workspaceRoot, ".git", "HEAD"), "ref: refs/heads/main");
+        File.WriteAllText(Path.Combine(_workspaceRoot, ".nanoagent", "state.json"), "{}");
+        File.WriteAllText(Path.Combine(_workspaceRoot, "deploy.py"), "print('hello')\n");
+
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            ApplicationSettingsFactory.CreatePermissionSettings(new ApplicationOptions
+            {
+                Permissions = new PermissionSettings
+                {
+                    AutoApproveAllTools = true
+                }
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ApprovalMode = ToolApprovalMode.Automatic,
+                ToolTags = ["edit"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Write,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "path": "deploy.py" }""",
+                toolName: AgentToolNames.FileDelete)));
+
+        result.Decision.Should().Be(PermissionEvaluationDecision.Denied);
+        result.ReasonCode.Should().Be("workspace_wipe_blocked");
+    }
+
+    [Fact]
+    public void Evaluate_Should_AllowDeletingProjectFile_When_OtherProjectFilesRemain()
+    {
+        File.WriteAllText(Path.Combine(_workspaceRoot, "src", "app.cs"), "class App {}");
+        File.WriteAllText(Path.Combine(_workspaceRoot, "docs", "readme.md"), "# Readme");
+
+        ToolPermissionEvaluator sut = new(
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            CreatePermissionSettings(new PermissionSettings
+            {
+                DefaultMode = PermissionMode.Allow
+            }));
+
+        PermissionEvaluationResult result = sut.Evaluate(
+            new ToolPermissionPolicy
+            {
+                ApprovalMode = ToolApprovalMode.Automatic,
+                ToolTags = ["edit"],
+                FilePaths =
+                [
+                    new FilePathPermissionRule
+                    {
+                        ArgumentName = "path",
+                        Kind = ToolPathAccessKind.Write,
+                        AllowedRoots = ["."]
+                    }
+                ]
+            },
+            new PermissionEvaluationContext(CreateContext(
+                """{ "path": "docs/readme.md" }""",
+                toolName: AgentToolNames.FileDelete)));
+
+        result.IsAllowed.Should().BeTrue();
+    }
+
+    [Fact]
     public void Evaluate_Should_AllowPromptedTools_When_AutoApproveAllToolsIsEnabled()
     {
         ToolPermissionEvaluator sut = new(

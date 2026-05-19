@@ -1,0 +1,20 @@
+{
+  "id": "explain-permissions",
+  "name": "Explain the permission flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Explain where tool permissions are parsed, evaluated, and shown to the user in this repository. Keep it concise and name the key files.",
+  "response": {
+    "containsAny": [
+      "ToolPermissionParser.cs",
+      "ToolPermissionEvaluator.cs",
+      "PermissionRequestDisplayFormatter.cs",
+      "SelectionPermissionApprovalPrompt.cs",
+      "PermissionSettings.cs"
+    ],
+    "containsAtLeast": 3
+  }
+}
