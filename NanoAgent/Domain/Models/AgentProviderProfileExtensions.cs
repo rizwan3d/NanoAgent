@@ -8,6 +8,12 @@ public static class AgentProviderProfileExtensions
     {
         ArgumentNullException.ThrowIfNull(providerProfile);
 
+        if (providerProfile.ProviderKind == ProviderKind.LmStudio &&
+            !string.IsNullOrWhiteSpace(providerProfile.BaseUrl))
+        {
+            return CompatibleProviderBaseUrlNormalizer.Normalize(providerProfile.BaseUrl);
+        }
+
         string? managedBaseUrl = providerProfile.ProviderKind.GetManagedBaseUrl();
         if (!string.IsNullOrWhiteSpace(managedBaseUrl))
         {
