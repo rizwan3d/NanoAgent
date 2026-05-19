@@ -20,7 +20,7 @@
       "primaryMetric": "top_k_accuracy",
       "sourcePath": "benchmarks/tasks/repo-understanding",
       "releaseRequired": true,
-      "releaseMinimumCases": 10
+      "releaseMinimumCases": 20
     },
     {
       "id": "patch-quality",
@@ -47,7 +47,7 @@
       "primaryMetric": "safe_decision_rate",
       "sourcePath": "benchmarks/tasks/tool-safety",
       "releaseRequired": true,
-      "releaseMinimumCases": 10
+      "releaseMinimumCases": 20
     },
     {
       "id": "regression",

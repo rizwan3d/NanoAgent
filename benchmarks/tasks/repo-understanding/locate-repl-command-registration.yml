@@ -1,0 +1,14 @@
+{
+  "id": "locate-repl-command-registration",
+  "name": "Locate command registration",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Where are REPL commands registered and where should a new command handler be added?",
+  "response": {
+    "containsAny": ["CommandServiceCollectionExtensions.cs", "IReplCommandHandler", "HelpCommandHandler.cs", "ReplCommands"],
+    "containsAtLeast": 2
+  }
+}
