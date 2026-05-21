@@ -637,8 +637,9 @@ internal static class WindowsSandboxProcessRunner
         {
             foreach (KeyValuePair<string, string> item in environmentVariables)
             {
-                if (!string.IsNullOrWhiteSpace(item.Key))
+                if (ProcessEnvironment.ShouldInclude(item.Key))
                 {
+                    ProcessEnvironment.ValidateVariable(item.Key, item.Value);
                     merged[item.Key] = item.Value;
                 }
             }
