@@ -62,8 +62,9 @@ internal sealed class ProcessRunner : IProcessRunner
         {
             foreach (KeyValuePair<string, string> environmentVariable in request.EnvironmentVariables)
             {
-                if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
+                if (ProcessEnvironment.ShouldInclude(environmentVariable.Key))
                 {
+                    ProcessEnvironment.ValidateVariable(environmentVariable.Key, environmentVariable.Value);
                     startInfo.Environment[environmentVariable.Key] = environmentVariable.Value;
                 }
             }
@@ -399,8 +400,9 @@ internal sealed class ProcessRunner : IProcessRunner
 
         foreach (KeyValuePair<string, string> environmentVariable in environmentVariables)
         {
-            if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
+            if (ProcessEnvironment.ShouldInclude(environmentVariable.Key))
             {
+                ProcessEnvironment.ValidateVariable(environmentVariable.Key, environmentVariable.Value);
                 mergedEnvironment[environmentVariable.Key] = environmentVariable.Value;
             }
         }
