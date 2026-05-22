@@ -555,8 +555,8 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             terminal.Command,
             terminal.WorkingDirectory,
             exitCode,
-            TrimOutput(standardOutput),
-            TrimOutput(standardError),
+            TrimBackgroundOutput(standardOutput),
+            TrimBackgroundOutput(standardError),
             terminal.SandboxPermissions,
             terminal.Justification,
             terminal.SandboxMode,
@@ -790,13 +790,25 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
     private static string TrimOutput(string value)
     {
+        return TrimOutput(value, MaxOutputCharacters);
+    }
+
+    private static string TrimBackgroundOutput(string value)
+    {
+        return TrimOutput(value, MaxBackgroundOutputCharacters);
+    }
+
+    private static string TrimOutput(
+        string value,
+        int maxCharacters)
+    {
         string normalizedValue = value.Replace("\r\n", "\n", StringComparison.Ordinal).Trim();
-        if (normalizedValue.Length <= MaxOutputCharacters)
+        if (normalizedValue.Length <= maxCharacters)
         {
             return normalizedValue;
         }
 
-        return normalizedValue[..MaxOutputCharacters] + "...";
+        return normalizedValue[..maxCharacters] + "...";
     }
 
     private static string NormalizeTerminalId(string? terminalId)
