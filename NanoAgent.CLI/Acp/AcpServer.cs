@@ -1868,16 +1868,24 @@ internal sealed class AcpServer : IAsyncDisposable
 
     private static string ReadAuthenticationToken(JsonElement root)
     {
-        JsonElement parameters = GetRequiredParams(root);
+        if (!TryGetProperty(root, "params", out JsonElement parameters))
+        {
+            throw new AcpProtocolException(
+                JsonRpcInvalidParams,
+                "authenticate requires a non-empty token parameter.");
+        }
+
         if (parameters.ValueKind == JsonValueKind.String &&
             !string.IsNullOrWhiteSpace(parameters.GetString()))
         {
             return parameters.GetString()!.Trim();
         }
 
-        if (TryGetString(parameters, "token", out string token))
+        if (parameters.ValueKind == JsonValueKind.Object &&
+            TryGetString(parameters, "token", out string token) &&
+            !string.IsNullOrWhiteSpace(token))
         {
-            return token;
+            return token.Trim();
         }
 
         throw new AcpProtocolException(
