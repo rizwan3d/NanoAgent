@@ -765,6 +765,32 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveExactContent_ForMoveOnlyUpdate()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string sourcePath = Path.Combine(_workspaceRoot, "old.txt");
+        string destinationPath = Path.Combine(_workspaceRoot, "new.txt");
+        await File.WriteAllTextAsync(
+            sourcePath,
+            "hello\r\nthere",
+            CancellationToken.None);
+
+        WorkspaceApplyPatchResult result = await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: old.txt
+            *** Move to: new.txt
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        result.FileCount.Should().Be(1);
+        File.Exists(sourcePath).Should().BeFalse();
+        string actualContent = await File.ReadAllTextAsync(destinationPath, CancellationToken.None);
+        actualContent.Should().Be("hello\r\nthere");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_HandleCrlfLineEndings_InExistingFile()
     {
         WorkspaceFileService sut = CreateSut();
