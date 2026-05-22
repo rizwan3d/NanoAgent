@@ -73,9 +73,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         ArgumentNullException.ThrowIfNull(states);
         cancellationToken.ThrowIfCancellationRequested();
 
+        StringComparer pathComparer = WorkspacePath.GetPathComparer();
         WorkspaceFileEditState[] normalizedStates = states
             .Where(static state => state is not null)
-            .GroupBy(static state => state.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(static state => state.Path, pathComparer)
             .Select(static group => group.Last())
             .ToArray();
 
@@ -1507,12 +1508,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static string[] GetTrackedPatchPaths(PatchDocument document)
     {
+        StringComparer pathComparer = WorkspacePath.GetPathComparer();
         return document.Operations
             .SelectMany(static operation => operation.MoveToPath is null
                 ? [operation.Path]
                 : new[] { operation.Path, operation.MoveToPath })
             .Where(static path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(pathComparer)
             .ToArray();
     }
 
