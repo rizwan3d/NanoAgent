@@ -60,8 +60,15 @@ Then open the NanoAgent view in VS Code or run `NanoAgent: Open Chat` from the C
 | `nanoagent.command` | `nanoai` | Command used to start NanoAgent. |
 | `nanoagent.args` | `["--acp"]` | Arguments passed to the NanoAgent CLI. |
 | `nanoagent.workingDirectory` | workspace root | Working directory for the NanoAgent process. |
+| `nanoagent.acpAuthenticationToken` | empty | Optional ACP auth token. Used only when the server advertises `authMethods: ["token"]`. |
 | `nanoagent.autoStart` | `false` | Start NanoAgent automatically when VS Code starts. |
 | `nanoagent.logLevel` | `info` | Extension log level. |
+
+When ACP authentication is enabled, the extension resolves the token in this order:
+
+1. VS Code `SecretStorage` key `nanoagent.acpAuthToken`
+2. `nanoagent.acpAuthenticationToken` setting
+3. `NANOAGENT_ACP_AUTH_TOKEN` environment variable
 
 ## Troubleshooting
 
