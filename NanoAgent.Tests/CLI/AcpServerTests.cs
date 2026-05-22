@@ -217,6 +217,42 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_AcceptStringAuthenticateParams()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":2,"method":"authenticate","params":"acp-secret"}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            autoApproveAllTools: false,
+            backendFactory: (_, _) => new FakeBackend(),
+            acpAuthenticationToken: "acp-secret");
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        FindResponse(messages, 2).GetProperty("result").ValueKind.Should().Be(JsonValueKind.Object);
+        FindResponse(messages, 3).GetProperty("result").GetProperty("sessionId").GetString().Should().Be("sess-test");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_RejectOversizedIncomingLine_AndContinueProcessing()
     {
         string oversizedLine = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + new string('a', 120) + "\"}";
