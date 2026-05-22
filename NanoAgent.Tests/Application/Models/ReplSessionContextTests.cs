@@ -121,6 +121,37 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void BeginFileEditTransactionBatch_Should_RespectPlatformPathComparison_ForCaseOnlyPaths()
+    {
+        ReplSessionContext session = CreateSession();
+
+        using (session.BeginFileEditTransactionBatch())
+        {
+            session.RecordFileEditTransaction(new WorkspaceFileEditTransaction(
+                "apply_patch (1 file)",
+                [new WorkspaceFileEditState("Foo.txt", exists: true, content: "before")],
+                [new WorkspaceFileEditState("Foo.txt", exists: false, content: null)]));
+            session.RecordFileEditTransaction(new WorkspaceFileEditTransaction(
+                "apply_patch (1 file)",
+                [new WorkspaceFileEditState("foo.txt", exists: false, content: null)],
+                [new WorkspaceFileEditState("foo.txt", exists: true, content: "after")]));
+        }
+
+        session.TryGetPendingUndoFileEdit(out WorkspaceFileEditTransaction? pendingUndo).Should().BeTrue();
+
+        if (OperatingSystem.IsWindows())
+        {
+            pendingUndo!.BeforeStates.Should().ContainSingle().Which.Path.Should().Be("Foo.txt");
+            pendingUndo.AfterStates.Should().ContainSingle().Which.Path.Should().Be("foo.txt");
+        }
+        else
+        {
+            pendingUndo!.BeforeStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
+            pendingUndo.AfterStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
+        }
+    }
+
+    [Fact]
     public void SetPendingExecutionPlan_Should_ExposePendingPlan_And_ClearShouldRemoveIt()
     {
         ReplSessionContext session = CreateSession();

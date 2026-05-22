@@ -613,6 +613,75 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_RespectPlatformPathComparison_ForCaseOnlyPaths()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        await sut.ApplyFileEditStatesAsync(
+            [
+                new WorkspaceFileEditState("Foo.txt", exists: true, content: "upper"),
+                new WorkspaceFileEditState("foo.txt", exists: true, content: "lower")
+            ],
+            CancellationToken.None);
+
+        string upperPath = Path.Combine(_workspaceRoot, "Foo.txt");
+        string lowerPath = Path.Combine(_workspaceRoot, "foo.txt");
+
+        if (OperatingSystem.IsWindows())
+        {
+            File.Exists(upperPath).Should().BeTrue();
+            (await File.ReadAllTextAsync(upperPath, CancellationToken.None)).Should().Be("lower");
+        }
+        else
+        {
+            File.Exists(upperPath).Should().BeTrue();
+            File.Exists(lowerPath).Should().BeTrue();
+            (await File.ReadAllTextAsync(upperPath, CancellationToken.None)).Should().Be("upper");
+            (await File.ReadAllTextAsync(lowerPath, CancellationToken.None)).Should().Be("lower");
+        }
+    }
+
+    [Fact]
+    public async Task ApplyPatchWithTrackingAsync_Should_RespectPlatformPathComparison_ForCaseOnlyRename()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string sourcePath = Path.Combine(_workspaceRoot, "Foo.txt");
+        await File.WriteAllTextAsync(sourcePath, "hello", CancellationToken.None);
+
+        WorkspaceApplyPatchExecutionResult result = await sut.ApplyPatchWithTrackingAsync(
+            """
+            *** Begin Patch
+            *** Update File: Foo.txt
+            *** Move to: foo.txt
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        result.EditTransaction.Should().NotBeNull();
+
+        if (OperatingSystem.IsWindows())
+        {
+            result.EditTransaction!.BeforeStates
+                .Should()
+                .ContainSingle()
+                .Which.Path
+                .Should()
+                .Be("Foo.txt");
+            result.EditTransaction.AfterStates
+                .Should()
+                .ContainSingle()
+                .Which.Path
+                .Should()
+                .Be("Foo.txt");
+        }
+        else
+        {
+            result.EditTransaction!.BeforeStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
+            result.EditTransaction.AfterStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
+        }
+    }
+
+    [Fact]
     public async Task ListDirectoryAsync_Should_ExcludeNanoIgnoredPaths()
     {
         await WriteNanoIgnoreAsync(
