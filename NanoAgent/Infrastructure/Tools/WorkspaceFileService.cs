@@ -458,7 +458,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             currentFullPath,
             Encoding.UTF8,
             cancellationToken);
-        string updatedContent = ApplyUpdatePatch(operation.Path, previousContent, operation.Hunks);
+        bool isMoveOnly = operation.MoveToPath is not null && operation.Hunks.Count == 0;
+        string updatedContent = isMoveOnly
+            ? previousContent
+            : ApplyUpdatePatch(operation.Path, previousContent, operation.Hunks);
 
         string destinationFullPath = operation.MoveToPath is null
             ? currentFullPath
