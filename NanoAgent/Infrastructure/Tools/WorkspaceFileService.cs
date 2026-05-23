@@ -1342,8 +1342,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 int insertIndex = changeContextIndex is null
                     ? originalLines.Length
                     : changeContextIndex.Value + 1;
-                replacements.Add(new PatchReplacement(insertIndex, 0, afterLines));
-                trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
+                replacements.Add(new PatchReplacement(insertIndex, 0, afterLines, hunk));
                 continue;
             }
 
@@ -1383,15 +1382,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     $"Could not apply the requested patch because the target context was not found in '{path}'.");
             }
 
-            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines));
+            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines, hunk));
             searchStart = matchIndex + pattern.Length;
-            trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
         }
 
         List<string> currentLines = originalLines.ToList();
         PatchReplacement[] orderedReplacements = replacements
             .OrderBy(static replacement => replacement.StartIndex)
             .ToArray();
+        trailingNewLineOverride = GetTrailingNewLineOverride(path, originalLines.Length, orderedReplacements);
         for (int index = orderedReplacements.Length - 1; index >= 0; index--)
         {
             PatchReplacement replacement = orderedReplacements[index];
@@ -1403,20 +1402,63 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return JoinLines(currentLines, trailingNewLine);
     }
 
-    private static bool? GetTrailingNewLineOverride(PatchHunk hunk)
+    private static bool? GetTrailingNewLineOverride(
+        string path,
+        int originalLineCount,
+        IReadOnlyList<PatchReplacement> replacements)
     {
         bool? trailingNewLine = null;
+        PatchReplacement? finalReplacement = replacements.Count == 0
+            ? null
+            : replacements[^1];
 
-        foreach (PatchLine line in hunk.Lines)
+        foreach (PatchReplacement replacement in replacements)
         {
-            if (!line.NoNewlineAtEnd)
-            {
-                continue;
-            }
+            int beforeIndex = -1;
+            int afterIndex = -1;
+            bool touchesEndOfFile = finalReplacement is not null &&
+                                    replacement.Equals(finalReplacement.Value) &&
+                                    replacement.StartIndex + replacement.OldLineCount == originalLineCount;
 
-            trailingNewLine = line.Kind is PatchLineKind.Addition or PatchLineKind.Context
-                ? false
-                : true;
+            foreach (PatchLine line in replacement.Hunk.Lines)
+            {
+                if (line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+                {
+                    beforeIndex++;
+                }
+
+                if (line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
+                {
+                    afterIndex++;
+                }
+
+                if (!line.NoNewlineAtEnd)
+                {
+                    continue;
+                }
+
+                bool isValidMarker = line.Kind switch
+                {
+                    PatchLineKind.Context => touchesEndOfFile &&
+                                             beforeIndex == replacement.OldLineCount - 1 &&
+                                             afterIndex == replacement.NewLines.Count - 1,
+                    PatchLineKind.Addition => touchesEndOfFile &&
+                                              afterIndex == replacement.NewLines.Count - 1,
+                    PatchLineKind.Removal => touchesEndOfFile &&
+                                             beforeIndex == replacement.OldLineCount - 1,
+                    _ => false
+                };
+
+                if (!isValidMarker)
+                {
+                    throw new FormatException(
+                        $"No-newline patch markers must apply to the final resulting line in '{path}'.");
+                }
+
+                trailingNewLine = line.Kind is PatchLineKind.Addition or PatchLineKind.Context
+                    ? false
+                    : true;
+            }
         }
 
         return trailingNewLine;
@@ -1717,7 +1759,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private readonly record struct PatchReplacement(
         int StartIndex,
         int OldLineCount,
-        IReadOnlyList<string> NewLines);
+        IReadOnlyList<string> NewLines,
+        PatchHunk Hunk);
 
     private enum PatchOperationKind
     {
