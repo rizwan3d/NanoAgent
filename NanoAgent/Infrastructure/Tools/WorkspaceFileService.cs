@@ -1339,7 +1339,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (beforeLines.Length == 0)
             {
-                replacements.Add(new PatchReplacement(originalLines.Length, 0, afterLines));
+                int insertIndex = changeContextIndex is null
+                    ? originalLines.Length
+                    : changeContextIndex.Value + 1;
+                replacements.Add(new PatchReplacement(insertIndex, 0, afterLines));
                 trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
                 continue;
             }
