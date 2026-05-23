@@ -777,7 +777,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             """,
             CancellationToken.None);
 
-        await act.Should().ThrowAsync<InvalidOperationException>();
+        await act.Should().ThrowAsync<FileNotFoundException>()
+            .WithMessage("File 'missing.txt' does not exist.");
         File.Exists(createdPath).Should().BeFalse();
         File.Exists(Path.Combine(_workspaceRoot, "missing.txt")).Should().BeFalse();
     }
