@@ -5,6 +5,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
+using System.Runtime.ExceptionServices;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
@@ -49,7 +50,29 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         WorkspaceFileEditState[] beforeStates = await CaptureFileStatesAsync(
             trackedPaths,
             cancellationToken);
-        WorkspaceApplyPatchResult result = await ApplyPatchDocumentAsync(document, cancellationToken);
+        WorkspaceApplyPatchResult result;
+        try
+        {
+            result = await ApplyPatchDocumentAsync(document, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await ApplyFileEditStatesAsync(beforeStates, CancellationToken.None);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "Patch application failed and rollback did not complete successfully.",
+                    exception,
+                    rollbackException);
+            }
+
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw;
+        }
+
         WorkspaceFileEditState[] afterStates = await CaptureFileStatesAsync(
             trackedPaths,
             cancellationToken);
