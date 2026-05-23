@@ -682,6 +682,31 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchWithTrackingAsync_Should_RollBackEarlierOperations_WhenALaterOperationFails()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string createdPath = Path.Combine(_workspaceRoot, "created.txt");
+
+        Func<Task> act = () => sut.ApplyPatchWithTrackingAsync(
+            """
+            *** Begin Patch
+            *** Add File: created.txt
+            +this file is created
+
+            *** Update File: missing.txt
+            @@
+            -old
+            +new
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        File.Exists(createdPath).Should().BeFalse();
+        File.Exists(Path.Combine(_workspaceRoot, "missing.txt")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ListDirectoryAsync_Should_ExcludeNanoIgnoredPaths()
     {
         await WriteNanoIgnoreAsync(
