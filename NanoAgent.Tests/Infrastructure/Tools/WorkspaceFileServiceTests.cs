@@ -386,6 +386,58 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_RejectNoNewlineMarker_BeforeLaterContextInSameHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(filePath, "a\nb\n", CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -a
+            +A
+            \ No newline at end of file
+             b
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<FormatException>()
+            .WithMessage("*final resulting line*");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RejectNoNewlineMarker_InNonFinalHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(filePath, "a\nb\nc\n", CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -a
+            +A
+            \ No newline at end of file
+            @@
+            -c
+            +C
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<FormatException>()
+            .WithMessage("*final resulting line*");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_RejectEmptyPatch()
     {
         WorkspaceFileService sut = CreateSut();
