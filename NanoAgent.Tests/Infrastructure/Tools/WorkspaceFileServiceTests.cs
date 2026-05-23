@@ -429,6 +429,31 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_InsertRelativeToAnchoredInsertionOnlyHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "app.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "before\ntarget line\nafter\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: app.txt
+            @@ target line
+            +inserted near target
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("before\ntarget line\ninserted near target\nafter\n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_AcceptRepeatedHunkLabel_AsImplicitContextLine()
     {
         WorkspaceFileService sut = CreateSut();
