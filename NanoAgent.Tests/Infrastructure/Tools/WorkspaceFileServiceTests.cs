@@ -769,7 +769,6 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             *** Begin Patch
             *** Add File: created.txt
             +this file is created
-
             *** Update File: missing.txt
             @@
             -old
