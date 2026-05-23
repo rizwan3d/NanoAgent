@@ -1588,7 +1588,7 @@ public sealed class ReplSessionContext
         IReadOnlyList<WorkspaceFileEditTransaction> transactions,
         string? description = null)
     {
-        StringComparer pathComparer = WorkspacePath.GetPathComparer();
+        StringComparer pathComparer = NanoAgent.Application.Utilities.WorkspacePath.GetPathComparer();
         Dictionary<string, WorkspaceFileEditState> firstBeforeStates = new(pathComparer);
         Dictionary<string, WorkspaceFileEditState> lastAfterStates = new(pathComparer);
         List<string> orderedPaths = [];
