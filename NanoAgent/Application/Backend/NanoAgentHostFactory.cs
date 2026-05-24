@@ -16,7 +16,7 @@ public static class NanoAgentHostFactory
         IUiBridge uiBridge,
         string[] args)
     {
-        return Create(uiBridge, args, []);
+        return Create(uiBridge, BackendRuntimeArguments.Parse(args), []);
     }
 
     public static IHost Create(
@@ -26,7 +26,7 @@ public static class NanoAgentHostFactory
     {
         return Create(
             uiBridge,
-            args,
+            BackendRuntimeArguments.Parse(args),
             sessionMcpServers,
             autoApproveAllTools: false);
     }
@@ -37,10 +37,23 @@ public static class NanoAgentHostFactory
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
         bool autoApproveAllTools)
     {
-        ArgumentNullException.ThrowIfNull(uiBridge);
-        ArgumentNullException.ThrowIfNull(args);
+        return Create(
+            uiBridge,
+            BackendRuntimeArguments.Parse(args),
+            sessionMcpServers,
+            autoApproveAllTools);
+    }
 
-        HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+    internal static IHost Create(
+        IUiBridge uiBridge,
+        BackendRuntimeArguments runtimeArguments,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
+        bool autoApproveAllTools)
+    {
+        ArgumentNullException.ThrowIfNull(uiBridge);
+        ArgumentNullException.ThrowIfNull(runtimeArguments);
+
+        HostApplicationBuilder builder = Host.CreateApplicationBuilder(runtimeArguments.RawArgs);
 
         builder.Configuration.AddJsonFile(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
@@ -60,7 +73,7 @@ public static class NanoAgentHostFactory
         builder.Services.AddSingleton(new BackendRuntimeOptions(
             sessionMcpServers,
             autoApproveAllTools,
-            ResolveAppSurface(args)));
+            runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface)));
         builder.Services
             .AddApplication()
             .AddReplCommands()
@@ -73,31 +86,5 @@ public static class NanoAgentHostFactory
         builder.Services.AddSingleton<IStatusMessageWriter, UiStatusMessageWriter>();
 
         return builder.Build();
-    }
-
-    private static string ResolveAppSurface(IReadOnlyList<string> args)
-    {
-        for (int index = 0; index < args.Count; index++)
-        {
-            string arg = args[index];
-            if (string.Equals(arg, "--surface", StringComparison.OrdinalIgnoreCase))
-            {
-                int valueIndex = index + 1;
-                if (valueIndex < args.Count && !string.IsNullOrWhiteSpace(args[valueIndex]))
-                {
-                    return BackendRuntimeOptions.NormalizeAppSurface(args[valueIndex]);
-                }
-
-                break;
-            }
-
-            const string Prefix = "--surface=";
-            if (arg.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return BackendRuntimeOptions.NormalizeAppSurface(arg[Prefix.Length..]);
-            }
-        }
-
-        return BackendRuntimeOptions.CliSurface;
     }
 }
