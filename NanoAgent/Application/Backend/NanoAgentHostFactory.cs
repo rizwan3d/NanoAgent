@@ -16,7 +16,11 @@ public static class NanoAgentHostFactory
         IUiBridge uiBridge,
         string[] args)
     {
-        return Create(uiBridge, BackendRuntimeArguments.Parse(args), []);
+        return Create(
+            uiBridge,
+            BackendRuntimeArguments.Parse(args),
+            [],
+            autoApproveAllTools: false);
     }
 
     public static IHost Create(
