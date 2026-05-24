@@ -118,7 +118,9 @@ public static partial class Program
         if (invocation.Mode == CliMode.SingleTurn)
         {
             return await RunSingleTurnAsync(
-                invocation.BackendArgs,
+                invocation.RuntimeArguments.WithDefaults(
+                    BackendRuntimeOptions.CliSurface,
+                    skipUpdateCheck: true),
                 invocation.ProviderAuthKey,
                 invocation.Prompt ?? string.Empty,
                 invocation.JsonOutput,
@@ -128,13 +130,13 @@ public static partial class Program
         if (invocation.Mode == CliMode.Acp)
         {
             return await RunAcpAsync(
-                invocation.BackendArgs,
+                invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface).RawArgs,
                 invocation.ProviderAuthKey,
                 invocation.AutoApproveAllTools);
         }
 
         await RunInteractiveAsync(
-            invocation.BackendArgs,
+            invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface),
             invocation.ProviderAuthKey,
             invocation.AutoApproveAllTools);
         return 0;
@@ -214,12 +216,11 @@ public static partial class Program
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
-        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
         AcpServer server = new(
             Console.In,
             Console.Out,
             Console.Error,
-            backendArgs,
+            args,
             providerAuthKey,
             autoApproveAllTools);
 
@@ -254,7 +255,7 @@ public static partial class Program
     }
 
     private static async Task RunInteractiveAsync(
-        string[] args,
+        BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
@@ -262,9 +263,8 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
         INanoAgentBackend backend = new NanoAgentBackend(
-            backendArgs,
+            runtimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         AppState state = new(uiBridge, backend);
@@ -320,7 +320,7 @@ public static partial class Program
     }
 
     private static async Task<int> RunSingleTurnAsync(
-        string[] args,
+        BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
         string prompt,
         bool jsonOutput,
@@ -333,13 +333,8 @@ public static partial class Program
         }
 
         ConsoleBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs =
-        [
-            .. EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface),
-            "--no-update-check"
-        ];
         await using INanoAgentBackend backend = new NanoAgentBackend(
-            backendArgs,
+            runtimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         using CancellationTokenSource cancellation = new();
@@ -648,24 +643,4 @@ public static partial class Program
         }
     }
 
-    private static string[] EnsureSurfaceArg(
-        IReadOnlyList<string> args,
-        string appSurface)
-    {
-        for (int index = 0; index < args.Count; index++)
-        {
-            string arg = args[index];
-            if (string.Equals(arg, "--surface", StringComparison.OrdinalIgnoreCase))
-            {
-                return [.. args];
-            }
-
-            if (arg.StartsWith("--surface=", StringComparison.OrdinalIgnoreCase))
-            {
-                return [.. args];
-            }
-        }
-
-        return [.. args, "--surface", appSurface];
-    }
 }
