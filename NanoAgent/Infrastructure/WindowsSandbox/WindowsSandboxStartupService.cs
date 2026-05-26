@@ -64,6 +64,7 @@ internal sealed class WindowsSandboxStartupService : IWindowsSandboxStartupServi
     private const string SetupCanceledMessage =
         "Windows sandbox setup was canceled. Restricted Windows shell commands may fail until setup is completed.";
     private const string SetupSuccessMessage = "Windows sandbox setup is ready.";
+    private const string SetupAlreadyReadyMessage = "Windows sandbox setup is already ready.";
 
     private readonly BackendRuntimeOptions _runtimeOptions;
     private readonly IConfirmationPrompt _confirmationPrompt;
@@ -89,6 +90,39 @@ internal sealed class WindowsSandboxStartupService : IWindowsSandboxStartupServi
             return;
         }
 
+        await RunSetupAsync(
+            promptForConfirmation: true,
+            announceAlreadyReady: false,
+            announceUnsupported: false,
+            cancellationToken);
+    }
+
+    public Task<WindowsSandboxSetupResult> SetupAsync(CancellationToken cancellationToken)
+    {
+        return RunSetupAsync(
+            promptForConfirmation: false,
+            announceAlreadyReady: true,
+            announceUnsupported: true,
+            cancellationToken);
+    }
+
+    private async Task<WindowsSandboxSetupResult> RunSetupAsync(
+        bool promptForConfirmation,
+        bool announceAlreadyReady,
+        bool announceUnsupported,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            const string message = "Windows sandbox setup is only required on Windows.";
+            if (announceUnsupported)
+            {
+                await _statusMessageWriter.ShowInfoAsync(message, cancellationToken);
+            }
+
+            return new WindowsSandboxSetupResult(WindowsSandboxSetupState.NotSupported, message);
+        }
+
         bool requiresSetup;
         try
         {
@@ -96,37 +130,50 @@ internal sealed class WindowsSandboxStartupService : IWindowsSandboxStartupServi
         }
         catch (Exception exception)
         {
+            string message = "Windows sandbox setup check failed: " + exception.Message;
             await _statusMessageWriter.ShowErrorAsync(
-                "Windows sandbox setup check failed: " + exception.Message,
+                message,
                 cancellationToken);
-            return;
+            return new WindowsSandboxSetupResult(WindowsSandboxSetupState.Failed, message);
         }
 
         if (!requiresSetup)
         {
-            return;
+            if (announceAlreadyReady)
+            {
+                await _statusMessageWriter.ShowInfoAsync(
+                    SetupAlreadyReadyMessage,
+                    cancellationToken);
+            }
+
+            return new WindowsSandboxSetupResult(
+                WindowsSandboxSetupState.AlreadyReady,
+                SetupAlreadyReadyMessage);
         }
 
-        bool shouldSetup;
-        try
+        if (promptForConfirmation)
         {
-            shouldSetup = await _confirmationPrompt.PromptAsync(
-                new ConfirmationPromptRequest(
-                    PromptTitle,
-                    PromptDescription,
-                    DefaultValue: true),
-                cancellationToken);
-        }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-            await _statusMessageWriter.ShowInfoAsync(SetupSkippedMessage, cancellationToken);
-            return;
-        }
+            bool shouldSetup;
+            try
+            {
+                shouldSetup = await _confirmationPrompt.PromptAsync(
+                    new ConfirmationPromptRequest(
+                        PromptTitle,
+                        PromptDescription,
+                        DefaultValue: true),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                await _statusMessageWriter.ShowInfoAsync(SetupSkippedMessage, cancellationToken);
+                return new WindowsSandboxSetupResult(WindowsSandboxSetupState.Skipped, SetupSkippedMessage);
+            }
 
-        if (!shouldSetup)
-        {
-            await _statusMessageWriter.ShowInfoAsync(SetupSkippedMessage, cancellationToken);
-            return;
+            if (!shouldSetup)
+            {
+                await _statusMessageWriter.ShowInfoAsync(SetupSkippedMessage, cancellationToken);
+                return new WindowsSandboxSetupResult(WindowsSandboxSetupState.Skipped, SetupSkippedMessage);
+            }
         }
 
         await _statusMessageWriter.ShowInfoAsync(SetupStartingMessage, cancellationToken);
@@ -135,16 +182,20 @@ internal sealed class WindowsSandboxStartupService : IWindowsSandboxStartupServi
         {
             _bootstrapper.EnsureSetup();
             await _statusMessageWriter.ShowSuccessAsync(SetupSuccessMessage, cancellationToken);
+            return new WindowsSandboxSetupResult(WindowsSandboxSetupState.Ready, SetupSuccessMessage);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
             await _statusMessageWriter.ShowInfoAsync(SetupCanceledMessage, cancellationToken);
+            return new WindowsSandboxSetupResult(WindowsSandboxSetupState.Canceled, SetupCanceledMessage);
         }
         catch (Exception exception)
         {
+            string message = "Windows sandbox setup failed: " + exception.Message;
             await _statusMessageWriter.ShowErrorAsync(
-                "Windows sandbox setup failed: " + exception.Message,
+                message,
                 cancellationToken);
+            return new WindowsSandboxSetupResult(WindowsSandboxSetupState.Failed, message);
         }
     }
 }

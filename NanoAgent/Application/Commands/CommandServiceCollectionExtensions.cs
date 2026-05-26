@@ -39,6 +39,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, ThinkingCommandHandler>();
         services.AddSingleton<IReplCommandHandler, SessionInfoCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ShareCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, SetupSandboxCommandHandler>();
         services.AddSingleton<IReplCommandHandler, TreeCommandHandler>();
         services.AddSingleton<IReplCommandHandler, UpdateCommandHandler>();
         services.AddSingleton<IReplCommandHandler, UndoCommandHandler>();

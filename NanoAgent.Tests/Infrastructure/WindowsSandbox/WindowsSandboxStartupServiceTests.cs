@@ -175,6 +175,71 @@ public sealed class WindowsSandboxStartupServiceTests
         statusMessageWriter.VerifyAll();
     }
 
+    [Fact]
+    public async Task SetupAsync_Should_SetupImmediately_WhenSetupIsRequired()
+    {
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Setting up Windows sandbox. Windows may ask for administrator approval.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Windows sandbox setup is ready.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        FakeWindowsSandboxSetupBootstrapper bootstrapper = new()
+        {
+            RequiresSetupResult = true
+        };
+        WindowsSandboxStartupService sut = CreateSut(
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            bootstrapper,
+            enableStartupPrompts: false);
+
+        WindowsSandboxSetupResult result = await sut.SetupAsync(CancellationToken.None);
+
+        result.State.Should().Be(WindowsSandboxSetupState.Ready);
+        bootstrapper.EnsureSetupCallCount.Should().Be(1);
+        confirmationPrompt.VerifyNoOtherCalls();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
+    public async Task SetupAsync_Should_ReportAlreadyReady_WhenSetupIsNotRequired()
+    {
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Windows sandbox setup is already ready.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        FakeWindowsSandboxSetupBootstrapper bootstrapper = new()
+        {
+            RequiresSetupResult = false
+        };
+        WindowsSandboxStartupService sut = CreateSut(
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            bootstrapper,
+            enableStartupPrompts: false);
+
+        WindowsSandboxSetupResult result = await sut.SetupAsync(CancellationToken.None);
+
+        result.State.Should().Be(WindowsSandboxSetupState.AlreadyReady);
+        bootstrapper.EnsureSetupCallCount.Should().Be(0);
+        confirmationPrompt.VerifyNoOtherCalls();
+        statusMessageWriter.VerifyAll();
+    }
+
     private static WindowsSandboxStartupService CreateSut(
         IConfirmationPrompt confirmationPrompt,
         IStatusMessageWriter statusMessageWriter,
