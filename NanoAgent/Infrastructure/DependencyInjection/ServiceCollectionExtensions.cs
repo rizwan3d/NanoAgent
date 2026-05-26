@@ -175,6 +175,7 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ToolExecutionSettings>(),
                 Timeout.InfiniteTimeSpan);
         });
+        services.AddSingleton<IWindowsSandboxPlatform, WindowsSandboxPlatform>();
         services.AddSingleton<IWindowsSandboxSetupBootstrapper, WindowsSandboxSetupBootstrapper>();
         services.AddSingleton<IWindowsSandboxStartupService, WindowsSandboxStartupService>();
         services.AddSingleton<IWindowsSandboxProcessRunner, WindowsSandboxProcessRunnerAdapter>();
