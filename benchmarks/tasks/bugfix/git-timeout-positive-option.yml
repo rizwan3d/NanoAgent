@@ -1,0 +1,33 @@
+{
+  "id": "git-timeout-positive-option",
+  "name": "Honor positive git timeout option",
+  "suite": "swe-bench-lite-style",
+  "workspace": "benchmarks/fixtures/tiny-ts-bug",
+  "profile": "build",
+  "tags": [
+    "regression"
+  ],
+  "prompt": "Fix the positive timeout handling bug in `gitClient.js`. Do not edit configuration files. Run `node gitClient.js` before finishing.",
+  "validationCommands": [
+    {
+      "command": [
+        "node",
+        "gitClient.js"
+      ],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": [
+        "OK"
+      ]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": [
+      "gitClient.js"
+    ],
+    "changedFilesExclude": [
+      "config.json",
+      "validate-config.js"
+    ]
+  }
+}

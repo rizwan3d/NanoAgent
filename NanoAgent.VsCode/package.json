@@ -179,6 +179,11 @@
           "type": "string",
           "description": "The working directory for the NanoAgent CLI. Defaults to workspace root."
         },
+        "nanoagent.acpAuthenticationToken": {
+          "type": "string",
+          "default": "",
+          "markdownDescription": "Optional ACP authentication token. Used when the ACP server returns `authMethods: [\"token\"]`. The extension checks VS Code SecretStorage key `nanoagent.acpAuthToken` first, then this setting, then environment variable `NANOAGENT_ACP_AUTH_TOKEN`."
+        },
         "nanoagent.autoStart": {
           "type": "boolean",
           "default": false,

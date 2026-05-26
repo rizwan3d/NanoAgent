@@ -14,6 +14,9 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
     private static readonly HashSet<string> MemoryWriteActions = new(
         ["save", "edit", "delete", "write", "update", "append"],
         StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<string> WorkspaceMetadataRoots = new(
+        [".git", ".nanoagent"],
+        StringComparer.OrdinalIgnoreCase);
 
     private readonly MemorySettings _memorySettings;
     private readonly PermissionSettings _settings;
@@ -76,6 +79,15 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
             {
                 return result;
             }
+        }
+
+        PermissionEvaluationResult? destructiveDeleteResult = EvaluateDestructiveWorkspaceDeletion(
+            permissionPolicy,
+            context.ToolExecutionContext,
+            workspaceRoot);
+        if (destructiveDeleteResult is not null)
+        {
+            return destructiveDeleteResult;
         }
 
         if (permissionPolicy.Patch is not null)
@@ -527,6 +539,49 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         return PermissionEvaluationResult.Allowed();
     }
 
+    private PermissionEvaluationResult? EvaluateDestructiveWorkspaceDeletion(
+        ToolPermissionPolicy permissionPolicy,
+        ToolExecutionContext context,
+        string workspaceRoot)
+    {
+        if (!string.Equals(context.ToolName, AgentToolNames.FileDelete, StringComparison.Ordinal) ||
+            !ToolArguments.TryGetNonEmptyString(context.Arguments, "path", out string? requestedPath))
+        {
+            return null;
+        }
+
+        string sessionRelativePath;
+        string candidatePath;
+        try
+        {
+            sessionRelativePath = context.Session.ResolvePathFromWorkingDirectory(requestedPath!);
+            candidatePath = WorkspacePath.Resolve(workspaceRoot, sessionRelativePath);
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
+
+        if (!File.Exists(candidatePath) ||
+            IsWorkspaceMetadataPath(workspaceRoot, candidatePath) ||
+            !WouldDeleteLastProjectFile(workspaceRoot, candidatePath))
+        {
+            return null;
+        }
+
+        string relativePath = WorkspacePath.ToRelativePath(workspaceRoot, candidatePath);
+        PermissionRequestDescriptor request = CreateRequestDescriptor(
+            context,
+            permissionPolicy,
+            [relativePath]);
+
+        return PermissionEvaluationResult.Denied(
+            "workspace_wipe_blocked",
+            $"Tool '{context.ToolName}' cannot delete '{requestedPath}' because it would remove the last non-metadata project file in the workspace. Refuse destructive workspace wipe requests and ask for a narrower target instead.",
+            PermissionMode.Deny,
+            request);
+    }
+
     private static IReadOnlyList<string> ExtractPatchPaths(string patchText)
     {
         List<string> paths = [];
@@ -567,6 +622,34 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
 
         path = line[header.Length..].Trim();
         return !string.IsNullOrWhiteSpace(path);
+    }
+
+    private static bool WouldDeleteLastProjectFile(
+        string workspaceRoot,
+        string candidatePath)
+    {
+        string[] projectFiles = Directory.EnumerateFiles(
+                workspaceRoot,
+                "*",
+                SearchOption.AllDirectories)
+            .Where(path => !IsWorkspaceMetadataPath(workspaceRoot, path))
+            .ToArray();
+
+        return projectFiles.Length == 1 &&
+               string.Equals(
+                   Path.GetFullPath(projectFiles[0]),
+                   Path.GetFullPath(candidatePath),
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsWorkspaceMetadataPath(
+        string workspaceRoot,
+        string path)
+    {
+        string relativePath = WorkspacePath.ToRelativePath(workspaceRoot, path);
+        string[] segments = relativePath.Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length > 0 &&
+               WorkspaceMetadataRoots.Contains(segments[0]);
     }
 
     private PermissionEvaluationResult EvaluateShellPolicy(

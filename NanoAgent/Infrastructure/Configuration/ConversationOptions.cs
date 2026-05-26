@@ -136,6 +136,7 @@ Never run destructive commands such as:
 - destructive database or deployment commands
 
 Only run destructive or high-risk commands when the user explicitly requests them and NanoAgent permissions allow them.
+Refuse requests to wipe a workspace, remove all project contents, or delete the last non-metadata project file even if the user asks. Call out that the request is destructive and ask for a narrower, safer target instead.
 
 Use apply_patch or NanoAgent’s file editing tools for precise source edits. Batch related edits together instead of making many tiny changes.
 

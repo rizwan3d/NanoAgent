@@ -83,7 +83,9 @@ type ChatCommandSuggestion = {
 };
 
 const CHAT_COMMANDS: ChatCommandSuggestion[] = [
+    { command: '/a', usage: '/a', description: 'Alias for /agent.', insertText: '/a' },
     { command: '/allow', usage: '/allow <tool-or-tag> [pattern]', description: 'Add a session-scoped allow override.', insertText: '/allow ' },
+    { command: '/agent', usage: '/agent', description: 'List available subagents.', insertText: '/agent' },
     { command: '/budget', usage: '/budget [status|local [path]|cloud]', description: 'Show or configure budget controls.', insertText: '/budget ' },
     { command: '/clear', usage: '/clear', description: 'Clear the chat view.', insertText: '/clear' },
     { command: '/clone', usage: '/clone', description: 'Duplicate the current session.', insertText: '/clone' },
@@ -1175,6 +1177,66 @@ function getChatWebviewContent(nonce: string) {
             text-transform: uppercase;
         }
 
+        .agent-thread-list {
+            display: grid;
+            gap: 7px;
+        }
+
+        .agent-thread-item {
+            width: 100%;
+            display: grid;
+            gap: 4px;
+            padding: 7px;
+            border: 1px solid transparent;
+            border-radius: 6px;
+            color: inherit;
+            text-align: left;
+            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            cursor: pointer;
+        }
+
+        .agent-thread-item:hover,
+        .agent-thread-item.active {
+            border-color: var(--focus);
+            background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--input-bg) 88%, transparent));
+        }
+
+        .agent-thread-topline {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .agent-thread-name {
+            color: var(--fg);
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .agent-thread-status {
+            color: var(--muted);
+            font-size: 10px;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .agent-thread-task,
+        .agent-thread-meta,
+        .agent-thread-output {
+            color: var(--muted);
+            font-size: 11px;
+            line-height: 1.4;
+            overflow-wrap: anywhere;
+        }
+
+        .agent-thread-output {
+            padding-top: 4px;
+            color: var(--fg);
+            border-top: 1px solid var(--border);
+            white-space: pre-wrap;
+        }
+
         .tool-card {
             display: grid;
             gap: 7px;
@@ -1856,6 +1918,13 @@ function getChatWebviewContent(nonce: string) {
                         </div>
                         <div id="plan-list" class="plan-list"></div>
                     </section>
+                    <section class="section section-scroll">
+                        <div class="section-header">
+                            <h2>Agents</h2>
+                            <span id="agent-count" class="section-count">0 threads</span>
+                        </div>
+                        <div id="agent-thread-list" class="agent-thread-list"></div>
+                    </section>
                 </aside>
                 <div class="composer">
                     <div id="suggestions" class="suggestions hidden"></div>
@@ -1917,6 +1986,8 @@ function getChatWebviewContent(nonce: string) {
         const sidePane = document.getElementById('activity-pane');
         const planList = document.getElementById('plan-list');
         const planCount = document.getElementById('plan-count');
+        const agentThreadList = document.getElementById('agent-thread-list');
+        const agentCount = document.getElementById('agent-count');
         const modalBackdrop = document.getElementById('modal-backdrop');
         const modalTitle = document.getElementById('modal-title');
         const modalDescription = document.getElementById('modal-description');
@@ -1936,9 +2007,11 @@ function getChatWebviewContent(nonce: string) {
         let activeAutoSelectTimer = null;
         let progressIndicator = null;
         let hasPlanActivity = false;
+        let activeAgentThreadId = '';
         const queuedClientRequests = [];
         const toolCalls = new Map();
         const toolMessageElements = new Map();
+        const agentThreads = new Map();
         const fallbackProfiles = [
             { name: 'build', mode: 'primary', description: 'Default coding agent profile' },
             { name: 'plan', mode: 'primary', description: 'Read-only planning profile' },
@@ -2186,6 +2259,14 @@ function getChatWebviewContent(nonce: string) {
                 }
             }
 
+            if ((event.key === 'ArrowDown' || event.key === 'ArrowUp') &&
+                inputField.value.trim().length === 0 &&
+                agentThreads.size > 0) {
+                event.preventDefault();
+                switchAgentThread(event.key === 'ArrowDown' ? 1 : -1);
+                return;
+            }
+
             if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 sendCurrentInput();
@@ -2213,7 +2294,10 @@ function getChatWebviewContent(nonce: string) {
                 progressIndicator = null;
                 toolCalls.clear();
                 toolMessageElements.clear();
+                agentThreads.clear();
+                activeAgentThreadId = '';
                 renderPlan(null);
+                renderAgentThreads();
                 updateStatusRail();
             } else if (message.command === 'setSessionInfo') {
                 sessionInfo = message.sessionInfo;
@@ -2244,7 +2328,10 @@ function getChatWebviewContent(nonce: string) {
             } else if (message.command === 'clearToolCalls') {
                 toolCalls.clear();
                 toolMessageElements.clear();
+                agentThreads.clear();
+                activeAgentThreadId = '';
                 renderTools();
+                renderAgentThreads();
             } else if (message.command === 'setPlan') {
                 renderPlan(message.plan);
             } else if (message.command === 'showClientRequest') {
@@ -2523,7 +2610,9 @@ function getChatWebviewContent(nonce: string) {
                 merged.rawInput = current.rawInput;
             }
             toolCalls.set(toolCall.toolCallId, merged);
+            trackAgentThreads(merged);
             renderToolMessage(merged);
+            renderAgentThreads();
             updateStatusRail();
         }
 
@@ -2645,7 +2734,178 @@ function getChatWebviewContent(nonce: string) {
         }
 
         function updateActivityVisibility() {
-            sidePane.classList.toggle('visible', activeView === 'chat' && hasPlanActivity);
+            sidePane.classList.toggle(
+                'visible',
+                activeView === 'chat' && (hasPlanActivity || agentThreads.size > 0));
+        }
+
+        function trackAgentThreads(call) {
+            const descriptors = createAgentThreadDescriptors(call);
+            if (descriptors.length === 0) {
+                return;
+            }
+
+            descriptors.forEach(descriptor => {
+                const current = agentThreads.get(descriptor.id) || {};
+                const merged = Object.assign({}, current, descriptor, {
+                    updatedAt: Date.now()
+                });
+                agentThreads.set(descriptor.id, merged);
+            });
+
+            if (!activeAgentThreadId || !agentThreads.has(activeAgentThreadId)) {
+                activeAgentThreadId = descriptors[0].id;
+            }
+        }
+
+        function createAgentThreadDescriptors(call) {
+            if (!call || !call.toolCallId) {
+                return [];
+            }
+
+            const rawInput = call.rawInput && typeof call.rawInput === 'object'
+                ? call.rawInput
+                : null;
+            const output = Array.isArray(call.content) ? call.content.join('\n').trim() : '';
+            const status = String(call.status || 'pending');
+
+            if (rawInput && typeof rawInput.agent === 'string' && rawInput.agent.trim()) {
+                return [{
+                    id: call.toolCallId,
+                    toolCallId: call.toolCallId,
+                    agent: rawInput.agent.trim(),
+                    task: typeof rawInput.task === 'string' ? rawInput.task.trim() : '',
+                    context: typeof rawInput.context === 'string' ? rawInput.context.trim() : '',
+                    status,
+                    output,
+                    source: 'delegate'
+                }];
+            }
+
+            if (rawInput && Array.isArray(rawInput.tasks)) {
+                return rawInput.tasks
+                    .map((task, index) => {
+                        if (!task || typeof task !== 'object' || typeof task.agent !== 'string' || !task.agent.trim()) {
+                            return null;
+                        }
+
+                        return {
+                            id: call.toolCallId + ':' + index,
+                            toolCallId: call.toolCallId,
+                            agent: task.agent.trim(),
+                            task: typeof task.task === 'string' ? task.task.trim() : '',
+                            context: typeof task.context === 'string' ? task.context.trim() : '',
+                            ownership: typeof task.ownership === 'string' ? task.ownership.trim() : '',
+                            status,
+                            output,
+                            source: 'orchestrate'
+                        };
+                    })
+                    .filter(Boolean);
+            }
+
+            return [];
+        }
+
+        function renderAgentThreads() {
+            const threads = getOrderedAgentThreads();
+            agentThreadList.textContent = '';
+            agentCount.textContent = threads.length + (threads.length === 1 ? ' thread' : ' threads');
+            updateActivityVisibility();
+
+            if (threads.length === 0) {
+                activeAgentThreadId = '';
+                return;
+            }
+
+            if (!activeAgentThreadId || !agentThreads.has(activeAgentThreadId)) {
+                activeAgentThreadId = threads[0].id;
+            }
+
+            threads.forEach(thread => {
+                const item = document.createElement('button');
+                item.type = 'button';
+                item.className = 'agent-thread-item' + (thread.id === activeAgentThreadId ? ' active' : '');
+                item.addEventListener('click', () => {
+                    activeAgentThreadId = thread.id;
+                    renderAgentThreads();
+                });
+
+                const topLine = document.createElement('div');
+                topLine.className = 'agent-thread-topline';
+
+                const name = document.createElement('div');
+                name.className = 'agent-thread-name';
+                name.textContent = '@' + thread.agent;
+                topLine.appendChild(name);
+
+                const status = document.createElement('div');
+                status.className = 'agent-thread-status';
+                status.textContent = thread.status || 'pending';
+                topLine.appendChild(status);
+
+                item.appendChild(topLine);
+
+                if (thread.task) {
+                    const task = document.createElement('div');
+                    task.className = 'agent-thread-task';
+                    task.textContent = thread.task;
+                    item.appendChild(task);
+                }
+
+                const metaParts = [];
+                if (thread.source === 'orchestrate') {
+                    metaParts.push('orchestrated');
+                }
+                if (thread.ownership) {
+                    metaParts.push(thread.ownership);
+                }
+                if (thread.context) {
+                    metaParts.push(thread.context);
+                }
+                if (metaParts.length > 0) {
+                    const meta = document.createElement('div');
+                    meta.className = 'agent-thread-meta';
+                    meta.textContent = metaParts.join(' | ');
+                    item.appendChild(meta);
+                }
+
+                if (thread.id === activeAgentThreadId && thread.output) {
+                    const output = document.createElement('div');
+                    output.className = 'agent-thread-output';
+                    renderLinkifiedText(output, truncateForAgentInspector(thread.output));
+                    item.appendChild(output);
+                }
+
+                agentThreadList.appendChild(item);
+            });
+        }
+
+        function switchAgentThread(delta) {
+            const threads = getOrderedAgentThreads();
+            if (threads.length === 0) {
+                return;
+            }
+
+            const currentIndex = Math.max(0, threads.findIndex(thread => thread.id === activeAgentThreadId));
+            const nextIndex = (currentIndex + delta + threads.length) % threads.length;
+            activeAgentThreadId = threads[nextIndex].id;
+            renderAgentThreads();
+        }
+
+        function getOrderedAgentThreads() {
+            return Array.from(agentThreads.values()).sort((left, right) => {
+                return Number(right.updatedAt || 0) - Number(left.updatedAt || 0);
+            });
+        }
+
+        function truncateForAgentInspector(text) {
+            const normalized = String(text || '').trim();
+            if (normalized.length <= 500) {
+                return normalized;
+            }
+
+            return normalized.slice(0, 497) + '...';
         }
 
         function formatPayload(value) {
@@ -3098,6 +3358,7 @@ function getChatWebviewContent(nonce: string) {
 
         renderContext();
         renderPlan(null);
+        renderAgentThreads();
         renderTools();
         updateStatusRail();
         updateComposerState();

@@ -1,0 +1,33 @@
+{
+  "id": "git-timeout-explicit-ms",
+  "name": "Respect explicit git timeout milliseconds",
+  "suite": "swe-bench-lite-style",
+  "workspace": "benchmarks/fixtures/tiny-ts-bug",
+  "profile": "build",
+  "tags": [
+    "regression"
+  ],
+  "prompt": "Fix `gitClient.js` so an explicit `timeoutMs` option is returned when it is a positive finite number. Keep the diff tiny and run `node gitClient.js`.",
+  "validationCommands": [
+    {
+      "command": [
+        "node",
+        "gitClient.js"
+      ],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": [
+        "OK"
+      ]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": [
+      "gitClient.js"
+    ],
+    "changedFilesExclude": [
+      "config.json",
+      "validate-config.js"
+    ]
+  }
+}

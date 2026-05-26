@@ -91,7 +91,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         new(
             "Ollama",
             OnboardingProviderChoice.Ollama,
-            "Use the local Ollama OpenAI-compatible API.")
+            "Use the local Ollama OpenAI-compatible API."),
+        new(
+            "LM Studio",
+            OnboardingProviderChoice.LmStudio,
+            "Use the local LM Studio OpenAI-compatible API.")
     ];
 
     private readonly ISelectionPrompt _selectionPrompt;
@@ -221,6 +225,15 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     OnboardingProviderChoice.OpenCodeZen => _profileFactory.CreateOpenCodeZen(),
                     OnboardingProviderChoice.OllamaCloud => _profileFactory.CreateOllamaCloud(),
                     OnboardingProviderChoice.Ollama => _profileFactory.CreateOllama(),
+                    OnboardingProviderChoice.LmStudio => _profileFactory.CreateLmStudio(
+                        await PromptUntilValidAsync(
+                            promptCancellationToken => _textPrompt.PromptAsync(
+                                new TextPromptRequest(
+                                    "Base URL",
+                                    "Enter the LM Studio base URL, or leave empty to use http://127.0.0.1:1234/v1."),
+                                promptCancellationToken),
+                            ValidateOptionalBaseUrl,
+                            cancellationToken)),
                     OnboardingProviderChoice.GoogleAiStudio => _profileFactory.CreateGoogleAiStudio(),
                     OnboardingProviderChoice.Anthropic => _profileFactory.CreateAnthropic(),
                     OnboardingProviderChoice.OpenAiCompatible => _profileFactory.CreateCompatible(
@@ -425,5 +438,12 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 
             await _statusMessageWriter.ShowErrorAsync(validationResult.ErrorMessage!, cancellationToken);
         }
+    }
+
+    private InputValidationResult ValidateOptionalBaseUrl(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? InputValidationResult.Success(string.Empty)
+            : _inputValidator.ValidateBaseUrl(value);
     }
 }

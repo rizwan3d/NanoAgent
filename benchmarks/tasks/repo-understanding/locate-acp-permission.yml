@@ -1,0 +1,14 @@
+{
+  "id": "locate-acp-permission",
+  "name": "Locate editor permission request flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Find files involved in sending editor permission requests and handling permission replies.",
+  "response": {
+    "containsAny": ["AcpServer.cs", "AcpClient.kt", "session/request_permission", "AcpServerTests.cs"],
+    "containsAtLeast": 2
+  }
+}

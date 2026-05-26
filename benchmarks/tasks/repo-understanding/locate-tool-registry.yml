@@ -1,0 +1,13 @@
+{
+  "id": "locate-tool-registry",
+  "name": "Locate tool registry flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Name files that register tools, parse permission requirements, and invoke tools.",
+  "response": {
+    "containsAny": ["ToolRegistry.cs", "RegistryBackedToolInvoker.cs", "IToolRegistry", "IToolInvoker", "ToolPermissionParser.cs"],
+    "containsAtLeast": 3
+  }
+}

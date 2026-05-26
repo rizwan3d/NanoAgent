@@ -1,0 +1,14 @@
+{
+  "id": "locate-permission-evaluation",
+  "name": "Locate permission evaluation files",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Name the key files that parse and evaluate tool permission decisions. Answer with paths only plus one short reason each.",
+  "response": {
+    "containsAny": ["ToolPermissionParser.cs", "ToolPermissionEvaluator.cs", "RegistryBackedToolInvoker.cs", "ToolPermissionPolicy.cs"],
+    "containsAtLeast": 3
+  }
+}

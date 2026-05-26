@@ -3,6 +3,7 @@ using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.WindowsSandbox;
+using NanoAgent.Infrastructure.Telemetry;
 using Spectre.Console;
 using System.Text;
 
@@ -74,7 +75,8 @@ public static partial class Program
         new("/tree", "/tree", "Navigate saved sessions.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
         new("/update", "/update [now]", "Check for updates.", false),
-        new("/use", "/use <model>", "Switch the active model directly.", true)
+        new("/use", "/use <model>", "Switch the active model directly.", true),
+        new("/version", "/version", "Show the current NanoAgent CLI version.", false)
     ];
 
     public static async Task<int> Main(string[]? args)
@@ -107,10 +109,18 @@ public static partial class Program
             return 0;
         }
 
+        if (invocation.ShowVersion)
+        {
+            Console.Out.WriteLine(GetVersionText());
+            return 0;
+        }
+
         if (invocation.Mode == CliMode.SingleTurn)
         {
             return await RunSingleTurnAsync(
-                invocation.BackendArgs,
+                invocation.RuntimeArguments.WithDefaults(
+                    BackendRuntimeOptions.CliSurface,
+                    skipUpdateCheck: true),
                 invocation.ProviderAuthKey,
                 invocation.Prompt ?? string.Empty,
                 invocation.JsonOutput,
@@ -120,13 +130,13 @@ public static partial class Program
         if (invocation.Mode == CliMode.Acp)
         {
             return await RunAcpAsync(
-                invocation.BackendArgs,
+                invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface).RawArgs,
                 invocation.ProviderAuthKey,
                 invocation.AutoApproveAllTools);
         }
 
         await RunInteractiveAsync(
-            invocation.BackendArgs,
+            invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface),
             invocation.ProviderAuthKey,
             invocation.AutoApproveAllTools);
         return 0;
@@ -206,12 +216,11 @@ public static partial class Program
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
-        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
         AcpServer server = new(
             Console.In,
             Console.Out,
             Console.Error,
-            backendArgs,
+            args,
             providerAuthKey,
             autoApproveAllTools);
 
@@ -246,7 +255,7 @@ public static partial class Program
     }
 
     private static async Task RunInteractiveAsync(
-        string[] args,
+        BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
@@ -254,11 +263,13 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs = EnsureStartupPromptsArg(
-            EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface),
-            enabled: true);
+        BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
+                EnsureStartupPromptsArg(runtimeArguments.RawArgs, enabled: true))
+            .WithDefaults(
+                runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
+                runtimeArguments.SkipUpdateCheck);
         INanoAgentBackend backend = new NanoAgentBackend(
-            backendArgs,
+            interactiveRuntimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         AppState state = new(uiBridge, backend);
@@ -314,7 +325,7 @@ public static partial class Program
     }
 
     private static async Task<int> RunSingleTurnAsync(
-        string[] args,
+        BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
         string prompt,
         bool jsonOutput,
@@ -327,13 +338,8 @@ public static partial class Program
         }
 
         ConsoleBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs =
-        [
-            .. EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface),
-            "--no-update-check"
-        ];
         await using INanoAgentBackend backend = new NanoAgentBackend(
-            backendArgs,
+            runtimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         using CancellationTokenSource cancellation = new();
@@ -465,8 +471,8 @@ public static partial class Program
     private static void WriteUsage(TextWriter writer)
     {
         writer.WriteLine(
-            """
-            NanoAgent CLI
+            $"""
+            {GetVersionText()}
 
             Usage:
               nanoai [options]                    Start the interactive terminal UI
@@ -488,11 +494,17 @@ public static partial class Program
               --session <id>       Alias for --section
               --profile <name>     Use an agent profile
               --thinking <effort>  Override thinking effort
+              -v, --version        Show version
               -h, --help           Show help
 
             Note:
               Run nanoai once to complete provider setup before using one-shot prompts.
             """);
+    }
+
+    private static string GetVersionText()
+    {
+        return $"NanoAgent CLI {ProductTelemetryHelpers.GetNanoAgentVersion()}";
     }
 
     private static void WriteFatalExitMessage(AppState state)
@@ -634,27 +646,6 @@ public static partial class Program
                 state.AddMessage(role.Value, message.Content);
             }
         }
-    }
-
-    private static string[] EnsureSurfaceArg(
-        IReadOnlyList<string> args,
-        string appSurface)
-    {
-        for (int index = 0; index < args.Count; index++)
-        {
-            string arg = args[index];
-            if (string.Equals(arg, "--surface", StringComparison.OrdinalIgnoreCase))
-            {
-                return [.. args];
-            }
-
-            if (arg.StartsWith("--surface=", StringComparison.OrdinalIgnoreCase))
-            {
-                return [.. args];
-            }
-        }
-
-        return [.. args, "--surface", appSurface];
     }
 
     private static string[] EnsureStartupPromptsArg(
