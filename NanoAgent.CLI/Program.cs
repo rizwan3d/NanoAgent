@@ -70,6 +70,7 @@ public static partial class Program
         new("/session", "/session", "Show session info and stats.", false),
         new("/setting", "/setting [area]", "Open the NanoAgent settings picker.", false),
         new("/share", "/share", "Share session as a secret GitHub gist.", false),
+        new("/setup-sandbox", "/setup-sandbox", "Set up Windows sandbox support for restricted shell commands.", false),
         new("/terminals", "/terminals [stop <id>|stop all]", "List or stop background terminals.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
         new("/tree", "/tree", "Navigate saved sessions.", false),
@@ -263,8 +264,13 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
+        BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
+                EnsureStartupPromptsArg(runtimeArguments.RawArgs, enabled: true))
+            .WithDefaults(
+                runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
+                runtimeArguments.SkipUpdateCheck);
         INanoAgentBackend backend = new NanoAgentBackend(
-            runtimeArguments,
+            interactiveRuntimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         AppState state = new(uiBridge, backend);
@@ -643,4 +649,24 @@ public static partial class Program
         }
     }
 
+    private static string[] EnsureStartupPromptsArg(
+        IReadOnlyList<string> args,
+        bool enabled)
+    {
+        for (int index = 0; index < args.Count; index++)
+        {
+            string arg = args[index];
+            if (string.Equals(arg, "--startup-prompts", StringComparison.OrdinalIgnoreCase))
+            {
+                return [.. args];
+            }
+
+            if (arg.StartsWith("--startup-prompts=", StringComparison.OrdinalIgnoreCase))
+            {
+                return [.. args];
+            }
+        }
+
+        return [.. args, "--startup-prompts", enabled ? "enabled" : "disabled"];
+    }
 }
