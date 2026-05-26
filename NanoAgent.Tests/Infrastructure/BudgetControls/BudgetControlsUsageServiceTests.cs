@@ -11,6 +11,55 @@ namespace NanoAgent.Tests.Infrastructure.BudgetControls;
 public sealed class BudgetControlsUsageServiceTests
 {
     [Fact]
+    public async Task RecordUsageAsync_Should_DenySymlinkFileBreakout()
+    {
+        string workspacePath = CreateWorkspace();
+        string outsideDirectory = CreateOutsideDirectory();
+        string outsideFile = Path.Combine(outsideDirectory, "outside-budget.json");
+        string budgetDirectory = Path.Combine(workspacePath, ".nanoagent");
+        string linkedBudgetPath = Path.Combine(budgetDirectory, "budget.json");
+        await File.WriteAllTextAsync(outsideFile, """{"source":"outside"}""", CancellationToken.None);
+        Directory.CreateDirectory(budgetDirectory);
+
+        try
+        {
+            if (!TryCreateFileSymlink(linkedBudgetPath, outsideFile))
+            {
+                return;
+            }
+
+            InMemoryBudgetConfigurationStore configurationStore = new()
+            {
+                Settings = BudgetControlsSettings.Local(".nanoagent/budget.json")
+            };
+            BudgetControlsUsageService sut = new(
+                new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+                configurationStore,
+                new InMemoryBudgetSecretStore());
+
+            Func<Task> act = () => sut.RecordUsageAsync(
+                CreateSession(workspacePath),
+                new BudgetControlsUsageDelta(
+                    InputTokens: 100,
+                    CachedInputTokens: 0,
+                    OutputTokens: 50),
+                CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*workspace*");
+            (await File.ReadAllTextAsync(outsideFile, CancellationToken.None))
+                .Should()
+                .Be("""{"source":"outside"}""");
+        }
+        finally
+        {
+            DeleteFileSystemEntryIfExists(linkedBudgetPath);
+            DeleteDirectoryTreeIfExists(outsideDirectory);
+        }
+    }
+
+    [Fact]
     public async Task RecordUsageAsync_Should_UpdateLocalUsageAndCost()
     {
         string workspacePath = CreateWorkspace();
@@ -146,6 +195,88 @@ public sealed class BudgetControlsUsageServiceTests
             Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workspacePath);
         return workspacePath;
+    }
+
+    private static string CreateOutsideDirectory()
+    {
+        string outsideRoot = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-budget-outside-tests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(outsideRoot);
+        return outsideRoot;
+    }
+
+    private static bool TryCreateFileSymlink(
+        string linkPath,
+        string targetPath)
+    {
+        try
+        {
+            File.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception exception) when (IsSymlinkCreationUnavailable(exception))
+        {
+            return false;
+        }
+    }
+
+    private static bool IsSymlinkCreationUnavailable(Exception exception)
+    {
+        return exception is UnauthorizedAccessException or PlatformNotSupportedException ||
+            OperatingSystem.IsWindows() && exception is IOException;
+    }
+
+    private static void DeleteFileSystemEntryIfExists(string path)
+    {
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(path);
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                Directory.Delete(path);
+                return;
+            }
+
+            File.Delete(path);
+        }
+        catch (FileNotFoundException)
+        {
+        }
+        catch (DirectoryNotFoundException)
+        {
+        }
+    }
+
+    private static void DeleteDirectoryTreeIfExists(string directoryPath)
+    {
+        if (!Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        foreach (string entry in Directory.EnumerateFileSystemEntries(directoryPath))
+        {
+            FileAttributes attributes = File.GetAttributes(entry);
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                if (attributes.HasFlag(FileAttributes.ReparsePoint))
+                {
+                    Directory.Delete(entry);
+                }
+                else
+                {
+                    DeleteDirectoryTreeIfExists(entry);
+                }
+
+                continue;
+            }
+
+            File.Delete(entry);
+        }
+
+        Directory.Delete(directoryPath);
     }
 
     private sealed class InMemoryBudgetConfigurationStore : IBudgetControlsConfigurationStore

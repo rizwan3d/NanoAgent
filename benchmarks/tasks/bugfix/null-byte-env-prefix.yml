@@ -1,0 +1,34 @@
+{
+  "id": "null-byte-env-prefix",
+  "name": "Keep environment text before null byte",
+  "suite": "swe-bench-lite-style",
+  "workspace": "benchmarks/fixtures/tiny-dotnet-bug",
+  "profile": "build",
+  "tags": [
+    "regression"
+  ],
+  "prompt": "Fix `Program.cs` so environment values are trimmed at the first null byte and the prefix is preserved. Validate with `dotnet run --project TinyDotnetBug.csproj`.",
+  "validationCommands": [
+    {
+      "command": [
+        "dotnet",
+        "run",
+        "--project",
+        "TinyDotnetBug.csproj"
+      ],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": [
+        "OK"
+      ]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": [
+      "Program.cs"
+    ],
+    "changedFilesExclude": [
+      "TinyDotnetBug.csproj"
+    ]
+  }
+}

@@ -538,6 +538,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToLmStudioEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_lm_studio",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from LM Studio."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
+                "lm-studio-key",
+                "qwen3-8b",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:4321/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer lm-studio-key");
+        handler.RequestBody.Should().Contain("\"model\":\"qwen3-8b\"");
+        payload.ProviderKind.Should().Be(ProviderKind.LmStudio);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatRequestToOllamaCloudEndpoint_When_ProviderIsSelected()
     {
         RecordingHandler handler = new("""

@@ -1,3 +1,5 @@
+using NanoAgent.Application.Backend;
+
 namespace NanoAgent.CLI;
 
 internal enum CliMode
@@ -9,31 +11,35 @@ internal enum CliMode
 
 internal sealed record CliInvocation(
     CliMode Mode,
-    string[] BackendArgs,
+    BackendRuntimeArguments RuntimeArguments,
     string? ProviderAuthKey,
     string? Prompt,
     bool JsonOutput,
     bool AutoApproveAllTools,
-    bool ShowHelp)
+    bool ShowHelp,
+    bool ShowVersion)
 {
-    private static readonly string[] BackendOptionsWithValues =
-    [
-        "--section",
-        "--session",
-        "--profile",
-        "--thinking",
-        "--surface",
-        "--startup-prompts"
-    ];
+    public string[] BackendArgs => RuntimeArguments.RawArgs;
 
     public static CliInvocation Help { get; } = new(
         CliMode.Interactive,
-        [],
+        BackendRuntimeArguments.Empty,
         ProviderAuthKey: null,
         Prompt: null,
         JsonOutput: false,
         AutoApproveAllTools: false,
-        ShowHelp: true);
+        ShowHelp: true,
+        ShowVersion: false);
+
+    public static CliInvocation Version { get; } = new(
+        CliMode.Interactive,
+        BackendRuntimeArguments.Empty,
+        ProviderAuthKey: null,
+        Prompt: null,
+        JsonOutput: false,
+        AutoApproveAllTools: false,
+        ShowHelp: false,
+        ShowVersion: true);
 
     public static CliInvocation Parse(
         IReadOnlyList<string> args,
@@ -43,7 +49,7 @@ internal sealed record CliInvocation(
         ArgumentNullException.ThrowIfNull(args);
         ArgumentNullException.ThrowIfNull(readStandardInput);
 
-        List<string> backendArgs = [];
+        BackendRuntimeArguments.Builder runtimeArgumentsBuilder = new();
         List<string> promptParts = [];
         string? providerAuthKey = null;
         bool forceAcp = false;
@@ -65,6 +71,11 @@ internal sealed record CliInvocation(
             if (IsHelpOption(arg))
             {
                 return Help;
+            }
+
+            if (IsVersionOption(arg))
+            {
+                return Version;
             }
 
             if (IsAcpOption(arg))
@@ -92,7 +103,7 @@ internal sealed record CliInvocation(
                 continue;
             }
 
-            if (TryConsumeBackendOption(args, ref index, backendArgs))
+            if (runtimeArgumentsBuilder.TryConsume(args, ref index))
             {
                 continue;
             }
@@ -141,12 +152,13 @@ internal sealed record CliInvocation(
 
             return new CliInvocation(
                 CliMode.Acp,
-                backendArgs.ToArray(),
+                runtimeArgumentsBuilder.Build(),
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
-                ShowHelp: false);
+                ShowHelp: false,
+                ShowVersion: false);
         }
 
         if (forceInteractive)
@@ -163,12 +175,13 @@ internal sealed record CliInvocation(
 
             return new CliInvocation(
                 CliMode.Interactive,
-                backendArgs.ToArray(),
+                runtimeArgumentsBuilder.Build(),
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
-                ShowHelp: false);
+                ShowHelp: false,
+                ShowVersion: false);
         }
 
         if (readPromptFromStandardInput)
@@ -200,28 +213,36 @@ internal sealed record CliInvocation(
 
             return new CliInvocation(
                 CliMode.Interactive,
-                backendArgs.ToArray(),
+                runtimeArgumentsBuilder.Build(),
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
-                ShowHelp: false);
+                ShowHelp: false,
+                ShowVersion: false);
         }
 
         return new CliInvocation(
             CliMode.SingleTurn,
-            backendArgs.ToArray(),
+            runtimeArgumentsBuilder.Build(),
             providerAuthKey,
             prompt,
             jsonOutput,
             autoApproveAllTools,
-            ShowHelp: false);
+            ShowHelp: false,
+            ShowVersion: false);
     }
 
     private static bool IsHelpOption(string arg)
     {
         return string.Equals(arg, "-h", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(arg, "--help", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsVersionOption(string arg)
+    {
+        return string.Equals(arg, "-v", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsAcpOption(string arg)
@@ -257,36 +278,6 @@ internal sealed record CliInvocation(
         out string? providerAuthKey)
     {
         return TryReadOptionValue(args, ref index, "--provider-auth-key", out providerAuthKey);
-    }
-
-    private static bool TryConsumeBackendOption(
-        IReadOnlyList<string> args,
-        ref int index,
-        List<string> backendArgs)
-    {
-        foreach (string optionName in BackendOptionsWithValues)
-        {
-            int originalIndex = index;
-            if (!TryReadOptionValue(args, ref index, optionName, out _))
-            {
-                index = originalIndex;
-                continue;
-            }
-
-            if (index == originalIndex)
-            {
-                backendArgs.Add(args[index]);
-            }
-            else
-            {
-                backendArgs.Add(args[originalIndex]);
-                backendArgs.Add(args[index]);
-            }
-
-            return true;
-        }
-
-        return false;
     }
 
     private static bool TryReadOptionValue(

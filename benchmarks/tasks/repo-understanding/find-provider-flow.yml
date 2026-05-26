@@ -1,0 +1,19 @@
+{
+  "id": "find-provider-flow",
+  "name": "Locate provider switching and persistence flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Which files in this repository are the most relevant for understanding provider switching, persisted provider configuration, and model discovery? Answer with the 3 most relevant paths and a short reason for each.",
+  "response": {
+    "containsAny": [
+      "ProviderCommandHandler.cs",
+      "JsonAgentConfigurationStore.cs",
+      "ModelDiscoveryService.cs",
+      "FirstRunOnboardingService.cs"
+    ],
+    "containsAtLeast": 3
+  }
+}

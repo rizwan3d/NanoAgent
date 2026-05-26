@@ -41,4 +41,20 @@ public sealed class AgentProviderProfileTests
 
         profile1.Should().NotBe(profile2);
     }
+
+    [Fact]
+    public void ResolveBaseUrl_Should_UseLmStudioDefault_When_BaseUrlIsNull()
+    {
+        var profile = new AgentProviderProfile(ProviderKind.LmStudio, null);
+
+        profile.ResolveBaseUrl().Should().Be("http://127.0.0.1:1234/v1");
+    }
+
+    [Fact]
+    public void ResolveBaseUrl_Should_UseLmStudioCustomBaseUrl_When_BaseUrlIsProvided()
+    {
+        var profile = new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321");
+
+        profile.ResolveBaseUrl().Should().Be("http://127.0.0.1:4321/v1");
+    }
 }
