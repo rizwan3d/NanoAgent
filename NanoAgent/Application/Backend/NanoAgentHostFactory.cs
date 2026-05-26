@@ -77,7 +77,8 @@ public static class NanoAgentHostFactory
         builder.Services.AddSingleton(new BackendRuntimeOptions(
             sessionMcpServers,
             autoApproveAllTools,
-            runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface)));
+            runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
+            ResolveStartupPromptPreference(runtimeArguments.RawArgs)));
         builder.Services
             .AddApplication()
             .AddReplCommands()
@@ -90,5 +91,50 @@ public static class NanoAgentHostFactory
         builder.Services.AddSingleton<IStatusMessageWriter, UiStatusMessageWriter>();
 
         return builder.Build();
+    }
+
+    private static bool ResolveStartupPromptPreference(IReadOnlyList<string> args)
+    {
+        for (int index = 0; index < args.Count; index++)
+        {
+            if (TryReadOptionValue(args, ref index, "--startup-prompts", out string? value))
+            {
+                return string.Equals(value, "enabled", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        return false;
+    }
+
+    private static bool TryReadOptionValue(
+        IReadOnlyList<string> args,
+        ref int index,
+        string optionName,
+        out string? value)
+    {
+        string arg = args[index];
+        value = null;
+
+        if (string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            int valueIndex = index + 1;
+            if (valueIndex >= args.Count || string.IsNullOrWhiteSpace(args[valueIndex]))
+            {
+                return false;
+            }
+
+            value = args[valueIndex].Trim();
+            index = valueIndex;
+            return true;
+        }
+
+        string prefix = optionName + "=";
+        if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        value = arg[prefix.Length..].Trim();
+        return !string.IsNullOrWhiteSpace(value);
     }
 }
