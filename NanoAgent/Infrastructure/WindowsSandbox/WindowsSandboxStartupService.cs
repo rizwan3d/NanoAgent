@@ -4,6 +4,19 @@ using NanoAgent.Application.Models;
 
 namespace NanoAgent.Infrastructure.WindowsSandbox;
 
+internal interface IWindowsSandboxPlatform
+{
+    bool IsWindows();
+}
+
+internal sealed class WindowsSandboxPlatform : IWindowsSandboxPlatform
+{
+    public bool IsWindows()
+    {
+        return OperatingSystem.IsWindows();
+    }
+}
+
 internal interface IWindowsSandboxSetupBootstrapper
 {
     bool RequiresSetup();
@@ -70,17 +83,20 @@ internal sealed class WindowsSandboxStartupService : IWindowsSandboxStartupServi
     private readonly IConfirmationPrompt _confirmationPrompt;
     private readonly IStatusMessageWriter _statusMessageWriter;
     private readonly IWindowsSandboxSetupBootstrapper _bootstrapper;
+    private readonly IWindowsSandboxPlatform _platform;
 
     public WindowsSandboxStartupService(
         BackendRuntimeOptions runtimeOptions,
         IConfirmationPrompt confirmationPrompt,
         IStatusMessageWriter statusMessageWriter,
-        IWindowsSandboxSetupBootstrapper bootstrapper)
+        IWindowsSandboxSetupBootstrapper bootstrapper,
+        IWindowsSandboxPlatform platform)
     {
         _runtimeOptions = runtimeOptions ?? throw new ArgumentNullException(nameof(runtimeOptions));
         _confirmationPrompt = confirmationPrompt ?? throw new ArgumentNullException(nameof(confirmationPrompt));
         _statusMessageWriter = statusMessageWriter ?? throw new ArgumentNullException(nameof(statusMessageWriter));
         _bootstrapper = bootstrapper ?? throw new ArgumentNullException(nameof(bootstrapper));
+        _platform = platform ?? throw new ArgumentNullException(nameof(platform));
     }
 
     public async Task EnsureReadyAsync(CancellationToken cancellationToken)
@@ -112,7 +128,7 @@ internal sealed class WindowsSandboxStartupService : IWindowsSandboxStartupServi
         bool announceUnsupported,
         CancellationToken cancellationToken)
     {
-        if (!OperatingSystem.IsWindows())
+        if (!_platform.IsWindows())
         {
             const string message = "Windows sandbox setup is only required on Windows.";
             if (announceUnsupported)

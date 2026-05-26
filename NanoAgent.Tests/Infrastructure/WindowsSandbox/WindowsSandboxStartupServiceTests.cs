@@ -22,7 +22,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: false);
+            enableStartupPrompts: false,
+            isWindows: true);
 
         await sut.EnsureReadyAsync(CancellationToken.None);
 
@@ -63,7 +64,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: true);
+            enableStartupPrompts: true,
+            isWindows: true);
 
         await sut.EnsureReadyAsync(CancellationToken.None);
 
@@ -97,7 +99,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: true);
+            enableStartupPrompts: true,
+            isWindows: true);
 
         await sut.EnsureReadyAsync(CancellationToken.None);
 
@@ -137,7 +140,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: true);
+            enableStartupPrompts: true,
+            isWindows: true);
 
         await sut.EnsureReadyAsync(CancellationToken.None);
 
@@ -166,7 +170,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: true);
+            enableStartupPrompts: true,
+            isWindows: true);
 
         await sut.EnsureReadyAsync(CancellationToken.None);
 
@@ -200,7 +205,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: false);
+            enableStartupPrompts: false,
+            isWindows: true);
 
         WindowsSandboxSetupResult result = await sut.SetupAsync(CancellationToken.None);
 
@@ -230,7 +236,8 @@ public sealed class WindowsSandboxStartupServiceTests
             confirmationPrompt.Object,
             statusMessageWriter.Object,
             bootstrapper,
-            enableStartupPrompts: false);
+            enableStartupPrompts: false,
+            isWindows: true);
 
         WindowsSandboxSetupResult result = await sut.SetupAsync(CancellationToken.None);
 
@@ -240,17 +247,49 @@ public sealed class WindowsSandboxStartupServiceTests
         statusMessageWriter.VerifyAll();
     }
 
+    [Fact]
+    public async Task SetupAsync_Should_ReportUnsupported_WhenNotRunningOnWindows()
+    {
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Windows sandbox setup is only required on Windows.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        FakeWindowsSandboxSetupBootstrapper bootstrapper = new()
+        {
+            RequiresSetupResult = true
+        };
+        WindowsSandboxStartupService sut = CreateSut(
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            bootstrapper,
+            enableStartupPrompts: false);
+
+        WindowsSandboxSetupResult result = await sut.SetupAsync(CancellationToken.None);
+
+        result.State.Should().Be(WindowsSandboxSetupState.NotSupported);
+        bootstrapper.EnsureSetupCallCount.Should().Be(0);
+        confirmationPrompt.VerifyNoOtherCalls();
+        statusMessageWriter.VerifyAll();
+    }
+
     private static WindowsSandboxStartupService CreateSut(
         IConfirmationPrompt confirmationPrompt,
         IStatusMessageWriter statusMessageWriter,
         IWindowsSandboxSetupBootstrapper bootstrapper,
-        bool enableStartupPrompts)
+        bool enableStartupPrompts,
+        bool isWindows = false)
     {
         return new WindowsSandboxStartupService(
             new BackendRuntimeOptions(enableStartupPrompts: enableStartupPrompts),
             confirmationPrompt,
             statusMessageWriter,
-            bootstrapper);
+            bootstrapper,
+            new FakeWindowsSandboxPlatform(isWindows));
     }
 
     private sealed class FakeWindowsSandboxSetupBootstrapper : IWindowsSandboxSetupBootstrapper
@@ -281,6 +320,14 @@ public sealed class WindowsSandboxStartupServiceTests
             {
                 throw ExceptionToThrow;
             }
+        }
+    }
+
+    private sealed class FakeWindowsSandboxPlatform(bool isWindows) : IWindowsSandboxPlatform
+    {
+        public bool IsWindows()
+        {
+            return isWindows;
         }
     }
 }
