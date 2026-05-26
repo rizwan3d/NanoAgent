@@ -1,0 +1,13 @@
+{
+  "id": "locate-update-command",
+  "name": "Locate self-update flow",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "prompt": "Which files implement update checks and the update command?",
+  "response": {
+    "containsAny": ["UpdateCommandHandler.cs", "Update", "SelfUpdate", "release"],
+    "containsAtLeast": 1
+  }
+}

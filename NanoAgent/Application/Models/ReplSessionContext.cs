@@ -1588,8 +1588,9 @@ public sealed class ReplSessionContext
         IReadOnlyList<WorkspaceFileEditTransaction> transactions,
         string? description = null)
     {
-        Dictionary<string, WorkspaceFileEditState> firstBeforeStates = new(StringComparer.OrdinalIgnoreCase);
-        Dictionary<string, WorkspaceFileEditState> lastAfterStates = new(StringComparer.OrdinalIgnoreCase);
+        StringComparer pathComparer = NanoAgent.Application.Utilities.WorkspacePath.GetPathComparer();
+        Dictionary<string, WorkspaceFileEditState> firstBeforeStates = new(pathComparer);
+        Dictionary<string, WorkspaceFileEditState> lastAfterStates = new(pathComparer);
         List<string> orderedPaths = [];
 
         foreach (WorkspaceFileEditTransaction transaction in transactions)
@@ -1605,7 +1606,7 @@ public sealed class ReplSessionContext
             foreach (WorkspaceFileEditState state in transaction.AfterStates)
             {
                 if (!lastAfterStates.ContainsKey(state.Path) &&
-                    !orderedPaths.Contains(state.Path, StringComparer.OrdinalIgnoreCase))
+                    !orderedPaths.Contains(state.Path, pathComparer))
                 {
                     orderedPaths.Add(state.Path);
                 }

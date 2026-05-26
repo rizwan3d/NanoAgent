@@ -491,11 +491,13 @@ public sealed class ShellCommandServiceTests : IDisposable
         string terminalId = started.TerminalId!;
 
         ShellCommandExecutionResult completed = started;
+        string output = string.Empty;
         for (int attempt = 0; attempt < 50; attempt++)
         {
             completed = await sut.ReadBackgroundAsync(
                 terminalId,
                 CancellationToken.None);
+            output += completed.StandardOutput;
             if (completed.TerminalStatus == "exited")
             {
                 break;
@@ -505,7 +507,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
 
         completed.TerminalStatus.Should().Be("exited");
-        completed.StandardOutput.Should().Contain("done");
+        output.Should().Contain("done");
 
         IReadOnlyList<BackgroundTerminalInfo> retained = await sut.ListBackgroundAsync(
             "session-a",
@@ -531,6 +533,57 @@ public sealed class ShellCommandServiceTests : IDisposable
             terminalId,
             CancellationToken.None);
         missing.TerminalStatus.Should().Be("not_found");
+    }
+
+    [Fact]
+    public async Task BackgroundTerminal_Read_Should_PreserveBufferedOutputUpToBackgroundLimit()
+    {
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+        string expectedOutput = new('x', 12_000);
+        string command = OperatingSystem.IsWindows()
+            ? $"Write-Output '{expectedOutput}'"
+            : $"printf '%s\n' '{expectedOutput}'";
+
+        ShellCommandExecutionResult started = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest(command, null),
+            CancellationToken.None);
+
+        started.TerminalId.Should().NotBeNullOrWhiteSpace();
+
+        string terminalId = started.TerminalId!;
+        try
+        {
+            ShellCommandExecutionResult read = started;
+            string output = string.Empty;
+            for (int attempt = 0; attempt < 50; attempt++)
+            {
+                read = await sut.ReadBackgroundAsync(
+                    terminalId,
+                    CancellationToken.None);
+                output += read.StandardOutput;
+                if (read.TerminalStatus == "exited")
+                {
+                    break;
+                }
+
+                await Task.Delay(100);
+            }
+
+            read.TerminalStatus.Should().Be("exited");
+            output.Should().Be(expectedOutput);
+        }
+        finally
+        {
+            await sut.StopBackgroundAsync(
+                terminalId,
+                CancellationToken.None);
+        }
     }
 
     public void Dispose()

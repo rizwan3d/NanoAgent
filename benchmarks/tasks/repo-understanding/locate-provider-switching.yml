@@ -1,0 +1,14 @@
+{
+  "id": "locate-provider-switching",
+  "name": "Locate provider switching files",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Find the files most relevant to provider switching, saved provider settings, and model discovery. Give 3 paths.",
+  "response": {
+    "containsAny": ["ProviderCommandHandler.cs", "JsonAgentConfigurationStore.cs", "ModelDiscoveryService.cs", "IAgentConfigurationStore.cs"],
+    "containsAtLeast": 3
+  }
+}
