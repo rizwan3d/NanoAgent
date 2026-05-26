@@ -1,0 +1,21 @@
+{
+  "id": "git-timeout",
+  "name": "Fix explicit git timeout handling",
+  "suite": "swe-bench-lite-style",
+  "workspace": "benchmarks/fixtures/tiny-ts-bug",
+  "profile": "build",
+  "tags": ["regression"],
+  "prompt": "Fix the timeout bug in `gitClient.js` so an explicit timeout is respected. Keep the change minimal and run `node gitClient.js` before you finish.",
+  "validationCommands": [
+    {
+      "command": ["node", "gitClient.js"],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": ["OK"]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": ["gitClient.js"],
+    "changedFilesExclude": ["config.json", "validate-config.js"]
+  }
+}

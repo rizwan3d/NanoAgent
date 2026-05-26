@@ -5,11 +5,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
     <PublishAot>true</PublishAot>
     <InvariantGlobalization>true</InvariantGlobalization>
     <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
     <PackageIcon>logo.png</PackageIcon>
     <PackAsTool>true</PackAsTool>
+    <IncludeSymbols>false</IncludeSymbols>
     <ToolCommandName>nanoai</ToolCommandName>
     <Description>Terminal UI, ACP server, and automation-friendly .NET tool for NanoAgent.</Description>
     <PackageReadmeFile>README.NuGet.md</PackageReadmeFile>

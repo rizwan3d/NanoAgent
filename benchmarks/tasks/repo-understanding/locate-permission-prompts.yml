@@ -1,0 +1,14 @@
+{
+  "id": "locate-permission-prompts",
+  "name": "Locate permission prompt display files",
+  "suite": "repo-understanding",
+  "workspace": ".",
+  "isolation": "in_place",
+  "profile": "plan",
+  "tags": ["regression"],
+  "prompt": "Which files format and show approval prompts for tool permission requests? Return the most relevant paths.",
+  "response": {
+    "containsAny": ["SelectionPermissionApprovalPrompt.cs", "PermissionRequestDisplayFormatter.cs", "UiPromptAdapters.cs", "UiBridge.cs", "ConsoleBridge.cs"],
+    "containsAtLeast": 3
+  }
+}

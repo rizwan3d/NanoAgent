@@ -19,7 +19,9 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
 
         const string HelpText =
             "Available commands:\n" +
+            "/a - Alias for /agent.\n" +
             "/allow <tool-or-tag> [pattern] - Add a session-scoped allow override.\n" +
+            "/agent - List available subagents for delegated work.\n" +
             "/budget [status|local|cloud] - Show or configure budget controls.\n" +
             "/clone - Duplicate the current session at the current position.\n" +
             "/compact [retained-turns] - Manually compact the session context.\n" +
@@ -53,14 +55,16 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
             "/undo - Roll back the most recent tracked file edit transaction.\n" +
             "/use <model> - Switch the active model directly.\n" +
+            "/version - Show the current NanoAgent CLI version.\n" +
             "!<shell-command> - Run a local shell command directly from the input box.\n" +
             "\nKeyboard shortcuts:\n" +
             "F2 - Choose the active model with the arrow-key picker.\n" +
             "F3 - Pin or hide the latest plan in the terminal view.\n" +
-            "/ - Open command suggestions in the terminal input.\n\n" +
+            "/ - Open command suggestions in the terminal input.\n" +
+            "ArrowUp / ArrowDown on an empty composer - Switch the active subagent thread in supported UIs.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --session <session-guid> to resume a saved session. --section also works as a compatibility alias.\n" +
-            "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session.\n" +
+            "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session. Use -v or --version at startup to print the CLI version.\n" +
             "Invoke subagents for one turn with @<subagent-name>; primary agents can also delegate focused work with agent_delegate or coordinate several tasks with agent_orchestrate.";
 
         return Task.FromResult(ReplCommandResult.Continue(

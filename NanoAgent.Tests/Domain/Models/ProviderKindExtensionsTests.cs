@@ -15,6 +15,7 @@ public sealed class ProviderKindExtensionsTests
     [InlineData(ProviderKind.OpenRouter, "OpenRouter")]
     [InlineData(ProviderKind.KiloCode, "Kilo Code")]
     [InlineData(ProviderKind.Ollama, "Ollama")]
+    [InlineData(ProviderKind.LmStudio, "LM Studio")]
     [InlineData(ProviderKind.OllamaCloud, "Ollama Cloud")]
     [InlineData(ProviderKind.Cerebras, "Cerebras")]
     [InlineData(ProviderKind.Groq, "Groq")]
@@ -37,6 +38,7 @@ public sealed class ProviderKindExtensionsTests
     [InlineData(ProviderKind.OpenRouter, "https://openrouter.ai/api/v1")]
     [InlineData(ProviderKind.KiloCode, "https://api.kilo.ai/api/gateway")]
     [InlineData(ProviderKind.Ollama, "http://127.0.0.1:11434/v1")]
+    [InlineData(ProviderKind.LmStudio, "http://127.0.0.1:1234/v1")]
     [InlineData(ProviderKind.OllamaCloud, "https://ollama.com")]
     [InlineData(ProviderKind.Cerebras, "https://api.cerebras.ai/v1")]
     [InlineData(ProviderKind.Groq, "https://api.groq.com/openai/v1")]
@@ -61,6 +63,7 @@ public sealed class ProviderKindExtensionsTests
     [InlineData(ProviderKind.OpenAi, null)]
     [InlineData(ProviderKind.Anthropic, null)]
     [InlineData(ProviderKind.GitHubCopilot, null)]
+    [InlineData(ProviderKind.LmStudio, null)]
     [InlineData(ProviderKind.OpenAiCompatible, null)]
     public void GetDefaultApiKey_Should_ReturnExpected(ProviderKind kind, string? expected)
     {

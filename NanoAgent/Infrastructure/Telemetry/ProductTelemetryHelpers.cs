@@ -5,6 +5,17 @@ namespace NanoAgent.Infrastructure.Telemetry;
 
 internal static class ProductTelemetryHelpers
 {
+    public static IReadOnlyDictionary<string, object> CreateIdentifyProperties(
+        string version,
+        string osFamily,
+        string appSurface)
+    {
+        return new Dictionary<string, object>(StringComparer.Ordinal)
+        {
+            ["$set"] = CreatePersonProperties(version, osFamily, appSurface)
+        };
+    }
+
     public static IReadOnlyDictionary<string, object> CreateAppStartedProperties(
         string version,
         string osFamily,
@@ -100,6 +111,14 @@ internal static class ProductTelemetryHelpers
         }
 
         return host.Trim().TrimEnd('/');
+    }
+
+    private static Dictionary<string, object> CreatePersonProperties(
+        string version,
+        string osFamily,
+        string appSurface)
+    {
+        return CreateCommonProperties(version, osFamily, appSurface);
     }
 
     private static Dictionary<string, object> CreateCommonProperties(

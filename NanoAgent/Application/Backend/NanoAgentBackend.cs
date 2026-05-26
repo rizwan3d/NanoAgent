@@ -11,7 +11,7 @@ namespace NanoAgent.Application.Backend;
 
 public sealed class NanoAgentBackend : INanoAgentBackend
 {
-    private readonly string[] _args;
+    private readonly BackendRuntimeArguments _runtimeArguments;
     private readonly bool _autoApproveAllTools;
     private readonly IReadOnlyList<BackendMcpServerConfiguration> _sessionMcpServers;
     private IAgentTurnService? _agentTurnService;
@@ -31,14 +31,20 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private bool _updatePromptShown;
 
     public NanoAgentBackend(string[] args)
-        : this(args, [])
+        : this(
+            BackendRuntimeArguments.Parse(args),
+            [],
+            autoApproveAllTools: false)
     {
     }
 
     public NanoAgentBackend(
         string[] args,
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers)
-        : this(args, sessionMcpServers, autoApproveAllTools: false)
+        : this(
+            BackendRuntimeArguments.Parse(args),
+            sessionMcpServers,
+            autoApproveAllTools: false)
     {
     }
 
@@ -46,8 +52,19 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         string[] args,
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
         bool autoApproveAllTools)
+        : this(
+            BackendRuntimeArguments.Parse(args),
+            sessionMcpServers,
+            autoApproveAllTools)
     {
-        _args = args;
+    }
+
+    internal NanoAgentBackend(
+        BackendRuntimeArguments runtimeArguments,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
+        bool autoApproveAllTools)
+    {
+        _runtimeArguments = runtimeArguments ?? throw new ArgumentNullException(nameof(runtimeArguments));
         _sessionMcpServers = sessionMcpServers ?? [];
         _autoApproveAllTools = autoApproveAllTools;
     }
@@ -63,11 +80,11 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             return CreateSessionInfo(_session, _profileResolver);
         }
 
-        CliSessionOptions options = ParseSessionOptions(_args);
+        BackendRuntimeArguments options = _runtimeArguments;
 
         _host = NanoAgentHostFactory.Create(
             uiBridge,
-            _args,
+            options,
             _sessionMcpServers,
             _autoApproveAllTools);
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
@@ -413,86 +430,4 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         await _statusMessageWriter.ShowErrorAsync(installResult.Message, cancellationToken);
     }
-
-    private static CliSessionOptions ParseSessionOptions(IReadOnlyList<string> args)
-    {
-        string? sectionId = null;
-        string? profileName = null;
-        string? thinkingMode = null;
-        bool skipUpdateCheck = false;
-
-        for (int index = 0; index < args.Count; index++)
-        {
-            string arg = args[index];
-
-            if (string.Equals(arg, "--no-update-check", StringComparison.OrdinalIgnoreCase))
-            {
-                skipUpdateCheck = true;
-                continue;
-            }
-
-            if (TryReadOptionValue(args, ref index, "--section", out string? sectionValue) ||
-                TryReadOptionValue(args, ref index, "--session", out sectionValue))
-            {
-                sectionId = sectionValue;
-                continue;
-            }
-
-            if (TryReadOptionValue(args, ref index, "--profile", out string? profileValue))
-            {
-                profileName = profileValue;
-                continue;
-            }
-
-            if (TryReadOptionValue(args, ref index, "--thinking", out string? thinkingValue))
-            {
-                thinkingMode = thinkingValue;
-            }
-        }
-
-        return new CliSessionOptions(sectionId, profileName, thinkingMode, skipUpdateCheck);
-    }
-
-    private static bool TryReadOptionValue(
-        IReadOnlyList<string> args,
-        ref int index,
-        string optionName,
-        out string? value)
-    {
-        string arg = args[index];
-        value = null;
-
-        if (string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase))
-        {
-            int valueIndex = index + 1;
-            if (valueIndex >= args.Count || string.IsNullOrWhiteSpace(args[valueIndex]))
-            {
-                throw new ArgumentException($"Missing value for {optionName}.");
-            }
-
-            value = args[valueIndex].Trim();
-            index = valueIndex;
-            return true;
-        }
-
-        string prefix = optionName + "=";
-        if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        value = arg[prefix.Length..].Trim();
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new ArgumentException($"Missing value for {optionName}.");
-        }
-
-        return true;
-    }
-
-    private sealed record CliSessionOptions(
-        string? SectionId,
-        string? ProfileName,
-        string? ThinkingMode,
-        bool SkipUpdateCheck);
 }

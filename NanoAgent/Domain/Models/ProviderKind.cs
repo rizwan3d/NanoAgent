@@ -15,5 +15,6 @@ public enum ProviderKind
     OllamaCloud = 12,
     Cerebras = 13,
     Groq = 14,
-    OpenCodeZen = 15
+    OpenCodeZen = 15,
+    LmStudio = 16
 }
