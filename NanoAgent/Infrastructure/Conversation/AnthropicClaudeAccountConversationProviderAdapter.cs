@@ -31,11 +31,6 @@ internal sealed class AnthropicClaudeAccountConversationProviderAdapter : IConve
         _credentialService = credentialService;
     }
 
-    public bool CanHandle(ConversationProviderRequest request)
-    {
-        return request.ProviderProfile.ProviderKind == ProviderKind.AnthropicClaudeAccount;
-    }
-
     public async Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)

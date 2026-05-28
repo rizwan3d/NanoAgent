@@ -22,11 +22,6 @@ internal sealed class OllamaCloudConversationProviderAdapter : IConversationProv
         _responseNormalizer = responseNormalizer;
     }
 
-    public bool CanHandle(ConversationProviderRequest request)
-    {
-        return request.ProviderProfile.ProviderKind == ProviderKind.OllamaCloud;
-    }
-
     public Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)
