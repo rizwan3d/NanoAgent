@@ -83,16 +83,17 @@ public static partial class Program
     public static async Task<int> Main(string[]? args)
     {
         Console.OutputEncoding = Encoding.UTF8;
-        if (TryHandleWindowsSandboxRunnerInvocation(args ?? [], out int runnerExitCode))
+        string[] effectiveArgs = args ?? [];
+        if (TryHandleWindowsSandboxSpecialInvocation(effectiveArgs, out int specialExitCode))
         {
-            return runnerExitCode;
+            return specialExitCode;
         }
 
         CliInvocation invocation;
         try
         {
             invocation = CliInvocation.Parse(
-                args ?? [],
+                effectiveArgs,
                 Console.IsInputRedirected,
                 Console.In.ReadToEnd);
         }
@@ -141,6 +142,54 @@ public static partial class Program
             invocation.ProviderAuthKey,
             invocation.AutoApproveAllTools);
         return 0;
+    }
+
+    internal static bool TryHandleWindowsSandboxSpecialInvocation(
+        IReadOnlyList<string> args,
+        out int exitCode)
+    {
+        if (TryHandleWindowsSandboxSetupInvocation(args, out exitCode))
+        {
+            return true;
+        }
+
+        return TryHandleWindowsSandboxRunnerInvocation(args, out exitCode);
+    }
+
+    private static bool TryHandleWindowsSandboxSetupInvocation(
+        IReadOnlyList<string> args,
+        out int exitCode)
+    {
+        exitCode = 0;
+
+        int commandIndex = -1;
+        for (int index = 0; index < args.Count; index++)
+        {
+            if (string.Equals(
+                    args[index],
+                    WindowsSandboxSetupOrchestrator.SetupCommandArgument,
+                    StringComparison.Ordinal))
+            {
+                commandIndex = index;
+                break;
+            }
+        }
+
+        if (commandIndex < 0)
+        {
+            return false;
+        }
+
+        int payloadIndex = commandIndex + 1;
+        if (payloadIndex >= args.Count || string.IsNullOrWhiteSpace(args[payloadIndex]))
+        {
+            Console.Error.WriteLine("Missing setup payload for Windows sandbox setup mode.");
+            exitCode = 2;
+            return true;
+        }
+
+        exitCode = WindowsSandboxSetupOrchestrator.RunEncodedSetupPayload(args[payloadIndex]);
+        return true;
     }
 
     private static bool TryHandleWindowsSandboxRunnerInvocation(
