@@ -24,16 +24,6 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
         _payloadFactory = payloadFactory;
     }
 
-    public bool CanHandle(ConversationProviderRequest request)
-    {
-        return request.ProviderProfile.ProviderKind is not ProviderKind.OpenAiChatGptAccount
-            and not ProviderKind.AnthropicClaudeAccount
-            and not ProviderKind.GitHubCopilot
-            and not ProviderKind.OllamaCloud
-            && !(request.ProviderProfile.ProviderKind == ProviderKind.OpenCodeZen &&
-                OpenCodeZenConversationProviderAdapter.ResolveEndpoint(request.ModelId) is not OpenCodeZenEndpoint.ChatCompletions);
-    }
-
     public Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)

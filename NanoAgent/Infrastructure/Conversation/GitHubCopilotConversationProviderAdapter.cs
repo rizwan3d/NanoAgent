@@ -24,11 +24,6 @@ internal sealed class GitHubCopilotConversationProviderAdapter : IConversationPr
         _credentialService = credentialService;
     }
 
-    public bool CanHandle(ConversationProviderRequest request)
-    {
-        return request.ProviderProfile.ProviderKind == ProviderKind.GitHubCopilot;
-    }
-
     public async Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)
