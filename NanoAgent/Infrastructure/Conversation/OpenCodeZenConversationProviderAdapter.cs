@@ -9,6 +9,9 @@ namespace NanoAgent.Infrastructure.Conversation;
 internal sealed class OpenCodeZenConversationProviderAdapter : IConversationProviderAdapter
 {
     private const string AnthropicVersion = "2023-06-01";
+    private const string ChatCompletionsPath = "chat/completions";
+    private const string MessagesPath = "messages";
+    private const string ResponsesPath = "responses";
 
     private readonly IConversationProviderHttpExecutor _httpExecutor;
     private readonly ConversationProviderRequestPayloadFactory _payloadFactory;
@@ -24,75 +27,77 @@ internal sealed class OpenCodeZenConversationProviderAdapter : IConversationProv
         _responseNormalizer = responseNormalizer;
     }
 
-    public bool CanHandle(ConversationProviderRequest request)
-    {
-        return request.ProviderProfile.ProviderKind == ProviderKind.OpenCodeZen &&
-            ResolveEndpoint(request.ModelId) is not OpenCodeZenEndpoint.ChatCompletions;
-    }
-
     public Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)
     {
-        OpenCodeZenEndpoint endpoint = ResolveEndpoint(request.ModelId);
-        string requestBody = endpoint switch
-        {
-            OpenCodeZenEndpoint.Responses => JsonSerializer.Serialize(
-                _payloadFactory.BuildResponsesRequest(request),
-                OpenAiConversationJsonContext.Default.OpenAiResponsesRequest),
-            OpenCodeZenEndpoint.Messages => JsonSerializer.Serialize(
-                _payloadFactory.BuildAnthropicMessagesRequest(request),
-                OpenAiConversationJsonContext.Default.AnthropicMessagesRequest),
-            _ => throw new InvalidOperationException($"Unsupported OpenCode Zen endpoint '{endpoint}'.")
-        };
+        string path = ResolvePath(request.ModelId);
+        string requestBody = CreateRequestBody(request, path);
         Uri baseUri = request.ProviderProfile.ResolveBaseUri();
 
         return _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
             requestBody,
-            () => CreateHttpRequest(baseUri, endpoint, request.ApiKey, requestBody),
+            () => CreateHttpRequest(baseUri, path, request.ApiKey, requestBody),
             cancellationToken,
-            endpoint switch
-            {
-                OpenCodeZenEndpoint.Responses => _responseNormalizer.NormalizeOpenAiResponsesBody,
-                OpenCodeZenEndpoint.Messages => _responseNormalizer.ConvertAnthropicMessagesResponseToChatCompletion,
-                _ => null
-            });
+            ResolveResponseNormalizer(path));
     }
 
-    internal static OpenCodeZenEndpoint ResolveEndpoint(string modelId)
+    private Func<string, string>? ResolveResponseNormalizer(string path)
+    {
+        return path switch
+        {
+            ResponsesPath => _responseNormalizer.NormalizeOpenAiResponsesBody,
+            MessagesPath => _responseNormalizer.ConvertAnthropicMessagesResponseToChatCompletion,
+            _ => null
+        };
+    }
+
+    private string CreateRequestBody(
+        ConversationProviderRequest request,
+        string path)
+    {
+        return path switch
+        {
+            ResponsesPath => JsonSerializer.Serialize(
+                _payloadFactory.BuildResponsesRequest(request),
+                OpenAiConversationJsonContext.Default.OpenAiResponsesRequest),
+            MessagesPath => JsonSerializer.Serialize(
+                _payloadFactory.BuildAnthropicMessagesRequest(request),
+                OpenAiConversationJsonContext.Default.AnthropicMessagesRequest),
+            ChatCompletionsPath => JsonSerializer.Serialize(
+                _payloadFactory.BuildChatCompletionRequest(request),
+                OpenAiConversationJsonContext.Default.OpenAiChatCompletionRequest),
+            _ => throw new InvalidOperationException($"Unsupported OpenCode Zen path '{path}'.")
+        };
+    }
+
+    private static string ResolvePath(string modelId)
     {
         string normalizedModelId = modelId.Trim().ToLowerInvariant();
         if (normalizedModelId.StartsWith("gpt-", StringComparison.Ordinal))
         {
-            return OpenCodeZenEndpoint.Responses;
+            return ResponsesPath;
         }
 
         if (normalizedModelId.StartsWith("claude-", StringComparison.Ordinal))
         {
-            return OpenCodeZenEndpoint.Messages;
+            return MessagesPath;
         }
 
-        return OpenCodeZenEndpoint.ChatCompletions;
+        return ChatCompletionsPath;
     }
 
     private static HttpRequestMessage CreateHttpRequest(
         Uri baseUri,
-        OpenCodeZenEndpoint endpoint,
+        string path,
         string apiKey,
         string requestBody)
     {
-        string path = endpoint switch
-        {
-            OpenCodeZenEndpoint.Responses => "responses",
-            OpenCodeZenEndpoint.Messages => "messages",
-            _ => throw new InvalidOperationException($"Unsupported OpenCode Zen endpoint '{endpoint}'.")
-        };
-
         HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, path));
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
         httpRequest.Headers.Accept.ParseAdd("application/json");
-        if (endpoint == OpenCodeZenEndpoint.Messages)
+        if (path == MessagesPath)
         {
             httpRequest.Headers.TryAddWithoutValidation("anthropic-version", AnthropicVersion);
         }

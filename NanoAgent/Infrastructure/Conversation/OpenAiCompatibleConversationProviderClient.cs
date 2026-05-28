@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
-using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.OpenAi;
@@ -10,7 +10,12 @@ namespace NanoAgent.Infrastructure.Conversation;
 
 internal sealed class OpenAiCompatibleConversationProviderClient : IConversationProviderClient
 {
-    private readonly IReadOnlyList<IConversationProviderAdapter> _adapters;
+    private readonly AnthropicClaudeAccountConversationProviderAdapter _anthropicClaudeAccountAdapter;
+    private readonly GitHubCopilotConversationProviderAdapter _gitHubCopilotAdapter;
+    private readonly OpenAiChatGptAccountConversationProviderAdapter _openAiChatGptAccountAdapter;
+    private readonly OpenAiCompatibleConversationProviderAdapter _openAiCompatibleAdapter;
+    private readonly OpenCodeZenConversationProviderAdapter _openCodeZenAdapter;
+    private readonly OllamaCloudConversationProviderAdapter _ollamaCloudAdapter;
 
     public OpenAiCompatibleConversationProviderClient(
         HttpClient httpClient,
@@ -20,21 +25,36 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
         IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
-        : this(CreateAdapters(
-            httpClient,
-            logger,
-            delayAsync,
-            nextJitter,
-            openAiChatGptAccountCredentialService,
-            anthropicClaudeAccountCredentialService,
-            gitHubCopilotCredentialService))
     {
-    }
+        ConversationProviderRequestPayloadFactory payloadFactory = new();
+        ConversationProviderResponseNormalizer responseNormalizer = new();
+        ConversationProviderHttpExecutor httpExecutor = new(httpClient, logger, delayAsync, nextJitter);
 
-    internal OpenAiCompatibleConversationProviderClient(
-        IReadOnlyList<IConversationProviderAdapter> adapters)
-    {
-        _adapters = adapters;
+        _openAiChatGptAccountAdapter = new OpenAiChatGptAccountConversationProviderAdapter(
+            httpExecutor,
+            payloadFactory,
+            responseNormalizer,
+            openAiChatGptAccountCredentialService);
+        _anthropicClaudeAccountAdapter = new AnthropicClaudeAccountConversationProviderAdapter(
+            httpExecutor,
+            payloadFactory,
+            responseNormalizer,
+            anthropicClaudeAccountCredentialService);
+        _gitHubCopilotAdapter = new GitHubCopilotConversationProviderAdapter(
+            httpExecutor,
+            payloadFactory,
+            gitHubCopilotCredentialService);
+        _ollamaCloudAdapter = new OllamaCloudConversationProviderAdapter(
+            httpExecutor,
+            payloadFactory,
+            responseNormalizer);
+        _openCodeZenAdapter = new OpenCodeZenConversationProviderAdapter(
+            httpExecutor,
+            payloadFactory,
+            responseNormalizer);
+        _openAiCompatibleAdapter = new OpenAiCompatibleConversationProviderAdapter(
+            httpExecutor,
+            payloadFactory);
     }
 
     public Task<ConversationProviderPayload> SendAsync(
@@ -44,56 +64,19 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        IConversationProviderAdapter? adapter = _adapters.FirstOrDefault(candidate => candidate.CanHandle(request));
-        if (adapter is null)
-        {
-            throw new ConversationProviderException(
-                $"No conversation provider adapter is registered for provider kind '{request.ProviderProfile.ProviderKind}'.");
-        }
-
-        return adapter.SendAsync(request, cancellationToken);
+        return ResolveAdapter(request.ProviderProfile.ProviderKind).SendAsync(request, cancellationToken);
     }
 
-    private static IReadOnlyList<IConversationProviderAdapter> CreateAdapters(
-        HttpClient httpClient,
-        ILogger<OpenAiCompatibleConversationProviderClient> logger,
-        Func<TimeSpan, CancellationToken, Task>? delayAsync,
-        Func<double>? nextJitter,
-        IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService,
-        IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService)
+    private IConversationProviderAdapter ResolveAdapter(ProviderKind providerKind)
     {
-        ConversationProviderRequestPayloadFactory payloadFactory = new();
-        ConversationProviderResponseNormalizer responseNormalizer = new();
-        ConversationProviderHttpExecutor httpExecutor = new(httpClient, logger, delayAsync, nextJitter);
-
-        return
-        [
-            new OpenAiChatGptAccountConversationProviderAdapter(
-                httpExecutor,
-                payloadFactory,
-                responseNormalizer,
-                openAiChatGptAccountCredentialService),
-            new AnthropicClaudeAccountConversationProviderAdapter(
-                httpExecutor,
-                payloadFactory,
-                responseNormalizer,
-                anthropicClaudeAccountCredentialService),
-            new GitHubCopilotConversationProviderAdapter(
-                httpExecutor,
-                payloadFactory,
-                gitHubCopilotCredentialService),
-            new OllamaCloudConversationProviderAdapter(
-                httpExecutor,
-                payloadFactory,
-                responseNormalizer),
-            new OpenCodeZenConversationProviderAdapter(
-                httpExecutor,
-                payloadFactory,
-                responseNormalizer),
-            new OpenAiCompatibleConversationProviderAdapter(
-                httpExecutor,
-                payloadFactory)
-        ];
+        return providerKind switch
+        {
+            ProviderKind.OpenAiChatGptAccount => _openAiChatGptAccountAdapter,
+            ProviderKind.AnthropicClaudeAccount => _anthropicClaudeAccountAdapter,
+            ProviderKind.GitHubCopilot => _gitHubCopilotAdapter,
+            ProviderKind.OllamaCloud => _ollamaCloudAdapter,
+            ProviderKind.OpenCodeZen => _openCodeZenAdapter,
+            _ => _openAiCompatibleAdapter
+        };
     }
 }
