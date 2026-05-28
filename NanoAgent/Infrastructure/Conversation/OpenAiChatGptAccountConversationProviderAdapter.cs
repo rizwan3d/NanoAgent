@@ -30,11 +30,6 @@ internal sealed class OpenAiChatGptAccountConversationProviderAdapter : IConvers
         _sessionId = sessionId ?? Guid.NewGuid().ToString("N");
     }
 
-    public bool CanHandle(ConversationProviderRequest request)
-    {
-        return request.ProviderProfile.ProviderKind == ProviderKind.OpenAiChatGptAccount;
-    }
-
     public async Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)
