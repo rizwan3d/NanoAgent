@@ -53,6 +53,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceSettingsWriter, WorkspaceSettingsWriter>();
         services.AddSingleton<ICodebaseIndexService, WorkspaceCodebaseIndexService>();
+        services.AddSingleton<ILanguageServerRegistry, LanguageServerRegistry>();
         services.AddSingleton<ICodeIntelligenceService, LspCodeIntelligenceService>();
         services.AddSingleton<IHeadlessBrowserService, HeadlessBrowserService>();
         services.AddSingleton<IWorkspaceSystemPromptProvider, WorkspaceSystemPromptProvider>();

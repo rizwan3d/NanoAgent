@@ -11,7 +11,7 @@ internal sealed class CodeIntelligenceTool : ITool
     private const int DefaultTimeoutSeconds = 10;
     private const int MaxTimeoutSeconds = 30;
     private const string SupportedActionsText =
-        "document_symbols, symbols_list, definition, definition_find, references, references_find, implementation_find, hover, call_hierarchy, rename_symbol, diagnostics_list, test_discover, dependency_graph";
+        "document_symbols, symbols_list, definition, definition_find, references, references_find, implementation_find, hover, call_hierarchy, rename_symbol, diagnostics_list, test_discover, dependency_graph, servers_status";
 
     private static readonly IReadOnlySet<string> PositionActions = new HashSet<string>(
         [
@@ -61,12 +61,12 @@ internal sealed class CodeIntelligenceTool : ITool
           "properties": {
             "action": {
               "type": "string",
-              "enum": ["document_symbols", "symbols_list", "definition", "definition_find", "references", "references_find", "implementation_find", "hover", "call_hierarchy", "rename_symbol", "diagnostics_list", "test_discover", "dependency_graph"],
+              "enum": ["document_symbols", "symbols_list", "definition", "definition_find", "references", "references_find", "implementation_find", "hover", "call_hierarchy", "rename_symbol", "diagnostics_list", "test_discover", "dependency_graph", "servers_status"],
               "description": "The code intelligence query to run."
             },
             "path": {
               "type": "string",
-              "description": "Source file path relative to the current session working directory."
+              "description": "Source file path relative to the current session working directory. Not required for servers_status."
             },
             "line": {
               "type": "integer",
@@ -100,9 +100,13 @@ internal sealed class CodeIntelligenceTool : ITool
               "minimum": 1,
               "maximum": 30,
               "description": "Maximum time to wait for the language server. Defaults to 10 seconds."
+            },
+            "refresh": {
+              "type": "boolean",
+              "description": "Refresh cached language-server detection before running the action."
             }
           },
-          "required": ["action", "path"],
+          "required": ["action"],
           "additionalProperties": false
         }
         """;
@@ -125,7 +129,10 @@ internal sealed class CodeIntelligenceTool : ITool
                     "Provide a supported action."));
         }
 
-        if (!ToolArguments.TryGetNonEmptyString(context.Arguments, "path", out string? path))
+        string? path = null;
+        bool requiresPath = !string.Equals(normalizedAction, "servers_status", StringComparison.Ordinal);
+        if (requiresPath &&
+            !ToolArguments.TryGetNonEmptyString(context.Arguments, "path", out path))
         {
             return ToolResultFactory.InvalidArguments(
                 "missing_path",
@@ -133,6 +140,10 @@ internal sealed class CodeIntelligenceTool : ITool
                 new ToolRenderPayload(
                     "Invalid code_intelligence arguments",
                     "Provide a non-empty source file path."));
+        }
+        else if (!requiresPath)
+        {
+            path = ".";
         }
 
         if (!TryReadPosition(context, normalizedAction!, out int? line, out int? character, out ToolResult? invalidPosition))
@@ -182,7 +193,8 @@ internal sealed class CodeIntelligenceTool : ITool
                     timeoutSeconds,
                     ToolArguments.GetOptionalString(context.Arguments, "query"),
                     newName,
-                    callDirection),
+                    callDirection,
+                    ToolArguments.GetBoolean(context.Arguments, "refresh")),
                 cancellationToken);
 
             SessionStateToolRecorder.RecordCodeIntelligence(context.Session, result);
@@ -252,7 +264,8 @@ internal sealed class CodeIntelligenceTool : ITool
             "rename_symbol" or
             "diagnostics_list" or
             "test_discover" or
-            "dependency_graph" => true,
+            "dependency_graph" or
+            "servers_status" => true,
             _ => false
         };
     }
@@ -393,11 +406,24 @@ internal sealed class CodeIntelligenceTool : ITool
                 : $"Found hover information for '{result.Path}'.";
         }
 
+        if (string.Equals(result.Action, "servers_status", StringComparison.Ordinal))
+        {
+            int available = result.Servers?
+                .Sum(static server => server.Candidates.Count(static candidate => candidate.DetectionStatus is "detected" or "healthy"))
+                ?? 0;
+            return $"Found {available} detected language server {(available == 1 ? "candidate" : "candidates")}.";
+        }
+
         return $"Found {result.Items.Count} code intelligence {(result.Items.Count == 1 ? "result" : "results")} for '{result.Path}'.";
     }
 
     private static string CreateRenderTitle(CodeIntelligenceResult result)
     {
+        if (string.Equals(result.Action, "servers_status", StringComparison.Ordinal))
+        {
+            return "code_intelligence: servers_status";
+        }
+
         return $"{result.Action}: {result.Path}";
     }
 
@@ -406,6 +432,36 @@ internal sealed class CodeIntelligenceTool : ITool
         List<string> lines = [];
         lines.Add($"Language: {result.LanguageId}");
         lines.Add($"Server: {result.ServerName}");
+
+        if (string.Equals(result.Action, "servers_status", StringComparison.Ordinal) &&
+            result.Servers is not null)
+        {
+            lines.Clear();
+            foreach (CodeIntelligenceServerStatus server in result.Servers)
+            {
+                lines.Add($"{server.Language} ({string.Join(", ", server.FileExtensions)})");
+                if (!string.IsNullOrWhiteSpace(server.SelectedServerName))
+                {
+                    lines.Add($"Selected: {server.SelectedServerName}");
+                }
+
+                foreach (CodeIntelligenceServerCandidate candidate in server.Candidates)
+                {
+                    string command = string.IsNullOrWhiteSpace(candidate.ResolvedCommand)
+                        ? candidate.Command
+                        : $"{candidate.Command} -> {candidate.ResolvedCommand}";
+                    string message = string.IsNullOrWhiteSpace(candidate.Message)
+                        ? string.Empty
+                        : $" ({candidate.Message})";
+                    string installHint = string.IsNullOrWhiteSpace(candidate.InstallHint)
+                        ? string.Empty
+                        : $" Install: {candidate.InstallHint}";
+                    lines.Add($"- [{candidate.DetectionStatus}] {candidate.Name} (priority {candidate.Priority}) {command}{message}{installHint}");
+                }
+            }
+
+            return string.Join(Environment.NewLine, lines);
+        }
 
         if (result.Warnings.Count > 0)
         {

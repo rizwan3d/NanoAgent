@@ -18,10 +18,35 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
     private const int MaxHoverCharacters = 4_000;
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
+    private readonly ILanguageServerRegistry _languageServerRegistry;
+    private readonly LanguageServerQueryDelegate _queryServerDelegate;
 
-    public LspCodeIntelligenceService(IWorkspaceRootProvider workspaceRootProvider)
+    internal delegate Task<CodeIntelligenceResult> LanguageServerQueryDelegate(
+        LanguageServerDefinition server,
+        CodeIntelligenceRequest request,
+        string workspaceRoot,
+        string rootUri,
+        string fileUri,
+        string relativePath,
+        string sourceText,
+        IReadOnlyList<string> warnings,
+        CancellationToken cancellationToken);
+
+    public LspCodeIntelligenceService(
+        IWorkspaceRootProvider workspaceRootProvider,
+        ILanguageServerRegistry languageServerRegistry)
+        : this(workspaceRootProvider, languageServerRegistry, null)
+    {
+    }
+
+    internal LspCodeIntelligenceService(
+        IWorkspaceRootProvider workspaceRootProvider,
+        ILanguageServerRegistry languageServerRegistry,
+        LanguageServerQueryDelegate? queryServerDelegate)
     {
         _workspaceRootProvider = workspaceRootProvider;
+        _languageServerRegistry = languageServerRegistry;
+        _queryServerDelegate = queryServerDelegate ?? QueryServerAsync;
     }
 
     public async Task<CodeIntelligenceResult> QueryAsync(
@@ -32,6 +57,15 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
         cancellationToken.ThrowIfCancellationRequested();
 
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        if (string.Equals(request.Action, "servers_status", StringComparison.Ordinal))
+        {
+            IReadOnlyList<LanguageServerStatusEntry> status = await _languageServerRegistry.GetStatusAsync(
+                workspaceRoot,
+                request.Refresh,
+                cancellationToken);
+            return CreateServersStatusResult(status);
+        }
+
         string fullPath = WorkspacePath.Resolve(workspaceRoot, request.Path);
         if (!File.Exists(fullPath))
         {
@@ -52,21 +86,39 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
             cancellationToken);
         string relativePath = WorkspacePath.ToRelativePath(workspaceRoot, fullPath);
 
-        LanguageServerDefinition[] servers = GetLanguageServers(fullPath).ToArray();
+        LanguageServerResolution resolution = await _languageServerRegistry.ResolveAsync(
+            workspaceRoot,
+            fullPath,
+            request.Refresh,
+            cancellationToken);
+        LanguageServerDefinition[] servers = resolution.Candidates
+            .Select(candidate => new LanguageServerDefinition(
+                candidate.Descriptor.Key,
+                candidate.Descriptor.Name,
+                candidate.Probe.ResolvedCommand ?? candidate.Descriptor.Command,
+                candidate.Descriptor.Arguments,
+                candidate.Descriptor.GetLanguageId(resolution.Extension),
+                candidate.Descriptor.InitializationOptions,
+                candidate.Descriptor.InstallHint,
+                candidate.Probe.State,
+                candidate.Probe.Message))
+            .ToArray();
         if (string.Equals(request.Action, "dependency_graph", StringComparison.Ordinal))
         {
             return CreateDependencyGraphResult(
                 request,
                 relativePath,
-                servers.FirstOrDefault()?.LanguageId ?? GetFallbackLanguageId(fullPath),
+                servers.FirstOrDefault(static server => server.State is LanguageServerHealthState.Healthy or LanguageServerHealthState.Detected)?.LanguageId
+                    ?? resolution.LanguageId
+                    ?? GetFallbackLanguageId(fullPath),
                 sourceText);
         }
 
         if (servers.Length == 0)
         {
             throw new CodeIntelligenceUnavailableException(
-                $"No supported language server is configured for '{Path.GetExtension(fullPath)}' files.",
-                [GetSupportedServersText()]);
+                $"No language server is registered for '{Path.GetExtension(fullPath)}' files.",
+                ["Add a language server entry under .nanoagent/agent-profile.json -> languageServers to support this extension."]);
         }
 
         string fileUri = CreateFileUri(fullPath);
@@ -75,13 +127,25 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
         List<string> attempts = [];
         foreach (LanguageServerDefinition server in servers)
         {
+            if (server.State is LanguageServerHealthState.Disabled or LanguageServerHealthState.Missing)
+            {
+                attempts.Add(FormatUnavailableAttempt(server, resolution.Extension));
+                continue;
+            }
+
+            if (server.State is LanguageServerHealthState.Unhealthy)
+            {
+                attempts.Add(FormatUnavailableAttempt(server, resolution.Extension));
+                continue;
+            }
+
             using CancellationTokenSource timeout =
                 CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(request.TimeoutSeconds));
 
             try
             {
-                return await QueryServerAsync(
+                CodeIntelligenceResult result = await _queryServerDelegate(
                     server,
                     request,
                     workspaceRoot,
@@ -91,28 +155,31 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
                     sourceText,
                     attempts,
                     timeout.Token);
+                _languageServerRegistry.RecordServerHealth(workspaceRoot, server.Key, LanguageServerHealthState.Healthy);
+                return result;
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                attempts.Add($"{server.Name}: timed out after {request.TimeoutSeconds} seconds.");
+                string message = $"{server.Name}: timed out after {request.TimeoutSeconds} seconds.";
+                _languageServerRegistry.RecordServerHealth(workspaceRoot, server.Key, LanguageServerHealthState.Unhealthy, message);
+                attempts.Add(message);
             }
             catch (Win32Exception)
             {
-                attempts.Add($"{server.Name}: command '{server.Command}' was not found.");
+                string message = $"{server.Name}: command '{server.Command}' was not found.";
+                _languageServerRegistry.RecordServerHealth(workspaceRoot, server.Key, LanguageServerHealthState.Missing, message);
+                attempts.Add(message);
             }
             catch (Exception exception) when (IsRecoverableServerException(exception))
             {
-                attempts.Add($"{server.Name}: {exception.Message}");
+                string message = $"{server.Name}: {exception.Message}";
+                _languageServerRegistry.RecordServerHealth(workspaceRoot, server.Key, LanguageServerHealthState.Unhealthy, message);
+                attempts.Add(message);
             }
         }
 
-        string commands = string.Join(
-            ", ",
-            servers
-                .Select(static server => server.Command)
-                .Distinct(StringComparer.Ordinal));
         throw new CodeIntelligenceUnavailableException(
-            $"No language server could complete '{request.Action}' for '{request.Path}'. Install one of: {commands}.",
+            $"No language server could complete '{request.Action}' for '{request.Path}' ({resolution.Extension}).",
             attempts);
     }
 
@@ -136,12 +203,14 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
         _ = ConsumeStandardErrorAsync(process);
         await using LspConnection connection = new(process, rootUri, Path.GetFileName(workspaceRoot));
 
-        await connection.InitializeAsync(workspaceRoot, cancellationToken);
+        await connection.InitializeAsync(workspaceRoot, server.InitializationOptions, cancellationToken);
         await connection.DidOpenAsync(
             fileUri,
             server.LanguageId,
             sourceText,
             cancellationToken);
+
+        EnsureServerSupportsAction(connection, request.Action, server.Name);
 
         if (string.Equals(request.Action, "call_hierarchy", StringComparison.Ordinal))
         {
@@ -1561,29 +1630,6 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
         };
     }
 
-    private static IReadOnlyList<LanguageServerDefinition> GetLanguageServers(string fullPath)
-    {
-        string extension = Path.GetExtension(fullPath).ToLowerInvariant();
-        return extension switch
-        {
-            ".ts" or ".mts" or ".cts" => [new LanguageServerDefinition("TypeScript language server", "typescript-language-server", ["--stdio"], "typescript")],
-            ".tsx" => [new LanguageServerDefinition("TypeScript language server", "typescript-language-server", ["--stdio"], "typescriptreact")],
-            ".js" or ".mjs" or ".cjs" => [new LanguageServerDefinition("TypeScript language server", "typescript-language-server", ["--stdio"], "javascript")],
-            ".jsx" => [new LanguageServerDefinition("TypeScript language server", "typescript-language-server", ["--stdio"], "javascriptreact")],
-            ".cs" => [new LanguageServerDefinition("C# language server", "csharp-ls", [], "csharp")],
-            ".py" =>
-            [
-                new LanguageServerDefinition("Python LSP server", "pylsp", [], "python"),
-                new LanguageServerDefinition("Pyright language server", "pyright-langserver", ["--stdio"], "python")
-            ],
-            ".rs" => [new LanguageServerDefinition("Rust analyzer", "rust-analyzer", [], "rust")],
-            ".go" => [new LanguageServerDefinition("Go language server", "gopls", [], "go")],
-            ".c" or ".h" => [new LanguageServerDefinition("Clangd", "clangd", [], "c")],
-            ".cc" or ".cpp" or ".cxx" or ".hh" or ".hpp" or ".hxx" => [new LanguageServerDefinition("Clangd", "clangd", [], "cpp")],
-            _ => []
-        };
-    }
-
     private static string GetFallbackLanguageId(string fullPath)
     {
         string extension = Path.GetExtension(fullPath).TrimStart('.').ToLowerInvariant();
@@ -1592,9 +1638,63 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
             : extension;
     }
 
-    private static string GetSupportedServersText()
+    private static CodeIntelligenceResult CreateServersStatusResult(
+        IReadOnlyList<LanguageServerStatusEntry> status)
     {
-        return "Supported server commands: typescript-language-server, csharp-ls, pylsp, pyright-langserver, rust-analyzer, gopls, clangd.";
+        return new CodeIntelligenceResult(
+            "servers_status",
+            ".",
+            "multi",
+            "registry",
+            [],
+            HoverText: null,
+            Warnings: [],
+            Servers: status
+                .Select(static server => new CodeIntelligenceServerStatus(
+                    server.Language,
+                    server.LanguageId,
+                    server.FileExtensions,
+                    server.Candidates
+                        .Select(static candidate => new CodeIntelligenceServerCandidate(
+                            candidate.Key,
+                            candidate.Name,
+                            candidate.Command,
+                            candidate.Arguments,
+                            candidate.Priority,
+                            candidate.DetectionStatus,
+                            candidate.Source,
+                            candidate.ResolvedCommand,
+                            candidate.InstallHint,
+                            candidate.LanguageId,
+                            candidate.Message))
+                        .ToArray(),
+                    server.SelectedServerName))
+                .ToArray());
+    }
+
+    private static string FormatUnavailableAttempt(
+        LanguageServerDefinition server,
+        string extension)
+    {
+        List<string> parts = [$"{server.Name}: {server.Message ?? $"no server available for {extension}."}"];
+        if (!string.IsNullOrWhiteSpace(server.InstallHint))
+        {
+            parts.Add($"Install hint: {server.InstallHint}");
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private static void EnsureServerSupportsAction(
+        LspConnection connection,
+        string action,
+        string serverName)
+    {
+        if (!connection.SupportsAction(action))
+        {
+            throw new InvalidOperationException(
+                $"Language server '{serverName}' does not support code_intelligence action '{action}'.");
+        }
     }
 
     private static bool IsRecoverableServerException(Exception exception)
@@ -1706,6 +1806,7 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
         private readonly string _rootUri;
         private readonly string _rootName;
         private readonly Dictionary<string, JsonElement> _publishedDiagnostics = new(StringComparer.Ordinal);
+        private JsonElement _serverCapabilities;
         private int _nextId;
         private bool _initialized;
         private bool _isDisposed;
@@ -1724,12 +1825,19 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
 
         public async Task InitializeAsync(
             string workspaceRoot,
+            JsonElement? initializationOptions,
             CancellationToken cancellationToken)
         {
-            await SendRequestAsync(
+            JsonElement initializeResult = await SendRequestAsync(
                 "initialize",
-                writer => WriteInitializeParams(writer, workspaceRoot),
+                writer => WriteInitializeParams(writer, workspaceRoot, initializationOptions),
                 cancellationToken);
+            if (initializeResult.ValueKind == JsonValueKind.Object &&
+                initializeResult.TryGetProperty("capabilities", out JsonElement capabilities))
+            {
+                _serverCapabilities = capabilities.Clone();
+            }
+
             await SendNotificationAsync(
                 "initialized",
                 static writer =>
@@ -1739,6 +1847,27 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
                 },
                 cancellationToken);
             _initialized = true;
+        }
+
+        public bool SupportsAction(string action)
+        {
+            if (_serverCapabilities.ValueKind != JsonValueKind.Object)
+            {
+                return true;
+            }
+
+            return action switch
+            {
+                "document_symbols" or "test_discover" => ReadCapabilityFlag("documentSymbolProvider"),
+                "symbols_list" => ReadCapabilityFlag("workspaceSymbolProvider"),
+                "definition" or "definition_find" => ReadCapabilityFlag("definitionProvider"),
+                "references" or "references_find" => ReadCapabilityFlag("referencesProvider"),
+                "implementation_find" => ReadCapabilityFlag("implementationProvider"),
+                "hover" => ReadCapabilityFlag("hoverProvider"),
+                "rename_symbol" => ReadCapabilityFlag("renameProvider"),
+                "call_hierarchy" => ReadCapabilityFlag("callHierarchyProvider"),
+                _ => true
+            };
         }
 
         public Task DidOpenAsync(
@@ -1916,13 +2045,23 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
 
         private void WriteInitializeParams(
             Utf8JsonWriter writer,
-            string workspaceRoot)
+            string workspaceRoot,
+            JsonElement? initializationOptions)
         {
             writer.WriteStartObject();
             writer.WritePropertyName("processId");
             writer.WriteNullValue();
             writer.WriteString("rootPath", workspaceRoot);
             writer.WriteString("rootUri", _rootUri);
+            writer.WritePropertyName("initializationOptions");
+            if (initializationOptions.HasValue)
+            {
+                initializationOptions.Value.WriteTo(writer);
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
             writer.WritePropertyName("capabilities");
             writer.WriteStartObject();
             writer.WritePropertyName("textDocument");
@@ -1989,6 +2128,23 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
             writer.WriteString("trace", "off");
             WriteWorkspaceFolders(writer);
             writer.WriteEndObject();
+        }
+
+        private bool ReadCapabilityFlag(string propertyName)
+        {
+            if (!_serverCapabilities.TryGetProperty(propertyName, out JsonElement capability))
+            {
+                return true;
+            }
+
+            return capability.ValueKind switch
+            {
+                JsonValueKind.False => false,
+                JsonValueKind.Null => false,
+                JsonValueKind.Object => true,
+                JsonValueKind.True => true,
+                _ => true
+            };
         }
 
         private async Task SendNotificationAsync(
@@ -2257,11 +2413,16 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
         }
     }
 
-    private sealed record LanguageServerDefinition(
+    internal sealed record LanguageServerDefinition(
+        string Key,
         string Name,
         string Command,
         IReadOnlyList<string> Arguments,
-        string LanguageId);
+        string LanguageId,
+        JsonElement? InitializationOptions,
+        string? InstallHint,
+        LanguageServerHealthState State,
+        string? Message);
 
     private readonly record struct LspPosition(
         int Line,

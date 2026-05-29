@@ -55,6 +55,7 @@ public static partial class Program
         new("/import", "/import <json-path>", "Import a session from JSON.", true),
         new("/init", "/init [recommended|minimal|custom]", "Choose workspace-local NanoAgent files.", false),
         new("/ls", "/ls", "List files in the current workspace.", false),
+        new("/lsp", "/lsp [status|refresh|file <path> [refresh]]", "Show detected language servers or inspect a file.", false),
         new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
         new("/models", "/models", "Choose the active model with the picker.", false),
         new("/new", "/new", "Start a new session.", false),
