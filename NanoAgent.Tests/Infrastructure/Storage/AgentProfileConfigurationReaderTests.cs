@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Storage;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
@@ -137,6 +138,65 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
         tools[0].TimeoutSeconds.Should().Be(15);
         tools[0].MaxOutputChars.Should().Be(3000);
         tools[0].Schema.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void LoadLanguageServers_Should_MergeUserAndWorkspaceOverrides()
+    {
+        WriteFile(
+            _userProfilePath,
+            """
+            {
+              "languageServers": {
+                "python-pyright": {
+                  "language": "Python",
+                  "name": "Pyright",
+                  "command": "pyright-langserver",
+                  "args": ["--stdio"],
+                  "languageId": "python",
+                  "fileExtensions": [".py"],
+                  "priority": 100
+                }
+              }
+            }
+            """);
+        WriteFile(
+            Path.Combine(_workspaceRoot, ".nanoagent", "agent-profile.json"),
+            """
+            {
+              "languageServers": {
+                "python-pyright": {
+                  "command": ".nanoagent/tools/custom-pyright.cmd",
+                  "priority": 250
+                },
+                "python-ruff": {
+                  "language": "Python",
+                  "name": "Ruff LSP",
+                  "command": ".nanoagent/tools/ruff-lsp.cmd",
+                  "args": ["serve"],
+                  "languageId": "python",
+                  "fileExtensions": ["pyi", ".py"],
+                  "priority": 300,
+                  "installHint": "pip install ruff-lsp"
+                }
+              }
+            }
+            """);
+
+        IReadOnlyList<LanguageServerProfileConfiguration> servers = AgentProfileConfigurationReader.LoadLanguageServers(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        servers.Should().HaveCount(2);
+        LanguageServerProfileConfiguration pyright = servers.Single(static server => server.Key == "python-pyright");
+        pyright.Command.Should().Be(Path.GetFullPath(Path.Combine(_workspaceRoot, ".nanoagent/tools/custom-pyright.cmd")));
+        pyright.Args.Should().Equal("--stdio");
+        pyright.Priority.Should().Be(250);
+
+        LanguageServerProfileConfiguration ruff = servers.Single(static server => server.Key == "python-ruff");
+        ruff.FileExtensions.Should().Equal(".pyi", ".py");
+        ruff.InstallHint.Should().Be("pip install ruff-lsp");
+        ruff.Command.Should().Be(Path.GetFullPath(Path.Combine(_workspaceRoot, ".nanoagent/tools/ruff-lsp.cmd")));
     }
 
     public void Dispose()

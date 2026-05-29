@@ -29,6 +29,8 @@ internal sealed class AgentProfileConfigurationDocument
 
     public Dictionary<string, McpServerProfileDocument>? McpServers { get; set; }
 
+    public Dictionary<string, LanguageServerProfileDocument>? LanguageServers { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
 }
@@ -133,4 +135,27 @@ internal sealed class CustomToolProfileDocument
 internal sealed class McpToolProfileDocument
 {
     public string? ApprovalMode { get; set; }
+}
+
+internal sealed class LanguageServerProfileDocument
+{
+    public List<string>? Args { get; set; }
+
+    public string? Command { get; set; }
+
+    public bool? Enabled { get; set; }
+
+    public List<string>? FileExtensions { get; set; }
+
+    public JsonElement? InitializationOptions { get; set; }
+
+    public string? InstallHint { get; set; }
+
+    public string? Language { get; set; }
+
+    public string? LanguageId { get; set; }
+
+    public string? Name { get; set; }
+
+    public int? Priority { get; set; }
 }
