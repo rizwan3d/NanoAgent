@@ -64,9 +64,15 @@ public sealed class LanguageServerRegistryTests : IDisposable
     [Fact]
     public async Task ResolveAsync_Should_DetectWorkspaceNodeModulesServer()
     {
-        WriteFile(
-            Path.Combine(_workspaceRoot, "node_modules", ".bin", "typescript-language-server.cmd"),
-            "@echo off");
+        WriteExecutable(
+            Path.Combine(
+                _workspaceRoot,
+                "node_modules",
+                ".bin",
+                OperatingSystem.IsWindows() ? "typescript-language-server.cmd" : "typescript-language-server"),
+            OperatingSystem.IsWindows()
+                ? "@echo off"
+                : "#!/usr/bin/env sh\nexit 0\n");
 
         LanguageServerRegistry sut = CreateSut();
 
@@ -135,6 +141,20 @@ public sealed class LanguageServerRegistryTests : IDisposable
     {
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
+    }
+
+    private static void WriteExecutable(string path, string content)
+    {
+        WriteFile(path, content);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            File.SetUnixFileMode(
+                path,
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
+                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+        }
     }
 
     private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
