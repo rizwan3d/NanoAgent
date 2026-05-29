@@ -16,6 +16,8 @@ namespace NanoAgent.Application.Tools.Serialization;
 [JsonSerializable(typeof(CodebaseIndexSnippet))]
 [JsonSerializable(typeof(CodebaseIndexStatusResult))]
 [JsonSerializable(typeof(CodeIntelligenceItem))]
+[JsonSerializable(typeof(CodeIntelligenceServerCandidate))]
+[JsonSerializable(typeof(CodeIntelligenceServerStatus))]
 [JsonSerializable(typeof(CodeIntelligenceResult))]
 [JsonSerializable(typeof(HeadlessBrowserResult))]
 [JsonSerializable(typeof(NanoAgent.Application.Models.LessonMemoryEntry))]
