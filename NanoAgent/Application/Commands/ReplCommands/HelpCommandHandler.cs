@@ -35,6 +35,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/help - List the available shell commands and their usage.\n" +
             "/import <json-path> - Import a session from JSON.\n" +
             "/init [recommended|minimal|custom] - Choose and initialize workspace-local NanoAgent files.\n" +
+            "/lsp [status|refresh|file <path> [refresh]] - Show detected language servers or inspect a specific file.\n" +
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Choose the active model with the picker.\n" +
             "/new - Start a new session.\n" +
