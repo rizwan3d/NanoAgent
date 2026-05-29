@@ -926,6 +926,79 @@ Supported transports:
 
 Use `enabledTools` and `disabledTools` to filter exposed tools. Use `/mcp` to inspect loaded MCP servers, custom tool providers, and dynamic tools.
 
+## Code Intelligence
+
+`code_intelligence` now discovers language servers from built-in definitions, the current workspace, and optional user or workspace profile overrides.
+
+- Run `code_intelligence` with `action: "servers_status"` to inspect supported languages, detected servers, missing servers, cached health, and install hints.
+- In the interactive CLI, use `/lsp` for the same registry view. Use `/lsp refresh` to bypass cached detection, or `/lsp file <path>` to inspect candidates for one file.
+- Built-in detection checks workspace-local bins such as `node_modules/.bin` and common Python virtualenv script folders before falling back to `PATH`.
+- Server selection is deterministic: higher `priority` wins, then NanoAgent falls back through remaining detected servers in stable key order.
+- Rename stays preview-only. Code-intelligence actions remain read-only.
+
+Example status request:
+
+```json
+{
+  "action": "servers_status",
+  "refresh": true
+}
+```
+
+Profile overrides live in user-level or workspace-level `.nanoagent/agent-profile.json` under `languageServers`.
+
+Example override:
+
+```json
+{
+  "languageServers": {
+    "python-pyright": {
+      "language": "Python",
+      "name": "Pyright",
+      "command": ".nanoagent/tools/pyright-langserver.cmd",
+      "args": ["--stdio"],
+      "languageId": "python",
+      "fileExtensions": [".py"],
+      "priority": 250
+    }
+  }
+}
+```
+
+Supported `languageServers` fields:
+
+- `command`
+- `args`
+- `enabled`
+- `fileExtensions`
+- `initializationOptions`
+- `installHint`
+- `language`
+- `languageId`
+- `name`
+- `priority`
+
+Setup examples:
+
+- TypeScript/JavaScript:
+  Install `vtsls` or `typescript-language-server`.
+  Example: `npm install -g @vtsls/language-server typescript`
+- Python:
+  Install `basedpyright-langserver`, `pyright-langserver`, or `pylsp`.
+  Examples: `pip install basedpyright` or `pip install python-lsp-server`
+- C#:
+  Install `csharp-ls`.
+  Example: `dotnet tool install --global csharp-ls`
+- Rust:
+  Install `rust-analyzer`.
+  Example: `rustup component add rust-analyzer`
+- Go:
+  Install `gopls`.
+  Example: `go install golang.org/x/tools/gopls@latest`
+- C/C++:
+  Install `clangd`.
+  Example: use your platform package manager or LLVM distribution so `clangd` is on `PATH`
+
 ## Custom Tools
 
 NanoAgent can expose user-defined process tools from `agent-profile.json`. A custom tool can be written in any language that can read JSON from stdin and write text or JSON to stdout. Configured tools are exposed to the model as `custom__<name>`.
