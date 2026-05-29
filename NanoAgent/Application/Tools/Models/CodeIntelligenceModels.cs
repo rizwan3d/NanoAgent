@@ -9,7 +9,8 @@ public sealed record CodeIntelligenceRequest(
     int TimeoutSeconds,
     string? Query = null,
     string? NewName = null,
-    string? CallDirection = null);
+    string? CallDirection = null,
+    bool Refresh = false);
 
 public sealed record CodeIntelligenceResult(
     string Action,
@@ -18,7 +19,8 @@ public sealed record CodeIntelligenceResult(
     string ServerName,
     IReadOnlyList<CodeIntelligenceItem> Items,
     string? HoverText,
-    IReadOnlyList<string> Warnings);
+    IReadOnlyList<string> Warnings,
+    IReadOnlyList<CodeIntelligenceServerStatus>? Servers = null);
 
 public sealed record CodeIntelligenceItem(
     string Kind,
@@ -30,3 +32,23 @@ public sealed record CodeIntelligenceItem(
     int EndLine,
     int EndCharacter,
     string? ContainerName);
+
+public sealed record CodeIntelligenceServerStatus(
+    string Language,
+    string LanguageId,
+    IReadOnlyList<string> FileExtensions,
+    IReadOnlyList<CodeIntelligenceServerCandidate> Candidates,
+    string? SelectedServerName);
+
+public sealed record CodeIntelligenceServerCandidate(
+    string Key,
+    string Name,
+    string Command,
+    IReadOnlyList<string> Arguments,
+    int Priority,
+    string DetectionStatus,
+    string Source,
+    string? ResolvedCommand,
+    string? InstallHint,
+    string LanguageId,
+    string? Message);

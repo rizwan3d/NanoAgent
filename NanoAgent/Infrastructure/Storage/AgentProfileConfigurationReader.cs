@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
+using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Mcp;
 using System.Text.Json;
@@ -126,6 +127,44 @@ internal static class AgentProfileConfigurationReader
 
         return tools.Values
             .OrderBy(static tool => tool.Name, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static IReadOnlyList<LanguageServerProfileConfiguration> LoadLanguageServers(
+        IUserDataPathProvider userDataPathProvider,
+        IWorkspaceRootProvider workspaceRootProvider)
+    {
+        ArgumentNullException.ThrowIfNull(userDataPathProvider);
+        ArgumentNullException.ThrowIfNull(workspaceRootProvider);
+
+        string workspaceRoot = Path.GetFullPath(workspaceRootProvider.GetWorkspaceRoot());
+        Dictionary<string, LanguageServerProfileConfiguration> servers = new(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string path, AgentProfileConfigurationDocument document) in LoadDocumentPairs(
+                     userDataPathProvider,
+                     workspaceRootProvider))
+        {
+            foreach (KeyValuePair<string, LanguageServerProfileDocument> item in document.LanguageServers ?? [])
+            {
+                if (string.IsNullOrWhiteSpace(item.Key) || item.Value is null)
+                {
+                    continue;
+                }
+
+                LanguageServerProfileConfiguration configuration = ConvertLanguageServer(item.Key, item.Value, path);
+                configuration.ResolveRelativePaths(workspaceRoot);
+                if (!servers.TryGetValue(configuration.Key, out LanguageServerProfileConfiguration? existing))
+                {
+                    servers[configuration.Key] = configuration;
+                    continue;
+                }
+
+                existing.Merge(configuration);
+            }
+        }
+
+        return servers.Values
+            .OrderBy(static server => server.Key, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
@@ -444,6 +483,76 @@ internal static class AgentProfileConfigurationReader
         }
 
         return tool;
+    }
+
+    private static LanguageServerProfileConfiguration ConvertLanguageServer(
+        string key,
+        LanguageServerProfileDocument document,
+        string sourcePath)
+    {
+        LanguageServerProfileConfiguration configuration = new(key)
+        {
+            SourcePath = sourcePath
+        };
+
+        if (document.Command is not null)
+        {
+            configuration.Command = NormalizeOptional(document.Command);
+        }
+
+        if (document.Args is not null)
+        {
+            configuration.Args.Clear();
+            configuration.Args.AddRange(NormalizeStringList(document.Args));
+        }
+
+        if (document.Enabled.HasValue)
+        {
+            configuration.Enabled = document.Enabled.Value;
+        }
+
+        if (document.FileExtensions is not null)
+        {
+            configuration.FileExtensions.Clear();
+            configuration.FileExtensions.AddRange(
+                NormalizeStringList(document.FileExtensions)
+                    .Select(static extension => extension.StartsWith(".", StringComparison.Ordinal)
+                        ? extension
+                        : $".{extension}")
+                    .Distinct(StringComparer.OrdinalIgnoreCase));
+        }
+
+        if (document.InitializationOptions.HasValue)
+        {
+            configuration.InitializationOptions = document.InitializationOptions.Value.Clone();
+        }
+
+        if (document.InstallHint is not null)
+        {
+            configuration.InstallHint = NormalizeOptional(document.InstallHint);
+        }
+
+        if (document.Language is not null)
+        {
+            configuration.Language = NormalizeOptional(document.Language);
+        }
+
+        if (document.LanguageId is not null)
+        {
+            configuration.LanguageId = NormalizeOptional(document.LanguageId);
+        }
+
+        if (document.Name is not null)
+        {
+            configuration.Name = NormalizeOptional(document.Name);
+        }
+
+        if (document.Priority.HasValue)
+        {
+            configuration.Priority = document.Priority.Value;
+        }
+
+        return configuration;
     }
 
     private static void MergeToolApprovalModes(
