@@ -134,11 +134,6 @@ Never collected:
 - API keys
 - terminal output
 
-Useful PostHog queries:
-- Unique users: `unique persons` on `nanoagent app started` or `nanoagent feature used`.
-- CI runs: event count for `nanoagent app started` filtered to `execution_environment = ci`, optionally broken down by `ci_provider` or `app_surface`.
-- Active users: DAU/WAU/MAU on `nanoagent app started` or `nanoagent feature used`, optionally filtered by `app_surface`.
-
 ## Provider Choice
 
 NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Kilo Code, Cerebras, Groq, Anthropic, Google AI Studio, Ollama, LM Studio, Ollama Cloud, and OpenAI-compatible providers.
