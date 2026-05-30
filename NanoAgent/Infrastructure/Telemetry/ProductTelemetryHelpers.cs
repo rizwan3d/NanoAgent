@@ -8,29 +8,40 @@ internal static class ProductTelemetryHelpers
     public static IReadOnlyDictionary<string, object> CreateIdentifyProperties(
         string version,
         string osFamily,
-        string appSurface)
+        string appSurface,
+        string executionEnvironment,
+        string? ciProvider)
     {
         return new Dictionary<string, object>(StringComparer.Ordinal)
         {
-            ["$set"] = CreatePersonProperties(version, osFamily, appSurface)
+            ["$set"] = CreatePersonProperties(version, osFamily, appSurface, executionEnvironment, ciProvider)
         };
     }
 
     public static IReadOnlyDictionary<string, object> CreateAppStartedProperties(
         string version,
         string osFamily,
-        string appSurface)
+        string appSurface,
+        string executionEnvironment,
+        string? ciProvider)
     {
-        return CreateCommonProperties(version, osFamily, appSurface);
+        return CreateCommonProperties(version, osFamily, appSurface, executionEnvironment, ciProvider);
     }
 
     public static IReadOnlyDictionary<string, object> CreateAppStoppedProperties(
         string version,
         string osFamily,
         string appSurface,
+        string executionEnvironment,
+        string? ciProvider,
         TimeSpan usageTime)
     {
-        Dictionary<string, object> properties = CreateCommonProperties(version, osFamily, appSurface);
+        Dictionary<string, object> properties = CreateCommonProperties(
+            version,
+            osFamily,
+            appSurface,
+            executionEnvironment,
+            ciProvider);
         properties["usage_time_bucket"] = ToUsageTimeBucket(usageTime);
         return properties;
     }
@@ -39,6 +50,8 @@ internal static class ProductTelemetryHelpers
         string version,
         string osFamily,
         string appSurface,
+        string executionEnvironment,
+        string? ciProvider,
         string featureName,
         string interactionKind,
         bool success,
@@ -46,7 +59,12 @@ internal static class ProductTelemetryHelpers
         int attachmentCount,
         Exception? exception)
     {
-        Dictionary<string, object> properties = CreateCommonProperties(version, osFamily, appSurface);
+        Dictionary<string, object> properties = CreateCommonProperties(
+            version,
+            osFamily,
+            appSurface,
+            executionEnvironment,
+            ciProvider);
         properties["feature_name"] = NormalizeFeatureName(featureName);
         properties["interaction_kind"] = NormalizeInteractionKind(interactionKind);
         properties["success"] = success;
@@ -113,25 +131,120 @@ internal static class ProductTelemetryHelpers
         return host.Trim().TrimEnd('/');
     }
 
+    public static string ResolveTelemetryAppSurface(
+        string appSurface,
+        Func<string, string?> environmentVariableReader)
+    {
+        ArgumentNullException.ThrowIfNull(environmentVariableReader);
+
+        string normalizedAppSurface = string.IsNullOrWhiteSpace(appSurface)
+            ? "cli"
+            : appSurface.Trim().ToLowerInvariant();
+
+        if (!string.Equals(normalizedAppSurface, "cli", StringComparison.Ordinal))
+        {
+            return normalizedAppSurface;
+        }
+
+        return DetectCiProvider(environmentVariableReader) switch
+        {
+            "github_actions" => "github_actions",
+            "gitlab_ci" => "gitlab_ci",
+            "bitbucket_pipelines" => "bitbucket_pipelines",
+            "generic_ci" => "ci",
+            _ => "cli"
+        };
+    }
+
+    public static string ResolveExecutionEnvironment(string telemetryAppSurface)
+    {
+        return telemetryAppSurface switch
+        {
+            "github_actions" or "gitlab_ci" or "bitbucket_pipelines" or "ci" => "ci",
+            _ => "local"
+        };
+    }
+
+    public static string? DetectCiProvider(Func<string, string?> environmentVariableReader)
+    {
+        ArgumentNullException.ThrowIfNull(environmentVariableReader);
+
+        if (HasTruthyEnvironmentVariable(environmentVariableReader, "GITHUB_ACTIONS") ||
+            HasEnvironmentVariable(environmentVariableReader, "GITHUB_RUN_ID"))
+        {
+            return "github_actions";
+        }
+
+        if (HasTruthyEnvironmentVariable(environmentVariableReader, "GITLAB_CI") ||
+            HasEnvironmentVariable(environmentVariableReader, "CI_PIPELINE_ID"))
+        {
+            return "gitlab_ci";
+        }
+
+        if (HasEnvironmentVariable(environmentVariableReader, "BITBUCKET_BUILD_NUMBER") ||
+            HasEnvironmentVariable(environmentVariableReader, "BITBUCKET_PIPELINE_UUID"))
+        {
+            return "bitbucket_pipelines";
+        }
+
+        if (HasTruthyEnvironmentVariable(environmentVariableReader, "CI"))
+        {
+            return "generic_ci";
+        }
+
+        return null;
+    }
+
     private static Dictionary<string, object> CreatePersonProperties(
         string version,
         string osFamily,
-        string appSurface)
+        string appSurface,
+        string executionEnvironment,
+        string? ciProvider)
     {
-        return CreateCommonProperties(version, osFamily, appSurface);
+        return CreateCommonProperties(version, osFamily, appSurface, executionEnvironment, ciProvider);
     }
 
     private static Dictionary<string, object> CreateCommonProperties(
         string version,
         string osFamily,
-        string appSurface)
+        string appSurface,
+        string executionEnvironment,
+        string? ciProvider)
     {
-        return new Dictionary<string, object>(StringComparer.Ordinal)
+        Dictionary<string, object> properties = new(StringComparer.Ordinal)
         {
             ["nanoagent_version"] = string.IsNullOrWhiteSpace(version) ? "0.0.0" : version.Trim(),
             ["os_family"] = string.IsNullOrWhiteSpace(osFamily) ? "other" : osFamily.Trim().ToLowerInvariant(),
-            ["app_surface"] = string.IsNullOrWhiteSpace(appSurface) ? "cli" : appSurface.Trim().ToLowerInvariant()
+            ["app_surface"] = string.IsNullOrWhiteSpace(appSurface) ? "cli" : appSurface.Trim().ToLowerInvariant(),
+            ["execution_environment"] = string.IsNullOrWhiteSpace(executionEnvironment)
+                ? "local"
+                : executionEnvironment.Trim().ToLowerInvariant(),
+            ["is_ci"] = string.Equals(executionEnvironment, "ci", StringComparison.OrdinalIgnoreCase)
         };
+
+        if (!string.IsNullOrWhiteSpace(ciProvider))
+        {
+            properties["ci_provider"] = ciProvider.Trim().ToLowerInvariant();
+        }
+
+        return properties;
+    }
+
+    private static bool HasEnvironmentVariable(
+        Func<string, string?> environmentVariableReader,
+        string variableName)
+    {
+        return !string.IsNullOrWhiteSpace(environmentVariableReader(variableName));
+    }
+
+    private static bool HasTruthyEnvironmentVariable(
+        Func<string, string?> environmentVariableReader,
+        string variableName)
+    {
+        string? value = environmentVariableReader(variableName);
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(value, "1", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeFeatureName(string? featureName)
