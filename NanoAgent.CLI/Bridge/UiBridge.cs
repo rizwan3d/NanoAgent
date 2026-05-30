@@ -45,7 +45,7 @@ public sealed class UiBridge : IUiBridge
         _pending.Enqueue(update);
     }
 
-    public Task<T> RequestSelectionAsync<T>(
+    public async Task<T> RequestSelectionAsync<T>(
         SelectionPromptRequest<T> request,
         CancellationToken cancellationToken)
     {
@@ -54,9 +54,8 @@ public sealed class UiBridge : IUiBridge
         TaskCompletionSource<T> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         object completionToken = new();
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            cancellationToken.Register(() =>
+        using CancellationTokenRegistration registration = cancellationToken.CanBeCanceled
+            ? cancellationToken.Register(() =>
             {
                 completion.TrySetCanceled(cancellationToken);
                 Enqueue(state =>
@@ -66,8 +65,8 @@ public sealed class UiBridge : IUiBridge
                         state.ActiveModal = null;
                     }
                 });
-            });
-        }
+            })
+            : default;
 
         Enqueue(state =>
         {
@@ -78,10 +77,10 @@ public sealed class UiBridge : IUiBridge
                 onCancelled: exception => completion.TrySetException(exception));
         });
 
-        return completion.Task;
+        return await completion.Task.ConfigureAwait(false);
     }
 
-    public Task<string> RequestTextAsync(
+    public async Task<string> RequestTextAsync(
         TextPromptRequest request,
         bool isSecret,
         CancellationToken cancellationToken)
@@ -91,15 +90,14 @@ public sealed class UiBridge : IUiBridge
 
         if (TryConsumeProviderAuthKey(request, isSecret, out string providerAuthKey))
         {
-            return Task.FromResult(providerAuthKey);
+            return providerAuthKey;
         }
 
         TaskCompletionSource<string> completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
         object completionToken = new();
 
-        if (cancellationToken.CanBeCanceled)
-        {
-            cancellationToken.Register(() =>
+        using CancellationTokenRegistration registration = cancellationToken.CanBeCanceled
+            ? cancellationToken.Register(() =>
             {
                 completion.TrySetCanceled(cancellationToken);
                 Enqueue(state =>
@@ -109,8 +107,8 @@ public sealed class UiBridge : IUiBridge
                         state.ActiveModal = null;
                     }
                 });
-            });
-        }
+            })
+            : default;
 
         Enqueue(state =>
         {
@@ -122,7 +120,7 @@ public sealed class UiBridge : IUiBridge
                 onCancelled: exception => completion.TrySetException(exception));
         });
 
-        return completion.Task;
+        return await completion.Task.ConfigureAwait(false);
     }
 
     public void ShowError(string message)
