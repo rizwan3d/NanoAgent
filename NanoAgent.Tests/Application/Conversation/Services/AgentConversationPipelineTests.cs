@@ -249,6 +249,72 @@ public sealed class AgentConversationPipelineTests
         hookService.Contexts[1].ResponseText.Should().Be("Done.");
     }
 
+    [Fact]
+    public async Task ProcessAsync_Should_NotMutateSessionHistory_When_AfterTaskCompleteHookRejects()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_1"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_1"));
+
+        RejectingAfterTaskCompleteLifecycleHookService hookService = new();
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            lifecycleHookService: hookService);
+
+        Func<Task> action = () => ProcessAsync(
+            sut,
+            "Ship it.",
+            session);
+
+        await action.Should().ThrowAsync<ConversationPipelineException>()
+            .WithMessage("Rejected after completion.");
+        session.ConversationHistory.Should().BeEmpty();
+        session.PendingExecutionPlan.Should().BeNull();
+        hookService.Contexts.Select(static context => context.EventName)
+            .Should()
+            .Equal(
+                LifecycleHookEvents.BeforeTaskStart,
+                LifecycleHookEvents.AfterTaskComplete,
+                LifecycleHookEvents.AfterTaskFailed);
+    }
+
 
     [Fact]
     public async Task ProcessAsync_Should_PassThinkingEffortToProviderRequest()
@@ -1563,6 +1629,94 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_KeepPendingPlanAndHistoryUnchanged_When_AfterTaskCompleteRejectsApprovedPlan()
+    {
+        ReplSessionContext session = CreateSession();
+        const string planningSummary =
+            """
+            Objective
+            - Plan the refactor first.
+
+            Plan
+            1. Inspect the affected files.
+            2. Apply the refactor.
+            3. Run validation.
+            """;
+
+        session.AddConversationTurn("Help me plan this refactor", planningSummary);
+        session.SetPendingExecutionPlan(new PendingExecutionPlan(
+            "Help me plan this refactor",
+            planningSummary,
+            [
+                "Inspect the affected files.",
+                "Apply the refactor.",
+                "Run validation."
+            ]));
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition(AgentToolNames.PlanningMode),
+                CreateToolDefinition(AgentToolNames.FileRead),
+                CreateToolDefinition(AgentToolNames.FileWrite),
+                CreateToolDefinition(AgentToolNames.ShellCommand)
+            ]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_exec"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Implemented the approved plan.",
+                [],
+                "resp_exec"));
+
+        RejectingAfterTaskCompleteLifecycleHookService hookService = new();
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            lifecycleHookService: hookService);
+
+        Func<Task> action = () => ProcessAsync(
+            sut,
+            "continue",
+            session);
+
+        await action.Should().ThrowAsync<ConversationPipelineException>()
+            .WithMessage("Rejected after completion.");
+        session.PendingExecutionPlan.Should().NotBeNull();
+        session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory[0].Content.Should().Be("Help me plan this refactor");
+        session.ConversationHistory[1].Content.Should().Be(planningSummary);
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_ExecutePlanningModeToolAndWriteToolWithinSingleConversation()
     {
         ReplSessionContext session = CreateSession();
@@ -2741,6 +2895,24 @@ public sealed class AgentConversationPipelineTests
             cancellationToken.ThrowIfCancellationRequested();
             Contexts.Add(context);
             return Task.FromResult(LifecycleHookRunResult.Allowed());
+        }
+    }
+
+    private sealed class RejectingAfterTaskCompleteLifecycleHookService : ILifecycleHookService
+    {
+        public List<LifecycleHookContext> Contexts { get; } = [];
+
+        public Task<LifecycleHookRunResult> RunAsync(
+            LifecycleHookContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Contexts.Add(context);
+
+            return Task.FromResult(
+                string.Equals(context.EventName, LifecycleHookEvents.AfterTaskComplete, StringComparison.Ordinal)
+                    ? LifecycleHookRunResult.Blocked("reject_after_complete", "Rejected after completion.")
+                    : LifecycleHookRunResult.Allowed());
         }
     }
 
