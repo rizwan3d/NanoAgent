@@ -118,7 +118,9 @@ NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud d
 Collected:
 - NanoAgent version
 - OS family
-- app surface such as CLI, Desktop, VS Code, Visual Studio, or JetBrains
+- app surface such as CLI, Desktop, VS Code, Visual Studio, JetBrains, GitHub Actions, GitLab CI, or Bitbucket Pipelines
+- execution environment (`local` or `ci`)
+- CI provider when detected (`github_actions`, `gitlab_ci`, `bitbucket_pipelines`, or generic CI)
 - feature names used
 - success and failure counts
 - token and duration buckets
@@ -131,6 +133,11 @@ Never collected:
 - repository names or URLs
 - API keys
 - terminal output
+
+Useful PostHog queries:
+- Unique users: `unique persons` on `nanoagent app started` or `nanoagent feature used`.
+- CI runs: event count for `nanoagent app started` filtered to `execution_environment = ci`, optionally broken down by `ci_provider` or `app_surface`.
+- Active users: DAU/WAU/MAU on `nanoagent app started` or `nanoagent feature used`, optionally filtered by `app_surface`.
 
 ## Provider Choice
 
