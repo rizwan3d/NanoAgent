@@ -160,11 +160,11 @@ internal sealed class McpHttpServerClient : IMcpServerClient
             cancellationToken);
         CaptureSessionId(response);
 
-        string responseBody = response.Content is null
-            ? string.Empty
-            : await response.Content.ReadAsStringAsync(cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
+            string responseBody = response.Content is null
+                ? string.Empty
+                : await response.Content.ReadAsStringAsync(cancellationToken);
             string bodySuffix = string.IsNullOrWhiteSpace(responseBody)
                 ? string.Empty
                 : $" Response: {responseBody.Trim()}";
@@ -172,15 +172,29 @@ internal sealed class McpHttpServerClient : IMcpServerClient
                 $"MCP server '{ServerName}' returned HTTP {(int)response.StatusCode}.{bodySuffix}");
         }
 
-        if (!expectResponse || string.IsNullOrWhiteSpace(responseBody))
+        HttpContent? content = response.Content;
+        if (!expectResponse || content is null)
         {
             return default;
         }
 
-        string contentType = response.Content?.Headers.ContentType?.MediaType ?? string.Empty;
-        string json = contentType.Contains("event-stream", StringComparison.OrdinalIgnoreCase)
-            ? ExtractSseJson(responseBody)
-            : responseBody;
+        string contentType = content.Headers.ContentType?.MediaType ?? string.Empty;
+        string json;
+
+        if (contentType.Contains("event-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            await using Stream stream = await content.ReadAsStreamAsync(cancellationToken);
+            using StreamReader reader = new(stream);
+            json = await ReadFirstSseDataEventAsync(reader, cancellationToken);
+        }
+        else
+        {
+            json = await content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return default;
+            }
+        }
 
         using JsonDocument document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
@@ -237,13 +251,20 @@ internal sealed class McpHttpServerClient : IMcpServerClient
         }
     }
 
-    private static string ExtractSseJson(string responseBody)
+    private static async Task<string> ReadFirstSseDataEventAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
     {
         StringBuilder builder = new();
-        string normalized = responseBody.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
 
-        foreach (string line in normalized.Split('\n'))
+        while (true)
         {
+            string? line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+
             if (line.Length == 0)
             {
                 if (builder.Length > 0)
