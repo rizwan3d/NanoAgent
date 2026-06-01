@@ -7,6 +7,7 @@ using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
 using System.Text;
@@ -208,6 +209,52 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         handler.AuthorizationHeader.Should().Be("Bearer test-key");
         handler.RequestBody.Should().Contain("\"model\":\"gemini-2.5-flash\"");
         payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_ResolveNanoAgentEnterpriseCredentials_When_CompatibleProviderUsesEnterpriseAuth()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_enterprise",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from enterprise."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<INanoAgentEnterpriseCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.CanResolve("enterprise-credential-json"))
+            .Returns(true);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("enterprise-access-token"));
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient, credentialService.Object);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://enterprise.example.com/v1"),
+                "enterprise-credential-json",
+                "gpt-5",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://enterprise.example.com/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer enterprise-access-token");
+        payload.ResponseId.Should().Be("req_789");
+        credentialService.VerifyAll();
     }
 
     [Fact]
@@ -1310,6 +1357,18 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             delayAsync: null,
             nextJitter: null,
             gitHubCopilotCredentialService: credentialService);
+    }
+
+    private static OpenAiCompatibleConversationProviderClient CreateSut(
+        HttpClient httpClient,
+        INanoAgentEnterpriseCredentialService credentialService)
+    {
+        return new OpenAiCompatibleConversationProviderClient(
+            httpClient,
+            NullLogger<OpenAiCompatibleConversationProviderClient>.Instance,
+            delayAsync: null,
+            nextJitter: null,
+            nanoAgentEnterpriseCredentialService: credentialService);
     }
 
 
