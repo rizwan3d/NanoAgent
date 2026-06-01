@@ -4,6 +4,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
 
 namespace NanoAgent.Infrastructure.Conversation;
@@ -24,7 +25,8 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         Func<double>? nextJitter = null,
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
     {
         ConversationProviderRequestPayloadFactory payloadFactory = new();
         ConversationProviderResponseNormalizer responseNormalizer = new();
@@ -54,7 +56,8 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
             responseNormalizer);
         _openAiCompatibleAdapter = new OpenAiCompatibleConversationProviderAdapter(
             httpExecutor,
-            payloadFactory);
+            payloadFactory,
+            nanoAgentEnterpriseCredentialService);
     }
 
     public Task<ConversationProviderPayload> SendAsync(

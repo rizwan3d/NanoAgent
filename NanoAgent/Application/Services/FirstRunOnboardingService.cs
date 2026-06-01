@@ -10,8 +10,14 @@ namespace NanoAgent.Application.Services;
 
 internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 {
+    private const string NanoAgentEnterpriseBaseUrl = "https://localhost:7180/v1";
+
     private static readonly SelectionPromptOption<OnboardingProviderSetupChoice>[] ProviderSetupOptions =
     [
+        new(
+            "NanoAgent Enterprise",
+            OnboardingProviderSetupChoice.NanoAgentEnterprise,
+            "Use your NanoAgent Enterprise deployment directly without opening a provider subpage. (Underdevelopment)"),
         new(
             "Subscription accounts",
             OnboardingProviderSetupChoice.SubscriptionAccount,
@@ -110,6 +116,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
     private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
     private readonly IGitHubCopilotAuthenticator? _gitHubCopilotAuthenticator;
+    private readonly INanoAgentEnterpriseAuthenticator? _nanoAgentEnterpriseAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -125,7 +132,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         ILogger<FirstRunOnboardingService> logger,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
-        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
+        INanoAgentEnterpriseAuthenticator? nanoAgentEnterpriseAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -139,6 +147,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
         _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
         _gitHubCopilotAuthenticator = gitHubCopilotAuthenticator;
+        _nanoAgentEnterpriseAuthenticator = nanoAgentEnterpriseAuthenticator;
         _logger = logger;
     }
 
@@ -151,12 +160,15 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 
         if (existingProfile is not null && !string.IsNullOrWhiteSpace(existingApiKey))
         {
+            string existingProviderName = existingConfiguration?.ActiveProviderName
+                ?? existingProfile.ProviderKind.ToDisplayName();
+
             ApplicationLogMessages.ExistingOnboardingDetected(
                 _logger,
-                existingProfile.ProviderKind.ToDisplayName());
+                existingProviderName);
 
             await _statusMessageWriter.ShowInfoAsync(
-                $"Using existing provider configuration: {existingProfile.ProviderKind.ToDisplayName()}.",
+                $"Using existing provider configuration: {existingProviderName}.",
                 cancellationToken);
 
             return new OnboardingResult(
@@ -245,6 +257,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                                 promptCancellationToken),
                             _inputValidator.ValidateBaseUrl,
                             cancellationToken)),
+                    OnboardingProviderChoice.NanoAgentEnterprise => _profileFactory.CreateCompatible(
+                        NanoAgentEnterpriseBaseUrl),
                     _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
                 };
 
@@ -257,6 +271,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                             await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
                         OnboardingProviderChoice.GitHubCopilot =>
                             await AuthenticateGitHubCopilotAsync(cancellationToken),
+                        OnboardingProviderChoice.NanoAgentEnterprise =>
+                            await AuthenticateNanoAgentEnterpriseAsync(profile, cancellationToken),
                         _ => await PromptUntilValidAsync(
                                 cancellationToken => _secretPrompt.PromptAsync(
                                     new SecretPromptRequest(
@@ -267,7 +283,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                                 cancellationToken)
                     };
 
-                string providerName = await CreateProviderNameAsync(profile, cancellationToken);
+                string providerName = await CreateProviderNameAsync(profile, providerChoice, cancellationToken);
                 await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
                 await _configurationStore.SaveAsync(
                     new AgentConfiguration(
@@ -278,10 +294,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 await _secretStore.SaveAsync(providerSecret, cancellationToken);
 
                 await _statusMessageWriter.ShowSuccessAsync(
-                    $"Onboarding complete. Provider: {profile.ProviderKind.ToDisplayName()}.",
+                    $"Onboarding complete. Provider: {GetProviderDisplayName(providerChoice, profile)}.",
                     cancellationToken);
 
-                ApplicationLogMessages.OnboardingCompleted(_logger, profile.ProviderKind.ToDisplayName());
+                ApplicationLogMessages.OnboardingCompleted(_logger, GetProviderDisplayName(providerChoice, profile));
 
                 return new OnboardingResult(
                     profile,
@@ -314,16 +330,20 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 
     private async Task<string> CreateProviderNameAsync(
         AgentProviderProfile profile,
+        OnboardingProviderChoice providerChoice,
         CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
-        return CreateProviderName(profile);
+        return CreateProviderName(profile, providerChoice);
     }
 
-    private static string CreateProviderName(AgentProviderProfile profile)
+    private static string CreateProviderName(
+        AgentProviderProfile profile,
+        OnboardingProviderChoice providerChoice)
     {
-        string providerName = profile.ProviderKind.ToDisplayName();
+        string providerName = GetProviderDisplayName(providerChoice, profile);
         if (profile.ProviderKind == ProviderKind.OpenAiCompatible &&
+            providerChoice != OnboardingProviderChoice.NanoAgentEnterprise &&
             Uri.TryCreate(profile.ResolveBaseUrl(), UriKind.Absolute, out Uri? uri) &&
             !string.IsNullOrWhiteSpace(uri.Host))
         {
@@ -344,6 +364,11 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     ProviderSetupOptions,
                     "Pick the kind of provider setup you want to configure on this machine."),
                 cancellationToken);
+
+            if (setupChoice == OnboardingProviderSetupChoice.NanoAgentEnterprise)
+            {
+                return OnboardingProviderChoice.NanoAgentEnterprise;
+            }
 
             if (setupChoice == OnboardingProviderSetupChoice.OpenAiCompatible)
             {
@@ -419,6 +444,21 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return await _gitHubCopilotAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
+    private async Task<string> AuthenticateNanoAgentEnterpriseAsync(
+        AgentProviderProfile profile,
+        CancellationToken cancellationToken)
+    {
+        if (_nanoAgentEnterpriseAuthenticator is null)
+        {
+            throw new InvalidOperationException(
+                "NanoAgent Enterprise authentication is unavailable in this runtime.");
+        }
+
+        return await _nanoAgentEnterpriseAuthenticator.AuthenticateAsync(
+            profile.ResolveBaseUrl(),
+            cancellationToken);
+    }
+
     private async Task<string> PromptUntilValidAsync(
         Func<CancellationToken, Task<string>> promptValue,
         Func<string?, InputValidationResult> validate,
@@ -445,5 +485,14 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return string.IsNullOrWhiteSpace(value)
             ? InputValidationResult.Success(string.Empty)
             : _inputValidator.ValidateBaseUrl(value);
+    }
+
+    private static string GetProviderDisplayName(
+        OnboardingProviderChoice providerChoice,
+        AgentProviderProfile profile)
+    {
+        return providerChoice == OnboardingProviderChoice.NanoAgentEnterprise
+            ? "NanoAgent Enterprise"
+            : profile.ProviderKind.ToDisplayName();
     }
 }

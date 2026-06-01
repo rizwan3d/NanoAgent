@@ -1,5 +1,6 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -15,16 +16,19 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
 
     private readonly IConversationProviderHttpExecutor _httpExecutor;
     private readonly ConversationProviderRequestPayloadFactory _payloadFactory;
+    private readonly INanoAgentEnterpriseCredentialService? _nanoAgentEnterpriseCredentialService;
 
     public OpenAiCompatibleConversationProviderAdapter(
         IConversationProviderHttpExecutor httpExecutor,
-        ConversationProviderRequestPayloadFactory payloadFactory)
+        ConversationProviderRequestPayloadFactory payloadFactory,
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
     {
         _httpExecutor = httpExecutor;
         _payloadFactory = payloadFactory;
+        _nanoAgentEnterpriseCredentialService = nanoAgentEnterpriseCredentialService;
     }
 
-    public Task<ConversationProviderPayload> SendAsync(
+    public async Task<ConversationProviderPayload> SendAsync(
         ConversationProviderRequest request,
         CancellationToken cancellationToken)
     {
@@ -33,11 +37,36 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
             payload,
             OpenAiConversationJsonContext.Default.OpenAiChatCompletionRequest);
         Uri baseUri = request.ProviderProfile.ResolveBaseUri();
+        string authorizationValue = request.ApiKey;
 
-        return _httpExecutor.ExecuteAsync(
+        if (_nanoAgentEnterpriseCredentialService?.CanResolve(request.ApiKey) == true)
+        {
+            NanoAgentEnterpriseResolvedCredential credential = await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                request.ApiKey,
+                forceRefresh: false,
+                cancellationToken);
+            authorizationValue = credential.AccessToken;
+
+            return await _httpExecutor.ExecuteAsync(
+                request.ProviderProfile.ProviderKind,
+                requestBody,
+                () => CreateHttpRequest(baseUri, request.ProviderProfile.ProviderKind, authorizationValue, requestBody),
+                cancellationToken,
+                refreshAuthorizationAsync: async token =>
+                {
+                    credential = await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                        request.ApiKey,
+                        forceRefresh: true,
+                        token);
+                    authorizationValue = credential.AccessToken;
+                    return true;
+                });
+        }
+
+        return await _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
             requestBody,
-            () => CreateHttpRequest(baseUri, request.ProviderProfile.ProviderKind, request.ApiKey, requestBody),
+            () => CreateHttpRequest(baseUri, request.ProviderProfile.ProviderKind, authorizationValue, requestBody),
             cancellationToken);
     }
 
