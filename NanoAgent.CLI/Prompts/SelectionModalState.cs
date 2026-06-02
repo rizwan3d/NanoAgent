@@ -10,6 +10,9 @@ public sealed class SelectionModalState<T> : UiModalState
     private const int PanelChromeLineCount = 2;
     private const int PanelHorizontalPadding = 6;
     private const int ReservedLayoutLineCount = 15;
+    private const int MaxDescriptionLineCount = 8;
+    private const int FallbackWindowWidth = 80;
+    private const int FallbackWindowHeight = 24;
 
     private readonly Action<Exception>? _onCancelled;
     private readonly Action<T> _onSelected;
@@ -39,12 +42,12 @@ public sealed class SelectionModalState<T> : UiModalState
     {
         get
         {
-            int contentWidth = Math.Max(20, Console.WindowWidth - PanelHorizontalPadding);
+            int contentWidth = Math.Max(20, GetWindowWidth() - PanelHorizontalPadding);
             int bodyLineCount = CountWrappedLines(Title, contentWidth);
 
             if (!string.IsNullOrWhiteSpace(Description))
             {
-                bodyLineCount += 1 + CountWrappedLines(Description, contentWidth);
+                bodyLineCount += 1 + GetVisibleDescriptionLines(contentWidth).Count;
             }
 
             if (DeadlineUtc is not null)
@@ -73,7 +76,7 @@ public sealed class SelectionModalState<T> : UiModalState
             int requestedSize = bodyLineCount + PanelChromeLineCount;
             int maxPanelSize = Math.Max(
                 PanelChromeLineCount + 1,
-                Console.WindowHeight - ReservedLayoutLineCount);
+                GetWindowHeight() - ReservedLayoutLineCount);
             int minPanelSize = Math.Min(MinimumPanelSize, maxPanelSize);
 
             return Math.Clamp(requestedSize, minPanelSize, maxPanelSize);
@@ -106,9 +109,17 @@ public sealed class SelectionModalState<T> : UiModalState
 
         if (headingLines.Count >= maxBodyLines)
         {
-            headingLines = headingLines
-                .Take(Math.Max(0, maxBodyLines - 1))
-                .ToList();
+            if (maxBodyLines == 1)
+            {
+                headingLines = [];
+            }
+            else
+            {
+                headingLines = headingLines
+                    .Take(Math.Max(0, maxBodyLines - 2))
+                    .Append("[grey]...[/]")
+                    .ToList();
+            }
         }
 
         int availableOptionLines = maxBodyLines - headingLines.Count;
@@ -231,7 +242,7 @@ public sealed class SelectionModalState<T> : UiModalState
         if (!string.IsNullOrWhiteSpace(Description))
         {
             lines.Add(string.Empty);
-            lines.AddRange(WrapMarkupLines(Description, contentWidth));
+            lines.AddRange(GetVisibleDescriptionMarkupLines(contentWidth));
         }
 
         if (DeadlineUtc is not null)
@@ -338,6 +349,27 @@ public sealed class SelectionModalState<T> : UiModalState
         return visibleLines;
     }
 
+    private IReadOnlyList<string> GetVisibleDescriptionLines(int contentWidth)
+    {
+        IReadOnlyList<string> wrappedLines = WrapPlainText(Description, contentWidth);
+        if (wrappedLines.Count <= MaxDescriptionLineCount)
+        {
+            return wrappedLines;
+        }
+
+        return [
+            .. wrappedLines.Take(MaxDescriptionLineCount - 1),
+            "..."
+        ];
+    }
+
+    private IReadOnlyList<string> GetVisibleDescriptionMarkupLines(int contentWidth)
+    {
+        return GetVisibleDescriptionLines(contentWidth)
+            .Select(line => Markup.Escape(line))
+            .ToArray();
+    }
+
     private int GetSelectedOptionFirstLineIndex()
     {
         int contentWidth = GetContentWidth();
@@ -385,7 +417,35 @@ public sealed class SelectionModalState<T> : UiModalState
 
     private static int GetContentWidth()
     {
-        return Math.Max(20, Console.WindowWidth - PanelHorizontalPadding);
+        return Math.Max(20, GetWindowWidth() - PanelHorizontalPadding);
+    }
+
+    private static int GetWindowWidth()
+    {
+        try
+        {
+            return Console.WindowWidth > 0
+                ? Console.WindowWidth
+                : FallbackWindowWidth;
+        }
+        catch (IOException)
+        {
+            return FallbackWindowWidth;
+        }
+    }
+
+    private static int GetWindowHeight()
+    {
+        try
+        {
+            return Console.WindowHeight > 0
+                ? Console.WindowHeight
+                : FallbackWindowHeight;
+        }
+        catch (IOException)
+        {
+            return FallbackWindowHeight;
+        }
     }
 
     private static IReadOnlyList<string> WrapMarkupLines(
