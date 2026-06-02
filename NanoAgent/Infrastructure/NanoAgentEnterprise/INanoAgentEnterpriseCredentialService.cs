@@ -4,6 +4,10 @@ internal interface INanoAgentEnterpriseCredentialService
 {
     bool CanResolve(string storedCredentials);
 
+    Task<string> AuthenticateAsync(
+        string baseUrl,
+        CancellationToken cancellationToken);
+
     Task<NanoAgentEnterpriseResolvedCredential> ResolveAsync(
         string storedCredentials,
         bool forceRefresh,
