@@ -2315,6 +2315,64 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_ThrowConversationPipelineException_When_BudgetIsExceededBeforeProviderRequest()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.PlanningMode)]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        Mock<IBudgetControlsUsageService> budgetControlsUsageService = new(MockBehavior.Strict);
+        budgetControlsUsageService
+            .Setup(service => service.GetStatusAsync(
+                session,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BudgetControlsStatus(
+                BudgetControlsSettings.LocalSource,
+                MonthlyBudgetUsd: 10m,
+                SpentUsd: 10m,
+                AlertThresholdPercent: 80,
+                BudgetControlsSettings.DefaultLocalPath,
+                CloudApiUrl: null,
+                HasCloudAuthKey: false));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            budgetControlsUsageService: budgetControlsUsageService.Object);
+
+        Func<Task> action = () => ProcessAsync(sut, "hello", session);
+
+        await action.Should().ThrowAsync<ConversationPipelineException>()
+            .WithMessage("*Budget controls blocked the provider request*");
+        providerClient.Verify(client => client.SendAsync(
+            It.IsAny<ConversationProviderRequest>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        responseMapper.VerifyNoOtherCalls();
+        toolExecutionPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_PropagateConversationProviderException_When_ProviderFails()
     {
         ReplSessionContext session = CreateSession();
@@ -2683,7 +2741,8 @@ public sealed class AgentConversationPipelineTests
         IWorkspaceInstructionsProvider? workspaceInstructionsProvider = null,
         ILessonMemoryService? lessonMemoryService = null,
         ILifecycleHookService? lifecycleHookService = null,
-        ISkillService? skillService = null)
+        ISkillService? skillService = null,
+        IBudgetControlsUsageService? budgetControlsUsageService = null)
     {
         return new AgentConversationPipeline(
             timeProvider,
@@ -2700,6 +2759,7 @@ public sealed class AgentConversationPipelineTests
             NullLogger<AgentConversationPipeline>.Instance,
             lifecycleHookService,
             skillService,
+            budgetControlsUsageService,
             workspaceAgentProfilePromptProvider: workspaceAgentProfilePromptProvider ?? new EmptyWorkspaceAgentProfilePromptProvider());
     }
 

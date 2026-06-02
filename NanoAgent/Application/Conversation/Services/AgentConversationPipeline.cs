@@ -10,6 +10,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
+using System.Globalization;
 using System.Text.Json;
 
 namespace NanoAgent.Application.Conversation.Services;
@@ -1266,6 +1267,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     {
         try
         {
+            await EnsureBudgetAllowsProviderRequestAsync(
+                session,
+                cancellationToken);
+
             ConversationProviderRequest request = new(
                 session.ProviderProfile,
                 apiKey,
@@ -1302,6 +1307,28 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "The configured provider failed while processing the conversation request.",
                 exception);
         }
+    }
+
+    private async Task EnsureBudgetAllowsProviderRequestAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        BudgetControlsStatus status = await _budgetControlsUsageService.GetStatusAsync(
+            session,
+            cancellationToken);
+
+        if (status.MonthlyBudgetUsd is not decimal monthlyBudgetUsd ||
+            monthlyBudgetUsd <= 0m ||
+            status.SpentUsd < monthlyBudgetUsd)
+        {
+            return;
+        }
+
+        throw new ConversationPipelineException(
+            "Budget controls blocked the provider request because recorded spend " +
+            $"${status.SpentUsd.ToString("0.##", CultureInfo.InvariantCulture)} " +
+            "has reached or exceeded the monthly budget of " +
+            $"${monthlyBudgetUsd.ToString("0.##", CultureInfo.InvariantCulture)}.");
     }
 
     private async Task<string?> LoadProviderSecretAsync(
