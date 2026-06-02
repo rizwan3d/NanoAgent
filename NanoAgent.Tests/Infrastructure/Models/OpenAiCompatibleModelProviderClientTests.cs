@@ -144,6 +144,70 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_ReauthenticateNanoAgentEnterprise_When_RefreshedCredentialIsStillUnauthorized()
+    {
+        SequencedHandler handler = new(
+            new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "data": [
+                        { "id": "enterprise-model" }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        HttpClient httpClient = new(handler);
+        Mock<INanoAgentEnterpriseCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.CanResolve("enterprise-credential-json"))
+            .Returns(true);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("expired-token"));
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json",
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("still-invalid-token"));
+        credentialService
+            .Setup(service => service.AuthenticateAsync(
+                "https://enterprise.example.com/v1",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("enterprise-credential-json-reauthenticated");
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json-reauthenticated",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("fresh-token"));
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            nanoAgentEnterpriseCredentialService: credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://enterprise.example.com/v1"),
+            "enterprise-credential-json",
+            CancellationToken.None);
+
+        handler.AuthorizationHeaders.Should().Equal(
+            "Bearer expired-token",
+            "Bearer still-invalid-token",
+            "Bearer fresh-token");
+        models.Select(model => model.Id).Should().Equal("enterprise-model");
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestOpenRouterModelsEndpointWithAppHeaders_When_OpenRouterProviderIsConfigured()
     {
         RecordingHandler handler = new("""

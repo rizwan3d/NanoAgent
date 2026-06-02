@@ -153,6 +153,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         bool refreshedAfterUnauthorized = false;
+        bool reauthenticatedAfterUnauthorized = false;
 
         while (true)
         {
@@ -173,12 +174,45 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 !refreshedAfterUnauthorized)
             {
                 refreshedAfterUnauthorized = true;
-                NanoAgentEnterpriseResolvedCredential enterpriseCredential =
-                    await _nanoAgentEnterpriseCredentialService!.ResolveAsync(
+                NanoAgentEnterpriseResolvedCredential enterpriseCredential;
+                try
+                {
+                    enterpriseCredential = await _nanoAgentEnterpriseCredentialService!.ResolveAsync(
                         apiKey,
                         forceRefresh: true,
                         cancellationToken);
+                }
+                catch (InvalidOperationException)
+                {
+                    string storedCredentials = await _nanoAgentEnterpriseCredentialService!.AuthenticateAsync(
+                        providerProfile.ResolveBaseUrl(),
+                        cancellationToken);
+                    enterpriseCredential = await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                        storedCredentials,
+                        forceRefresh: false,
+                        cancellationToken);
+                    reauthenticatedAfterUnauthorized = true;
+                }
+
                 authorizationValue = enterpriseCredential.AccessToken;
+                continue;
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                usesNanoAgentEnterpriseCredentials &&
+                refreshedAfterUnauthorized &&
+                !reauthenticatedAfterUnauthorized)
+            {
+                string storedCredentials = await _nanoAgentEnterpriseCredentialService!.AuthenticateAsync(
+                    providerProfile.ResolveBaseUrl(),
+                    cancellationToken);
+                NanoAgentEnterpriseResolvedCredential enterpriseCredential =
+                    await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                        storedCredentials,
+                        forceRefresh: false,
+                        cancellationToken);
+                authorizationValue = enterpriseCredential.AccessToken;
+                reauthenticatedAfterUnauthorized = true;
                 continue;
             }
 
