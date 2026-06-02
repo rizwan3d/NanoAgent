@@ -21,17 +21,20 @@ internal sealed class NanoAgentEnterpriseCredentialService :
     private static readonly TimeSpan TokenExpiryBuffer = TimeSpan.FromMinutes(5);
 
     private readonly HttpClient _httpClient;
+    private readonly IAgentConfigurationStore _configurationStore;
     private readonly IApiKeySecretStore _secretStore;
     private readonly IStatusMessageWriter _statusMessageWriter;
     private readonly ILogger<NanoAgentEnterpriseCredentialService> _logger;
 
     public NanoAgentEnterpriseCredentialService(
         HttpClient httpClient,
+        IAgentConfigurationStore configurationStore,
         IApiKeySecretStore secretStore,
         IStatusMessageWriter statusMessageWriter,
         ILogger<NanoAgentEnterpriseCredentialService> logger)
     {
         _httpClient = httpClient;
+        _configurationStore = configurationStore;
         _secretStore = secretStore;
         _statusMessageWriter = statusMessageWriter;
         _logger = logger;
@@ -98,6 +101,7 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             redirectUri,
             codeVerifier,
             cancellationToken);
+        await SaveCredentialsAsync(credentials, cancellationToken);
 
         await _statusMessageWriter.ShowSuccessAsync(
             "NanoAgent Enterprise sign-in completed.",
@@ -123,7 +127,7 @@ internal sealed class NanoAgentEnterpriseCredentialService :
         if (forceRefresh || IsExpired(credentials))
         {
             credentials = await RefreshCredentialsAsync(credentials, cancellationToken);
-            await _secretStore.SaveAsync(SerializeCredentials(credentials), cancellationToken);
+            await SaveCredentialsAsync(credentials, cancellationToken);
         }
 
         return new NanoAgentEnterpriseResolvedCredential(credentials.AccessToken);
@@ -367,6 +371,20 @@ internal sealed class NanoAgentEnterpriseCredentialService :
         return trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? trimmed[..^3]
             : trimmed;
+    }
+
+    private async Task SaveCredentialsAsync(
+        NanoAgentEnterpriseCredentials credentials,
+        CancellationToken cancellationToken)
+    {
+        string serializedCredentials = SerializeCredentials(credentials);
+        await _secretStore.SaveAsync(serializedCredentials, cancellationToken);
+
+        string? activeProviderName = (await _configurationStore.LoadAsync(cancellationToken))?.ActiveProviderName;
+        if (!string.IsNullOrWhiteSpace(activeProviderName))
+        {
+            await _secretStore.SaveAsync(activeProviderName, serializedCredentials, cancellationToken);
+        }
     }
 
     private static bool IsExpired(NanoAgentEnterpriseCredentials credentials)

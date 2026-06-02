@@ -2,6 +2,8 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Models;
+using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using System.Net;
 using System.Text;
@@ -16,11 +18,11 @@ public sealed class NanoAgentEnterpriseCredentialServiceTests
     {
         string storedCredentials = JsonSerializer.Serialize(new
         {
-            Type = "nanoagent-enterprise",
-            ProviderBaseUrl = "https://enterprise.example.com/v1",
-            AccessToken = "old-access",
-            RefreshToken = "old-refresh",
-            ExpiresAtUnixTimeMilliseconds = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeMilliseconds()
+            type = "nanoagent-enterprise",
+            providerBaseUrl = "https://enterprise.example.com/v1",
+            access_token = "old-access",
+            refresh_token = "old-refresh",
+            expires = DateTimeOffset.UtcNow.AddMinutes(-10).ToUnixTimeMilliseconds()
         });
         RecordingHandler handler = new("""
             {
@@ -38,11 +40,23 @@ public sealed class NanoAgentEnterpriseCredentialServiceTests
             .Setup(store => store.SaveAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .Callback<string, CancellationToken>((value, _) => savedSecret = value)
             .Returns(Task.CompletedTask);
+        secretStore
+            .Setup(store => store.SaveAsync("NanoAgent Enterprise", It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentConfiguration(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://enterprise.example.com/v1"),
+                PreferredModelId: null,
+                ReasoningEffort: null,
+                ActiveProviderName: "NanoAgent Enterprise"));
 
         Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
 
         NanoAgentEnterpriseCredentialService sut = new(
             httpClient,
+            configurationStore.Object,
             secretStore.Object,
             statusMessageWriter.Object,
             NullLogger<NanoAgentEnterpriseCredentialService>.Instance);
@@ -59,6 +73,7 @@ public sealed class NanoAgentEnterpriseCredentialServiceTests
         savedSecret.Should().NotBeNullOrWhiteSpace();
         sut.CanResolve(savedSecret!).Should().BeTrue();
         secretStore.VerifyAll();
+        configurationStore.VerifyAll();
         statusMessageWriter.VerifyNoOtherCalls();
     }
 
