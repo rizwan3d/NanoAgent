@@ -7,15 +7,59 @@ namespace NanoAgent.CLI;
 public static partial class Program
 {
     private const string MessagesPanelScrollHint = "[ Scroll: ↑/↓ | PgUp/PgDn | Wheel ]";
+    private const int FallbackWindowWidth = 80;
+    private const int FallbackWindowHeight = 24;
+    private const int MinimumPanelHeight = 3;
+    private const int MinimumStandardLayoutHeight = 10;
 
     private static IRenderable BuildUi(AppState state)
     {
+        return BuildUi(state, GetWindowWidth(), GetWindowHeight());
+    }
+
+    private static IRenderable BuildUi(
+        AppState state,
+        int windowWidth,
+        int windowHeight)
+    {
+        if (windowWidth < 20 || windowHeight < MinimumStandardLayoutHeight)
+        {
+            return BuildCompactUi(state, windowWidth, windowHeight);
+        }
+
+        int footerSize = 1;
+        int inputSize = Math.Max(MinimumPanelHeight, GetInputPanelSize(state));
+        int headerSize = HeaderPanelSize;
+        int bodyMinimumSize = HasPinnedPlan(state) ? 8 : MinimumPanelHeight;
+        int totalFixedSize = headerSize + inputSize + footerSize;
+        if (totalFixedSize + bodyMinimumSize > windowHeight)
+        {
+            int overflow = totalFixedSize + bodyMinimumSize - windowHeight;
+            int reducibleHeader = Math.Max(0, headerSize - MinimumPanelHeight);
+            int headerReduction = Math.Min(reducibleHeader, overflow);
+            headerSize -= headerReduction;
+            overflow -= headerReduction;
+
+            if (overflow > 0)
+            {
+                int reducibleInput = Math.Max(0, inputSize - MinimumPanelHeight);
+                int inputReduction = Math.Min(reducibleInput, overflow);
+                inputSize -= inputReduction;
+                overflow -= inputReduction;
+            }
+
+            if (overflow > 0)
+            {
+                return BuildCompactUi(state, windowWidth, windowHeight);
+            }
+        }
+
         Layout root = new Layout("root")
             .SplitRows(
-                new Layout("header").Size(HeaderPanelSize),
+                new Layout("header").Size(headerSize),
                 new Layout("body").Ratio(1),
-                new Layout("input").Size(GetInputPanelSize(state)),
-                new Layout("footer").Size(1));
+                new Layout("input").Size(inputSize),
+                new Layout("footer").Size(footerSize));
 
         root["header"].Update(BuildHeader(state));
 
@@ -32,6 +76,38 @@ public static partial class Program
         root["footer"].Update(new Markup(BuildFooterMarkup(state)));
 
         return root;
+    }
+
+    private static IRenderable BuildCompactUi(
+        AppState state,
+        int windowWidth,
+        int windowHeight)
+    {
+        string status = state.ActiveModal is null
+            ? (state.IsBusy || state.IsStreaming ? "Busy" : "Ready")
+            : "Action required";
+        string model = string.IsNullOrWhiteSpace(state.ActiveModelId) ? "n/a" : state.ActiveModelId;
+        string lastMessage = state.Messages.Count == 0
+            ? "No messages yet."
+            : state.Messages[^1].Text;
+        int contentWidth = Math.Max(8, windowWidth - 2);
+        string compactBody = string.Join(
+            '\n',
+            WrapText($"NanoAgent {status}", contentWidth)
+                .Concat(WrapText($"Model: {model}", contentWidth))
+                .Concat([string.Empty])
+                .Concat(WrapText(lastMessage, contentWidth)));
+
+        if (windowHeight < MinimumPanelHeight)
+        {
+            return new Markup(Markup.Escape(TruncateFromRight(
+                compactBody.Replace('\n', ' '),
+                Math.Max(1, contentWidth))));
+        }
+
+        return new Panel(new Markup(Markup.Escape(compactBody)))
+            .Border(BoxBorder.Square)
+            .Expand();
     }
 
     private static IRenderable BuildHeader(AppState state)
@@ -53,7 +129,7 @@ public static partial class Program
     private static string BuildMessagesPanelHeaderMarkup(AppState state)
     {
         const string leftPrefix = "Session ── Working: ";
-        int headerWidth = Math.Max(20, Console.WindowWidth - 6);
+        int headerWidth = Math.Max(20, GetWindowWidth() - 6);
         int leftBudget = Math.Max(0, headerWidth - MessagesPanelScrollHint.Length - 1);
         string rootDirectory = state.RootDirectory ?? string.Empty;
         string displayRootDirectory = rootDirectory;
@@ -120,7 +196,7 @@ public static partial class Program
         const string plainPrefix = "Input -- Model: ";
         const int minimumNoteLength = 16;
         const int minimumSeparatorLength = 3;
-        int headerBudget = Math.Max(24, Console.WindowWidth - 8);
+        int headerBudget = Math.Max(24, GetWindowWidth() - 8);
         int modelBudget = Math.Max(
             3,
             headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
@@ -298,7 +374,7 @@ public static partial class Program
 
     private static int GetMessageContentWidth()
     {
-        return Math.Max(20, Console.WindowWidth - 8 - MessageScrollbarColumnWidth);
+        return Math.Max(20, GetWindowWidth() - 8 - MessageScrollbarColumnWidth);
     }
 
     private static int GetMessageViewportLineCount(AppState state)
@@ -313,7 +389,7 @@ public static partial class Program
             reservedLines += GetPinnedPlanPanelSize(state);
         }
 
-        return Math.Max(5, Console.WindowHeight - reservedLines);
+        return Math.Max(5, GetWindowHeight() - reservedLines);
     }
 
     private static int GetMaxConversationScrollOffset(AppState state)
@@ -338,12 +414,12 @@ public static partial class Program
 
     private static int GetPinnedPlanPanelSize(AppState state)
     {
-        int contentWidth = Math.Max(20, Console.WindowWidth - 8);
+        int contentWidth = Math.Max(20, GetWindowWidth() - 8);
         int bodyLineCount = GetPinnedPlanLines(state)
             .Sum(line => WrapText(line, contentWidth).Count);
         int availableBodySize = Math.Max(
             5,
-            Console.WindowHeight - HeaderPanelSize - GetInputPanelSize(state) - 1);
+            GetWindowHeight() - HeaderPanelSize - GetInputPanelSize(state) - 1);
         int maxPanelSize = Math.Min(12, Math.Max(5, availableBodySize - 5));
 
         return Math.Clamp(bodyLineCount + 2, 5, maxPanelSize);
@@ -351,7 +427,7 @@ public static partial class Program
 
     private static string BuildPinnedPlanMarkup(AppState state)
     {
-        int contentWidth = Math.Max(20, Console.WindowWidth - 8);
+        int contentWidth = Math.Max(20, GetWindowWidth() - 8);
         int maxBodyLines = Math.Max(1, GetPinnedPlanPanelSize(state) - 2);
         List<string> renderedLines = [];
 
@@ -541,7 +617,7 @@ public static partial class Program
             ? $"1 file pasted/attached: {FormatAttachmentNames(state.InputAttachments)}"
             : $"{count} files pasted/attached: {FormatAttachmentNames(state.InputAttachments)}";
         string hint = " - F4 choose file";
-        int contentWidth = Math.Max(20, Console.WindowWidth - 10);
+        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
         summary = TruncateFromRight(label, Math.Max(1, contentWidth - hint.Length)) + hint;
         return true;
     }
@@ -584,7 +660,7 @@ public static partial class Program
         string busySuffixMarkup = isBusy ? $"[yellow]{spinner}[/]" + " [grey]Press Esc to interrupt the current request.[/]" : string.Empty;
         const string promptPlain = "> ";
         const string promptMarkup = "[bold green]❯[/] ";
-        int contentWidth = Math.Max(20, Console.WindowWidth - 10);
+        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
         int maxInputLength = Math.Max(
             1,
             contentWidth - promptPlain.Length - busySuffixPlain.Length - InputCursorColumnWidth);
@@ -855,7 +931,7 @@ public static partial class Program
     {
         const string promptPlain = "❯ ";
         string busySuffixPlain = isBusy ? " Press Esc to interrupt the current request." : string.Empty;
-        int contentWidth = Math.Max(20, Console.WindowWidth - 10);
+        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
 
         return Math.Max(
             1,
@@ -864,8 +940,36 @@ public static partial class Program
 
     private static int GetInputContinuationLineTextWidth()
     {
-        int contentWidth = Math.Max(20, Console.WindowWidth - 10);
+        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
         return Math.Max(1, contentWidth - 2 - InputCursorColumnWidth);
+    }
+
+    private static int GetWindowWidth()
+    {
+        try
+        {
+            return Console.WindowWidth > 0
+                ? Console.WindowWidth
+                : FallbackWindowWidth;
+        }
+        catch (IOException)
+        {
+            return FallbackWindowWidth;
+        }
+    }
+
+    private static int GetWindowHeight()
+    {
+        try
+        {
+            return Console.WindowHeight > 0
+                ? Console.WindowHeight
+                : FallbackWindowHeight;
+        }
+        catch (IOException)
+        {
+            return FallbackWindowHeight;
+        }
     }
 
     internal static string BuildInputCursorMarkup()
