@@ -669,6 +669,7 @@ public static partial class Program
         BackendSessionInfo sessionInfo,
         string? statusMessage)
     {
+        state.ClearPlanState();
         state.Messages.Clear();
         state.ConversationScrollOffset = 0;
 
