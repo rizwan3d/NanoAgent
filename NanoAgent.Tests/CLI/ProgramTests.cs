@@ -1,6 +1,9 @@
 using FluentAssertions;
 using NanoAgent.CLI;
+using NanoAgent.Application.Backend;
+using Moq;
 using NanoAgent.Infrastructure.WindowsSandbox;
+using System.Reflection;
 
 namespace NanoAgent.Tests.CLI;
 
@@ -26,5 +29,39 @@ public sealed class ProgramTests
 
         handled.Should().BeTrue();
         exitCode.Should().Be(2);
+    }
+
+    [Fact]
+    public void RenderSessionView_Should_ClearPinnedPlanState()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object)
+        {
+            IsPlanPinned = true,
+            LatestPlanText = "Plan progress: 1/3"
+        };
+
+        BackendSessionInfo sessionInfo = new(
+            SessionId: "session-id",
+            SectionResumeCommand: "/resume session-id",
+            ProviderName: "provider",
+            ModelId: "model",
+            ActiveModelContextWindowTokens: 1234,
+            AvailableModelIds: [],
+            ThinkingMode: "default",
+            AgentProfileName: "agent",
+            SectionTitle: "title",
+            IsResumedSection: false,
+            ConversationHistory: []);
+
+        MethodInfo renderSessionView = typeof(Program).GetMethod(
+            "RenderSessionView",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        renderSessionView.Invoke(null, [state, sessionInfo, null]);
+
+        state.IsPlanPinned.Should().BeFalse();
+        state.LatestPlanText.Should().BeNull();
     }
 }
