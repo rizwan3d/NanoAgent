@@ -1442,7 +1442,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static string NormalizePatchMatchText(string value)
     {
-        return value
+        return DecodeCommonJsonUnicodeEscapes(value)
             .Replace('\u2018', '\'')
             .Replace('\u2019', '\'')
             .Replace('\u201A', '\'')
@@ -1459,6 +1459,93 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             .Replace('\u2015', '-')
             .Replace("\u2026", "...", StringComparison.Ordinal)
             .Replace('\u00A0', ' ');
+    }
+
+    private static string DecodeCommonJsonUnicodeEscapes(string value)
+    {
+        if (value.IndexOf('\\', StringComparison.Ordinal) < 0)
+        {
+            return value;
+        }
+
+        StringBuilder? builder = null;
+        for (int index = 0; index < value.Length; index++)
+        {
+            if (TryDecodeCommonJsonUnicodeEscape(value, index, out char decoded))
+            {
+                builder ??= new StringBuilder(value.Length);
+                builder.Append(decoded);
+                index += 5;
+                continue;
+            }
+
+            builder?.Append(value[index]);
+        }
+
+        return builder is null
+            ? value
+            : builder.ToString();
+    }
+
+    private static bool TryDecodeCommonJsonUnicodeEscape(
+        string value,
+        int index,
+        out char decoded)
+    {
+        decoded = default;
+        if (index + 5 >= value.Length ||
+            value[index] != '\\' ||
+            value[index + 1] is not ('u' or 'U'))
+        {
+            return false;
+        }
+
+        int codePoint = 0;
+        for (int offset = 2; offset < 6; offset++)
+        {
+            int digit = FromHexDigit(value[index + offset]);
+            if (digit < 0)
+            {
+                return false;
+            }
+
+            codePoint = (codePoint << 4) + digit;
+        }
+
+        decoded = codePoint switch
+        {
+            0x0022 => '"',
+            0x0026 => '&',
+            0x0027 => '\'',
+            0x002F => '/',
+            0x003C => '<',
+            0x003D => '=',
+            0x003E => '>',
+            0x0060 => '`',
+            _ => default
+        };
+
+        return decoded != default;
+    }
+
+    private static int FromHexDigit(char value)
+    {
+        if (value is >= '0' and <= '9')
+        {
+            return value - '0';
+        }
+
+        if (value is >= 'a' and <= 'f')
+        {
+            return value - 'a' + 10;
+        }
+
+        if (value is >= 'A' and <= 'F')
+        {
+            return value - 'A' + 10;
+        }
+
+        return -1;
     }
 
     private static string JoinLines(
