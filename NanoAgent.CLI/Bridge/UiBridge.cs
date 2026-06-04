@@ -183,8 +183,20 @@ public sealed class UiBridge : IUiBridge
 
     public void ShowToolResults(ToolExecutionBatchResult toolExecutionResult)
     {
-        IReadOnlyList<string> messages = _toolOutputFormatter.FormatResults(toolExecutionResult);
-
+        IReadOnlyList<string> messages;
+    
+        try
+        {
+            messages = _toolOutputFormatter.FormatResults(toolExecutionResult);
+        }
+        catch (Exception ex)
+        {
+            messages =
+            [
+                $"Tool result display failed: {ex.Message}"
+            ];
+        }
+    
         Enqueue(state =>
         {
             foreach (string message in messages)
