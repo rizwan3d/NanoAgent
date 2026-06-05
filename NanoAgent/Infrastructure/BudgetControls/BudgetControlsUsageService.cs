@@ -39,6 +39,7 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
         string fullPath = ResolveLocalPath(session.WorkspacePath, localPath);
         string relativePath = WorkspacePath.ToRelativePath(session.WorkspacePath, fullPath);
         LocalBudgetControlsDocument document = await LoadLocalDocumentAsync(
+            session.WorkspacePath,
             fullPath,
             cancellationToken) ??
             new LocalBudgetControlsDocument();
@@ -56,7 +57,11 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
         document.SpentUsd = Math.Max(0m, document.Usage.TotalCostUsd);
         document.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
-        await SaveLocalDocumentAsync(fullPath, document, cancellationToken);
+        await SaveLocalDocumentAsync(
+            session.WorkspacePath,
+            fullPath,
+            document,
+            cancellationToken);
         await _configurationStore.SaveAsync(
             BudgetControlsSettings.Local(relativePath),
             cancellationToken);
@@ -77,6 +82,7 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
 
         string fullPath = ResolveLocalPath(session.WorkspacePath, settings.LocalPath);
         LocalBudgetControlsDocument? document = await LoadLocalDocumentAsync(
+            session.WorkspacePath,
             fullPath,
             cancellationToken);
 
@@ -127,6 +133,7 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
     {
         string fullPath = ResolveLocalPath(session.WorkspacePath, settings.LocalPath);
         LocalBudgetControlsDocument document = await LoadLocalDocumentAsync(
+            session.WorkspacePath,
             fullPath,
             cancellationToken) ??
             new LocalBudgetControlsDocument();
@@ -160,6 +167,7 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
         document.UpdatedAtUtc = DateTimeOffset.UtcNow;
 
         await SaveLocalDocumentAsync(
+            session.WorkspacePath,
             fullPath,
             document,
             cancellationToken);
@@ -254,9 +262,12 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
     }
 
     private static async Task<LocalBudgetControlsDocument?> LoadLocalDocumentAsync(
+        string workspacePath,
         string fullPath,
         CancellationToken cancellationToken)
     {
+        WorkspaceResolvedPath.EnsurePathStaysWithinWorkspace(workspacePath, fullPath);
+
         if (!File.Exists(fullPath))
         {
             return null;
@@ -284,10 +295,13 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
     }
 
     private static async Task SaveLocalDocumentAsync(
+        string workspacePath,
         string fullPath,
         LocalBudgetControlsDocument document,
         CancellationToken cancellationToken)
     {
+        WorkspaceResolvedPath.EnsurePathStaysWithinWorkspace(workspacePath, fullPath);
+
         string directoryPath = Path.GetDirectoryName(fullPath)
             ?? throw new InvalidOperationException("Budget controls path does not contain a parent directory.");
         Directory.CreateDirectory(directoryPath);

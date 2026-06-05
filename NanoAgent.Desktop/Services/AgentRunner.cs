@@ -372,8 +372,8 @@ public sealed class AgentRunner : IAsyncDisposable
     private static string[] CreateBackendArgs(string? sectionId)
     {
         return string.IsNullOrWhiteSpace(sectionId)
-            ? ["--surface", BackendRuntimeOptions.DesktopSurface]
-            : ["--section", sectionId, "--surface", BackendRuntimeOptions.DesktopSurface];
+            ? ["--surface", BackendRuntimeOptions.DesktopSurface, "--startup-prompts", "enabled"]
+            : ["--section", sectionId, "--surface", BackendRuntimeOptions.DesktopSurface, "--startup-prompts", "enabled"];
     }
 
     private static string? NormalizeSectionIdOrNull(string? sectionId)

@@ -5,6 +5,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
+using System.Runtime.ExceptionServices;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
@@ -49,7 +50,29 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         WorkspaceFileEditState[] beforeStates = await CaptureFileStatesAsync(
             trackedPaths,
             cancellationToken);
-        WorkspaceApplyPatchResult result = await ApplyPatchDocumentAsync(document, cancellationToken);
+        WorkspaceApplyPatchResult result;
+        try
+        {
+            result = await ApplyPatchDocumentAsync(document, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await ApplyFileEditStatesAsync(beforeStates, CancellationToken.None);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "Patch application failed and rollback did not complete successfully.",
+                    exception,
+                    rollbackException);
+            }
+
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw;
+        }
+
         WorkspaceFileEditState[] afterStates = await CaptureFileStatesAsync(
             trackedPaths,
             cancellationToken);
@@ -73,9 +96,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         ArgumentNullException.ThrowIfNull(states);
         cancellationToken.ThrowIfCancellationRequested();
 
+        StringComparer pathComparer = WorkspacePath.GetPathComparer();
         WorkspaceFileEditState[] normalizedStates = states
             .Where(static state => state is not null)
-            .GroupBy(static state => state.Path, StringComparer.OrdinalIgnoreCase)
+            .GroupBy(static state => state.Path, pathComparer)
             .Select(static group => group.Last())
             .ToArray();
 
@@ -458,7 +482,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             currentFullPath,
             Encoding.UTF8,
             cancellationToken);
-        string updatedContent = ApplyUpdatePatch(operation.Path, previousContent, operation.Hunks);
+        bool isMoveOnly = operation.MoveToPath is not null && operation.Hunks.Count == 0;
+        string updatedContent = isMoveOnly
+            ? previousContent
+            : ApplyUpdatePatch(operation.Path, previousContent, operation.Hunks);
 
         string destinationFullPath = operation.MoveToPath is null
             ? currentFullPath
@@ -739,7 +766,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         string fullPath = WorkspacePath.Resolve(workspaceRoot, requestedPath);
-        EnsureResolvedPathStaysWithinWorkspace(workspaceRoot, fullPath);
+        WorkspaceResolvedPath.EnsurePathStaysWithinWorkspace(workspaceRoot, fullPath);
 
         if (directoryRequired && !Directory.Exists(fullPath))
         {
@@ -773,109 +800,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         throw new InvalidOperationException(
             $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by .nanoagent/.nanoignore.");
-    }
-
-    private static void EnsureResolvedPathStaysWithinWorkspace(
-        string workspaceRoot,
-        string fullPath)
-    {
-        string resolvedWorkspaceRoot = ResolveExistingPath(workspaceRoot);
-        string relativePath = Path.GetRelativePath(workspaceRoot, fullPath);
-        if (string.IsNullOrWhiteSpace(relativePath) ||
-            string.Equals(relativePath, ".", StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        string[] segments = relativePath.Split(
-            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
-            StringSplitOptions.RemoveEmptyEntries);
-
-        string currentPath = resolvedWorkspaceRoot;
-        for (int index = 0; index < segments.Length; index++)
-        {
-            currentPath = Path.Combine(currentPath, segments[index]);
-            if (!TryResolveExistingPath(currentPath, out string resolvedPath))
-            {
-                string plannedPath = AppendRemainingSegments(currentPath, segments, index + 1);
-                EnsureWorkspaceDescendant(resolvedWorkspaceRoot, plannedPath);
-                return;
-            }
-
-            EnsureWorkspaceDescendant(resolvedWorkspaceRoot, resolvedPath);
-            currentPath = resolvedPath;
-        }
-    }
-
-    private static string ResolveExistingPath(string path)
-    {
-        return TryResolveExistingPath(path, out string resolvedPath)
-            ? resolvedPath
-            : Path.GetFullPath(path);
-    }
-
-    private static bool TryResolveExistingPath(
-        string path,
-        out string resolvedPath)
-    {
-        try
-        {
-            FileAttributes attributes = File.GetAttributes(path);
-            FileSystemInfo fileSystemInfo = attributes.HasFlag(FileAttributes.Directory)
-                ? new DirectoryInfo(path)
-                : new FileInfo(path);
-
-            if (attributes.HasFlag(FileAttributes.ReparsePoint))
-            {
-                FileSystemInfo? target = fileSystemInfo.ResolveLinkTarget(returnFinalTarget: true);
-                if (target is null)
-                {
-                    throw new InvalidOperationException(
-                        "Tool paths cannot use unresolved symbolic links or reparse points.");
-                }
-
-                resolvedPath = Path.GetFullPath(target.FullName);
-                return true;
-            }
-
-            resolvedPath = Path.GetFullPath(path);
-            return true;
-        }
-        catch (FileNotFoundException)
-        {
-            resolvedPath = Path.GetFullPath(path);
-            return false;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            resolvedPath = Path.GetFullPath(path);
-            return false;
-        }
-    }
-
-    private static string AppendRemainingSegments(
-        string path,
-        IReadOnlyList<string> segments,
-        int startIndex)
-    {
-        string currentPath = path;
-        for (int index = startIndex; index < segments.Count; index++)
-        {
-            currentPath = Path.Combine(currentPath, segments[index]);
-        }
-
-        return Path.GetFullPath(currentPath);
-    }
-
-    private static void EnsureWorkspaceDescendant(
-        string workspaceRoot,
-        string fullPath)
-    {
-        if (!WorkspacePath.IsSamePathOrDescendant(workspaceRoot, fullPath))
-        {
-            throw new InvalidOperationException(
-                "Tool paths must stay within the current workspace.");
-        }
     }
 
     private string ToWorkspaceRelativePath(string fullPath)
@@ -1312,8 +1236,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (beforeLines.Length == 0)
             {
-                replacements.Add(new PatchReplacement(originalLines.Length, 0, afterLines));
-                trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
+                int insertIndex = changeContextIndex is null
+                    ? originalLines.Length
+                    : changeContextIndex.Value + 1;
+                replacements.Add(new PatchReplacement(insertIndex, 0, afterLines, hunk));
                 continue;
             }
 
@@ -1353,15 +1279,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     $"Could not apply the requested patch because the target context was not found in '{path}'.");
             }
 
-            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines));
+            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines, hunk));
             searchStart = matchIndex + pattern.Length;
-            trailingNewLineOverride = GetTrailingNewLineOverride(hunk) ?? trailingNewLineOverride;
         }
 
         List<string> currentLines = originalLines.ToList();
         PatchReplacement[] orderedReplacements = replacements
             .OrderBy(static replacement => replacement.StartIndex)
             .ToArray();
+        trailingNewLineOverride = GetTrailingNewLineOverride(path, originalLines.Length, orderedReplacements);
         for (int index = orderedReplacements.Length - 1; index >= 0; index--)
         {
             PatchReplacement replacement = orderedReplacements[index];
@@ -1373,20 +1299,63 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return JoinLines(currentLines, trailingNewLine);
     }
 
-    private static bool? GetTrailingNewLineOverride(PatchHunk hunk)
+    private static bool? GetTrailingNewLineOverride(
+        string path,
+        int originalLineCount,
+        IReadOnlyList<PatchReplacement> replacements)
     {
         bool? trailingNewLine = null;
+        PatchReplacement? finalReplacement = replacements.Count == 0
+            ? null
+            : replacements[^1];
 
-        foreach (PatchLine line in hunk.Lines)
+        foreach (PatchReplacement replacement in replacements)
         {
-            if (!line.NoNewlineAtEnd)
-            {
-                continue;
-            }
+            int beforeIndex = -1;
+            int afterIndex = -1;
+            bool touchesEndOfFile = finalReplacement is not null &&
+                                    replacement.Equals(finalReplacement.Value) &&
+                                    replacement.StartIndex + replacement.OldLineCount == originalLineCount;
 
-            trailingNewLine = line.Kind is PatchLineKind.Addition or PatchLineKind.Context
-                ? false
-                : true;
+            foreach (PatchLine line in replacement.Hunk.Lines)
+            {
+                if (line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+                {
+                    beforeIndex++;
+                }
+
+                if (line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
+                {
+                    afterIndex++;
+                }
+
+                if (!line.NoNewlineAtEnd)
+                {
+                    continue;
+                }
+
+                bool isValidMarker = line.Kind switch
+                {
+                    PatchLineKind.Context => touchesEndOfFile &&
+                                             beforeIndex == replacement.OldLineCount - 1 &&
+                                             afterIndex == replacement.NewLines.Count - 1,
+                    PatchLineKind.Addition => touchesEndOfFile &&
+                                              afterIndex == replacement.NewLines.Count - 1,
+                    PatchLineKind.Removal => touchesEndOfFile &&
+                                             beforeIndex == replacement.OldLineCount - 1,
+                    _ => false
+                };
+
+                if (!isValidMarker)
+                {
+                    throw new FormatException(
+                        $"No-newline patch markers must apply to the final resulting line in '{path}'.");
+                }
+
+                trailingNewLine = line.Kind is PatchLineKind.Addition or PatchLineKind.Context
+                    ? false
+                    : true;
+            }
         }
 
         return trailingNewLine;
@@ -1504,12 +1473,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static string[] GetTrackedPatchPaths(PatchDocument document)
     {
+        StringComparer pathComparer = WorkspacePath.GetPathComparer();
         return document.Operations
             .SelectMany(static operation => operation.MoveToPath is null
                 ? [operation.Path]
                 : new[] { operation.Path, operation.MoveToPath })
             .Where(static path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Distinct(pathComparer)
             .ToArray();
     }
 
@@ -1686,7 +1656,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private readonly record struct PatchReplacement(
         int StartIndex,
         int OldLineCount,
-        IReadOnlyList<string> NewLines);
+        IReadOnlyList<string> NewLines,
+        PatchHunk Hunk);
 
     private enum PatchOperationKind
     {

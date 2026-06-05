@@ -15,8 +15,10 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
     private readonly Channel<TelemetryEnvelope>? _queue;
     private readonly string _appSurface;
     private readonly string? _captureEndpoint;
+    private readonly string? _ciProvider;
     private readonly string? _distinctId;
     private readonly bool _enabled;
+    private readonly string _executionEnvironment;
     private readonly string _osFamily;
     private readonly string? _projectToken;
     private readonly string? _sessionId;
@@ -31,7 +33,8 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
         IUserDataPathProvider userDataPathProvider,
         IOptions<ApplicationOptions> options,
         BackendRuntimeOptions runtimeOptions,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        Func<string, string?>? environmentVariableReader = null)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(userDataPathProvider);
@@ -43,7 +46,13 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
         _timeProvider = timeProvider;
         _version = ProductTelemetryHelpers.GetNanoAgentVersion();
         _osFamily = ProductTelemetryHelpers.GetOsFamily();
-        _appSurface = runtimeOptions.AppSurface;
+        Func<string, string?> resolvedEnvironmentVariableReader =
+            environmentVariableReader ?? Environment.GetEnvironmentVariable;
+        _appSurface = ProductTelemetryHelpers.ResolveTelemetryAppSurface(
+            runtimeOptions.AppSurface,
+            resolvedEnvironmentVariableReader);
+        _executionEnvironment = ProductTelemetryHelpers.ResolveExecutionEnvironment(_appSurface);
+        _ciProvider = ProductTelemetryHelpers.DetectCiProvider(resolvedEnvironmentVariableReader);
 
         TelemetryOptions telemetryOptions = options.Value.Telemetry ?? new TelemetryOptions();
         string? projectToken = string.IsNullOrWhiteSpace(telemetryOptions.ProjectToken)
@@ -94,7 +103,9 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             ProductTelemetryHelpers.CreateAppStartedProperties(
                 _version,
                 _osFamily,
-                _appSurface));
+                _appSurface,
+                _executionEnvironment,
+                _ciProvider));
     }
 
     public void TrackAppStopped()
@@ -112,6 +123,8 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
                 _version,
                 _osFamily,
                 _appSurface,
+                _executionEnvironment,
+                _ciProvider,
                 usageTime));
         _startedAtUtc = null;
     }
@@ -136,6 +149,8 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
                 _version,
                 _osFamily,
                 _appSurface,
+                _executionEnvironment,
+                _ciProvider,
                 featureName,
                 interactionKind,
                 success,
@@ -246,7 +261,9 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
             ProductTelemetryHelpers.CreateIdentifyProperties(
                 _version,
                 _osFamily,
-                _appSurface));
+                _appSurface,
+                _executionEnvironment,
+                _ciProvider));
     }
 
     private static string LoadOrCreateDistinctId(IUserDataPathProvider userDataPathProvider)

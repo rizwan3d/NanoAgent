@@ -4,6 +4,7 @@ using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
+using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Globalization;
 using System.Net.Http.Headers;
@@ -53,6 +54,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private readonly IOpenAiCodexClientVersionProvider _openAiCodexClientVersionProvider;
     private readonly IAnthropicClaudeAccountCredentialService? _anthropicClaudeAccountCredentialService;
     private readonly IGitHubCopilotCredentialService? _gitHubCopilotCredentialService;
+    private readonly INanoAgentEnterpriseCredentialService? _nanoAgentEnterpriseCredentialService;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
@@ -62,13 +64,15 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         IOpenAiChatGptAccountCredentialService? openAiChatGptAccountCredentialService = null,
         IOpenAiCodexClientVersionProvider? openAiCodexClientVersionProvider = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _openAiChatGptAccountCredentialService = openAiChatGptAccountCredentialService;
         _anthropicClaudeAccountCredentialService = anthropicClaudeAccountCredentialService;
         _gitHubCopilotCredentialService = gitHubCopilotCredentialService;
+        _nanoAgentEnterpriseCredentialService = nanoAgentEnterpriseCredentialService;
         _openAiCodexClientVersionProvider = openAiCodexClientVersionProvider ??
             new StaticOpenAiCodexClientVersionProvider(
                 GitHubOpenAiCodexClientVersionProvider.FallbackClientVersion);
@@ -130,36 +134,107 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         Uri baseUri = providerProfile.ResolveBaseUri();
-        using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
-        ApplyAuthenticationHeaders(request, providerProfile.ProviderKind, apiKey);
-        LogDebugApiRequest(request.Method, request.RequestUri);
-
-        using HttpResponseMessage response = await _httpClient.SendAsync(
-            request,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-
-        string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        LogDebugApiResponse(response.StatusCode, responseBody);
-
-        if (!response.IsSuccessStatusCode)
+        string authorizationValue = apiKey;
+        bool usesNanoAgentEnterpriseCredentials = _nanoAgentEnterpriseCredentialService?.CanResolve(apiKey) == true;
+        if (usesNanoAgentEnterpriseCredentials)
         {
-            string detail = string.IsNullOrWhiteSpace(responseBody)
-                ? $"Provider returned HTTP {(int)response.StatusCode}."
-                : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
+            if (_nanoAgentEnterpriseCredentialService is null)
+            {
+                throw new ModelProviderException(
+                    "NanoAgent Enterprise credentials cannot be resolved in this runtime.");
+            }
 
-            throw new ModelProviderException(
-                $"Unable to fetch models from the configured provider. {detail}");
+            NanoAgentEnterpriseResolvedCredential enterpriseCredential =
+                await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                    apiKey,
+                    forceRefresh: false,
+                    cancellationToken);
+            authorizationValue = enterpriseCredential.AccessToken;
         }
 
-        IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
-        if (models.Count == 0)
-        {
-            throw new ModelProviderException(
-                "The configured provider returned an invalid models response.");
-        }
+        bool refreshedAfterUnauthorized = false;
+        bool reauthenticatedAfterUnauthorized = false;
 
-        return models;
+        while (true)
+        {
+            using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
+            ApplyAuthenticationHeaders(request, providerProfile.ProviderKind, authorizationValue);
+            LogDebugApiRequest(request.Method, request.RequestUri);
+
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+
+            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            LogDebugApiResponse(response.StatusCode, responseBody);
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                usesNanoAgentEnterpriseCredentials &&
+                !refreshedAfterUnauthorized)
+            {
+                refreshedAfterUnauthorized = true;
+                NanoAgentEnterpriseResolvedCredential enterpriseCredential;
+                try
+                {
+                    enterpriseCredential = await _nanoAgentEnterpriseCredentialService!.ResolveAsync(
+                        apiKey,
+                        forceRefresh: true,
+                        cancellationToken);
+                }
+                catch (InvalidOperationException)
+                {
+                    string storedCredentials = await _nanoAgentEnterpriseCredentialService!.AuthenticateAsync(
+                        providerProfile.ResolveBaseUrl(),
+                        cancellationToken);
+                    enterpriseCredential = await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                        storedCredentials,
+                        forceRefresh: false,
+                        cancellationToken);
+                    reauthenticatedAfterUnauthorized = true;
+                }
+
+                authorizationValue = enterpriseCredential.AccessToken;
+                continue;
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
+                usesNanoAgentEnterpriseCredentials &&
+                refreshedAfterUnauthorized &&
+                !reauthenticatedAfterUnauthorized)
+            {
+                string storedCredentials = await _nanoAgentEnterpriseCredentialService!.AuthenticateAsync(
+                    providerProfile.ResolveBaseUrl(),
+                    cancellationToken);
+                NanoAgentEnterpriseResolvedCredential enterpriseCredential =
+                    await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                        storedCredentials,
+                        forceRefresh: false,
+                        cancellationToken);
+                authorizationValue = enterpriseCredential.AccessToken;
+                reauthenticatedAfterUnauthorized = true;
+                continue;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                string detail = string.IsNullOrWhiteSpace(responseBody)
+                    ? $"Provider returned HTTP {(int)response.StatusCode}."
+                    : $"Provider returned HTTP {(int)response.StatusCode}: {Truncate(responseBody.Trim(), 200)}";
+
+                throw new ModelProviderException(
+                    $"Unable to fetch models from the configured provider. {detail}");
+            }
+
+            IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+            if (models.Count == 0)
+            {
+                throw new ModelProviderException(
+                    "The configured provider returned an invalid models response.");
+            }
+
+            return models;
+        }
     }
 
     private async Task<IReadOnlyList<AvailableModel>> GetOpenAiChatGptAccountModelsAsync(
