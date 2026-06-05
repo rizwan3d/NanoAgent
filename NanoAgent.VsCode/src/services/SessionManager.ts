@@ -10,6 +10,10 @@ type SessionNewResult = {
     sessionId: string;
 };
 
+type InitializeResult = {
+    authMethods?: unknown;
+};
+
 type SessionPromptResult = {
     stopReason?: string;
 };
@@ -116,6 +120,9 @@ type PendingClientRequest = {
 };
 
 export class SessionManager extends EventEmitter {
+    private static readonly acpAuthSecretStorageKey = 'nanoagent.acpAuthToken';
+    private static readonly acpAuthEnvVarName = 'NANOAGENT_ACP_AUTH_TOKEN';
+
     private acpClient: AcpClient | null = null;
     private currentSessionInfo: SessionInfo | null = null;
     private currentPromptState: PromptState = {
@@ -128,10 +135,14 @@ export class SessionManager extends EventEmitter {
     private sessionId: string | null = null;
     private sessionPromise: Promise<string> | null = null;
     private readonly logService: LogService;
+    private readonly secretStorage: vscode.SecretStorage;
 
-    constructor(private readonly processManager: NanoAgentProcessManager) {
+    constructor(
+        private readonly processManager: NanoAgentProcessManager,
+        secretStorage: vscode.SecretStorage) {
         super();
         this.logService = LogService.getInstance();
+        this.secretStorage = secretStorage;
 
         this.processManager.on('status', (status: NanoAgentProcessStatus) => {
             this.emit('processStatusChanged', status);
@@ -388,7 +399,8 @@ export class SessionManager extends EventEmitter {
     private async ensureInitialized(client: AcpClient): Promise<void> {
         if (!this.initializePromise) {
             this.initializePromise = client
-                .sendRequest('initialize', { protocolVersion: 1 })
+                .sendRequest<InitializeResult>('initialize', { protocolVersion: 1 })
+                .then((result) => this.authenticateIfRequired(client, result))
                 .then(() => undefined)
                 .catch((error) => {
                     this.initializePromise = null;
@@ -397,6 +409,48 @@ export class SessionManager extends EventEmitter {
         }
 
         await this.initializePromise;
+    }
+
+    private async authenticateIfRequired(client: AcpClient, result: InitializeResult | undefined): Promise<void> {
+        const authMethods = Array.isArray(result?.authMethods)
+            ? result.authMethods.filter((method): method is string => typeof method === 'string')
+            : [];
+
+        if (!authMethods.includes('token')) {
+            return;
+        }
+
+        const token = await this.resolveAcpAuthenticationToken();
+        if (!token) {
+            throw new Error(
+                'NanoAgent ACP authentication is enabled, but no token was found in VS Code SecretStorage, the ' +
+                '`nanoagent.acpAuthenticationToken` setting, or the `NANOAGENT_ACP_AUTH_TOKEN` environment variable.');
+        }
+
+        await client.sendRequest('authenticate', { token });
+    }
+
+    private async resolveAcpAuthenticationToken(): Promise<string | undefined> {
+        const secretToken = this.normalizeToken(
+            await this.secretStorage.get(SessionManager.acpAuthSecretStorageKey));
+        if (secretToken) {
+            return secretToken;
+        }
+
+        const configuration = vscode.workspace.getConfiguration('nanoagent');
+        const configuredToken = this.normalizeToken(
+            configuration.get<string>('acpAuthenticationToken'));
+        if (configuredToken) {
+            return configuredToken;
+        }
+
+        return this.normalizeToken(process.env[SessionManager.acpAuthEnvVarName]);
+    }
+
+    private normalizeToken(value: string | undefined): string | undefined {
+        return typeof value === 'string' && value.trim()
+            ? value.trim()
+            : undefined;
     }
 
     private async ensureSession(client: AcpClient): Promise<string> {

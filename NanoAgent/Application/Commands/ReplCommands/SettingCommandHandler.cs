@@ -427,6 +427,10 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                                 SettingPermissionAction.DefaultMode,
                                 $"Current: {FormatPermissionMode(_permissionSettings.DefaultMode)}."),
                             new SelectionPromptOption<SettingPermissionAction>(
+                                "Auto approve all tools",
+                                SettingPermissionAction.AutoApproveAllTools,
+                                $"Current: {(_permissionSettings.AutoApproveAllTools ? "On" : "Off")}."),
+                            new SelectionPromptOption<SettingPermissionAction>(
                                 "Sandbox mode",
                                 SettingPermissionAction.SandboxMode,
                                 $"Current: {FormatSandboxMode(_permissionSettings.SandboxMode)}."),
@@ -519,6 +523,11 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     await SaveWorkspacePermissionSettingsAsync(context, cancellationToken);
                 }
 
+                return;
+
+            case SettingPermissionAction.AutoApproveAllTools:
+                _permissionSettings.AutoApproveAllTools = !_permissionSettings.AutoApproveAllTools;
+                await SaveWorkspacePermissionSettingsAsync(context, cancellationToken);
                 return;
 
             case SettingPermissionAction.SandboxMode:
@@ -1241,6 +1250,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
     private enum SettingPermissionAction
     {
         DefaultMode,
+        AutoApproveAllTools,
         SandboxMode,
         Edits,
         FileReads,

@@ -19,7 +19,9 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
 
         const string HelpText =
             "Available commands:\n" +
+            "/a - Alias for /agent.\n" +
             "/allow <tool-or-tag> [pattern] - Add a session-scoped allow override.\n" +
+            "/agent - List available subagents for delegated work.\n" +
             "/budget [status|local|cloud] - Show or configure budget controls.\n" +
             "/clone - Duplicate the current session at the current position.\n" +
             "/compact [retained-turns] - Manually compact the session context.\n" +
@@ -33,6 +35,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/help - List the available shell commands and their usage.\n" +
             "/import <json-path> - Import a session from JSON.\n" +
             "/init [recommended|minimal|custom] - Choose and initialize workspace-local NanoAgent files.\n" +
+            "/lsp [status|refresh|file <path> [refresh]] - Show detected language servers or inspect a specific file.\n" +
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Choose the active model with the picker.\n" +
             "/new - Start a new session.\n" +
@@ -47,6 +50,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/session - Show session info and stats.\n" +
             "/setting [model|profile|thinking|provider|budget|workspace|permissions|tools|summary] - Open the settings picker or jump to a settings area.\n" +
             "/share - Share the current session as a secret GitHub gist.\n" +
+            "/setup-sandbox - Set up Windows sandbox support for restricted shell commands.\n" +
             "/terminals [stop <terminal-id>|stop all] - List or stop background terminals for this session.\n" +
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/tree - Navigate saved sessions and switch branches.\n" +
@@ -58,7 +62,8 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "\nKeyboard shortcuts:\n" +
             "F2 - Choose the active model with the arrow-key picker.\n" +
             "F3 - Pin or hide the latest plan in the terminal view.\n" +
-            "/ - Open command suggestions in the terminal input.\n\n" +
+            "/ - Open command suggestions in the terminal input.\n" +
+            "ArrowUp / ArrowDown on an empty composer - Switch the active subagent thread in supported UIs.\n\n" +
             "Multiline input: press Shift+Enter to insert a new line, then Enter to send.\n\n" +
             "Start with --session <session-guid> to resume a saved session. --section also works as a compatibility alias.\n" +
             "Start with --profile <name> to choose the initial session profile. Use --thinking <on|off> to choose initial thinking mode, or use /profile <name> and /thinking <on|off> inside an active session. Use -v or --version at startup to print the CLI version.\n" +

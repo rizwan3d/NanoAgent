@@ -168,6 +168,32 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_RejectEnvironmentVariablesWithEmbeddedNulls_ForDirectExecution()
+    {
+        ProcessExecutionRequest request = OperatingSystem.IsWindows()
+            ? new ProcessExecutionRequest(
+                "cmd.exe",
+                ["/c", "exit /b 0"],
+                EnvironmentVariables: new Dictionary<string, string>
+                {
+                    ["NANOAGENT_PROCESS_RUNNER_TEST"] = "safe\0EVIL=malicious"
+                })
+            : new ProcessExecutionRequest(
+                "/bin/sh",
+                ["-c", "true"],
+                EnvironmentVariables: new Dictionary<string, string>
+                {
+                    ["NANOAGENT_PROCESS_RUNNER_TEST"] = "safe\0EVIL=malicious"
+                });
+
+        Func<Task> act = () => new ProcessRunner().RunAsync(request, CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("*NANOAGENT_PROCESS_RUNNER_TEST*embedded null*");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_PreserveExitCodeAndStandardError_ForDirectExecution()
     {
         ProcessExecutionRequest request = OperatingSystem.IsWindows()
@@ -338,6 +364,36 @@ public sealed class ProcessRunnerTests
         result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
         result.StandardError.Should().BeNullOrWhiteSpace();
         result.StandardOutput.Trim().Should().Be(variableValue);
+    }
+
+    [Fact]
+    public void BuildEnvironmentBlockBytes_Should_RejectEnvironmentValuesWithEmbeddedNulls()
+    {
+        Dictionary<string, string> environment = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NANOAGENT_SANDBOX_JUSTIFICATION"] = "safe\0EVIL=malicious"
+        };
+
+        Action act = () => WindowsSandboxProcessRunner.BuildEnvironmentBlockBytes(environment);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*NANOAGENT_SANDBOX_JUSTIFICATION*embedded null*");
+    }
+
+    [Fact]
+    public void BuildEnvironmentBlockBytes_Should_RejectEnvironmentNamesWithEmbeddedNulls()
+    {
+        Dictionary<string, string> environment = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["NANOAGENT_SANDBOX_JUSTIFICATION\0EVIL"] = "malicious"
+        };
+
+        Action act = () => WindowsSandboxProcessRunner.BuildEnvironmentBlockBytes(environment);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*NANOAGENT_SANDBOX_JUSTIFICATION*embedded null*");
     }
 
     [Fact]

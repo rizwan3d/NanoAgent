@@ -55,6 +55,7 @@ public static partial class Program
         new("/import", "/import <json-path>", "Import a session from JSON.", true),
         new("/init", "/init [recommended|minimal|custom]", "Choose workspace-local NanoAgent files.", false),
         new("/ls", "/ls", "List files in the current workspace.", false),
+        new("/lsp", "/lsp [status|refresh|file <path> [refresh]]", "Show detected language servers or inspect a file.", false),
         new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
         new("/models", "/models", "Choose the active model with the picker.", false),
         new("/new", "/new", "Start a new session.", false),
@@ -70,6 +71,7 @@ public static partial class Program
         new("/session", "/session", "Show session info and stats.", false),
         new("/setting", "/setting [area]", "Open the NanoAgent settings picker.", false),
         new("/share", "/share", "Share session as a secret GitHub gist.", false),
+        new("/setup-sandbox", "/setup-sandbox", "Set up Windows sandbox support for restricted shell commands.", false),
         new("/terminals", "/terminals [stop <id>|stop all]", "List or stop background terminals.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
         new("/tree", "/tree", "Navigate saved sessions.", false),
@@ -82,16 +84,17 @@ public static partial class Program
     public static async Task<int> Main(string[]? args)
     {
         Console.OutputEncoding = Encoding.UTF8;
-        if (TryHandleWindowsSandboxRunnerInvocation(args ?? [], out int runnerExitCode))
+        string[] effectiveArgs = args ?? [];
+        if (TryHandleWindowsSandboxSpecialInvocation(effectiveArgs, out int specialExitCode))
         {
-            return runnerExitCode;
+            return specialExitCode;
         }
 
         CliInvocation invocation;
         try
         {
             invocation = CliInvocation.Parse(
-                args ?? [],
+                effectiveArgs,
                 Console.IsInputRedirected,
                 Console.In.ReadToEnd);
         }
@@ -118,7 +121,9 @@ public static partial class Program
         if (invocation.Mode == CliMode.SingleTurn)
         {
             return await RunSingleTurnAsync(
-                invocation.BackendArgs,
+                invocation.RuntimeArguments.WithDefaults(
+                    BackendRuntimeOptions.CliSurface,
+                    skipUpdateCheck: true),
                 invocation.ProviderAuthKey,
                 invocation.Prompt ?? string.Empty,
                 invocation.JsonOutput,
@@ -128,16 +133,64 @@ public static partial class Program
         if (invocation.Mode == CliMode.Acp)
         {
             return await RunAcpAsync(
-                invocation.BackendArgs,
+                invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface).RawArgs,
                 invocation.ProviderAuthKey,
                 invocation.AutoApproveAllTools);
         }
 
         await RunInteractiveAsync(
-            invocation.BackendArgs,
+            invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface),
             invocation.ProviderAuthKey,
             invocation.AutoApproveAllTools);
         return 0;
+    }
+
+    internal static bool TryHandleWindowsSandboxSpecialInvocation(
+        IReadOnlyList<string> args,
+        out int exitCode)
+    {
+        if (TryHandleWindowsSandboxSetupInvocation(args, out exitCode))
+        {
+            return true;
+        }
+
+        return TryHandleWindowsSandboxRunnerInvocation(args, out exitCode);
+    }
+
+    private static bool TryHandleWindowsSandboxSetupInvocation(
+        IReadOnlyList<string> args,
+        out int exitCode)
+    {
+        exitCode = 0;
+
+        int commandIndex = -1;
+        for (int index = 0; index < args.Count; index++)
+        {
+            if (string.Equals(
+                    args[index],
+                    WindowsSandboxSetupOrchestrator.SetupCommandArgument,
+                    StringComparison.Ordinal))
+            {
+                commandIndex = index;
+                break;
+            }
+        }
+
+        if (commandIndex < 0)
+        {
+            return false;
+        }
+
+        int payloadIndex = commandIndex + 1;
+        if (payloadIndex >= args.Count || string.IsNullOrWhiteSpace(args[payloadIndex]))
+        {
+            Console.Error.WriteLine("Missing setup payload for Windows sandbox setup mode.");
+            exitCode = 2;
+            return true;
+        }
+
+        exitCode = WindowsSandboxSetupOrchestrator.RunEncodedSetupPayload(args[payloadIndex]);
+        return true;
     }
 
     private static bool TryHandleWindowsSandboxRunnerInvocation(
@@ -214,12 +267,11 @@ public static partial class Program
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
-        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
         AcpServer server = new(
             Console.In,
             Console.Out,
             Console.Error,
-            backendArgs,
+            args,
             providerAuthKey,
             autoApproveAllTools);
 
@@ -254,7 +306,7 @@ public static partial class Program
     }
 
     private static async Task RunInteractiveAsync(
-        string[] args,
+        BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
@@ -262,9 +314,13 @@ public static partial class Program
         EnableTerminalWheelScrolling();
 
         UiBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs = EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface);
+        BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
+                EnsureStartupPromptsArg(runtimeArguments.RawArgs, enabled: true))
+            .WithDefaults(
+                runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
+                runtimeArguments.SkipUpdateCheck);
         INanoAgentBackend backend = new NanoAgentBackend(
-            backendArgs,
+            interactiveRuntimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         AppState state = new(uiBridge, backend);
@@ -320,7 +376,7 @@ public static partial class Program
     }
 
     private static async Task<int> RunSingleTurnAsync(
-        string[] args,
+        BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
         string prompt,
         bool jsonOutput,
@@ -333,13 +389,8 @@ public static partial class Program
         }
 
         ConsoleBridge uiBridge = new(providerAuthKey);
-        string[] backendArgs =
-        [
-            .. EnsureSurfaceArg(args, BackendRuntimeOptions.CliSurface),
-            "--no-update-check"
-        ];
         await using INanoAgentBackend backend = new NanoAgentBackend(
-            backendArgs,
+            runtimeArguments,
             sessionMcpServers: [],
             autoApproveAllTools);
         using CancellationTokenSource cancellation = new();
@@ -618,6 +669,7 @@ public static partial class Program
         BackendSessionInfo sessionInfo,
         string? statusMessage)
     {
+        state.ClearPlanState();
         state.Messages.Clear();
         state.ConversationScrollOffset = 0;
 
@@ -648,24 +700,24 @@ public static partial class Program
         }
     }
 
-    private static string[] EnsureSurfaceArg(
+    private static string[] EnsureStartupPromptsArg(
         IReadOnlyList<string> args,
-        string appSurface)
+        bool enabled)
     {
         for (int index = 0; index < args.Count; index++)
         {
             string arg = args[index];
-            if (string.Equals(arg, "--surface", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(arg, "--startup-prompts", StringComparison.OrdinalIgnoreCase))
             {
                 return [.. args];
             }
 
-            if (arg.StartsWith("--surface=", StringComparison.OrdinalIgnoreCase))
+            if (arg.StartsWith("--startup-prompts=", StringComparison.OrdinalIgnoreCase))
             {
                 return [.. args];
             }
         }
 
-        return [.. args, "--surface", appSurface];
+        return [.. args, "--startup-prompts", enabled ? "enabled" : "disabled"];
     }
 }

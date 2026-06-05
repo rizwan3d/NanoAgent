@@ -71,6 +71,12 @@ public sealed class AppState
         TurnCancellation = null;
     }
 
+    public void ClearPlanState()
+    {
+        IsPlanPinned = false;
+        LatestPlanText = null;
+    }
+
     public List<ChatMessage> Messages { get; } = [];
 
     public int ConversationScrollOffset { get; set; }
