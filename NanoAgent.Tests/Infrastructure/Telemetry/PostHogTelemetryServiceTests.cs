@@ -52,6 +52,8 @@ public sealed class PostHogTelemetryServiceTests
             .GetProperty("properties")
             .GetProperty("$set");
         personProperties.GetProperty("app_surface").GetString().Should().Be("desktop");
+        personProperties.GetProperty("execution_environment").GetString().Should().Be("local");
+        personProperties.GetProperty("is_ci").GetBoolean().Should().BeFalse();
         personProperties.GetProperty("os_family").GetString().Should().Be(ProductTelemetryHelpers.GetOsFamily());
         personProperties.GetProperty("nanoagent_version").GetString().Should().NotBeNullOrWhiteSpace();
 
@@ -91,9 +93,54 @@ public sealed class PostHogTelemetryServiceTests
             .Be("vscode");
     }
 
+    [Theory]
+    [InlineData("GITHUB_ACTIONS", "true", "github_actions", "github_actions")]
+    [InlineData("GITLAB_CI", "true", "gitlab_ci", "gitlab_ci")]
+    [InlineData("BITBUCKET_BUILD_NUMBER", "123", "bitbucket_pipelines", "bitbucket_pipelines")]
+    public async Task TrackAppStarted_ShouldAnnotateCiSurfaceWhenRunningInKnownCi(
+        string variableName,
+        string variableValue,
+        string expectedSurface,
+        string expectedProvider)
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        Dictionary<string, string> environment = new(StringComparer.Ordinal)
+        {
+            [variableName] = variableValue
+        };
+
+        PostHogTelemetryService sut = CreateSut(
+            handler,
+            BackendRuntimeOptions.CliSurface,
+            environment.GetValueOrDefault);
+
+        sut.TrackAppStarted();
+        await sut.DisposeAsync();
+
+        handler.Requests.Should().HaveCount(2);
+
+        using JsonDocument identifyRequest = ParseBody(handler.Requests[0]);
+        using JsonDocument appStartedRequest = ParseBody(handler.Requests[1]);
+
+        JsonElement identifyProperties = identifyRequest.RootElement
+            .GetProperty("properties")
+            .GetProperty("$set");
+        identifyProperties.GetProperty("app_surface").GetString().Should().Be(expectedSurface);
+        identifyProperties.GetProperty("execution_environment").GetString().Should().Be("ci");
+        identifyProperties.GetProperty("is_ci").GetBoolean().Should().BeTrue();
+        identifyProperties.GetProperty("ci_provider").GetString().Should().Be(expectedProvider);
+
+        JsonElement appStartedProperties = appStartedRequest.RootElement.GetProperty("properties");
+        appStartedProperties.GetProperty("app_surface").GetString().Should().Be(expectedSurface);
+        appStartedProperties.GetProperty("execution_environment").GetString().Should().Be("ci");
+        appStartedProperties.GetProperty("is_ci").GetBoolean().Should().BeTrue();
+        appStartedProperties.GetProperty("ci_provider").GetString().Should().Be(expectedProvider);
+    }
+
     private static PostHogTelemetryService CreateSut(
         HttpMessageHandler handler,
-        string appSurface)
+        string appSurface,
+        Func<string, string?>? environmentVariableReader = null)
     {
         string tempRoot = Path.Combine(
             Path.GetTempPath(),
@@ -116,7 +163,8 @@ public sealed class PostHogTelemetryServiceTests
             new TestUserDataPathProvider(tempRoot),
             Options.Create(applicationOptions),
             new BackendRuntimeOptions(appSurface: appSurface),
-            TimeProvider.System);
+            TimeProvider.System,
+            environmentVariableReader);
     }
 
     private static JsonDocument ParseBody(RecordedRequest request)

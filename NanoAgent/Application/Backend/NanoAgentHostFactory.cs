@@ -16,7 +16,11 @@ public static class NanoAgentHostFactory
         IUiBridge uiBridge,
         string[] args)
     {
-        return Create(uiBridge, args, []);
+        return Create(
+            uiBridge,
+            BackendRuntimeArguments.Parse(args),
+            [],
+            autoApproveAllTools: false);
     }
 
     public static IHost Create(
@@ -26,7 +30,7 @@ public static class NanoAgentHostFactory
     {
         return Create(
             uiBridge,
-            args,
+            BackendRuntimeArguments.Parse(args),
             sessionMcpServers,
             autoApproveAllTools: false);
     }
@@ -37,10 +41,23 @@ public static class NanoAgentHostFactory
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
         bool autoApproveAllTools)
     {
-        ArgumentNullException.ThrowIfNull(uiBridge);
-        ArgumentNullException.ThrowIfNull(args);
+        return Create(
+            uiBridge,
+            BackendRuntimeArguments.Parse(args),
+            sessionMcpServers,
+            autoApproveAllTools);
+    }
 
-        HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+    internal static IHost Create(
+        IUiBridge uiBridge,
+        BackendRuntimeArguments runtimeArguments,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
+        bool autoApproveAllTools)
+    {
+        ArgumentNullException.ThrowIfNull(uiBridge);
+        ArgumentNullException.ThrowIfNull(runtimeArguments);
+
+        HostApplicationBuilder builder = Host.CreateApplicationBuilder(runtimeArguments.RawArgs);
 
         builder.Configuration.AddJsonFile(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
@@ -60,7 +77,8 @@ public static class NanoAgentHostFactory
         builder.Services.AddSingleton(new BackendRuntimeOptions(
             sessionMcpServers,
             autoApproveAllTools,
-            ResolveAppSurface(args)));
+            runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
+            ResolveStartupPromptPreference(runtimeArguments.RawArgs)));
         builder.Services
             .AddApplication()
             .AddReplCommands()
@@ -75,29 +93,48 @@ public static class NanoAgentHostFactory
         return builder.Build();
     }
 
-    private static string ResolveAppSurface(IReadOnlyList<string> args)
+    private static bool ResolveStartupPromptPreference(IReadOnlyList<string> args)
     {
         for (int index = 0; index < args.Count; index++)
         {
-            string arg = args[index];
-            if (string.Equals(arg, "--surface", StringComparison.OrdinalIgnoreCase))
+            if (TryReadOptionValue(args, ref index, "--startup-prompts", out string? value))
             {
-                int valueIndex = index + 1;
-                if (valueIndex < args.Count && !string.IsNullOrWhiteSpace(args[valueIndex]))
-                {
-                    return BackendRuntimeOptions.NormalizeAppSurface(args[valueIndex]);
-                }
-
-                break;
-            }
-
-            const string Prefix = "--surface=";
-            if (arg.StartsWith(Prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                return BackendRuntimeOptions.NormalizeAppSurface(arg[Prefix.Length..]);
+                return string.Equals(value, "enabled", StringComparison.OrdinalIgnoreCase);
             }
         }
 
-        return BackendRuntimeOptions.CliSurface;
+        return false;
+    }
+
+    private static bool TryReadOptionValue(
+        IReadOnlyList<string> args,
+        ref int index,
+        string optionName,
+        out string? value)
+    {
+        string arg = args[index];
+        value = null;
+
+        if (string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase))
+        {
+            int valueIndex = index + 1;
+            if (valueIndex >= args.Count || string.IsNullOrWhiteSpace(args[valueIndex]))
+            {
+                return false;
+            }
+
+            value = args[valueIndex].Trim();
+            index = valueIndex;
+            return true;
+        }
+
+        string prefix = optionName + "=";
+        if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        value = arg[prefix.Length..].Trim();
+        return !string.IsNullOrWhiteSpace(value);
     }
 }

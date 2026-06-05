@@ -181,6 +181,82 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
+    public async Task EnsureOnboardedAsync_Should_SaveNanoAgentEnterpriseConfiguration_When_Selected()
+    {
+        AgentProviderProfile enterpriseProfile = new(ProviderKind.OpenAiCompatible, "https://localhost:7180/v1");
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.NanoAgentEnterprise);
+
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Welcome to NanoAgent. Let's configure your provider for first run.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        statusMessageWriter
+            .Setup(writer => writer.ShowSuccessAsync(
+                "Onboarding complete. Provider: NanoAgent Enterprise.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(enterpriseProfile, null, null, "NanoAgent Enterprise"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+        secretStore.Setup(store => store.SaveAsync("enterprise-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
+        secretStore
+            .Setup(store => store.SaveAsync("NanoAgent Enterprise", "enterprise-credential-json", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+        profileFactory
+            .Setup(factory => factory.CreateCompatible("https://localhost:7180/v1"))
+            .Returns(enterpriseProfile);
+
+        Mock<INanoAgentEnterpriseAuthenticator> authenticator = new(MockBehavior.Strict);
+        authenticator
+            .Setup(service => service.AuthenticateAsync("https://localhost:7180/v1", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("enterprise-credential-json");
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object,
+            nanoAgentEnterpriseAuthenticator: authenticator.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            enterpriseProfile,
+            true,
+            ActiveProviderName: "NanoAgent Enterprise"));
+        profileFactory.Verify(factory => factory.CreateCompatible("https://localhost:7180/v1"), Times.Once);
+        authenticator.Verify(service => service.AuthenticateAsync("https://localhost:7180/v1", It.IsAny<CancellationToken>()), Times.Once);
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
+        statusMessageWriter.VerifyAll();
+    }
+
+    [Fact]
     public async Task EnsureOnboardedAsync_Should_UseProviderSetupSubmenus()
     {
         AgentProviderProfile openAiProfile = new(ProviderKind.OpenAi, null);
@@ -196,6 +272,7 @@ public sealed class FirstRunOnboardingServiceTests
                 request.Options.Select(option => (option.Label, option.Value))
                     .Should()
                     .Equal(
+                        ("NanoAgent Enterprise", OnboardingProviderSetupChoice.NanoAgentEnterprise),
                         ("Subscription accounts", OnboardingProviderSetupChoice.SubscriptionAccount),
                         ("API key providers", OnboardingProviderSetupChoice.ApiKey),
                         ("OpenAI-compatible provider", OnboardingProviderSetupChoice.OpenAiCompatible),
@@ -1404,6 +1481,7 @@ public sealed class FirstRunOnboardingServiceTests
     {
         OnboardingProviderSetupChoice setupChoice = providerChoice switch
         {
+            OnboardingProviderChoice.NanoAgentEnterprise => OnboardingProviderSetupChoice.NanoAgentEnterprise,
             OnboardingProviderChoice.OpenAiChatGptAccount or
                 OnboardingProviderChoice.AnthropicClaudeAccount or
                 OnboardingProviderChoice.GitHubCopilot => OnboardingProviderSetupChoice.SubscriptionAccount,
@@ -1419,7 +1497,7 @@ public sealed class FirstRunOnboardingServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(setupChoice);
 
-        if (setupChoice == OnboardingProviderSetupChoice.OpenAiCompatible)
+        if (setupChoice is OnboardingProviderSetupChoice.NanoAgentEnterprise or OnboardingProviderSetupChoice.OpenAiCompatible)
         {
             return;
         }
@@ -1443,7 +1521,8 @@ public sealed class FirstRunOnboardingServiceTests
         IAgentProviderProfileFactory profileFactory,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
-        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
+        INanoAgentEnterpriseAuthenticator? nanoAgentEnterpriseAuthenticator = null)
     {
         return new FirstRunOnboardingService(
             selectionPrompt,
@@ -1458,6 +1537,7 @@ public sealed class FirstRunOnboardingServiceTests
             NullLogger<FirstRunOnboardingService>.Instance,
             openAiChatGptAccountAuthenticator,
             anthropicClaudeAccountAuthenticator,
-            gitHubCopilotAuthenticator);
+            gitHubCopilotAuthenticator,
+            nanoAgentEnterpriseAuthenticator);
     }
 }

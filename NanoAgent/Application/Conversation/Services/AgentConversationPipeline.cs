@@ -10,6 +10,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
+using System.Globalization;
 using System.Text.Json;
 
 namespace NanoAgent.Application.Conversation.Services;
@@ -166,7 +167,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             if (session.PendingExecutionPlan is not null &&
                 PlanningModePolicy.IsExecutionApproval(normalizedInput))
             {
-                ConversationTurnResult approvedResult = await ExecuteApprovedPlanAsync(
+                CompletedAssistantTurn approvedTurn = await ExecuteApprovedPlanAsync(
                     normalizedInput,
                     session,
                     progressSink,
@@ -180,8 +181,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     normalizedAttachments,
                     cancellationToken);
 
-                await RunAfterTaskCompleteHookAsync(normalizedInput, session, approvedResult, cancellationToken);
-                return approvedResult;
+                await RunAfterTaskCompleteHookAsync(normalizedInput, session, approvedTurn.Result, cancellationToken);
+                CommitCompletedTurn(session, approvedTurn);
+                return approvedTurn.Result;
             }
 
             List<ConversationRequestMessage> messages =
@@ -209,27 +211,14 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 executionPlanTracker: null,
                 cancellationToken);
 
-            ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
-            session.ClearPendingExecutionPlan();
-            ToolExecutionBatchResult? batchResult = CreateBatchResult(result.ExecutedToolResults);
-            session.AddConversationTurn(
+            CompletedAssistantTurn completedTurn = CreateCompletedAssistantTurn(
                 normalizedInput,
-                result.AssistantMessage,
-                result.ToolCalls,
-                CreateToolOutputMessages(batchResult),
-                result.AssistantReasoningContent,
-                result.AssistantReasoningDetailsJson);
+                result,
+                startedAt);
 
-            ConversationTurnResult turnResult = ConversationTurnResult.AssistantMessage(
-                result.AssistantMessage,
-                batchResult,
-                CreateMetrics(
-                    startedAt,
-                    result),
-                result.AssistantReasoningContent ?? ExtractReasoningDetailsText(result.AssistantReasoningDetailsJson));
-
-            await RunAfterTaskCompleteHookAsync(normalizedInput, session, turnResult, cancellationToken);
-            return turnResult;
+            await RunAfterTaskCompleteHookAsync(normalizedInput, session, completedTurn.Result, cancellationToken);
+            CommitCompletedTurn(session, completedTurn);
+            return completedTurn.Result;
         }
         catch (OperationCanceledException)
         {
@@ -246,7 +235,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
     }
 
-    private async Task<ConversationTurnResult> ExecuteApprovedPlanAsync(
+    private async Task<CompletedAssistantTurn> ExecuteApprovedPlanAsync(
         string normalizedInput,
         ReplSessionContext session,
         IConversationProgressSink progressSink,
@@ -305,25 +294,50 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 cancellationToken);
         }
 
-        ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
-        session.ClearPendingExecutionPlan();
-        ToolExecutionBatchResult? batchResult = CreateBatchResult(executionResult.ExecutedToolResults);
-        session.AddConversationTurn(
+        return CreateCompletedAssistantTurn(
             normalizedInput,
-            executionResult.AssistantMessage,
-            executionResult.ToolCalls,
-            CreateToolOutputMessages(batchResult),
-            executionResult.AssistantReasoningContent,
-            executionResult.AssistantReasoningDetailsJson);
+            executionResult,
+            startedAt);
+    }
 
-        return ConversationTurnResult.AssistantMessage(
-            executionResult.AssistantMessage,
+    private CompletedAssistantTurn CreateCompletedAssistantTurn(
+        string userInput,
+        PhaseExecutionResult phaseResult,
+        DateTimeOffset startedAt)
+    {
+        ToolExecutionBatchResult? batchResult = CreateBatchResult(phaseResult.ExecutedToolResults);
+        ConversationTurnResult result = ConversationTurnResult.AssistantMessage(
+            phaseResult.AssistantMessage,
             batchResult,
             CreateMetrics(
                 startedAt,
-                executionResult),
-            executionResult.AssistantReasoningContent ??
-                ExtractReasoningDetailsText(executionResult.AssistantReasoningDetailsJson));
+                phaseResult),
+            phaseResult.AssistantReasoningContent ??
+                ExtractReasoningDetailsText(phaseResult.AssistantReasoningDetailsJson));
+
+        return new CompletedAssistantTurn(
+            userInput,
+            phaseResult.AssistantMessage,
+            phaseResult.ToolCalls,
+            batchResult,
+            phaseResult.AssistantReasoningContent,
+            phaseResult.AssistantReasoningDetailsJson,
+            result);
+    }
+
+    private void CommitCompletedTurn(
+        ReplSessionContext session,
+        CompletedAssistantTurn completedTurn)
+    {
+        ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
+        session.ClearPendingExecutionPlan();
+        session.AddConversationTurn(
+            completedTurn.UserInput,
+            completedTurn.AssistantResponse,
+            completedTurn.ToolCalls,
+            CreateToolOutputMessages(completedTurn.BatchResult),
+            completedTurn.AssistantReasoningContent,
+            completedTurn.AssistantReasoningDetailsJson);
     }
 
     private ConversationTurnMetrics CreateMetrics(
@@ -1253,6 +1267,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     {
         try
         {
+            await EnsureBudgetAllowsProviderRequestAsync(
+                session,
+                cancellationToken);
+
             ConversationProviderRequest request = new(
                 session.ProviderProfile,
                 apiKey,
@@ -1289,6 +1307,28 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 "The configured provider failed while processing the conversation request.",
                 exception);
         }
+    }
+
+    private async Task EnsureBudgetAllowsProviderRequestAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        BudgetControlsStatus status = await _budgetControlsUsageService.GetStatusAsync(
+            session,
+            cancellationToken);
+
+        if (status.MonthlyBudgetUsd is not decimal monthlyBudgetUsd ||
+            monthlyBudgetUsd <= 0m ||
+            status.SpentUsd < monthlyBudgetUsd)
+        {
+            return;
+        }
+
+        throw new ConversationPipelineException(
+            "Budget controls blocked the provider request because recorded spend " +
+            $"${status.SpentUsd.ToString("0.##", CultureInfo.InvariantCulture)} " +
+            "has reached or exceeded the monthly budget of " +
+            $"${monthlyBudgetUsd.ToString("0.##", CultureInfo.InvariantCulture)}.");
     }
 
     private async Task<string?> LoadProviderSecretAsync(
@@ -1481,6 +1521,46 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
 
         private int _lastInputTokenEstimate;
+    }
+
+    private sealed class CompletedAssistantTurn
+    {
+        public CompletedAssistantTurn(
+            string userInput,
+            string assistantResponse,
+            IReadOnlyList<ConversationToolCall> toolCalls,
+            ToolExecutionBatchResult? batchResult,
+            string? assistantReasoningContent,
+            string? assistantReasoningDetailsJson,
+            ConversationTurnResult result)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
+            ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
+            ArgumentNullException.ThrowIfNull(toolCalls);
+            ArgumentNullException.ThrowIfNull(result);
+
+            UserInput = userInput.Trim();
+            AssistantResponse = assistantResponse.Trim();
+            ToolCalls = toolCalls.ToArray();
+            BatchResult = batchResult;
+            AssistantReasoningContent = assistantReasoningContent;
+            AssistantReasoningDetailsJson = assistantReasoningDetailsJson;
+            Result = result;
+        }
+
+        public string UserInput { get; }
+
+        public string AssistantResponse { get; }
+
+        public IReadOnlyList<ConversationToolCall> ToolCalls { get; }
+
+        public ToolExecutionBatchResult? BatchResult { get; }
+
+        public string? AssistantReasoningContent { get; }
+
+        public string? AssistantReasoningDetailsJson { get; }
+
+        public ConversationTurnResult Result { get; }
     }
 
     private sealed class ExecutionPlanTracker

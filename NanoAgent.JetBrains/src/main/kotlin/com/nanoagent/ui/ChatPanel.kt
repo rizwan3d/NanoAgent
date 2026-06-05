@@ -1,5 +1,7 @@
 package com.nanoagent.ui
 
+import com.google.gson.JsonElement
+import com.google.gson.JsonObject
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.editor.EditorFactory
@@ -78,6 +80,7 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
     private val stopButton = JButton("Stop")
     private val connectButton = JButton("Start")
     private val statusLabel = JBLabel("Stopped")
+    private val agentThreadLabel = JBLabel("No agent threads")
     private val modelButton = JButton("Model")
     private val profileComboBox = JComboBox<String>()
     private val settingsButton = JButton("\u2699")
@@ -98,6 +101,8 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
     private val messageContainer = Box.createVerticalBox()
     private val toolCalls = mutableMapOf<String, ToolCallInfo>()
     private val toolMessageElements = mutableMapOf<String, MessageElement>()
+    private val agentThreads = linkedMapOf<String, AgentThread>()
+    private var activeAgentThreadId: String? = null
     private var currentPlan: List<AcpPlanEntry>? = null
 
     // Side pane for plan/tool activity
@@ -158,6 +163,23 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
         inputField.minimumSize = Dimension(0, 40)
         inputField.addKeyListener(object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
+                if (!suggestionsPopup.isVisible && inputField.text.isBlank()) {
+                    when (e.keyCode) {
+                        KeyEvent.VK_UP -> {
+                            if (switchAgentThread(-1)) {
+                                e.consume()
+                                return
+                            }
+                        }
+                        KeyEvent.VK_DOWN -> {
+                            if (switchAgentThread(1)) {
+                                e.consume()
+                                return
+                            }
+                        }
+                    }
+                }
+
                 if (e.keyCode == KeyEvent.VK_ENTER && !e.isControlDown && !e.isShiftDown) {
                     e.consume()
                     sendMessage()
@@ -211,12 +233,16 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
         // ---- Status Label ----
         statusLabel.border = JBUI.Borders.empty(4, 8)
         statusLabel.font = statusLabel.font.deriveFont(Font.ITALIC, 11f)
+        agentThreadLabel.border = JBUI.Borders.empty(4, 0)
+        agentThreadLabel.font = agentThreadLabel.font.deriveFont(11f)
+        agentThreadLabel.foreground = JBColor.GRAY
 
         // ---- Top Toolbar ----
         val toolbar = JPanel(BorderLayout())
         val leftToolbar = JPanel(FlowLayout(FlowLayout.LEFT, 4, 2))
         leftToolbar.add(connectButton)
         leftToolbar.add(statusLabel)
+        leftToolbar.add(agentThreadLabel)
 
         val centerToolbar = JPanel(FlowLayout(FlowLayout.CENTER, 4, 2))
         centerToolbar.add(modelButton)
@@ -492,6 +518,9 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
         }
         currentSessionId = null
         connected = false
+        agentThreads.clear()
+        activeAgentThreadId = null
+        updateActiveAgentThreadLabel()
         setConnectionUI(false)
         appendSystemMessage("Disconnected")
     }
@@ -562,6 +591,7 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
                     kind = update.kind ?: toolCalls[update.toolCallId]?.kind
                 )
                 toolCalls[update.toolCallId] = merged
+                trackAgentThreads(merged)
                 renderToolMessage(merged)
             }
         }
@@ -746,6 +776,99 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
         planPanel.repaint()
     }
 
+    private fun trackAgentThreads(call: ToolCallInfo) {
+        createAgentThreads(call).forEach { thread ->
+            agentThreads[thread.id] = thread
+        }
+
+        if (activeAgentThreadId == null || agentThreads[activeAgentThreadId] == null) {
+            activeAgentThreadId = agentThreads.values.lastOrNull()?.id
+        }
+
+        updateActiveAgentThreadLabel()
+    }
+
+    private fun createAgentThreads(call: ToolCallInfo): List<AgentThread> {
+        val rawInput = call.rawInput as? JsonElement ?: return emptyList()
+        val rawObject = rawInput.asJsonObjectOrNull() ?: return emptyList()
+        val output = call.content.joinToString("\n").trim()
+
+        rawObject.getString("agent")?.takeIf { it.isNotBlank() }?.let { agent ->
+            return listOf(AgentThread(
+                id = call.toolCallId,
+                toolCallId = call.toolCallId,
+                agent = agent,
+                task = rawObject.getString("task").orEmpty(),
+                context = rawObject.getString("context").orEmpty(),
+                ownership = "",
+                status = call.status,
+                output = output,
+                source = "delegate"
+            ))
+        }
+
+        val tasks = rawObject.get("tasks")?.takeIf { it.isJsonArray }?.asJsonArray ?: return emptyList()
+        return tasks.mapIndexedNotNull { index, taskElement ->
+            val taskObject = taskElement.asJsonObjectOrNull() ?: return@mapIndexedNotNull null
+            val agent = taskObject.getString("agent")?.takeIf { it.isNotBlank() } ?: return@mapIndexedNotNull null
+            AgentThread(
+                id = "${call.toolCallId}:$index",
+                toolCallId = call.toolCallId,
+                agent = agent,
+                task = taskObject.getString("task").orEmpty(),
+                context = taskObject.getString("context").orEmpty(),
+                ownership = taskObject.getString("ownership").orEmpty(),
+                status = call.status,
+                output = output,
+                source = "orchestrate"
+            )
+        }
+    }
+
+    private fun switchAgentThread(delta: Int): Boolean {
+        if (agentThreads.isEmpty()) {
+            return false
+        }
+
+        val threads = agentThreads.values.toList()
+        val currentIndex = threads.indexOfFirst { it.id == activeAgentThreadId }.let { if (it >= 0) it else 0 }
+        val nextIndex = Math.floorMod(currentIndex + delta, threads.size)
+        activeAgentThreadId = threads[nextIndex].id
+        updateActiveAgentThreadLabel()
+        return true
+    }
+
+    private fun updateActiveAgentThreadLabel() {
+        val thread = activeAgentThreadId?.let(agentThreads::get)
+        if (thread == null) {
+            agentThreadLabel.text = "No agent threads"
+            agentThreadLabel.toolTipText = null
+            return
+        }
+
+        agentThreadLabel.text = "@${thread.agent} ${thread.status}"
+        agentThreadLabel.toolTipText = buildString {
+            append("@").append(thread.agent)
+            append(" [").append(thread.status).append("]")
+            if (thread.task.isNotBlank()) {
+                append("\nTask: ").append(thread.task)
+            }
+            if (thread.context.isNotBlank()) {
+                append("\nContext: ").append(thread.context)
+            }
+            if (thread.ownership.isNotBlank()) {
+                append("\nOwnership: ").append(thread.ownership)
+            }
+            if (thread.output.isNotBlank()) {
+                append("\n\n").append(thread.output.take(400))
+                if (thread.output.length > 400) {
+                    append("...")
+                }
+            }
+            append("\n\nUse ArrowUp / ArrowDown on an empty composer to switch threads.")
+        }
+    }
+
     // ---- Message Sending ----
 
     private fun sendMessage() {
@@ -840,6 +963,9 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
         } catch (e: Exception) {}
         toolCalls.clear()
         toolMessageElements.clear()
+        agentThreads.clear()
+        activeAgentThreadId = null
+        updateActiveAgentThreadLabel()
         activeAssistantMessage = null
         activeReasoningMessage = null
         currentPlan = null
@@ -1006,7 +1132,9 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
     // ---- Suggestions ----
 
     private val slashCommands = listOf(
+        "/a" to "Alias for /agent.",
         "/allow <tool-or-tag> [pattern]" to "Add a session-scoped allow override.",
+        "/agent" to "List available subagents.",
         "/budget [status|local [path]|cloud]" to "Show or configure budget controls.",
         "/clear" to "Clear the chat view.",
         "/clone" to "Duplicate the current session.",
@@ -1168,4 +1296,25 @@ class ChatPanel(private val project: Project) : BorderLayoutPanel() {
     private data class MessageElement(
         val text: String
     )
+
+    private data class AgentThread(
+        val id: String,
+        val toolCallId: String,
+        val agent: String,
+        val task: String,
+        val context: String,
+        val ownership: String,
+        val status: String,
+        val output: String,
+        val source: String
+    )
 }
+
+private fun JsonElement.asJsonObjectOrNull(): JsonObject? =
+    if (isJsonObject) asJsonObject else null
+
+private fun JsonObject.getString(propertyName: String): String? =
+    get(propertyName)
+        ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+        ?.asString
+        ?.trim()

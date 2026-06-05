@@ -2,6 +2,13 @@ namespace NanoAgent.Application.Utilities;
 
 internal static class WorkspacePath
 {
+    public static StringComparer GetPathComparer()
+    {
+        return OperatingSystem.IsWindows()
+            ? StringComparer.OrdinalIgnoreCase
+            : StringComparer.Ordinal;
+    }
+
     public static bool IsSamePathOrDescendant(
         string parentPath,
         string candidatePath)
