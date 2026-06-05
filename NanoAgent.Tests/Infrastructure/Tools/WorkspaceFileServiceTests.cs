@@ -386,6 +386,58 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_RejectNoNewlineMarker_BeforeLaterContextInSameHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(filePath, "a\nb\n", CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -a
+            +A
+            \ No newline at end of file
+             b
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<FormatException>()
+            .WithMessage("*final resulting line*");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RejectNoNewlineMarker_InNonFinalHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(filePath, "a\nb\nc\n", CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -a
+            +A
+            \ No newline at end of file
+            @@
+            -c
+            +C
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<FormatException>()
+            .WithMessage("*final resulting line*");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_RejectEmptyPatch()
     {
         WorkspaceFileService sut = CreateSut();
@@ -426,6 +478,31 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
             .Be("def other():\n    print(\"Hi\")\n\ndef greet():\n    print(\"Hello\")\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_InsertRelativeToAnchoredInsertionOnlyHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "app.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "before\ntarget line\nafter\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: app.txt
+            @@ target line
+            +inserted near target
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("before\ntarget line\ninserted near target\nafter\n");
     }
 
     [Fact]
@@ -613,6 +690,100 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_RespectPlatformPathComparison_ForCaseOnlyPaths()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        await sut.ApplyFileEditStatesAsync(
+            [
+                new WorkspaceFileEditState("Foo.txt", exists: true, content: "upper"),
+                new WorkspaceFileEditState("foo.txt", exists: true, content: "lower")
+            ],
+            CancellationToken.None);
+
+        string upperPath = Path.Combine(_workspaceRoot, "Foo.txt");
+        string lowerPath = Path.Combine(_workspaceRoot, "foo.txt");
+
+        if (OperatingSystem.IsWindows())
+        {
+            File.Exists(upperPath).Should().BeTrue();
+            (await File.ReadAllTextAsync(upperPath, CancellationToken.None)).Should().Be("lower");
+        }
+        else
+        {
+            File.Exists(upperPath).Should().BeTrue();
+            File.Exists(lowerPath).Should().BeTrue();
+            (await File.ReadAllTextAsync(upperPath, CancellationToken.None)).Should().Be("upper");
+            (await File.ReadAllTextAsync(lowerPath, CancellationToken.None)).Should().Be("lower");
+        }
+    }
+
+    [Fact]
+    public async Task ApplyPatchWithTrackingAsync_Should_RespectPlatformPathComparison_ForCaseOnlyRename()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string sourcePath = Path.Combine(_workspaceRoot, "Foo.txt");
+        await File.WriteAllTextAsync(sourcePath, "hello", CancellationToken.None);
+
+        WorkspaceApplyPatchExecutionResult result = await sut.ApplyPatchWithTrackingAsync(
+            """
+            *** Begin Patch
+            *** Update File: Foo.txt
+            *** Move to: foo.txt
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        result.EditTransaction.Should().NotBeNull();
+
+        if (OperatingSystem.IsWindows())
+        {
+            result.EditTransaction!.BeforeStates
+                .Should()
+                .ContainSingle()
+                .Which.Path
+                .Should()
+                .Be("Foo.txt");
+            result.EditTransaction.AfterStates
+                .Should()
+                .ContainSingle()
+                .Which.Path
+                .Should()
+                .Be("Foo.txt");
+        }
+        else
+        {
+            result.EditTransaction!.BeforeStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
+            result.EditTransaction.AfterStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
+        }
+    }
+
+    [Fact]
+    public async Task ApplyPatchWithTrackingAsync_Should_RollBackEarlierOperations_WhenALaterOperationFails()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string createdPath = Path.Combine(_workspaceRoot, "created.txt");
+
+        Func<Task> act = () => sut.ApplyPatchWithTrackingAsync(
+            """
+            *** Begin Patch
+            *** Add File: created.txt
+            +this file is created
+            *** Update File: missing.txt
+            @@
+            -old
+            +new
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should().ThrowAsync<FileNotFoundException>()
+            .WithMessage("File 'missing.txt' does not exist.");
+        File.Exists(createdPath).Should().BeFalse();
+        File.Exists(Path.Combine(_workspaceRoot, "missing.txt")).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task ListDirectoryAsync_Should_ExcludeNanoIgnoredPaths()
     {
         await WriteNanoIgnoreAsync(
@@ -762,6 +933,32 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         result.FileCount.Should().Be(1);
         string actualContent = await File.ReadAllTextAsync(filePath, CancellationToken.None);
         actualContent.Should().Be("keep\nadded\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveExactContent_ForMoveOnlyUpdate()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string sourcePath = Path.Combine(_workspaceRoot, "old.txt");
+        string destinationPath = Path.Combine(_workspaceRoot, "new.txt");
+        await File.WriteAllTextAsync(
+            sourcePath,
+            "hello\r\nthere",
+            CancellationToken.None);
+
+        WorkspaceApplyPatchResult result = await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: old.txt
+            *** Move to: new.txt
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        result.FileCount.Should().Be(1);
+        File.Exists(sourcePath).Should().BeFalse();
+        string actualContent = await File.ReadAllTextAsync(destinationPath, CancellationToken.None);
+        actualContent.Should().Be("hello\r\nthere");
     }
 
     [Fact]

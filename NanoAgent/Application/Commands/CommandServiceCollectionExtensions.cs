@@ -10,6 +10,8 @@ public static class CommandServiceCollectionExtensions
 
         services.AddSingleton<IReplCommandParser, ReplCommandParser>();
         services.AddSingleton<IReplCommandDispatcher, ReplCommandDispatcher>();
+        services.AddSingleton<IReplCommandHandler, AgentCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, AgentAliasCommandHandler>();
         services.AddSingleton<IReplCommandHandler, AllowCommandHandler>();
         services.AddSingleton<IReplCommandHandler, BudgetCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ConfigCommandHandler>();
@@ -22,6 +24,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, InitCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ImportCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, LspCommandHandler>();
         services.AddSingleton<IReplCommandHandler, McpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ModelsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, NewSessionCommandHandler>();
@@ -37,6 +40,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, ThinkingCommandHandler>();
         services.AddSingleton<IReplCommandHandler, SessionInfoCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ShareCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, SetupSandboxCommandHandler>();
         services.AddSingleton<IReplCommandHandler, TreeCommandHandler>();
         services.AddSingleton<IReplCommandHandler, UpdateCommandHandler>();
         services.AddSingleton<IReplCommandHandler, UndoCommandHandler>();

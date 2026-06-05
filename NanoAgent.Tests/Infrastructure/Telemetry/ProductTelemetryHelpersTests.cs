@@ -22,6 +22,8 @@ public sealed class ProductTelemetryHelpersTests
             "1.2.3",
             "windows",
             "vscode",
+            "local",
+            ciProvider: null,
             "prompt_with_attachments",
             "turn",
             success: true,
@@ -34,6 +36,8 @@ public sealed class ProductTelemetryHelpersTests
                 "nanoagent_version",
                 "os_family",
                 "app_surface",
+                "execution_environment",
+                "is_ci",
                 "feature_name",
                 "interaction_kind",
                 "success",
@@ -63,6 +67,8 @@ public sealed class ProductTelemetryHelpersTests
             "1.2.3",
             "linux",
             "cli",
+            "local",
+            ciProvider: null,
             "prompt",
             "turn",
             success: false,
@@ -87,8 +93,38 @@ public sealed class ProductTelemetryHelpersTests
             "1.2.3",
             "macos",
             "desktop",
+            "local",
+            ciProvider: null,
             TimeSpan.FromMinutes(7));
 
         properties["usage_time_bucket"].Should().Be("5m_to_15m");
+    }
+
+    [Theory]
+    [InlineData("GITHUB_ACTIONS", "true", "github_actions", "github_actions", "ci")]
+    [InlineData("GITLAB_CI", "true", "gitlab_ci", "gitlab_ci", "ci")]
+    [InlineData("BITBUCKET_BUILD_NUMBER", "42", "bitbucket_pipelines", "bitbucket_pipelines", "ci")]
+    [InlineData("CI", "true", "ci", "generic_ci", "ci")]
+    public void ResolveTelemetryAppSurface_ShouldDetectCiProviders(
+        string variableName,
+        string variableValue,
+        string expectedSurface,
+        string expectedProvider,
+        string expectedExecutionEnvironment)
+    {
+        Dictionary<string, string> environment = new(StringComparer.Ordinal)
+        {
+            [variableName] = variableValue
+        };
+
+        string appSurface = ProductTelemetryHelpers.ResolveTelemetryAppSurface(
+            "cli",
+            environment.GetValueOrDefault);
+        string? ciProvider = ProductTelemetryHelpers.DetectCiProvider(environment.GetValueOrDefault);
+        string executionEnvironment = ProductTelemetryHelpers.ResolveExecutionEnvironment(appSurface);
+
+        appSurface.Should().Be(expectedSurface);
+        ciProvider.Should().Be(expectedProvider);
+        executionEnvironment.Should().Be(expectedExecutionEnvironment);
     }
 }

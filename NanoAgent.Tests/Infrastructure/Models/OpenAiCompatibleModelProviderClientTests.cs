@@ -6,6 +6,7 @@ using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.Models;
+using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
 using System.Text;
@@ -104,6 +105,106 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         handler.RequestUri.Should().Be(new Uri("https://generativelanguage.googleapis.com/v1beta/openai/models"));
         models.Select(model => model.Id).Should().Equal("gemini-2.5-flash");
+    }
+
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_ResolveNanoAgentEnterpriseCredentials_When_CompatibleProviderUsesEnterpriseAuth()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "gpt-5" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        Mock<INanoAgentEnterpriseCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.CanResolve("enterprise-credential-json"))
+            .Returns(true);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("enterprise-access-token"));
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            nanoAgentEnterpriseCredentialService: credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://enterprise.example.com/v1"),
+            "enterprise-credential-json",
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://enterprise.example.com/v1/models"));
+        handler.AuthorizationHeader.Should().Be("Bearer enterprise-access-token");
+        models.Select(model => model.Id).Should().Equal("gpt-5");
+        credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_ReauthenticateNanoAgentEnterprise_When_RefreshedCredentialIsStillUnauthorized()
+    {
+        SequencedHandler handler = new(
+            new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            new HttpResponseMessage(HttpStatusCode.Unauthorized),
+            new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    """
+                    {
+                      "data": [
+                        { "id": "enterprise-model" }
+                      ]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json")
+            });
+        HttpClient httpClient = new(handler);
+        Mock<INanoAgentEnterpriseCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.CanResolve("enterprise-credential-json"))
+            .Returns(true);
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("expired-token"));
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json",
+                true,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("still-invalid-token"));
+        credentialService
+            .Setup(service => service.AuthenticateAsync(
+                "https://enterprise.example.com/v1",
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("enterprise-credential-json-reauthenticated");
+        credentialService
+            .Setup(service => service.ResolveAsync(
+                "enterprise-credential-json-reauthenticated",
+                false,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("fresh-token"));
+        OpenAiCompatibleModelProviderClient sut = CreateSut(
+            httpClient,
+            nanoAgentEnterpriseCredentialService: credentialService.Object);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://enterprise.example.com/v1"),
+            "enterprise-credential-json",
+            CancellationToken.None);
+
+        handler.AuthorizationHeaders.Should().Equal(
+            "Bearer expired-token",
+            "Bearer still-invalid-token",
+            "Bearer fresh-token");
+        models.Select(model => model.Id).Should().Equal("enterprise-model");
+        credentialService.VerifyAll();
     }
 
     [Fact]
@@ -511,7 +612,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         IOpenAiChatGptAccountCredentialService? credentialService = null,
         IOpenAiCodexClientVersionProvider? versionProvider = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
-        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null)
+        IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
@@ -519,7 +621,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             credentialService,
             versionProvider,
             anthropicClaudeAccountCredentialService,
-            gitHubCopilotCredentialService);
+            gitHubCopilotCredentialService,
+            nanoAgentEnterpriseCredentialService);
     }
 
     private sealed class StubOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider

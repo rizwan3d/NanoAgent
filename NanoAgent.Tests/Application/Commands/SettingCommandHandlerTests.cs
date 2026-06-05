@@ -176,6 +176,52 @@ public sealed class SettingCommandHandlerTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ToggleAutoApproveAllToolsAndSavePermissionSettings()
+    {
+        QueueSelectionPrompt selectionPrompt = new("Auto approve all tools", "Back");
+        HandlerServiceProvider serviceProvider = new();
+        CapturingWorkspaceSettingsWriter settingsWriter = new();
+        PermissionSettings permissionSettings = new()
+        {
+            AutoApproveAllTools = false
+        };
+        SettingCommandHandler sut = CreateHandler(
+            selectionPrompt,
+            serviceProvider,
+            permissionSettings: permissionSettings,
+            workspaceSettingsWriter: settingsWriter);
+        serviceProvider.Handlers = [sut];
+        string workspacePath = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-setting-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspacePath);
+        ReplSessionContext session = CreateSession(workspacePath);
+
+        try
+        {
+            ReplCommandResult result = await sut.ExecuteAsync(
+                CreateContext(session, "permissions"),
+                CancellationToken.None);
+
+            result.Message.Should().BeNull();
+            permissionSettings.AutoApproveAllTools.Should().BeTrue();
+            settingsWriter.WorkspacePath.Should().Be(workspacePath);
+            settingsWriter.SavedSettings.Should().NotBeNull();
+            settingsWriter.SavedSettings!.AutoApproveAllTools.Should().BeTrue();
+            selectionPrompt.RequestTitles.Should().Equal(
+                "Permission settings",
+                "Permission settings");
+        }
+        finally
+        {
+            if (Directory.Exists(workspacePath))
+            {
+                Directory.Delete(workspacePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_DelegateBudgetAreaWithRemainingArguments()
     {
         QueueSelectionPrompt selectionPrompt = new();

@@ -16,6 +16,7 @@ using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
 using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.Models;
+using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
@@ -53,6 +54,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
         services.AddSingleton<IWorkspaceSettingsWriter, WorkspaceSettingsWriter>();
         services.AddSingleton<ICodebaseIndexService, WorkspaceCodebaseIndexService>();
+        services.AddSingleton<ILanguageServerRegistry, LanguageServerRegistry>();
         services.AddSingleton<ICodeIntelligenceService, LspCodeIntelligenceService>();
         services.AddSingleton<IHeadlessBrowserService, HeadlessBrowserService>();
         services.AddSingleton<IWorkspaceSystemPromptProvider, WorkspaceSystemPromptProvider>();
@@ -120,6 +122,13 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ToolExecutionSettings>(),
                 TimeSpan.FromSeconds(30));
         });
+        services.AddHttpClient<NanoAgentEnterpriseCredentialService>((serviceProvider, client) =>
+        {
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(30));
+        });
         services.AddTransient<IOpenAiChatGptAccountCredentialService>(serviceProvider =>
             serviceProvider.GetRequiredService<OpenAiChatGptAccountCredentialService>());
         services.AddTransient<IOpenAiChatGptAccountAuthenticator>(serviceProvider =>
@@ -132,6 +141,10 @@ public static class ServiceCollectionExtensions
             serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
         services.AddTransient<IGitHubCopilotAuthenticator>(serviceProvider =>
             serviceProvider.GetRequiredService<GitHubCopilotCredentialService>());
+        services.AddTransient<INanoAgentEnterpriseCredentialService>(serviceProvider =>
+            serviceProvider.GetRequiredService<NanoAgentEnterpriseCredentialService>());
+        services.AddTransient<INanoAgentEnterpriseAuthenticator>(serviceProvider =>
+            serviceProvider.GetRequiredService<NanoAgentEnterpriseCredentialService>());
         services.AddHttpClient("NanoAgent.Mcp", (serviceProvider, client) =>
         {
             ConfigureHttpClient(
@@ -175,6 +188,9 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ToolExecutionSettings>(),
                 Timeout.InfiniteTimeSpan);
         });
+        services.AddSingleton<IWindowsSandboxPlatform, WindowsSandboxPlatform>();
+        services.AddSingleton<IWindowsSandboxSetupBootstrapper, WindowsSandboxSetupBootstrapper>();
+        services.AddSingleton<IWindowsSandboxStartupService, WindowsSandboxStartupService>();
         services.AddSingleton<IWindowsSandboxProcessRunner, WindowsSandboxProcessRunnerAdapter>();
 
         services
