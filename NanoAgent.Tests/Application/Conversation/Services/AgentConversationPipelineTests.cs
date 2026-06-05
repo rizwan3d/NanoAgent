@@ -2759,7 +2759,7 @@ public sealed class AgentConversationPipelineTests
             NullLogger<AgentConversationPipeline>.Instance,
             lifecycleHookService,
             skillService,
-            budgetControlsUsageService,
+            budgetControlsUsageService: budgetControlsUsageService,
             workspaceAgentProfilePromptProvider: workspaceAgentProfilePromptProvider ?? new EmptyWorkspaceAgentProfilePromptProvider());
     }
 
