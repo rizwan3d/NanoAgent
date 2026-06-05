@@ -32,6 +32,11 @@ TRANSIENT_DIFF_SEGMENTS = {
     "obj",
     "out",
 }
+SUBPROCESS_TEXT_KWARGS = {
+    "text": True,
+    "encoding": "utf-8",
+    "errors": "replace",
+}
 
 
 @dataclass(frozen=True)
@@ -119,6 +124,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--release-tag", help="Optional release tag for the output metadata.")
     parser.add_argument("--output-json", help="Explicit JSON output path.")
     parser.add_argument("--output-md", help="Explicit Markdown summary path.")
+    parser.add_argument(
+        "--refresh-latest",
+        action="store_true",
+        help="Also copy the generated results to benchmarks/results/latest.json and latest.md. Without this flag, runs only write timestamped result files.",
+    )
     return parser.parse_args()
 
 
@@ -207,8 +217,8 @@ def run_process_streaming(
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        text=True,
         bufsize=1,
+        **SUBPROCESS_TEXT_KWARGS,
     )
 
     import queue
@@ -647,9 +657,9 @@ def run_process(
         cwd=str(cwd),
         env=env,
         capture_output=True,
-        text=True,
         timeout=timeout_seconds,
         check=False,
+        **SUBPROCESS_TEXT_KWARGS,
     )
     ended = utc_now()
     log_progress(
@@ -1201,6 +1211,10 @@ def refresh_latest_files(json_path: Path, md_path: Path) -> None:
     shutil.copyfile(md_path, latest_md)
 
 
+def should_refresh_latest(args: argparse.Namespace) -> bool:
+    return args.refresh_latest
+
+
 def print_task_list(tasks: list[TaskDefinition], regression_tag: str) -> None:
     for task in tasks:
         suites = ", ".join(get_task_suite_membership(task, regression_tag))
@@ -1282,6 +1296,8 @@ def main() -> int:
     agent_settings = resolve_agent_settings(args)
     if args.system:
         log_progress("System mode enabled: using nanoai with --json, --profile, and positional prompt; provider/model/key env wiring is bypassed.")
+    if not args.refresh_latest:
+        log_progress("This run will not refresh benchmarks/results/latest.json or latest.md unless --refresh-latest is provided.")
     if args.skip_preflight:
         log_progress("Skipping benchmark preflight because --skip-preflight was provided.")
     else:
@@ -1348,7 +1364,8 @@ def main() -> int:
 
     write_json(json_path, payload)
     write_markdown(md_path, payload)
-    refresh_latest_files(json_path, md_path)
+    if should_refresh_latest(args):
+        refresh_latest_files(json_path, md_path)
 
     total = len(task_results)
     passed = sum(1 for item in task_results if item["passed"])
