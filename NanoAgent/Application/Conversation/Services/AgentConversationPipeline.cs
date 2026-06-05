@@ -1292,6 +1292,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         {
             throw;
         }
+        catch (ConversationPipelineException)
+        {
+            throw;
+        }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && timeoutSource.IsCancellationRequested)
         {
             throw new ConversationProviderException(
