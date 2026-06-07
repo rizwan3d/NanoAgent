@@ -954,7 +954,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                !IsPatchOperationBoundary(lines[lineIndex]))
         {
             string line = lines[lineIndex];
-            if (string.IsNullOrWhiteSpace(line))
+            if (line.Length == 0)
             {
                 if (CanSkipBlankUpdatePatchLine(lines, lineIndex, currentHunkLines))
                 {
@@ -1074,7 +1074,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         int nextNonBlankLineIndex = lineIndex + 1;
         while (nextNonBlankLineIndex < lines.Count &&
-               string.IsNullOrWhiteSpace(lines[nextNonBlankLineIndex]))
+               lines[nextNonBlankLineIndex].Length == 0)
         {
             nextNonBlankLineIndex++;
         }
