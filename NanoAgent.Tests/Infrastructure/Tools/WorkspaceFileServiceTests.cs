@@ -1116,4 +1116,33 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             return _workspaceRoot;
         }
     }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptSpacePrefixedBlankContextLine()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.cs");
+    
+        await File.WriteAllTextAsync(
+            filePath,
+            "line1\n\nline3\n",
+            CancellationToken.None);
+    
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: sample.cs
+            @@
+             line1
+             
+            -line3
+            +line4
+            *** End Patch
+            """,
+            CancellationToken.None);
+    
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("line1\n\nline4\n");
+    }
 }
