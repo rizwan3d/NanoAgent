@@ -6,6 +6,7 @@ using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Tools;
@@ -19,6 +20,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private const int MaxFileSearchResults = 200;
     private const int FileWritePreviewContextLines = 1;
     private const int MaxFileWritePreviewLines = 8;
+    private const int LargeFileThresholdBytes = 262_144;
+    private const int ContentPreviewThresholdChars = 262_144;
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
@@ -28,6 +31,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         _workspaceRootProvider = workspaceRootProvider;
     }
+ 
 
     public async Task<WorkspaceApplyPatchResult> ApplyPatchAsync(
         string patch,
@@ -46,7 +50,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         PatchDocument document = ParsePatch(patch);
-        string[] trackedPaths = GetTrackedPatchPaths(document);
+        string[] trackedPaths = await FilterLargeFilePathsAsync(
+            GetTrackedPatchPaths(document),
+            cancellationToken);
         WorkspaceFileEditState[] beforeStates = await CaptureFileStatesAsync(
             trackedPaths,
             cancellationToken);
@@ -106,6 +112,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         foreach (WorkspaceFileEditState state in normalizedStates.Where(static state => state.Exists))
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (state.Content is null)
+            {
+                continue;
+            }
 
             string fullPath = ResolveWorkspacePath(state.Path, directoryRequired: false, fileRequired: false);
             if (Directory.Exists(fullPath))
@@ -407,6 +418,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 ToWorkspaceRelativePath(fullPath),
                 exists: false,
                 content: null);
+        }
+
+        if (TryGetFileLength(fullPath, out long fileLength) && fileLength > LargeFileThresholdBytes)
+        {
+            await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            byte[] hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
+            string hash = Convert.ToHexStringLower(hashBytes);
+            return new WorkspaceFileEditState(
+                ToWorkspaceRelativePath(fullPath),
+                exists: true,
+                content: null,
+                contentHash: hash);
         }
 
         string content = await File.ReadAllTextAsync(
@@ -1471,22 +1494,54 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : content;
     }
 
-    private static string[] GetTrackedPatchPaths(PatchDocument document)
+    private static string ComputeContentHash(string content)
     {
-        StringComparer pathComparer = WorkspacePath.GetPathComparer();
-        return document.Operations
-            .SelectMany(static operation => operation.MoveToPath is null
-                ? [operation.Path]
-                : new[] { operation.Path, operation.MoveToPath })
-            .Where(static path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(pathComparer)
-            .ToArray();
+        byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
+        return Convert.ToHexStringLower(hashBytes);
+    }
+
+    private static bool IsLargeContent(string? content)
+    {
+        return content?.Length > ContentPreviewThresholdChars;
+    }
+
+    private async Task<string[]> FilterLargeFilePathsAsync(
+        string[] paths,
+        CancellationToken cancellationToken)
+    {
+        List<string> filtered = [];
+        foreach (string path in paths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+                if (!File.Exists(fullPath) || !TryGetFileLength(fullPath, out long length) || length <= LargeFileThresholdBytes)
+                {
+                    filtered.Add(path);
+                }
+            }
+            catch
+            {
+                filtered.Add(path);
+            }
+        }
+        return filtered.ToArray();
     }
 
     private static FileWritePreview BuildFileWritePreview(
         string? previousContent,
         string currentContent)
     {
+        if (IsLargeContent(previousContent) || IsLargeContent(currentContent))
+        {
+            string[] prevLines = SplitLines(previousContent);
+            string[] currLines = SplitLines(currentContent);
+            int added = Math.Max(0, currLines.Length - (prevLines?.Length ?? 0));
+            int removed = Math.Max(0, (prevLines?.Length ?? 0) - currLines.Length);
+            return new FileWritePreview(added, removed, [], 0);
+        }
+
         string[] currentLines = SplitLines(currentContent);
         IReadOnlyList<PreviewDiffLine> diffLines = previousContent is null
             ? currentLines
