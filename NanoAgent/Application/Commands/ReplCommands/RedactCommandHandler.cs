@@ -1,3 +1,4 @@
+using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Commands;
