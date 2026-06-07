@@ -4,11 +4,22 @@ namespace NanoAgent.Application.Utilities;
 
 public static partial class SecretRedactor
 {
+    /// <summary>
+    /// Gets or sets whether secret redaction is enabled. Defaults to <see langword="true"/>.
+    /// When <see langword="false"/>, <see cref="Redact"/> and <see cref="RedactEnvironmentFileContent"/>
+    /// return the input value without modification.
+    /// </summary>
+    public static bool IsEnabled { get; set; } = true;
     private const string Redacted = "<redacted>";
     private const string RedactedPrivateKey = "<redacted:private-key>";
 
     public static string Redact(string? value)
     {
+        if (!IsEnabled)
+        {
+            return value ?? string.Empty;
+        }
+
         if (string.IsNullOrEmpty(value))
         {
             return string.Empty;
@@ -27,6 +38,11 @@ public static partial class SecretRedactor
 
     public static string RedactEnvironmentFileContent(string? value)
     {
+        if (!IsEnabled)
+        {
+            return value ?? string.Empty;
+        }
+
         if (string.IsNullOrEmpty(value))
         {
             return string.Empty;
