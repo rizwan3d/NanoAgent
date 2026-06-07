@@ -167,12 +167,13 @@ internal static class ShellCommandText
         foreach (Match match in matches)
         {
             string value = match.Value.Trim();
-            if ((value.StartsWith('"') && value.EndsWith('"')) ||
-                (value.StartsWith('\'') && value.EndsWith('\'')))
+            if (value.Length >= 2 &&
+                ((value[0] == '"' && value[^1] == '"') ||
+                (value[0] == '\'' && value[^1] == '\'')))
             {
                 value = value[1..^1];
             }
-
+            
             if (!string.IsNullOrWhiteSpace(value))
             {
                 tokens.Add(value);
