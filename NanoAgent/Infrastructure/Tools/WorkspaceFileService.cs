@@ -1505,6 +1505,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return content?.Length > ContentPreviewThresholdChars;
     }
 
+
+    private static string[] GetTrackedPatchPaths(PatchDocument document)
+    {
+        List<string> paths = [];
+        foreach (PatchOperation op in document.Operations)
+        {
+            paths.Add(op.Path);
+            if (op.MoveToPath is not null)
+            {
+                paths.Add(op.MoveToPath);
+            }
+        }
+        return paths.ToArray();
+    }
+
     private async Task<string[]> FilterLargeFilePathsAsync(
         string[] paths,
         CancellationToken cancellationToken)
