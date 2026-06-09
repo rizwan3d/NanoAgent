@@ -893,7 +893,10 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string query = GetString(arguments, "query") ?? "<missing>";
         string path = GetString(arguments, "path") ?? ".";
         string caseSensitive = FormatBoolean(GetBoolean(arguments, "caseSensitive"), defaultValue: "false");
-        return $"{toolName} query `{query}`, path `{path}`, caseSensitive {caseSensitive}";
+        string glob = GetString(arguments, "glob") ?? "<none>";
+        string fuzzy = FormatBoolean(GetBoolean(arguments, "fuzzy"), defaultValue: "false");
+        string limit = GetInt32(arguments, "limit")?.ToString(CultureInfo.InvariantCulture) ?? "200";
+        return $"{toolName} query `{query}`, path `{path}`, caseSensitive {caseSensitive}, glob `{glob}`, fuzzy {fuzzy}, limit {limit}";
     }
 
     private static string SummarizeShellArguments(JsonElement arguments)
@@ -920,6 +923,17 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         return arguments.TryGetProperty(propertyName, out JsonElement value) &&
                value.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? value.GetBoolean()
+            : null;
+    }
+
+    private static int? GetInt32(
+        JsonElement arguments,
+        string propertyName)
+    {
+        return arguments.TryGetProperty(propertyName, out JsonElement value) &&
+               value.ValueKind == JsonValueKind.Number &&
+               value.TryGetInt32(out int result)
+            ? result
             : null;
     }
 
