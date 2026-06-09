@@ -5,8 +5,10 @@ namespace NanoAgent.Infrastructure.Workspaces;
 
 internal sealed class WorkspaceIgnoreMatcher
 {
+    private const string GitIgnoreFileName = ".gitignore";
     private const string IgnoreFileDirectoryName = ".nanoagent";
     private const string IgnoreFileName = ".nanoignore";
+    private static readonly string NanoIgnoreRelativePath = Path.Combine(IgnoreFileDirectoryName, IgnoreFileName);
 
     private static readonly WorkspaceIgnoreMatcher EmptyMatcher = new(
         string.Empty,
@@ -29,7 +31,7 @@ internal sealed class WorkspaceIgnoreMatcher
     {
         return Load(
             workspaceRoot,
-            [Path.Combine(IgnoreFileDirectoryName, IgnoreFileName)]);
+            [GitIgnoreFileName, NanoIgnoreRelativePath]);
     }
 
     public static WorkspaceIgnoreMatcher Load(
@@ -47,29 +49,14 @@ internal sealed class WorkspaceIgnoreMatcher
             return EmptyMatcher;
         }
 
+        IgnoreFileCandidate[] ignoreFiles = ExpandIgnoreFiles(fullWorkspaceRoot, ignoreFilePaths);
         List<IgnoreRule> rules = [];
-        foreach (string ignoreFilePath in ignoreFilePaths)
+        foreach (IgnoreFileCandidate ignoreFile in ignoreFiles)
         {
-            if (string.IsNullOrWhiteSpace(ignoreFilePath))
-            {
-                continue;
-            }
-
-            string fullIgnoreFilePath = Path.GetFullPath(
-                Path.IsPathRooted(ignoreFilePath)
-                    ? ignoreFilePath
-                    : Path.Combine(fullWorkspaceRoot, ignoreFilePath.Trim()));
-
-            if (!WorkspacePath.IsSamePathOrDescendant(fullWorkspaceRoot, fullIgnoreFilePath) ||
-                !File.Exists(fullIgnoreFilePath))
-            {
-                continue;
-            }
-
             string[] lines;
             try
             {
-                lines = File.ReadAllLines(fullIgnoreFilePath);
+                lines = File.ReadAllLines(ignoreFile.FullPath);
             }
             catch (Exception exception) when (IsFileSystemAccessException(exception))
             {
@@ -77,7 +64,10 @@ internal sealed class WorkspaceIgnoreMatcher
             }
 
             rules.AddRange(lines
-                .Select(ParseRule)
+                .Select(line => ParseRule(
+                    line,
+                    ignoreFile.BaseRelativeDirectory,
+                    ignoreFile.DisplayPath))
                 .Where(static rule => rule is not null)
                 .Select(static rule => rule!));
         }
@@ -107,32 +97,30 @@ internal sealed class WorkspaceIgnoreMatcher
         string relativePath,
         bool isDirectory)
     {
+        return GetIgnoringRule(relativePath, isDirectory) is not null;
+    }
+
+    public bool TryGetIgnoreSource(
+        string fullPath,
+        bool isDirectory,
+        out string sourceDisplayPath)
+    {
         if (_rules.Length == 0)
         {
+            sourceDisplayPath = string.Empty;
             return false;
         }
 
-        string normalizedPath = NormalizePath(relativePath);
-        if (string.IsNullOrWhiteSpace(normalizedPath) ||
-            string.Equals(normalizedPath, ".", StringComparison.Ordinal))
+        string relativePath = WorkspacePath.ToRelativePath(_workspaceRoot, fullPath);
+        IgnoreRule? ignoringRule = GetIgnoringRule(relativePath, isDirectory);
+        if (ignoringRule is null)
         {
+            sourceDisplayPath = string.Empty;
             return false;
         }
 
-        string[] pathSegments = normalizedPath.Split(
-            '/',
-            StringSplitOptions.RemoveEmptyEntries);
-
-        bool ignored = false;
-        foreach (IgnoreRule rule in _rules)
-        {
-            if (Matches(rule, pathSegments, isDirectory))
-            {
-                ignored = !rule.Negated;
-            }
-        }
-
-        return ignored;
+        sourceDisplayPath = ignoringRule.SourceDisplayPath;
+        return true;
     }
 
     public static bool MatchesGlob(
@@ -145,7 +133,7 @@ internal sealed class WorkspaceIgnoreMatcher
             return false;
         }
 
-        IgnoreRule? rule = ParseRule(pattern);
+        IgnoreRule? rule = ParseRule(pattern, string.Empty, "<glob>");
         if (rule is null)
         {
             return false;
@@ -156,7 +144,46 @@ internal sealed class WorkspaceIgnoreMatcher
         return pathSegments.Length > 0 && Matches(rule, pathSegments, isDirectory);
     }
 
-    private static IgnoreRule? ParseRule(string line)
+    private IgnoreRule? GetIgnoringRule(
+        string relativePath,
+        bool isDirectory)
+    {
+        if (_rules.Length == 0)
+        {
+            return null;
+        }
+
+        string normalizedPath = NormalizePath(relativePath);
+        if (string.IsNullOrWhiteSpace(normalizedPath) ||
+            string.Equals(normalizedPath, ".", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string[] pathSegments = normalizedPath.Split(
+            '/',
+            StringSplitOptions.RemoveEmptyEntries);
+
+        IgnoreRule? ignoringRule = null;
+        foreach (IgnoreRule rule in _rules)
+        {
+            if (!Matches(rule, pathSegments, isDirectory))
+            {
+                continue;
+            }
+
+            ignoringRule = rule.Negated
+                ? null
+                : rule;
+        }
+
+        return ignoringRule;
+    }
+
+    private static IgnoreRule? ParseRule(
+        string line,
+        string baseRelativeDirectory,
+        string sourceDisplayPath)
     {
         string trimmedLine = line.Trim();
         if (string.IsNullOrWhiteSpace(trimmedLine))
@@ -197,17 +224,23 @@ internal sealed class WorkspaceIgnoreMatcher
             return null;
         }
 
+        string[] baseSegments = GetPathSegments(baseRelativeDirectory);
         string[] segments = normalizedPattern.Split(
             '/',
             StringSplitOptions.RemoveEmptyEntries);
         bool hasSlash = segments.Length > 1;
+        string[] matchSegments = hasSlash
+            ? [.. baseSegments, .. segments]
+            : segments;
 
         return new IgnoreRule(
             negated,
             directoryOnly,
             hasSlash,
-            segments,
-            segments.Select(CreateSegmentRegex).ToArray());
+            baseSegments,
+            matchSegments,
+            matchSegments.Select(CreateSegmentRegex).ToArray(),
+            sourceDisplayPath);
     }
 
     private static bool Matches(
@@ -216,6 +249,11 @@ internal sealed class WorkspaceIgnoreMatcher
         bool isDirectory)
     {
         if (pathSegments.Count == 0)
+        {
+            return false;
+        }
+
+        if (!StartsWithSegments(pathSegments, rule.BasePathSegments))
         {
             return false;
         }
@@ -234,11 +272,12 @@ internal sealed class WorkspaceIgnoreMatcher
         bool isDirectory)
     {
         Regex segmentRegex = rule.SegmentRegexes[0];
+        int startIndex = rule.BasePathSegments.Length;
         int segmentCount = rule.DirectoryOnly && !isDirectory
             ? pathSegments.Count - 1
             : pathSegments.Count;
 
-        for (int index = 0; index < segmentCount; index++)
+        for (int index = startIndex; index < segmentCount; index++)
         {
             if (segmentRegex.IsMatch(pathSegments[index]))
             {
@@ -329,6 +368,35 @@ internal sealed class WorkspaceIgnoreMatcher
             patternIndex++;
             pathIndex++;
         }
+    }
+
+    private static bool StartsWithSegments(
+        IReadOnlyList<string> pathSegments,
+        IReadOnlyList<string> prefixSegments)
+    {
+        if (prefixSegments.Count == 0)
+        {
+            return true;
+        }
+
+        if (pathSegments.Count < prefixSegments.Count)
+        {
+            return false;
+        }
+
+        StringComparison comparison = OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+
+        for (int index = 0; index < prefixSegments.Count; index++)
+        {
+            if (!string.Equals(pathSegments[index], prefixSegments[index], comparison))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static Regex CreateSegmentRegex(string patternSegment)
@@ -432,6 +500,135 @@ internal sealed class WorkspaceIgnoreMatcher
         return path.Trim().Replace('\\', '/');
     }
 
+    private static string[] GetPathSegments(string relativePath)
+    {
+        string normalized = NormalizePath(relativePath).Trim('/');
+        if (string.IsNullOrWhiteSpace(normalized) ||
+            string.Equals(normalized, ".", StringComparison.Ordinal))
+        {
+            return [];
+        }
+
+        return normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static IgnoreFileCandidate[] ExpandIgnoreFiles(
+        string workspaceRoot,
+        IReadOnlyList<string> ignoreFilePaths)
+    {
+        List<IgnoreFileCandidate> candidates = [];
+        foreach (string ignoreFilePath in ignoreFilePaths)
+        {
+            if (string.IsNullOrWhiteSpace(ignoreFilePath))
+            {
+                continue;
+            }
+
+            string normalizedIgnoreFilePath = NormalizePath(ignoreFilePath);
+            if (string.Equals(normalizedIgnoreFilePath, GitIgnoreFileName, GetPathComparison()))
+            {
+                candidates.AddRange(DiscoverGitIgnoreFiles(workspaceRoot));
+                continue;
+            }
+
+            string fullIgnoreFilePath = Path.GetFullPath(
+                Path.IsPathRooted(ignoreFilePath)
+                    ? ignoreFilePath
+                    : Path.Combine(workspaceRoot, ignoreFilePath.Trim()));
+
+            if (!WorkspacePath.IsSamePathOrDescendant(workspaceRoot, fullIgnoreFilePath) ||
+                !File.Exists(fullIgnoreFilePath))
+            {
+                continue;
+            }
+
+            string displayPath = WorkspacePath.ToRelativePath(workspaceRoot, fullIgnoreFilePath);
+            string baseRelativeDirectory = string.Equals(
+                NormalizePath(displayPath),
+                NormalizePath(NanoIgnoreRelativePath),
+                GetPathComparison())
+                ? string.Empty
+                : GetRelativeDirectory(displayPath);
+            candidates.Add(new IgnoreFileCandidate(
+                fullIgnoreFilePath,
+                baseRelativeDirectory,
+                displayPath));
+        }
+
+        StringComparer pathComparer = WorkspacePath.GetPathComparer();
+        return candidates
+            .DistinctBy(static candidate => candidate.DisplayPath, pathComparer)
+            .OrderBy(static candidate => GetPathSegments(candidate.BaseRelativeDirectory).Length)
+            .ThenBy(static candidate => candidate.DisplayPath, pathComparer)
+            .ToArray();
+    }
+
+    private static IEnumerable<IgnoreFileCandidate> DiscoverGitIgnoreFiles(string workspaceRoot)
+    {
+        Stack<string> pendingDirectories = new();
+        pendingDirectories.Push(workspaceRoot);
+
+        while (pendingDirectories.Count > 0)
+        {
+            string currentDirectory = pendingDirectories.Pop();
+
+            IEnumerable<string> directories;
+            try
+            {
+                directories = Directory.EnumerateDirectories(currentDirectory);
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
+            {
+                continue;
+            }
+
+            foreach (string directory in directories)
+            {
+                pendingDirectories.Push(directory);
+            }
+
+            IEnumerable<string> ignoreFiles;
+            try
+            {
+                ignoreFiles = Directory.EnumerateFiles(currentDirectory, GitIgnoreFileName, SearchOption.TopDirectoryOnly);
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
+            {
+                continue;
+            }
+
+            foreach (string ignoreFile in ignoreFiles)
+            {
+                string displayPath = WorkspacePath.ToRelativePath(workspaceRoot, ignoreFile);
+                yield return new IgnoreFileCandidate(
+                    ignoreFile,
+                    GetRelativeDirectory(displayPath),
+                    displayPath);
+            }
+        }
+    }
+
+    private static string GetRelativeDirectory(string relativePath)
+    {
+        string? directory = Path.GetDirectoryName(relativePath);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            return string.Empty;
+        }
+
+        string normalized = NormalizePath(directory).Trim('/');
+        return string.Equals(normalized, ".", StringComparison.Ordinal)
+            ? string.Empty
+            : normalized;
+    }
+
+    private static StringComparison GetPathComparison()
+    {
+        return OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
+    }
+
     private static bool IsFileSystemAccessException(Exception exception)
     {
         return exception is UnauthorizedAccessException or
@@ -444,6 +641,13 @@ internal sealed class WorkspaceIgnoreMatcher
         bool Negated,
         bool DirectoryOnly,
         bool HasSlash,
+        string[] BasePathSegments,
         string[] PatternSegments,
-        Regex[] SegmentRegexes);
+        Regex[] SegmentRegexes,
+        string SourceDisplayPath);
+
+    private sealed record IgnoreFileCandidate(
+        string FullPath,
+        string BaseRelativeDirectory,
+        string DisplayPath);
 }
