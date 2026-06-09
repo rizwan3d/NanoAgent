@@ -135,6 +135,27 @@ internal sealed class WorkspaceIgnoreMatcher
         return ignored;
     }
 
+    public static bool MatchesGlob(
+        string pattern,
+        string relativePath,
+        bool isDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(pattern) || string.IsNullOrWhiteSpace(relativePath))
+        {
+            return false;
+        }
+
+        IgnoreRule? rule = ParseRule(pattern);
+        if (rule is null)
+        {
+            return false;
+        }
+
+        string[] pathSegments = NormalizePath(relativePath)
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return pathSegments.Length > 0 && Matches(rule, pathSegments, isDirectory);
+    }
+
     private static IgnoreRule? ParseRule(string line)
     {
         string trimmedLine = line.Trim();

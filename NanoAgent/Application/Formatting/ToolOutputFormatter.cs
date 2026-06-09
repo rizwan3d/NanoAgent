@@ -199,6 +199,13 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 case "text_search":
                     AddNamedArgumentLine(root, lines, "query");
                     AddNamedArgumentLine(root, lines, "path");
+                    if (string.Equals(toolCall.Name, "search_files", StringComparison.Ordinal))
+                    {
+                        AddNamedArgumentLine(root, lines, "caseSensitive");
+                        AddNamedArgumentLine(root, lines, "glob");
+                        AddNamedArgumentLine(root, lines, "fuzzy");
+                        AddNamedArgumentLine(root, lines, "limit");
+                    }
                     break;
 
                 case "file_write":
@@ -793,6 +800,10 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             }
 
             TryGetJsonString(root, "Path", out string path);
+            TryGetJsonString(root, "Glob", out string glob);
+            TryGetJsonBoolean(root, "Fuzzy", out bool fuzzy);
+            TryGetJsonBoolean(root, "CaseSensitive", out bool caseSensitive);
+            TryGetJsonInt32(root, "Limit", out int limit);
             List<string> matches = [];
             foreach (JsonElement matchElement in matchesElement.EnumerateArray())
             {
@@ -816,6 +827,23 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 .Append(query)
                 .Append("\" in ")
                 .Append(string.IsNullOrWhiteSpace(path) ? "." : path);
+
+            builder
+                .Append(" (limit ")
+                .Append(limit > 0 ? limit : 200)
+                .Append(", fuzzy ")
+                .Append(fuzzy ? "true" : "false")
+                .Append(", caseSensitive ")
+                .Append(caseSensitive ? "true" : "false");
+
+            if (!string.IsNullOrWhiteSpace(glob))
+            {
+                builder
+                    .Append(", glob ")
+                    .Append(glob);
+            }
+
+            builder.Append(')');
 
             if (matches.Count == 0)
             {
@@ -1513,6 +1541,27 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
 
         return property.ValueKind == JsonValueKind.Number &&
             property.TryGetInt32(out value);
+    }
+
+    private static bool TryGetJsonBoolean(
+        JsonElement element,
+        string propertyName,
+        out bool value)
+    {
+        value = false;
+
+        if (!TryGetJsonProperty(element, propertyName, out JsonElement property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return false;
+        }
+
+        value = property.GetBoolean();
+        return true;
     }
 
     private static bool TryGetJsonProperty(

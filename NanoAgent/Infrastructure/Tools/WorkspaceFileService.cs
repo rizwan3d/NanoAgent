@@ -320,7 +320,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return new WorkspaceFileSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            SearchFilesManaged(request, fullPath, ignoreMatcher));
+            SearchFilesManaged(request, fullPath, ignoreMatcher),
+            request.Glob,
+            request.Fuzzy,
+            request.Limit,
+            request.CaseSensitive);
     }
 
     public async Task<WorkspaceTextSearchResult> SearchTextAsync(
@@ -612,12 +616,151 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 : throw new FileNotFoundException(
                     $"Search path '{request.Path ?? "."}' does not exist.");
 
-        return files
-            .OrderBy(static path => path, StringComparer.Ordinal)
+        IEnumerable<string> relativePaths = files
             .Select(filePath => ToWorkspaceRelativePath(filePath))
-            .Where(relativePath => relativePath.Contains(request.Query, comparison))
-            .Take(MaxFileSearchResults)
+            .Where(relativePath => string.IsNullOrWhiteSpace(request.Glob) ||
+                                   WorkspaceIgnoreMatcher.MatchesGlob(request.Glob!, relativePath, isDirectory: false));
+
+        int limit = Math.Clamp(request.Limit, 1, MaxFileSearchResults);
+        if (!request.Fuzzy)
+        {
+            return relativePaths
+                .OrderBy(static path => path, StringComparer.Ordinal)
+                .Where(relativePath => relativePath.Contains(request.Query, comparison))
+                .Take(limit)
+                .ToArray();
+        }
+
+        return relativePaths
+            .Select(relativePath => new
+            {
+                Path = relativePath,
+                Score = TryGetFuzzySearchScore(relativePath, request.Query, request.CaseSensitive)
+            })
+            .Where(static candidate => candidate.Score.HasValue)
+            .OrderByDescending(static candidate => candidate.Score)
+            .ThenBy(static candidate => candidate.Path, StringComparer.Ordinal)
+            .Take(limit)
+            .Select(static candidate => candidate.Path)
             .ToArray();
+    }
+
+    private static int? TryGetFuzzySearchScore(
+        string relativePath,
+        string query,
+        bool caseSensitive)
+    {
+        string fileName = Path.GetFileName(relativePath);
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (string.Equals(fileName, query, comparison))
+        {
+            return 10_000 - relativePath.Length;
+        }
+
+        if (string.Equals(relativePath, query, comparison))
+        {
+            return 9_500 - relativePath.Length;
+        }
+
+        if (fileName.Contains(query, comparison))
+        {
+            return 9_000 - relativePath.Length;
+        }
+
+        if (relativePath.Contains(query, comparison))
+        {
+            return 8_500 - relativePath.Length;
+        }
+
+        if (TryScoreSubsequence(fileName, query, caseSensitive, out int fileNameScore))
+        {
+            return 7_000 + fileNameScore;
+        }
+
+        if (TryScoreSubsequence(relativePath, query, caseSensitive, out int relativePathScore))
+        {
+            return 6_000 + relativePathScore;
+        }
+
+        return null;
+    }
+
+    private static bool TryScoreSubsequence(
+        string candidate,
+        string query,
+        bool caseSensitive,
+        out int score)
+    {
+        score = 0;
+        if (string.IsNullOrEmpty(candidate) || string.IsNullOrEmpty(query))
+        {
+            return false;
+        }
+
+        int firstMatchIndex = -1;
+        int previousMatchIndex = -1;
+        int gapPenalty = 0;
+        int consecutiveBonus = 0;
+
+        for (int queryIndex = 0, candidateIndex = 0; queryIndex < query.Length; queryIndex++)
+        {
+            bool found = false;
+            while (candidateIndex < candidate.Length)
+            {
+                if (CharsEqual(candidate[candidateIndex], query[queryIndex], caseSensitive))
+                {
+                    if (firstMatchIndex < 0)
+                    {
+                        firstMatchIndex = candidateIndex;
+                    }
+
+                    if (previousMatchIndex >= 0)
+                    {
+                        if (candidateIndex == previousMatchIndex + 1)
+                        {
+                            consecutiveBonus += 4;
+                        }
+                        else
+                        {
+                            gapPenalty += candidateIndex - previousMatchIndex - 1;
+                        }
+                    }
+
+                    previousMatchIndex = candidateIndex;
+                    candidateIndex++;
+                    found = true;
+                    break;
+                }
+
+                candidateIndex++;
+            }
+
+            if (!found)
+            {
+                score = 0;
+                return false;
+            }
+        }
+
+        score = 500
+            - (firstMatchIndex * 2)
+            - gapPenalty
+            - Math.Max(0, candidate.Length - query.Length)
+            + consecutiveBonus;
+        return true;
+    }
+
+    private static bool CharsEqual(
+        char left,
+        char right,
+        bool caseSensitive)
+    {
+        return caseSensitive
+            ? left == right
+            : char.ToUpperInvariant(left) == char.ToUpperInvariant(right);
     }
 
     private async Task<IReadOnlyList<WorkspaceTextSearchMatch>> SearchTextManagedAsync(
