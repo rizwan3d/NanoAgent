@@ -136,6 +136,51 @@ public sealed class ApplyPatchToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ReturnRepairGuidance_When_TargetContextIsMissing()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ApplyPatchWithTrackingAsync(
+                "*** Begin Patch\n*** Update File: retry.txt\n@@\n-old\n+new\n*** End Patch",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException(
+                "Could not apply the requested patch because the target context was not found in 'retry.txt'."));
+
+        ApplyPatchTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "patch": "*** Begin Patch\n*** Update File: retry.txt\n@@\n-old\n+new\n*** End Patch" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("Read the current file contents again");
+        result.Message.Should().Contain("include a small amount of unchanged surrounding text");
+        result.RenderPayload!.Title.Should().Be("Patch rejected");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReturnRepairGuidance_When_MatchIsAmbiguous()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ApplyPatchWithTrackingAsync(
+                "*** Begin Patch\n*** Update File: ambiguous.txt\n@@\n-old\n+new\n*** End Patch",
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException(
+                "Could not apply the requested patch because it matched multiple locations in 'ambiguous.txt' using exact text. Candidate starting lines: 1, 4."));
+
+        ApplyPatchTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "patch": "*** Begin Patch\n*** Update File: ambiguous.txt\n@@\n-old\n+new\n*** End Patch" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("Make the patch more specific before retrying.");
+        result.Message.Should().Contain("use a more distinctive '@@ ...' locator");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_ResolvePatchPathsFromSessionWorkingDirectory()
     {
         string workspaceRoot = Path.Combine(
