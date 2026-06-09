@@ -971,13 +971,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         bool isDirectory,
         WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        if (!ignoreMatcher.IsIgnored(fullPath, isDirectory))
+        if (!ignoreMatcher.TryGetIgnoreSource(fullPath, isDirectory, out string sourceDisplayPath))
         {
             return;
         }
 
         throw new InvalidOperationException(
-            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by .nanoagent/.nanoignore.");
+            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by {sourceDisplayPath}.");
     }
 
     private string ToWorkspaceRelativePath(string fullPath)

@@ -282,7 +282,8 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             return true;
         }
 
-        if (message.Contains("excluded by .nanoagent/.nanoignore", StringComparison.OrdinalIgnoreCase))
+        if (message.Contains("excluded by .nanoagent/.nanoignore", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("excluded by .gitignore", StringComparison.OrdinalIgnoreCase))
         {
             guidance =
                 $"{message} " +

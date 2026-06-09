@@ -74,10 +74,11 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
                 request.Path);
         }
 
-        if (WorkspaceIgnoreMatcher.Load(workspaceRoot).IsIgnored(fullPath, isDirectory: false))
+        WorkspaceIgnoreMatcher ignoreMatcher = WorkspaceIgnoreMatcher.Load(workspaceRoot);
+        if (ignoreMatcher.TryGetIgnoreSource(fullPath, isDirectory: false, out string sourceDisplayPath))
         {
             throw new UnauthorizedAccessException(
-                $"Source file '{WorkspacePath.ToRelativePath(workspaceRoot, fullPath)}' is excluded by .nanoagent/.nanoignore.");
+                $"Source file '{WorkspacePath.ToRelativePath(workspaceRoot, fullPath)}' is excluded by {sourceDisplayPath}.");
         }
 
         string sourceText = await File.ReadAllTextAsync(
