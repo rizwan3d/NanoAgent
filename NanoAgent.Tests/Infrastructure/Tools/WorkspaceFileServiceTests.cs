@@ -244,6 +244,55 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchFilesAsync_Should_ApplyGlobFilter()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.txt"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Glob: "**/*.cs"),
+            CancellationToken.None);
+
+        result.Matches.Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyFuzzyMatching()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "WorkspaceFileService.cs"), "class WorkspaceFileService {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("wkspfilesrv", "src", CaseSensitive: false, Fuzzy: true),
+            CancellationToken.None);
+
+        result.Matches.Should().ContainSingle();
+        result.Matches[0].Should().Be("src/WorkspaceFileService.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_RespectRequestedLimit()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.Tests.cs"), "class ProgramTests {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Limit: 1),
+            CancellationToken.None);
+
+        result.Matches.Should().HaveCount(1);
+    }
+
+    [Fact]
     public async Task SearchTextAsync_Should_ReturnMatchingWorkspaceRelativePaths()
     {
         WorkspaceFileService sut = CreateSut();

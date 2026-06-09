@@ -183,7 +183,11 @@ public sealed class ToolOutputFormatterTests
                 {
                   "Query": "Program",
                   "Path": "src",
-                  "Matches": ["src/Program.cs", "src/Program.Tests.cs"]
+                  "Matches": ["src/Program.cs", "src/Program.Tests.cs"],
+                  "Glob": "**/*.cs",
+                  "Fuzzy": true,
+                  "Limit": 5,
+                  "CaseSensitive": false
                 }
                 """),
             CreateResult(
@@ -207,7 +211,7 @@ public sealed class ToolOutputFormatterTests
         messages[1].Should().Contain("Listed src (2 entries)");
         messages[1].Should().Contain("file: src/Program.cs");
         messages[1].Should().Contain("directory: src/Models");
-        messages[2].Should().Contain("Found 2 files for \"Program\" in src");
+        messages[2].Should().Contain("Found 2 files for \"Program\" in src (limit 5, fuzzy true, caseSensitive false, glob **/*.cs)");
         messages[3].Should().Contain("Searched src for \"coverage\" (1 match)");
         messages[3].Should().Contain("src/Program.cs:42 coverage threshold");
     }
