@@ -9,6 +9,11 @@ public interface IWorkspaceSettingsWriter
         PermissionSettings settings,
         CancellationToken cancellationToken);
 
+    Task SaveMemorySettingsAsync(
+        string workspacePath,
+        MemorySettings settings,
+        CancellationToken cancellationToken);
+
     Task SaveTelemetryEnabledAsync(
         string workspacePath,
         bool enabled,

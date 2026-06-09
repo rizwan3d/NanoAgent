@@ -159,7 +159,7 @@ public sealed class ToolExecutionPipelineTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_ObserveToolResultsWithLessonMemory()
+    public async Task ExecuteAsync_Should_NotObserveToolResultsWithLessonMemory()
     {
         IReadOnlySet<string> allowedToolNames = new HashSet<string>(
             ["shell_command"],
@@ -191,10 +191,7 @@ public sealed class ToolExecutionPipelineTests
             allowedToolNames,
             CancellationToken.None);
 
-        lessonMemoryService.ObservedResults.Should().ContainSingle();
-        lessonMemoryService.ObservedResults[0].ToolCall.Should().BeEquivalentTo(
-            new ConversationToolCall("call_1", "shell_command", "{}"));
-        lessonMemoryService.ObservedResults[0].InvocationResult.Should().Be(invocationResult);
+        lessonMemoryService.ObservedResults.Should().BeEmpty();
     }
 
     [Fact]

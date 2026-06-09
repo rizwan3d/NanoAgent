@@ -574,7 +574,7 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_IncludeRelevantLessonMemoryInSystemPrompt()
+    public async Task ProcessAsync_Should_NotInjectLessonMemoryIntoSystemPrompt()
     {
         ReplSessionContext session = CreateSession();
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
@@ -635,10 +635,9 @@ public sealed class AgentConversationPipelineTests
             session);
 
         requests.Should().ContainSingle();
-        requests[0].SystemPrompt.Should().Contain("Relevant lesson memory:");
-        requests[0].SystemPrompt.Should().Contain("CS0246");
-        requests[0].SystemPrompt.Should().Contain("Check DI registration first");
-        lessonMemoryService.Queries.Should().Equal("Fix the build");
+        requests[0].SystemPrompt.Should().NotContain("Relevant lesson memory:");
+        requests[0].SystemPrompt.Should().NotContain("Check DI registration first");
+        lessonMemoryService.Queries.Should().BeEmpty();
     }
 
     [Fact]
