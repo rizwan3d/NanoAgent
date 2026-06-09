@@ -892,11 +892,24 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     {
         string query = GetString(arguments, "query") ?? "<missing>";
         string path = GetString(arguments, "path") ?? ".";
+        string mode = GetString(arguments, "mode") ?? (GetBoolean(arguments, "regex") == true
+            ? "regex"
+            : GetBoolean(arguments, "fuzzy") == true
+                ? "fuzzy"
+                : "substring");
         string caseSensitive = FormatBoolean(GetBoolean(arguments, "caseSensitive"), defaultValue: "false");
+        string wholeWord = FormatBoolean(GetBoolean(arguments, "wholeWord"), defaultValue: "false");
         string glob = GetString(arguments, "glob") ?? "<none>";
+        string includeGlobs = FormatArray(arguments, "includeGlobs");
+        string excludeGlobs = FormatArray(arguments, "excludeGlobs");
         string fuzzy = FormatBoolean(GetBoolean(arguments, "fuzzy"), defaultValue: "false");
+        string includeHidden = FormatBoolean(GetBoolean(arguments, "includeHidden"), defaultValue: "false");
+        string includeGenerated = FormatBoolean(GetBoolean(arguments, "includeGenerated"), defaultValue: "false");
+        string includeIgnored = FormatBoolean(GetBoolean(arguments, "includeIgnored"), defaultValue: "false");
+        string offset = GetInt32(arguments, "offset")?.ToString(CultureInfo.InvariantCulture) ?? "0";
+        string cursor = GetString(arguments, "cursor") ?? "<none>";
         string limit = GetInt32(arguments, "limit")?.ToString(CultureInfo.InvariantCulture) ?? "200";
-        return $"{toolName} query `{query}`, path `{path}`, caseSensitive {caseSensitive}, glob `{glob}`, fuzzy {fuzzy}, limit {limit}";
+        return $"{toolName} query `{query}`, path `{path}`, mode {mode}, caseSensitive {caseSensitive}, wholeWord {wholeWord}, glob `{glob}`, includeGlobs {includeGlobs}, excludeGlobs {excludeGlobs}, fuzzy {fuzzy}, includeHidden {includeHidden}, includeGenerated {includeGenerated}, includeIgnored {includeIgnored}, offset {offset}, cursor `{cursor}`, limit {limit}";
     }
 
     private static string SummarizeShellArguments(JsonElement arguments)
@@ -914,6 +927,29 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
+    }
+
+    private static string FormatArray(
+        JsonElement arguments,
+        string propertyName)
+    {
+        if (!arguments.TryGetProperty(propertyName, out JsonElement value) ||
+            value.ValueKind != JsonValueKind.Array)
+        {
+            return "<none>";
+        }
+
+        string[] items = value
+            .EnumerateArray()
+            .Where(static item => item.ValueKind == JsonValueKind.String)
+            .Select(static item => item.GetString())
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+
+        return items.Length == 0
+            ? "[]"
+            : "[" + string.Join(", ", items) + "]";
     }
 
     private static bool? GetBoolean(
