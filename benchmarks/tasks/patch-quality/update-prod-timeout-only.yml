@@ -1,0 +1,21 @@
+{
+  "id": "update-prod-timeout-only",
+  "name": "Update only the prod timeout",
+  "suite": "patch-quality",
+  "workspace": "benchmarks/fixtures/duplicate-config-edit",
+  "profile": "build",
+  "tags": ["regression"],
+  "prompt": "Only update the production timeout in `config.json` from `5000` to `15000`. Leave the dev profile and both retry counts unchanged. Run `node validate-prod-timeout.js` before you finish.",
+  "validationCommands": [
+    {
+      "command": ["node", "validate-prod-timeout.js"],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": ["OK"]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": ["config.json"],
+    "changedFilesExclude": ["validate-prod-timeout.js"]
+  }
+}
