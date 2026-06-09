@@ -1,0 +1,21 @@
+{
+  "id": "preserve-blank-lines",
+  "name": "Change one note and keep spacing",
+  "suite": "patch-quality",
+  "workspace": "benchmarks/fixtures/blank-line-note",
+  "profile": "build",
+  "tags": ["regression"],
+  "prompt": "In `notes.md`, change `TODO: wire cache` to `TODO: ship cache`. Keep the headings, list items, and blank lines exactly as they are. Run `node validate-notes.js` before you finish.",
+  "validationCommands": [
+    {
+      "command": ["node", "validate-notes.js"],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": ["OK"]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 1,
+    "changedFilesInclude": ["notes.md"],
+    "changedFilesExclude": ["validate-notes.js"]
+  }
+}

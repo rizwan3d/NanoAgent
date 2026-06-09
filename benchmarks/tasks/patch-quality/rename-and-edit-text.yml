@@ -1,0 +1,21 @@
+{
+  "id": "rename-and-edit-text",
+  "name": "Rename one file and adjust its text",
+  "suite": "patch-quality",
+  "workspace": "benchmarks/fixtures/rename-text-note",
+  "profile": "build",
+  "tags": ["regression"],
+  "prompt": "Rename `old.txt` to `new.txt`, and change its content from `hello` to `hello there`. Do not create any extra files. Run `node validate-rename.js` before you finish.",
+  "validationCommands": [
+    {
+      "command": ["node", "validate-rename.js"],
+      "expectExitCode": 0,
+      "expectStdoutContainsAll": ["OK"]
+    }
+  ],
+  "diff": {
+    "maxChangedFiles": 2,
+    "changedFilesInclude": ["old.txt", "new.txt"],
+    "changedFilesExclude": ["validate-rename.js"]
+  }
+}
