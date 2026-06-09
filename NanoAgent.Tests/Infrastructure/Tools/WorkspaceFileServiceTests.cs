@@ -293,6 +293,74 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchFilesAsync_Should_ExcludeRootGitIgnoredFiles()
+    {
+        await WriteGitIgnoreAsync(
+            """
+            ignored/
+            """);
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false),
+            CancellationToken.None);
+
+        result.Matches.Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_RespectNestedGitIgnoreRules()
+    {
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "visible"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "generated"));
+        await WriteGitIgnoreAsync(
+            """
+            generated/
+            *.snap
+            !keep.snap
+            """,
+            "src");
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "visible", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "generated", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "test.snap"), "snapshot", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "keep.snap"), "snapshot", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult programResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
+            CancellationToken.None);
+        WorkspaceFileSearchResult snapResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("snap", "src", CaseSensitive: false),
+            CancellationToken.None);
+
+        programResult.Matches.Should().Equal("src/visible/Program.cs");
+        snapResult.Matches.Should().Equal("src/keep.snap");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_DenyGitIgnoredSearchPath()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "ignored", CaseSensitive: false),
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .gitignore*");
+    }
+
+    [Fact]
     public async Task SearchTextAsync_Should_ReturnMatchingWorkspaceRelativePaths()
     {
         WorkspaceFileService sut = CreateSut();
@@ -1248,6 +1316,20 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         Directory.CreateDirectory(nanoAgentDirectory);
         await File.WriteAllTextAsync(
             Path.Combine(nanoAgentDirectory, ".nanoignore"),
+            content,
+            CancellationToken.None);
+    }
+
+    private async Task WriteGitIgnoreAsync(
+        string content,
+        string? relativeDirectory = null)
+    {
+        string directory = string.IsNullOrWhiteSpace(relativeDirectory)
+            ? _workspaceRoot
+            : Path.Combine(_workspaceRoot, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, ".gitignore"),
             content,
             CancellationToken.None);
     }
