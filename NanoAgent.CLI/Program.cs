@@ -63,6 +63,7 @@ public static partial class Program
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
         new("/provider", "/provider [list|name]", "List or switch saved providers.", false),
         new("/profile", "/profile <name>", "Switch the active agent profile.", true),
+        new("/redact", "/redact [on|off]", "Show or toggle secret redaction.", false),
         new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
         new("/reload", "/reload", "Reload local resources.", false),
         new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
