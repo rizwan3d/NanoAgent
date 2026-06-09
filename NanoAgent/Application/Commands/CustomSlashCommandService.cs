@@ -43,6 +43,7 @@ public static class CustomSlashCommandService
             "permissions",
             "provider",
             "profile",
+            "redact",
             "read",
             "redo",
             "reload",

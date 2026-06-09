@@ -40,10 +40,20 @@ public sealed class SecretRedactorTests
     [Fact]
     public void RedactEnvironmentFileContent_Should_Redact_Assignments()
     {
-        string result = SecretRedactor.RedactEnvironmentFileContent(
-            "DATABASE_URL=postgres://user:pass@localhost/db");
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        result.Should().Contain("<redacted>");
+        try
+        {
+            string result = SecretRedactor.RedactEnvironmentFileContent(
+                "DATABASE_URL=postgres://user:pass@localhost/db");
+
+            result.Should().Contain("<redacted>");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     [Fact]
