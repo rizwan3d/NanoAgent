@@ -240,7 +240,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
             CancellationToken.None);
 
-        result.Matches.Should().Equal("src/Program.cs");
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+        result.Matches[0].MatchKind.Should().Be("filename_contains");
     }
 
     [Fact]
@@ -256,7 +257,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Glob: "**/*.cs"),
             CancellationToken.None);
 
-        result.Matches.Should().Equal("src/Program.cs");
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
     }
 
     [Fact]
@@ -273,7 +274,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             CancellationToken.None);
 
         result.Matches.Should().ContainSingle();
-        result.Matches[0].Should().Be("src/WorkspaceFileService.cs");
+        result.Matches[0].Path.Should().Be("src/WorkspaceFileService.cs");
+        result.Matches[0].MatchKind.Should().Be("filename_subsequence");
     }
 
     [Fact]
@@ -310,7 +312,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false),
             CancellationToken.None);
 
-        result.Matches.Should().Equal("src/Program.cs");
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
     }
 
     [Fact]
@@ -339,8 +341,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             new WorkspaceFileSearchRequest("snap", "src", CaseSensitive: false),
             CancellationToken.None);
 
-        programResult.Matches.Should().Equal("src/visible/Program.cs");
-        snapResult.Matches.Should().Equal("src/keep.snap");
+        programResult.Matches.Select(static match => match.Path).Should().Equal("src/visible/Program.cs");
+        snapResult.Matches.Select(static match => match.Path).Should().Equal("src/keep.snap");
     }
 
     [Fact]
@@ -358,6 +360,127 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*excluded by .gitignore*");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyRegexWholeWordMatching()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "SearchFilesTool.cs"), "class SearchFilesTool {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "SearchFilesToolbar.cs"), "class SearchFilesToolbar {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "SearchFilesTool",
+                "src",
+                CaseSensitive: false,
+                Mode: WorkspaceFileSearchModes.Regex,
+                Regex: true,
+                WholeWord: true),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/SearchFilesTool.cs");
+        result.Matches[0].MatchKind.Should().Be("filename_regex");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyIncludeAndExcludeGlobs()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        string objDirectory = Path.Combine(srcDirectory, "obj");
+        Directory.CreateDirectory(objDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(objDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.txt"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "Program",
+                "src",
+                CaseSensitive: false,
+                IncludeGlobs: ["**/*.cs"],
+                ExcludeGlobs: ["**/obj/**"]),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ReturnPagedMatchesAndNextCursor()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.A.cs"), "class ProgramA {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.B.cs"), "class ProgramB {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.C.cs"), "class ProgramC {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult firstPage = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Limit: 2),
+            CancellationToken.None);
+
+        firstPage.Matches.Should().HaveCount(2);
+        firstPage.HasMore.Should().BeTrue();
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+        firstPage.TotalMatchCount.Should().Be(3);
+
+        WorkspaceFileSearchResult secondPage = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "Program",
+                "src",
+                CaseSensitive: false,
+                Limit: 2,
+                Cursor: firstPage.NextCursor),
+            CancellationToken.None);
+
+        secondPage.Matches.Should().ContainSingle();
+        secondPage.HasMore.Should().BeFalse();
+        secondPage.Offset.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ExcludeGeneratedDirectories_UnlessRequested()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        string generatedDirectory = Path.Combine(srcDirectory, "obj");
+        Directory.CreateDirectory(generatedDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(generatedDirectory, "GeneratedProgram.cs"), "class GeneratedProgram {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult defaultResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
+            CancellationToken.None);
+        WorkspaceFileSearchResult includeGeneratedResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, IncludeGenerated: true),
+            CancellationToken.None);
+
+        defaultResult.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+        includeGeneratedResult.Matches.Select(static match => match.Path)
+            .Should()
+            .Contain(["src/Program.cs", "src/obj/GeneratedProgram.cs"]);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_IncludeIgnoredFiles_When_Requested()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false, IncludeIgnored: true),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path)
+            .Should()
+            .Contain(["src/Program.cs", "ignored/Program.cs"]);
     }
 
     [Fact]

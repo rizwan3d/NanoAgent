@@ -9,6 +9,7 @@ using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace NanoAgent.Infrastructure.Tools;
 
@@ -26,8 +27,42 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly Encoding Utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+    private static readonly HashSet<string> GeneratedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bin",
+        "obj",
+        "node_modules",
+        "vendor",
+        "dist",
+        "build",
+        "out",
+        "target",
+        "coverage",
+        ".next",
+        ".nuxt",
+        ".svelte-kit",
+        "packages",
+        "generated"
+    };
+    private static readonly string[] GeneratedFileSuffixes =
+    [
+        ".g.cs",
+        ".g.i.cs",
+        ".gen.cs",
+        ".generated.cs",
+        ".designer.cs",
+        ".pb.cs",
+        ".AssemblyInfo.cs"
+    ];
 
     private readonly record struct FileEncodingInfo(bool HasBom, string NewLine);
+    private readonly record struct WorkspaceFileSearchPage(
+        IReadOnlyList<WorkspaceFileSearchMatch> Matches,
+        int Offset,
+        int Limit,
+        int TotalMatchCount,
+        bool HasMore,
+        string? NextCursor);
 
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
@@ -312,19 +347,38 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        string effectiveMode = GetEffectiveSearchMode(request);
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
         {
-            EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
+            if (!request.IncludeIgnored)
+            {
+                EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
+            }
         }
+
+        WorkspaceFileSearchPage page = SearchFilesManaged(request, effectiveMode, fullPath, ignoreMatcher);
 
         return new WorkspaceFileSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            SearchFilesManaged(request, fullPath, ignoreMatcher),
+            page.Matches,
             request.Glob,
             request.Fuzzy,
-            request.Limit,
-            request.CaseSensitive);
+            page.Limit,
+            request.CaseSensitive,
+            effectiveMode,
+            request.Regex,
+            request.WholeWord,
+            page.Offset,
+            request.Cursor,
+            page.NextCursor,
+            page.HasMore,
+            page.TotalMatchCount,
+            request.IncludeHidden,
+            request.IncludeGenerated,
+            request.IncludeIgnored,
+            request.IncludeGlobs ?? [],
+            request.ExcludeGlobs ?? []);
     }
 
     public async Task<WorkspaceTextSearchResult> SearchTextAsync(
@@ -600,52 +654,276 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             .ToArray();
     }
 
-    private IReadOnlyList<string> SearchFilesManaged(
+    private WorkspaceFileSearchPage SearchFilesManaged(
         WorkspaceFileSearchRequest request,
+        string effectiveMode,
         string fullPath,
         WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        StringComparison comparison = request.CaseSensitive
-            ? StringComparison.Ordinal
-            : StringComparison.OrdinalIgnoreCase;
+        bool searchPathIsDirectory = Directory.Exists(fullPath);
+        bool searchPathExists = File.Exists(fullPath) || searchPathIsDirectory;
+        if (searchPathExists &&
+            !string.Equals(ToWorkspaceRelativePath(fullPath), ".", StringComparison.Ordinal) &&
+            !ShouldIncludeSearchPath(
+                ToWorkspaceRelativePath(fullPath),
+                fullPath,
+                searchPathIsDirectory,
+                request,
+                ignoreMatcher))
+        {
+            int initialOffset = GetSearchOffset(request);
+            return new WorkspaceFileSearchPage([], initialOffset, Math.Clamp(request.Limit, 1, MaxFileSearchResults), 0, false, null);
+        }
 
         IEnumerable<string> files = File.Exists(fullPath)
             ? [fullPath]
             : Directory.Exists(fullPath)
-                ? EnumerateFilesSafely(fullPath, recursive: true, ignoreMatcher)
+                ? EnumerateSearchFiles(fullPath, request, ignoreMatcher)
                 : throw new FileNotFoundException(
                     $"Search path '{request.Path ?? "."}' does not exist.");
 
-        IEnumerable<string> relativePaths = files
-            .Select(filePath => ToWorkspaceRelativePath(filePath))
-            .Where(relativePath => string.IsNullOrWhiteSpace(request.Glob) ||
-                                   WorkspaceIgnoreMatcher.MatchesGlob(request.Glob!, relativePath, isDirectory: false));
+        List<WorkspaceFileSearchMatch> matches = files
+            .Select(filePath => CreateSearchMatch(request, effectiveMode, filePath, ignoreMatcher))
+            .Where(static match => match is not null)
+            .Select(static match => match!)
+            .OrderByDescending(static match => match.Score)
+            .ThenBy(static match => match.Path, StringComparer.Ordinal)
+            .ToList();
 
         int limit = Math.Clamp(request.Limit, 1, MaxFileSearchResults);
-        if (!request.Fuzzy)
+        int offset = GetSearchOffset(request);
+        if (offset > matches.Count)
         {
-            return relativePaths
-                .OrderBy(static path => path, StringComparer.Ordinal)
-                .Where(relativePath => relativePath.Contains(request.Query, comparison))
-                .Take(limit)
-                .ToArray();
+            offset = matches.Count;
         }
 
-        return relativePaths
-            .Select(relativePath => new
-            {
-                Path = relativePath,
-                Score = TryGetFuzzySearchScore(relativePath, request.Query, request.CaseSensitive)
-            })
-            .Where(static candidate => candidate.Score.HasValue)
-            .OrderByDescending(static candidate => candidate.Score)
-            .ThenBy(static candidate => candidate.Path, StringComparer.Ordinal)
+        WorkspaceFileSearchMatch[] pageMatches = matches
+            .Skip(offset)
             .Take(limit)
-            .Select(static candidate => candidate.Path)
             .ToArray();
+        bool hasMore = offset + pageMatches.Length < matches.Count;
+
+        return new WorkspaceFileSearchPage(
+            pageMatches,
+            offset,
+            limit,
+            matches.Count,
+            hasMore,
+            hasMore
+                ? EncodeSearchCursor(offset + pageMatches.Length)
+                : null);
     }
 
-    private static int? TryGetFuzzySearchScore(
+    private WorkspaceFileSearchMatch? CreateSearchMatch(
+        WorkspaceFileSearchRequest request,
+        string effectiveMode,
+        string filePath,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        string relativePath = ToWorkspaceRelativePath(filePath);
+        if (!ShouldIncludeSearchPath(relativePath, filePath, isDirectory: false, request, ignoreMatcher))
+        {
+            return null;
+        }
+
+        return TryMatchSearchPath(request, effectiveMode, relativePath);
+    }
+
+    private static WorkspaceFileSearchMatch? TryMatchSearchPath(
+        WorkspaceFileSearchRequest request,
+        string mode,
+        string relativePath)
+    {
+        return mode switch
+        {
+            WorkspaceFileSearchModes.Fuzzy => TryGetFuzzySearchMatch(relativePath, request.Query, request.CaseSensitive),
+            WorkspaceFileSearchModes.Exact => TryGetExactSearchMatch(relativePath, request.Query, request.CaseSensitive),
+            WorkspaceFileSearchModes.Regex => TryGetRegexSearchMatch(relativePath, request.Query, request.CaseSensitive, request.WholeWord),
+            WorkspaceFileSearchModes.GlobOnly => CreateGlobOnlySearchMatch(relativePath),
+            _ => TryGetSubstringSearchMatch(relativePath, request.Query, request.CaseSensitive, request.WholeWord)
+        };
+    }
+
+    private bool ShouldIncludeSearchPath(
+        string relativePath,
+        string fullPath,
+        bool isDirectory,
+        WorkspaceFileSearchRequest request,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        if (!request.IncludeIgnored &&
+            ignoreMatcher.IsIgnored(fullPath, isDirectory))
+        {
+            return false;
+        }
+
+        if (!request.IncludeHidden &&
+            IsHiddenPath(relativePath, fullPath, isDirectory))
+        {
+            return false;
+        }
+
+        if (!request.IncludeGenerated &&
+            IsGeneratedOrVendorPath(relativePath))
+        {
+            return false;
+        }
+
+        IReadOnlyList<string> includeGlobs = GetEffectiveIncludeGlobs(request);
+        if (!isDirectory &&
+            includeGlobs.Count > 0 &&
+            !includeGlobs.Any(glob => WorkspaceIgnoreMatcher.MatchesGlob(glob, relativePath, isDirectory)))
+        {
+            return false;
+        }
+
+        if (request.ExcludeGlobs?.Count > 0 &&
+            request.ExcludeGlobs.Any(glob => WorkspaceIgnoreMatcher.MatchesGlob(glob, relativePath, isDirectory)))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyList<string> GetEffectiveIncludeGlobs(WorkspaceFileSearchRequest request)
+    {
+        if (request.IncludeGlobs?.Count > 0)
+        {
+            return request.IncludeGlobs;
+        }
+
+        return string.IsNullOrWhiteSpace(request.Glob)
+            ? []
+            : [request.Glob];
+    }
+
+    private static string GetEffectiveSearchMode(WorkspaceFileSearchRequest request)
+    {
+        if (request.Regex &&
+            (string.IsNullOrWhiteSpace(request.Mode) ||
+             string.Equals(request.Mode, WorkspaceFileSearchModes.Substring, StringComparison.Ordinal)))
+        {
+            return WorkspaceFileSearchModes.Regex;
+        }
+
+        if (request.Fuzzy &&
+            (string.IsNullOrWhiteSpace(request.Mode) ||
+             string.Equals(request.Mode, WorkspaceFileSearchModes.Substring, StringComparison.Ordinal)))
+        {
+            return WorkspaceFileSearchModes.Fuzzy;
+        }
+
+        return string.IsNullOrWhiteSpace(request.Mode)
+            ? WorkspaceFileSearchModes.Substring
+            : request.Mode;
+    }
+
+    private IEnumerable<string> EnumerateSearchFiles(
+        string root,
+        WorkspaceFileSearchRequest request,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        Stack<string> pendingDirectories = new();
+        pendingDirectories.Push(root);
+
+        while (pendingDirectories.Count > 0)
+        {
+            string directoryPath = pendingDirectories.Pop();
+            string[] entries;
+            try
+            {
+                entries = Directory.GetFileSystemEntries(directoryPath);
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
+            {
+                continue;
+            }
+
+            foreach (string entry in entries)
+            {
+                FileAttributes attributes;
+                try
+                {
+                    attributes = File.GetAttributes(entry);
+                }
+                catch (Exception exception) when (IsFileSystemAccessException(exception))
+                {
+                    continue;
+                }
+
+                bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
+                string relativePath = ToWorkspaceRelativePath(entry);
+                if (!ShouldIncludeSearchPath(relativePath, entry, isDirectory, request, ignoreMatcher))
+                {
+                    continue;
+                }
+
+                if (isDirectory)
+                {
+                    if (!attributes.HasFlag(FileAttributes.ReparsePoint))
+                    {
+                        pendingDirectories.Push(entry);
+                    }
+
+                    continue;
+                }
+
+                yield return entry;
+            }
+        }
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetSubstringSearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive,
+        bool wholeWord)
+    {
+        string fileName = Path.GetFileName(relativePath);
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (wholeWord)
+        {
+            if (ContainsWholeWord(fileName, query, caseSensitive))
+            {
+                return new WorkspaceFileSearchMatch(relativePath, 9_200 - relativePath.Length, "filename_whole_word");
+            }
+
+            if (ContainsWholeWord(relativePath, query, caseSensitive))
+            {
+                return new WorkspaceFileSearchMatch(relativePath, 8_700 - relativePath.Length, "path_whole_word");
+            }
+
+            return null;
+        }
+
+        if (string.Equals(fileName, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 10_000 - relativePath.Length, "filename_exact");
+        }
+
+        if (string.Equals(relativePath, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_500 - relativePath.Length, "path_exact");
+        }
+
+        if (fileName.Contains(query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_000 - relativePath.Length, "filename_contains");
+        }
+
+        if (relativePath.Contains(query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_500 - relativePath.Length, "path_contains");
+        }
+
+        return null;
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetExactSearchMatch(
         string relativePath,
         string query,
         bool caseSensitive)
@@ -657,35 +935,214 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         if (string.Equals(fileName, query, comparison))
         {
-            return 10_000 - relativePath.Length;
+            return new WorkspaceFileSearchMatch(relativePath, 10_000 - relativePath.Length, "filename_exact");
         }
 
         if (string.Equals(relativePath, query, comparison))
         {
-            return 9_500 - relativePath.Length;
+            return new WorkspaceFileSearchMatch(relativePath, 9_500 - relativePath.Length, "path_exact");
+        }
+
+        return null;
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetRegexSearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive,
+        bool wholeWord)
+    {
+        string pattern = wholeWord
+            ? WrapWholeWordPattern(query)
+            : query;
+        Regex regex = new(pattern, GetSearchRegexOptions(caseSensitive));
+        string fileName = Path.GetFileName(relativePath);
+
+        if (regex.IsMatch(fileName))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_900 - relativePath.Length, "filename_regex");
+        }
+
+        if (regex.IsMatch(relativePath))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_400 - relativePath.Length, "path_regex");
+        }
+
+        return null;
+    }
+
+    private static WorkspaceFileSearchMatch CreateGlobOnlySearchMatch(string relativePath)
+    {
+        return new WorkspaceFileSearchMatch(relativePath, 1_000 - relativePath.Length, "glob");
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetFuzzySearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive)
+    {
+        string fileName = Path.GetFileName(relativePath);
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (string.Equals(fileName, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 10_000 - relativePath.Length, "filename_exact");
+        }
+
+        if (string.Equals(relativePath, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_500 - relativePath.Length, "path_exact");
         }
 
         if (fileName.Contains(query, comparison))
         {
-            return 9_000 - relativePath.Length;
+            return new WorkspaceFileSearchMatch(relativePath, 9_000 - relativePath.Length, "filename_contains");
         }
 
         if (relativePath.Contains(query, comparison))
         {
-            return 8_500 - relativePath.Length;
+            return new WorkspaceFileSearchMatch(relativePath, 8_500 - relativePath.Length, "path_contains");
         }
 
         if (TryScoreSubsequence(fileName, query, caseSensitive, out int fileNameScore))
         {
-            return 7_000 + fileNameScore;
+            return new WorkspaceFileSearchMatch(relativePath, 7_000 + fileNameScore, "filename_subsequence");
         }
 
         if (TryScoreSubsequence(relativePath, query, caseSensitive, out int relativePathScore))
         {
-            return 6_000 + relativePathScore;
+            return new WorkspaceFileSearchMatch(relativePath, 6_000 + relativePathScore, "path_subsequence");
         }
 
         return null;
+    }
+
+    private static bool ContainsWholeWord(
+        string candidate,
+        string query,
+        bool caseSensitive)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        Regex regex = new(
+            WrapWholeWordPattern(Regex.Escape(query)),
+            GetSearchRegexOptions(caseSensitive));
+        return regex.IsMatch(candidate);
+    }
+
+    private static string WrapWholeWordPattern(string pattern)
+    {
+        return $@"(?<![\p{{L}}\p{{N}}_])(?:{pattern})(?![\p{{L}}\p{{N}}_])";
+    }
+
+    private static RegexOptions GetSearchRegexOptions(bool caseSensitive)
+    {
+        return caseSensitive
+            ? RegexOptions.CultureInvariant
+            : RegexOptions.CultureInvariant | RegexOptions.IgnoreCase;
+    }
+
+    private static int GetSearchOffset(WorkspaceFileSearchRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Cursor) &&
+            TryDecodeSearchCursor(request.Cursor, out int cursorOffset))
+        {
+            return cursorOffset;
+        }
+
+        return Math.Max(0, request.Offset);
+    }
+
+    private static string EncodeSearchCursor(int offset)
+    {
+        return Convert.ToBase64String(
+            Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    private static bool TryDecodeSearchCursor(
+        string cursor,
+        out int offset)
+    {
+        offset = 0;
+
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(cursor);
+            string text = Encoding.UTF8.GetString(bytes);
+            return int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out offset) && offset >= 0;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsHiddenPath(
+        string relativePath,
+        string fullPath,
+        bool isDirectory)
+    {
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(fullPath);
+            if (attributes.HasFlag(FileAttributes.Hidden))
+            {
+                return true;
+            }
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+        }
+
+        string normalized = relativePath.Replace('\\', '/');
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        int segmentCount = isDirectory ? segments.Length : Math.Max(0, segments.Length - 1);
+        for (int index = 0; index < segments.Length; index++)
+        {
+            if (index < segmentCount &&
+                segments[index].Length > 0 &&
+                segments[index][0] == '.' &&
+                !string.Equals(segments[index], ".", StringComparison.Ordinal) &&
+                !string.Equals(segments[index], "..", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (!isDirectory &&
+            segments.Length > 0 &&
+            segments[^1].Length > 0 &&
+            segments[^1][0] == '.' &&
+            !string.Equals(segments[^1], ".", StringComparison.Ordinal) &&
+            !string.Equals(segments[^1], "..", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsGeneratedOrVendorPath(string relativePath)
+    {
+        string normalized = relativePath.Replace('\\', '/');
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string segment in segments)
+        {
+            if (GeneratedDirectoryNames.Contains(segment))
+            {
+                return true;
+            }
+        }
+
+        string fileName = Path.GetFileName(relativePath);
+        return GeneratedFileSuffixes.Any(suffix => fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) ||
+            fileName.Contains(".generated.", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Contains(".designer.", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool TryScoreSubsequence(
