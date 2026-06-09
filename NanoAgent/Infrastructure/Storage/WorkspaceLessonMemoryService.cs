@@ -54,7 +54,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             throw new InvalidOperationException("Lesson memory is disabled.");
         }
@@ -97,7 +97,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return [];
         }
@@ -137,7 +137,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return [];
         }
@@ -166,7 +166,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return null;
         }
@@ -228,7 +228,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return false;
         }
@@ -261,7 +261,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string query,
         CancellationToken cancellationToken)
     {
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return null;
         }
@@ -342,7 +342,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(invocationResult);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_settings.Disabled ||
+        if (!IsLessonMemoryEnabled() ||
             !_settings.AllowAutoFailureObservation)
         {
             return;
@@ -1370,6 +1370,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             ? 12_000
             : Math.Min(settings.MaxPromptChars, 100_000);
         return settings;
+    }
+
+    private bool IsLessonMemoryEnabled()
+    {
+        return !_settings.Disabled && _settings.LessonsEnabled;
     }
 
     private static string NormalizeKind(string? value)

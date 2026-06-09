@@ -50,6 +50,8 @@ internal sealed class MemoryProfileDocument
 
     public bool? Disabled { get; set; }
 
+    public bool? LessonsEnabled { get; set; }
+
     public int? MaxEntries { get; set; }
 
     public int? MaxPromptChars { get; set; }

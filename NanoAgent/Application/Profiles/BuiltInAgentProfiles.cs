@@ -24,7 +24,6 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.FileRead,
             AgentToolNames.FileWrite,
             AgentToolNames.HeadlessBrowser,
-            AgentToolNames.LessonMemory,
             AgentToolNames.PlanningMode,
             AgentToolNames.RepoMemory,
             AgentToolNames.SearchFiles,
@@ -46,7 +45,6 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.FileRead,
             AgentToolNames.FileWrite,
             AgentToolNames.HeadlessBrowser,
-            AgentToolNames.LessonMemory,
             AgentToolNames.PlanningMode,
             AgentToolNames.RepoMemory,
             AgentToolNames.SearchFiles,
@@ -66,7 +64,6 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.DirectoryList,
             AgentToolNames.FileRead,
             AgentToolNames.HeadlessBrowser,
-            AgentToolNames.LessonMemory,
             AgentToolNames.PlanningMode,
             AgentToolNames.RepoMemory,
             AgentToolNames.SearchFiles,
@@ -85,7 +82,6 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.CodeIntelligence,
             AgentToolNames.FileRead,
             AgentToolNames.HeadlessBrowser,
-            AgentToolNames.LessonMemory,
             AgentToolNames.RepoMemory,
             AgentToolNames.SearchFiles,
             AgentToolNames.ShellCommand,
@@ -106,7 +102,7 @@ internal static class BuiltInAgentProfiles
         Use code_intelligence for semantic navigation, such as symbols, definitions, implementations, references, call hierarchy, diagnostics, rename previews, tests, dependencies, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
         Use codebase_index for repository-wide questions, broad discovery, or finding likely relevant files by concept, symbol, or behavior before narrowing with file_read, text_search, or code_intelligence.
         Repo memory from .nanoagent/memory/*.md is retrieved as reviewable team context when present. Use repo_memory for durable architecture, convention, decision, known-issue, and test-strategy notes; writes require approval and should stay inspectable, diffable, and version-controlled.
-        Relevant lesson memory is retrieved automatically. Use lesson_memory when a mistake teaches a reusable future rule, when you need to search/list memory manually, or when a bad lesson should be edited or deleted.
+        Lesson memory is managed manually through the /lessons shell command and is off by default. Use it only when you intentionally want to keep reusable local lessons about failures and fixes.
         When you want a plan-first pass, call `planning_mode` instead of writing a freeform plan in assistant text.
         Delegate focused, self-contained side tasks with agent_delegate when one subagent can inspect or implement a bounded slice independently. Use agent_orchestrate when several independent side tasks can run as one coordinated handoff; use explore for fast read-only investigation and general for implementation-capable delegated work.
         In orchestration, split read-only discovery into parallel-friendly tasks, keep editing-capable tasks bounded, and give each editing task a clear write scope when practical.
