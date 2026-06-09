@@ -936,6 +936,135 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_StripMarkdownCodeFences()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "before\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            ```patch
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -before
+            +after
+            *** End Patch
+            ```
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("after\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptUnifiedDiffHeaders()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "config.ini");
+        await File.WriteAllTextAsync(
+            filePath,
+            "setting1=old\nsetting2=value\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            --- a/config.ini
+            +++ b/config.ini
+            @@ -1,2 +1,2 @@
+            -setting1=old
+            +setting1=new
+             setting2=value
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("setting1=new\nsetting2=value\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_InsertMissingHunkHeader_BeforeDiffLines()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "old\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: sample.txt
+            -old
+            +new
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("new\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AutoPrefixBlankLine_InsideUpdateHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.cs");
+
+        await File.WriteAllTextAsync(
+            filePath,
+            "line1\n\nline3\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: sample.cs
+            @@
+             line1
+
+            -line3
+            +line4
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("line1\n\nline4\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AutoPrefixBlankLine_InsideAddFile()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Add File: notes.txt
+            +first
+
+            +third
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(Path.Combine(_workspaceRoot, "notes.txt"), CancellationToken.None))
+            .Should()
+            .Be("first\n\nthird\n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_PreserveExactContent_ForMoveOnlyUpdate()
     {
         WorkspaceFileService sut = CreateSut();
