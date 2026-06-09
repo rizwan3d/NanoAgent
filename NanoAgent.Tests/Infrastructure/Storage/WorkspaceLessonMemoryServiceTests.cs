@@ -348,10 +348,14 @@ public sealed class WorkspaceLessonMemoryServiceTests
         MemorySettings? settings = null,
         ILessonFailureClassifier? failureClassifier = null)
     {
+        MemorySettings effectiveSettings = settings ?? new MemorySettings();
+        effectiveSettings.LessonsEnabled = true;
+        effectiveSettings.AllowAutoFailureObservation = true;
+
         return new WorkspaceLessonMemoryService(
             new FixedWorkspaceRootProvider(workspacePath),
             TimeProvider.System,
-            settings,
+            effectiveSettings,
             failureClassifier);
     }
 
