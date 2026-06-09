@@ -5,6 +5,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
 using System.Text;
@@ -1702,7 +1703,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             int? changeContextIndex = null;
             if (!string.IsNullOrWhiteSpace(hunk.ChangeContext))
             {
-                int contextIndex = SeekSequence(
+                int contextIndex = FindFirstSequenceMatch(
                     originalLines,
                     [hunk.ChangeContext],
                     searchStart,
@@ -1742,13 +1743,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                                      string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
                 ? changeContextIndex.Value
                 : searchStart;
-            int matchIndex = SeekSequence(
+            PatchSequenceSearchResult match = FindUniqueSequenceMatch(
                 originalLines,
                 pattern,
                 patternSearchStart,
                 hunk.IsEndOfFile);
 
-            if (matchIndex < 0 &&
+            if (match.Status == PatchSequenceSearchStatus.NotFound &&
                 pattern.Length > 0 &&
                 pattern[^1].Length == 0)
             {
@@ -1758,21 +1759,48 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     replacementLines = replacementLines[..^1];
                 }
 
-                matchIndex = SeekSequence(
+                match = FindUniqueSequenceMatch(
                     originalLines,
                     pattern,
                     patternSearchStart,
                     hunk.IsEndOfFile);
             }
 
-            if (matchIndex < 0)
+            if (match.Status == PatchSequenceSearchStatus.NotFound)
             {
-                throw new InvalidOperationException(
-                    $"Could not apply the requested patch because the target context was not found in '{path}'.");
+                PatchRetryMatch? retryMatch = TryFindRetryMatch(
+                    originalLines,
+                    hunk,
+                    patternSearchStart,
+                    hunk.IsEndOfFile);
+                if (retryMatch is not null)
+                {
+                    replacements.Add(new PatchReplacement(
+                        retryMatch.Value.StartIndex,
+                        retryMatch.Value.OldLineCount,
+                        retryMatch.Value.NewLines,
+                        hunk));
+                    searchStart = retryMatch.Value.StartIndex + retryMatch.Value.OldLineCount;
+                    continue;
+                }
             }
 
-            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines, hunk));
-            searchStart = matchIndex + pattern.Length;
+            if (match.Status == PatchSequenceSearchStatus.NotFound)
+            {
+                throw new InvalidOperationException(
+                    $"Could not apply the requested patch because the target context was not found in '{path}'. " +
+                    $"Tried the full hunk and smaller retry windows near line {patternSearchStart + 1}.");
+            }
+
+            if (match.Status == PatchSequenceSearchStatus.Ambiguous)
+            {
+                throw new InvalidOperationException(
+                    $"Could not apply the requested patch because it matched multiple locations in '{path}' " +
+                    $"using {match.MatchStyle}. Candidate starting lines: {DescribeCandidateLines(match.CandidateStartIndexes)}.");
+            }
+
+            replacements.Add(new PatchReplacement(match.StartIndex, pattern.Length, replacementLines, hunk));
+            searchStart = match.StartIndex + pattern.Length;
         }
 
         List<string> currentLines = originalLines.ToList();
@@ -1853,7 +1881,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return trailingNewLine;
     }
 
-    private static int SeekSequence(
+    private static int FindFirstSequenceMatch(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
         int startIndex,
@@ -1887,6 +1915,63 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return -1;
     }
 
+    private static PatchSequenceSearchResult FindUniqueSequenceMatch(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        int startIndex,
+        bool endOfFile)
+    {
+        if (target.Count == 0)
+        {
+            return new PatchSequenceSearchResult(
+                PatchSequenceSearchStatus.NotFound,
+                -1,
+                string.Empty,
+                []);
+        }
+
+        (string Name, Func<string, string, bool> Comparer)[] comparers =
+        [
+            ("exact text", static (left, right) => string.Equals(left, right, StringComparison.Ordinal)),
+            ("trimmed line endings", static (left, right) => string.Equals(left.TrimEnd(), right.TrimEnd(), StringComparison.Ordinal)),
+            ("trimmed whitespace", static (left, right) => string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal)),
+            ("normalized punctuation", static (left, right) => string.Equals(
+                NormalizePatchMatchText(left.Trim()),
+                NormalizePatchMatchText(right.Trim()),
+                StringComparison.Ordinal))
+        ];
+
+        foreach ((string name, Func<string, string, bool> comparer) in comparers)
+        {
+            int[] matches = FindAllSequenceMatches(source, target, startIndex, endOfFile, comparer);
+            if (matches.Length == 0)
+            {
+                continue;
+            }
+
+            if (matches.Length == 1)
+            {
+                return new PatchSequenceSearchResult(
+                    PatchSequenceSearchStatus.Matched,
+                    matches[0],
+                    name,
+                    matches);
+            }
+
+            return new PatchSequenceSearchResult(
+                PatchSequenceSearchStatus.Ambiguous,
+                -1,
+                name,
+                matches);
+        }
+
+        return new PatchSequenceSearchResult(
+            PatchSequenceSearchStatus.NotFound,
+            -1,
+            string.Empty,
+            []);
+    }
+
     private static int TryMatchSequence(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
@@ -1913,6 +1998,36 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return -1;
+    }
+
+    private static int[] FindAllSequenceMatches(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        int startIndex,
+        bool endOfFile,
+        Func<string, string, bool> comparer)
+    {
+        List<int> matches = [];
+        if (endOfFile)
+        {
+            int fromEndIndex = source.Count - target.Count;
+            if (fromEndIndex >= Math.Max(0, startIndex) &&
+                SequenceMatches(source, target, fromEndIndex, comparer))
+            {
+                matches.Add(fromEndIndex);
+                return matches.ToArray();
+            }
+        }
+
+        for (int index = Math.Max(0, startIndex); index <= source.Count - target.Count; index++)
+        {
+            if (SequenceMatches(source, target, index, comparer))
+            {
+                matches.Add(index);
+            }
+        }
+
+        return matches.ToArray();
     }
 
     private static bool SequenceMatches(
@@ -1951,6 +2066,111 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             .Replace('\u2015', '-')
             .Replace("\u2026", "...", StringComparison.Ordinal)
             .Replace('\u00A0', ' ');
+    }
+
+    private static PatchRetryMatch? TryFindRetryMatch(
+        IReadOnlyList<string> originalLines,
+        PatchHunk hunk,
+        int searchStart,
+        bool endOfFile)
+    {
+        (string[] BeforeLines, string[] AfterLines)[] retryWindows =
+        [
+            BuildRetryWindow(hunk, includeLeadingAndTrailingContext: false),
+            BuildRetryWindow(hunk, removalsOnly: true)
+        ];
+
+        foreach ((string[] beforeRetry, string[] afterRetry) in retryWindows)
+        {
+            if (beforeRetry.Length == 0)
+            {
+                continue;
+            }
+
+            PatchSequenceSearchResult retryMatch = FindUniqueSequenceMatch(
+                originalLines,
+                beforeRetry,
+                searchStart,
+                endOfFile);
+            if (retryMatch.Status == PatchSequenceSearchStatus.Matched)
+            {
+                return new PatchRetryMatch(
+                    retryMatch.StartIndex,
+                    beforeRetry.Length,
+                    afterRetry,
+                    retryMatch.MatchStyle);
+            }
+        }
+
+        return null;
+    }
+
+    private static (string[] BeforeLines, string[] AfterLines) BuildRetryWindow(
+        PatchHunk hunk,
+        bool includeLeadingAndTrailingContext = true,
+        bool removalsOnly = false)
+    {
+        IReadOnlyList<PatchLine> workingLines = hunk.Lines;
+        if (!includeLeadingAndTrailingContext)
+        {
+            int firstChangedIndex = -1;
+            int lastChangedIndex = -1;
+            for (int index = 0; index < workingLines.Count; index++)
+            {
+                if (workingLines[index].Kind != PatchLineKind.Context)
+                {
+                    firstChangedIndex = index;
+                    break;
+                }
+            }
+
+            for (int index = workingLines.Count - 1; index >= 0; index--)
+            {
+                if (workingLines[index].Kind != PatchLineKind.Context)
+                {
+                    lastChangedIndex = index;
+                    break;
+                }
+            }
+
+            if (firstChangedIndex >= 0 && lastChangedIndex >= firstChangedIndex)
+            {
+                workingLines = workingLines
+                    .Skip(firstChangedIndex)
+                    .Take(lastChangedIndex - firstChangedIndex + 1)
+                    .ToArray();
+            }
+        }
+
+        string[] beforeLines = removalsOnly
+            ? workingLines
+                .Where(static line => line.Kind == PatchLineKind.Removal)
+                .Select(static line => line.Text)
+                .ToArray()
+            : workingLines
+                .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+                .Select(static line => line.Text)
+                .ToArray();
+        string[] afterLines = removalsOnly
+            ? workingLines
+                .Where(static line => line.Kind == PatchLineKind.Addition)
+                .Select(static line => line.Text)
+                .ToArray()
+            : workingLines
+                .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
+                .Select(static line => line.Text)
+                .ToArray();
+        return (beforeLines, afterLines);
+    }
+
+    private static string DescribeCandidateLines(
+        IReadOnlyList<int> candidateIndexes)
+    {
+        return string.Join(
+            ", ",
+            candidateIndexes
+                .Take(4)
+                .Select(static index => (index + 1).ToString(CultureInfo.InvariantCulture)));
     }
 
     private static string JoinLines(
@@ -2198,11 +2418,30 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         IReadOnlyList<string> NewLines,
         PatchHunk Hunk);
 
+    private readonly record struct PatchRetryMatch(
+        int StartIndex,
+        int OldLineCount,
+        IReadOnlyList<string> NewLines,
+        string MatchStyle);
+
+    private readonly record struct PatchSequenceSearchResult(
+        PatchSequenceSearchStatus Status,
+        int StartIndex,
+        string MatchStyle,
+        IReadOnlyList<int> CandidateStartIndexes);
+
     private enum PatchOperationKind
     {
         Add = 0,
         Delete = 1,
         Update = 2
+    }
+
+    private enum PatchSequenceSearchStatus
+    {
+        NotFound = 0,
+        Matched = 1,
+        Ambiguous = 2
     }
 
     private enum PatchLineKind
