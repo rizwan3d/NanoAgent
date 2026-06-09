@@ -5,11 +5,11 @@ namespace NanoAgent.Application.Utilities;
 public static partial class SecretRedactor
 {
     /// <summary>
-    /// Gets or sets whether secret redaction is enabled. Defaults to <see langword="true"/>.
+    /// Gets or sets whether secret redaction is enabled. Defaults to <see langword="false"/>.
     /// When <see langword="false"/>, <see cref="Redact"/> and <see cref="RedactEnvironmentFileContent"/>
     /// return the input value without modification.
     /// </summary>
-    public static bool IsEnabled { get; set; } = true;
+    public static bool IsEnabled { get; set; } = false;
     private const string Redacted = "<redacted>";
     private const string RedactedPrivateKey = "<redacted:private-key>";
 

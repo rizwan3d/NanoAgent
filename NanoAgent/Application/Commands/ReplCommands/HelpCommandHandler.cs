@@ -43,6 +43,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/permissions - Show the current permission summary and override guidance.\n" +
             "/provider [list|name] - List saved providers or switch to another saved provider.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
+            "/redact [on|off] - Show or toggle secret redaction for session output.\n" +
             "/reload - Reload keybindings, extensions, skills, prompts, and themes.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/resume [session-id] - Resume a different session.\n" +
