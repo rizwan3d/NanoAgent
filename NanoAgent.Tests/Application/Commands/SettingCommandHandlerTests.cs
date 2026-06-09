@@ -372,6 +372,14 @@ public sealed class SettingCommandHandlerTests
             return Task.CompletedTask;
         }
 
+        public Task SaveMemorySettingsAsync(
+            string workspacePath,
+            MemorySettings settings,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task SaveTelemetryEnabledAsync(
             string workspacePath,
             bool enabled,
@@ -407,6 +415,15 @@ public sealed class SettingCommandHandlerTests
                 ShellDefault = settings.ShellDefault,
                 ShellSafe = settings.ShellSafe
             };
+            return Task.CompletedTask;
+        }
+
+        public Task SaveMemorySettingsAsync(
+            string workspacePath,
+            MemorySettings settings,
+            CancellationToken cancellationToken)
+        {
+            WorkspacePath = workspacePath;
             return Task.CompletedTask;
         }
 

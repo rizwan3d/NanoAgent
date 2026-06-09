@@ -85,6 +85,14 @@ public sealed class DisableAnalyticsCommandHandlerTests
             return Task.CompletedTask;
         }
 
+        public Task SaveMemorySettingsAsync(
+            string workspacePath,
+            MemorySettings settings,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
         public Task SaveTelemetryEnabledAsync(
             string workspacePath,
             bool enabled,

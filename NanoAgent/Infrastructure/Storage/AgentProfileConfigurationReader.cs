@@ -607,6 +607,11 @@ internal static class AgentProfileConfigurationReader
             target.Disabled = source.Disabled.Value;
         }
 
+        if (source.LessonsEnabled is not null)
+        {
+            target.LessonsEnabled = source.LessonsEnabled.Value;
+        }
+
         if (source.MaxEntries is not null)
         {
             target.MaxEntries = source.MaxEntries.Value;

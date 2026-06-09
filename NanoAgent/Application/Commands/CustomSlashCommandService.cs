@@ -41,6 +41,8 @@ public static class CustomSlashCommandService
             "new",
             "onboard",
             "permissions",
+            "lesson",
+            "lessons",
             "provider",
             "profile",
             "redact",

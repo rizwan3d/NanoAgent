@@ -154,7 +154,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
                 baseSystemPrompt,
                 session,
-                CreateLessonQuery(normalizedInput),
                 cancellationToken);
             IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
             IReadOnlySet<string> availableToolNames = availableToolDefinitions
@@ -275,7 +274,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 await CreateProfileSystemPromptAsync(
                     baseSystemPrompt,
                     session,
-                    CreateLessonQuery(normalizedInput, pendingPlan),
                     cancellationToken),
                 pendingPlan.PlanningSummary),
             allToolDefinitions,
@@ -508,7 +506,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private async Task<string?> CreateProfileSystemPromptAsync(
         string? basePrompt,
         ReplSessionContext session,
-        string lessonQuery,
         CancellationToken cancellationToken)
     {
         string? workspaceProfilePrompt = await _workspaceAgentProfilePromptProvider.LoadAsync(
@@ -525,9 +522,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 session,
                 cancellationToken)
             : null;
-        string? lessonMemory = await CreateLessonMemoryPromptAsync(
-            lessonQuery,
-            cancellationToken);
         string? statefulContext = session.CreateStatefulContextPrompt();
         string?[] promptSections =
         [
@@ -535,7 +529,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             contribution,
             workspaceInstructions,
             skillRouting,
-            lessonMemory,
             statefulContext
         ];
 
@@ -563,45 +556,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return string.IsNullOrWhiteSpace(workspaceSystemPrompt)
             ? configuredSystemPrompt
             : workspaceSystemPrompt;
-    }
-
-    private async Task<string?> CreateLessonMemoryPromptAsync(
-        string lessonQuery,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _lessonMemoryService.CreatePromptAsync(
-                lessonQuery,
-                cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string CreateLessonQuery(
-        string normalizedInput,
-        PendingExecutionPlan? pendingPlan = null)
-    {
-        if (pendingPlan is null)
-        {
-            return normalizedInput;
-        }
-
-        return string.Join(
-            Environment.NewLine,
-            [
-                normalizedInput,
-                pendingPlan.SourceUserInput,
-                pendingPlan.PlanningSummary,
-                string.Join(Environment.NewLine, pendingPlan.Tasks)
-            ]);
     }
 
     private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)

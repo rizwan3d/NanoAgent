@@ -228,11 +228,6 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         Func<ToolInvocationResult, CancellationToken, Task>? onToolResult,
         CancellationToken cancellationToken)
     {
-        await ObserveLessonMemoryAsync(
-            record.ToolCall,
-            record.InvocationResult,
-            session,
-            cancellationToken);
         await RecordToolAuditAsync(
             record.ToolCall,
             record.InvocationResult,
@@ -256,36 +251,6 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
             AgentToolNames.TextSearch or
             AgentToolNames.WebRun or
             AgentToolNames.SkillLoad;
-    }
-
-    private async Task ObserveLessonMemoryAsync(
-        ConversationToolCall toolCall,
-        ToolInvocationResult result,
-        ReplSessionContext session,
-        CancellationToken cancellationToken)
-    {
-        if (_lessonMemoryService is null)
-        {
-            return;
-        }
-
-        try
-        {
-            await _lessonMemoryService.ObserveToolResultAsync(
-                toolCall,
-                result,
-                cancellationToken,
-                session);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            // Lesson memory is helpful context, but tool execution should not fail because
-            // the local memory file is temporarily unavailable or malformed.
-        }
     }
 
     private async Task RecordToolAuditAsync(
