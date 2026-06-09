@@ -909,9 +909,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             throw new FormatException("Patch text must not be empty.");
         }
 
-        string[] lines = StripPatchHeredoc(patch.Trim())
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
+        string[] lines = NormalizePatchInput(patch)
             .Split('\n', StringSplitOptions.None);
 
         int lineIndex = FindPatchMarker(lines, "*** Begin Patch");
@@ -961,6 +959,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return new PatchDocument(operations);
+    }
+
+    private static string NormalizePatchInput(string patch)
+    {
+        string normalized = StripPatchHeredoc(StripMarkdownCodeFence(patch).Trim())
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        if (!normalized.Contains("*** Begin Patch", StringComparison.Ordinal) &&
+            LooksLikeUnifiedDiff(normalized))
+        {
+            normalized = ConvertUnifiedDiffToApplyPatch(normalized);
+        }
+
+        return AutoRepairApplyPatchText(normalized);
     }
 
     private static PatchOperation ParseAddFile(
@@ -1200,6 +1213,43 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return string.Join("\n", lines.Skip(1).Take(lines.Length - 2));
     }
 
+    private static string StripMarkdownCodeFence(string patch)
+    {
+        string normalized = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        string[] lines = normalized.Split('\n', StringSplitOptions.None);
+        if (lines.Length < 3)
+        {
+            return patch;
+        }
+
+        int startIndex = 0;
+        while (startIndex < lines.Length && string.IsNullOrWhiteSpace(lines[startIndex]))
+        {
+            startIndex++;
+        }
+
+        int endIndex = lines.Length - 1;
+        while (endIndex >= 0 && string.IsNullOrWhiteSpace(lines[endIndex]))
+        {
+            endIndex--;
+        }
+
+        if (startIndex >= endIndex)
+        {
+            return patch;
+        }
+
+        if (!lines[startIndex].TrimStart().StartsWith("```", StringComparison.Ordinal) ||
+            !string.Equals(lines[endIndex].Trim(), "```", StringComparison.Ordinal))
+        {
+            return patch;
+        }
+
+        return string.Join("\n", lines[(startIndex + 1)..endIndex]);
+    }
+
     private static bool TryReadHeredocMarker(
         string line,
         out string? marker)
@@ -1231,6 +1281,367 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         marker = value;
         return true;
+    }
+
+    private static bool LooksLikeUnifiedDiff(string patch)
+    {
+        string[] lines = patch.Split('\n', StringSplitOptions.None);
+        bool sawOldPath = false;
+        foreach (string rawLine in lines)
+        {
+            string line = rawLine.TrimEnd();
+            if (!sawOldPath)
+            {
+                sawOldPath = line.StartsWith("--- ", StringComparison.Ordinal);
+                continue;
+            }
+
+            if (line.StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            sawOldPath = false;
+        }
+
+        return false;
+    }
+
+    private static string ConvertUnifiedDiffToApplyPatch(string patch)
+    {
+        string[] lines = patch.Split('\n', StringSplitOptions.None);
+        List<string> converted = ["*** Begin Patch"];
+        int index = 0;
+
+        while (index < lines.Length)
+        {
+            string line = lines[index].TrimEnd();
+            if (!line.StartsWith("--- ", StringComparison.Ordinal))
+            {
+                index++;
+                continue;
+            }
+
+            if (index + 1 >= lines.Length ||
+                !lines[index + 1].TrimEnd().StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                throw new FormatException("Unified diff sections must include matching '---' and '+++' headers.");
+            }
+
+            string oldPath = ParseUnifiedDiffPath(lines[index].TrimEnd()["--- ".Length..]);
+            string newPath = ParseUnifiedDiffPath(lines[index + 1].TrimEnd()["+++ ".Length..]);
+            index += 2;
+
+            if (string.Equals(oldPath, "/dev/null", StringComparison.Ordinal))
+            {
+                converted.Add($"*** Add File: {newPath}");
+                while (index < lines.Length && !lines[index].TrimEnd().StartsWith("--- ", StringComparison.Ordinal))
+                {
+                    string hunkLine = lines[index].TrimEnd();
+                    if (hunkLine.StartsWith("@@", StringComparison.Ordinal) ||
+                        hunkLine.Length == 0)
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    if (hunkLine == "\\ No newline at end of file")
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    if (!hunkLine.StartsWith('+') || hunkLine.StartsWith("+++ ", StringComparison.Ordinal))
+                    {
+                        throw new FormatException("Unified diff add-file hunks must contain only added lines.");
+                    }
+
+                    converted.Add(hunkLine);
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (string.Equals(newPath, "/dev/null", StringComparison.Ordinal))
+            {
+                converted.Add($"*** Delete File: {oldPath}");
+                while (index < lines.Length && !lines[index].TrimEnd().StartsWith("--- ", StringComparison.Ordinal))
+                {
+                    index++;
+                }
+
+                continue;
+            }
+
+            converted.Add($"*** Update File: {oldPath}");
+            if (!string.Equals(oldPath, newPath, StringComparison.Ordinal))
+            {
+                converted.Add($"*** Move to: {newPath}");
+            }
+
+            while (index < lines.Length && !lines[index].TrimEnd().StartsWith("--- ", StringComparison.Ordinal))
+            {
+                string hunkLine = lines[index].TrimEnd();
+                if (hunkLine.Length == 0)
+                {
+                    index++;
+                    continue;
+                }
+
+                if (hunkLine.StartsWith("@@", StringComparison.Ordinal))
+                {
+                    converted.Add(ConvertUnifiedDiffHunkHeader(hunkLine));
+                    index++;
+                    continue;
+                }
+
+                if (hunkLine == "\\ No newline at end of file")
+                {
+                    converted.Add(hunkLine);
+                    index++;
+                    continue;
+                }
+
+                if (hunkLine[0] is ' ' or '+' or '-')
+                {
+                    converted.Add(hunkLine);
+                    index++;
+                    continue;
+                }
+
+                index++;
+            }
+        }
+
+        converted.Add("*** End Patch");
+        return string.Join("\n", converted);
+    }
+
+    private static string ParseUnifiedDiffPath(string value)
+    {
+        string trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new FormatException("Unified diff file headers must include a path.");
+        }
+
+        if (string.Equals(trimmed, "/dev/null", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        int tabIndex = trimmed.IndexOf('\t');
+        if (tabIndex >= 0)
+        {
+            trimmed = trimmed[..tabIndex];
+        }
+
+        if (trimmed.Length >= 2 &&
+            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
+             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
+        {
+            trimmed = trimmed[1..^1];
+        }
+
+        if (trimmed.StartsWith("a/", StringComparison.Ordinal) ||
+            trimmed.StartsWith("b/", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
+        return trimmed;
+    }
+
+    private static string ConvertUnifiedDiffHunkHeader(string line)
+    {
+        int closingIndex = line.IndexOf("@@", 2, StringComparison.Ordinal);
+        if (closingIndex < 0)
+        {
+            return "@@";
+        }
+
+        string trailing = line[(closingIndex + 2)..].Trim();
+        return trailing.Length == 0
+            ? "@@"
+            : $"@@ {trailing}";
+    }
+
+    private static string AutoRepairApplyPatchText(string patch)
+    {
+        string[] lines = patch.Split('\n', StringSplitOptions.None);
+        List<string> repaired = new(lines.Length + 4);
+        PatchOperationKind? currentOperation = null;
+        bool insideUpdateHunk = false;
+
+        for (int index = 0; index < lines.Length; index++)
+        {
+            string line = lines[index];
+
+            if (IsPatchHeader(line, "*** Add File:"))
+            {
+                currentOperation = PatchOperationKind.Add;
+                insideUpdateHunk = false;
+                repaired.Add(line);
+                continue;
+            }
+
+            if (IsPatchHeader(line, "*** Delete File:"))
+            {
+                currentOperation = PatchOperationKind.Delete;
+                insideUpdateHunk = false;
+                repaired.Add(line);
+                continue;
+            }
+
+            if (IsPatchHeader(line, "*** Update File:"))
+            {
+                currentOperation = PatchOperationKind.Update;
+                insideUpdateHunk = false;
+                repaired.Add(line);
+                continue;
+            }
+
+            if (IsPatchHeader(line, "*** Move to:") ||
+                string.Equals(line.Trim(), "*** Begin Patch", StringComparison.Ordinal) ||
+                string.Equals(line.Trim(), "*** End Patch", StringComparison.Ordinal))
+            {
+                repaired.Add(line);
+                continue;
+            }
+
+            if (currentOperation == PatchOperationKind.Add && line.Length == 0)
+            {
+                repaired.Add("+");
+                continue;
+            }
+
+            if (currentOperation == PatchOperationKind.Update)
+            {
+                if (line.StartsWith("@@@", StringComparison.Ordinal))
+                {
+                    line = "@@" + line[3..];
+                }
+
+                if (line.StartsWith("@@", StringComparison.Ordinal))
+                {
+                    insideUpdateHunk = true;
+                    repaired.Add(line);
+                    continue;
+                }
+
+                if (!insideUpdateHunk &&
+                    IsLikelyUpdatePatchContent(line))
+                {
+                    insideUpdateHunk = true;
+                    repaired.Add("@@");
+                }
+
+                if (insideUpdateHunk &&
+                    line.Length == 0 &&
+                    !CanTreatBlankUpdateLineAsSeparator(lines, index))
+                {
+                    repaired.Add(InferBlankUpdateLinePrefix(lines, index));
+                    continue;
+                }
+            }
+
+            repaired.Add(line);
+        }
+
+        return string.Join("\n", repaired);
+    }
+
+    private static bool IsLikelyUpdatePatchContent(string line)
+    {
+        if (line.Length == 0)
+        {
+            return false;
+        }
+
+        if (line[0] is ' ' or '+' or '-' ||
+            string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal) ||
+            string.Equals(line, "*** End of File", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string InferBlankUpdateLinePrefix(
+        IReadOnlyList<string> lines,
+        int lineIndex)
+    {
+        char? previousPrefix = FindNearbyPatchPrefix(lines, lineIndex, searchBackward: true);
+        char? nextPrefix = FindNearbyPatchPrefix(lines, lineIndex, searchBackward: false);
+
+        if (previousPrefix.HasValue && nextPrefix.HasValue && previousPrefix.Value == nextPrefix.Value)
+        {
+            return previousPrefix.Value.ToString();
+        }
+
+        if (previousPrefix.HasValue)
+        {
+            return previousPrefix.Value.ToString();
+        }
+
+        if (nextPrefix.HasValue)
+        {
+            return nextPrefix.Value.ToString();
+        }
+
+        return " ";
+    }
+
+    private static bool CanTreatBlankUpdateLineAsSeparator(
+        IReadOnlyList<string> lines,
+        int lineIndex)
+    {
+        int nextIndex = lineIndex + 1;
+        while (nextIndex < lines.Count && lines[nextIndex].Length == 0)
+        {
+            nextIndex++;
+        }
+
+        if (nextIndex >= lines.Count)
+        {
+            return true;
+        }
+
+        string nextLine = lines[nextIndex];
+        return nextLine.StartsWith("@@", StringComparison.Ordinal) ||
+               IsPatchOperationBoundary(nextLine);
+    }
+
+    private static char? FindNearbyPatchPrefix(
+        IReadOnlyList<string> lines,
+        int lineIndex,
+        bool searchBackward)
+    {
+        int index = lineIndex + (searchBackward ? -1 : 1);
+        while (index >= 0 && index < lines.Count)
+        {
+            string candidate = lines[index];
+            if (candidate.Length == 0)
+            {
+                index += searchBackward ? -1 : 1;
+                continue;
+            }
+
+            if (candidate.StartsWith("@@", StringComparison.Ordinal) ||
+                IsPatchOperationBoundary(candidate) ||
+                IsPatchHeader(candidate, "*** Move to:"))
+            {
+                return null;
+            }
+
+            return candidate[0] is ' ' or '+' or '-'
+                ? candidate[0]
+                : null;
+        }
+
+        return null;
     }
 
     private static int FindPatchMarker(
@@ -1566,7 +1977,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static string[] GetTrackedPatchPaths(PatchDocument document)
     {
-        List<string> paths = [];
+        HashSet<string> paths = new(WorkspacePath.GetPathComparer());
         foreach (PatchOperation op in document.Operations)
         {
             paths.Add(op.Path);
