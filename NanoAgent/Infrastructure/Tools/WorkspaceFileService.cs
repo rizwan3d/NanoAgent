@@ -24,6 +24,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private const int ContentPreviewThresholdChars = 262_144;
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private static readonly Encoding Utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+
+    private readonly record struct FileEncodingInfo(bool HasBom, string NewLine);
+
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
@@ -365,12 +369,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 cancellationToken);
         }
 
+        FileEncodingInfo encoding = fileExists
+            ? DetectFileEncoding(fullPath)
+            : new FileEncodingInfo(HasBom: false, NewLine: "\n");
         EnsureParentDirectory(fullPath);
 
-        await File.WriteAllTextAsync(
+        await WriteAllTextWithEncodingAsync(
             fullPath,
             content,
-            Utf8NoBom,
+            encoding,
             cancellationToken);
 
         FileWritePreview preview = BuildFileWritePreview(previousContent, content);
@@ -458,11 +465,14 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string content = operation.AddLines.Count == 0
             ? string.Empty
             : JoinLines(operation.AddLines, trailingNewLine: true);
+        FileEncodingInfo encoding = new FileEncodingInfo(HasBom: false, NewLine: "\n");
+
+
         EnsureParentDirectory(fullPath);
-        await File.WriteAllTextAsync(
+        await WriteAllTextWithEncodingAsync(
             fullPath,
             content,
-            Utf8NoBom,
+            encoding,
             cancellationToken);
 
         return CreatePatchFileResult(
@@ -501,6 +511,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string currentFullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
         EnsurePathNotIgnored(currentFullPath, isDirectory: false, ignoreMatcher);
+        FileEncodingInfo encoding = DetectFileEncoding(currentFullPath);
         string previousContent = await File.ReadAllTextAsync(
             currentFullPath,
             Encoding.UTF8,
@@ -524,10 +535,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         EnsureParentDirectory(destinationFullPath);
 
-        await File.WriteAllTextAsync(
+        await WriteAllTextWithEncodingAsync(
             destinationFullPath,
             updatedContent,
-            Utf8NoBom,
+            encoding,
             cancellationToken);
 
         if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
@@ -833,6 +844,53 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private string GetWorkspaceRoot()
     {
         return Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+    }
+
+    private static FileEncodingInfo DetectFileEncoding(string fullPath)
+    {
+        if (!File.Exists(fullPath))
+        {
+            return new FileEncodingInfo(HasBom: false, NewLine: "\n");
+        }
+
+        byte[] bytes = File.ReadAllBytes(fullPath);
+
+        bool hasBom = bytes.Length >= 3 &&
+                      bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+
+        int start = hasBom ? 3 : 0;
+        bool hasCrlf = false;
+        for (int i = start; i < bytes.Length - 1; i++)
+        {
+            if (bytes[i] == '\r' && bytes[i + 1] == '\n')
+            {
+                hasCrlf = true;
+                break;
+            }
+        }
+
+        return new FileEncodingInfo(hasBom, hasCrlf ? "\r\n" : "\n");
+    }
+
+    private static async Task WriteAllTextWithEncodingAsync(
+        string fullPath,
+        string content,
+        FileEncodingInfo encoding,
+        CancellationToken cancellationToken)
+    {
+        string finalContent = NormalizeNewlines(content, encoding.NewLine);
+        Encoding writeEncoding = encoding.HasBom ? Utf8WithBom : Utf8NoBom;
+        await File.WriteAllTextAsync(fullPath, finalContent, writeEncoding, cancellationToken);
+    }
+
+    private static string NormalizeNewlines(string content, string targetNewLine)
+    {
+        string normalized = content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        return targetNewLine == "\r\n"
+            ? normalized.Replace("\n", "\r\n", StringComparison.Ordinal)
+            : normalized;
     }
 
     private static void EnsureParentDirectory(string fullPath)

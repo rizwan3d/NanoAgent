@@ -978,7 +978,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         result.FileCount.Should().Be(1);
         string actualContent = await File.ReadAllTextAsync(filePath, CancellationToken.None);
-        actualContent.Should().Be("setting1=new\nsetting2=value\n");
+        actualContent.Should().Be("setting1=new\r\nsetting2=value\r\n");
     }
 
     [Fact]
