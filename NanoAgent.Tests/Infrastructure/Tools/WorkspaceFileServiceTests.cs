@@ -1126,6 +1126,60 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             CancellationToken.None);
         actualContent.Should().Be("hello world\nsecond line\n");
     }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RetrySingleFileMatch_UsingSmallerChangedWindow()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "retry.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "header changed\nold value\nfooter changed\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: retry.txt
+            @@
+             header
+            -old value
+            +new value
+             footer
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("header changed\nnew value\nfooter changed\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RejectAmbiguousRepeatedMatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "ambiguous.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "dup\nkeep\n\ndup\nkeep\n",
+            CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: ambiguous.txt
+            @@
+            -dup
+            +changed
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*matched multiple locations*Candidate starting lines: 1, 4*");
+    }
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
