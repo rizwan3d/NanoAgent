@@ -1,5 +1,6 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using System.Net.Http.Headers;
 using System.Text;
@@ -17,15 +18,18 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
     private readonly IConversationProviderHttpExecutor _httpExecutor;
     private readonly ConversationProviderRequestPayloadFactory _payloadFactory;
     private readonly INanoAgentEnterpriseCredentialService? _nanoAgentEnterpriseCredentialService;
+    private readonly ProviderRequestProjectHeaderProvider? _providerRequestProjectHeaderProvider;
 
     public OpenAiCompatibleConversationProviderAdapter(
         IConversationProviderHttpExecutor httpExecutor,
         ConversationProviderRequestPayloadFactory payloadFactory,
-        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null,
+        ProviderRequestProjectHeaderProvider? providerRequestProjectHeaderProvider = null)
     {
         _httpExecutor = httpExecutor;
         _payloadFactory = payloadFactory;
         _nanoAgentEnterpriseCredentialService = nanoAgentEnterpriseCredentialService;
+        _providerRequestProjectHeaderProvider = providerRequestProjectHeaderProvider;
     }
 
     public async Task<ConversationProviderPayload> SendAsync(
@@ -38,10 +42,15 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
             OpenAiConversationJsonContext.Default.OpenAiChatCompletionRequest);
         Uri baseUri = request.ProviderProfile.ResolveBaseUri();
         string authorizationValue = request.ApiKey;
+        bool usesNanoAgentEnterpriseCredentials = _nanoAgentEnterpriseCredentialService?.CanResolve(request.ApiKey) == true;
 
-        if (_nanoAgentEnterpriseCredentialService?.CanResolve(request.ApiKey) == true)
+        if (usesNanoAgentEnterpriseCredentials)
         {
-            NanoAgentEnterpriseResolvedCredential credential = await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+            INanoAgentEnterpriseCredentialService enterpriseCredentialService =
+                _nanoAgentEnterpriseCredentialService ??
+                throw new InvalidOperationException("NanoAgent Enterprise credentials cannot be resolved in this runtime.");
+
+            NanoAgentEnterpriseResolvedCredential credential = await enterpriseCredentialService.ResolveAsync(
                 request.ApiKey,
                 forceRefresh: false,
                 cancellationToken);
@@ -50,11 +59,16 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
             return await _httpExecutor.ExecuteAsync(
                 request.ProviderProfile.ProviderKind,
                 requestBody,
-                () => CreateHttpRequest(baseUri, request.ProviderProfile.ProviderKind, authorizationValue, requestBody),
+                () => CreateHttpRequest(
+                    baseUri,
+                    request.ProviderProfile.ProviderKind,
+                    authorizationValue,
+                    requestBody,
+                    usesNanoAgentEnterpriseCredentials),
                 cancellationToken,
                 refreshAuthorizationAsync: async token =>
                 {
-                    credential = await _nanoAgentEnterpriseCredentialService.ResolveAsync(
+                    credential = await enterpriseCredentialService.ResolveAsync(
                         request.ApiKey,
                         forceRefresh: true,
                         token);
@@ -66,15 +80,21 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
         return await _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
             requestBody,
-            () => CreateHttpRequest(baseUri, request.ProviderProfile.ProviderKind, authorizationValue, requestBody),
+            () => CreateHttpRequest(
+                baseUri,
+                request.ProviderProfile.ProviderKind,
+                authorizationValue,
+                requestBody,
+                usesNanoAgentEnterpriseCredentials),
             cancellationToken);
     }
 
-    private static HttpRequestMessage CreateHttpRequest(
+    private HttpRequestMessage CreateHttpRequest(
         Uri baseUri,
         ProviderKind providerKind,
         string apiKey,
-        string requestBody)
+        string requestBody,
+        bool usesNanoAgentEnterpriseCredentials)
     {
         HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "chat/completions"));
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
@@ -87,6 +107,14 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
         {
             httpRequest.Headers.TryAddWithoutValidation("X-KILOCODE-EDITORNAME", KiloCodeEditorName);
             httpRequest.Headers.TryAddWithoutValidation("User-Agent", KiloCodeUserAgent);
+        }
+        else if (usesNanoAgentEnterpriseCredentials)
+        {
+            httpRequest.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            httpRequest.Headers.TryAddWithoutValidation(
+                "X-Project",
+                _providerRequestProjectHeaderProvider?.GetProjectName() ??
+                ProviderRequestProjectHeaderProvider.ResolveProjectName(Directory.GetCurrentDirectory()));
         }
 
         httpRequest.Content = new StringContent(requestBody, Encoding.UTF8, "application/json");
