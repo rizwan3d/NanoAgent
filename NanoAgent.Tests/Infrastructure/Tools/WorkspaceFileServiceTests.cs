@@ -240,7 +240,247 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
             CancellationToken.None);
 
-        result.Matches.Should().Equal("src/Program.cs");
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+        result.Matches[0].MatchKind.Should().Be("filename_contains");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyGlobFilter()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.txt"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Glob: "**/*.cs"),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyFuzzyMatching()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "WorkspaceFileService.cs"), "class WorkspaceFileService {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("wkspfilesrv", "src", CaseSensitive: false, Fuzzy: true),
+            CancellationToken.None);
+
+        result.Matches.Should().ContainSingle();
+        result.Matches[0].Path.Should().Be("src/WorkspaceFileService.cs");
+        result.Matches[0].MatchKind.Should().Be("filename_subsequence");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_RespectRequestedLimit()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.Tests.cs"), "class ProgramTests {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Limit: 1),
+            CancellationToken.None);
+
+        result.Matches.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ExcludeRootGitIgnoredFiles()
+    {
+        await WriteGitIgnoreAsync(
+            """
+            ignored/
+            """);
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_RespectNestedGitIgnoreRules()
+    {
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "visible"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "generated"));
+        await WriteGitIgnoreAsync(
+            """
+            generated/
+            *.snap
+            !keep.snap
+            """,
+            "src");
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "visible", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "generated", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "test.snap"), "snapshot", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "keep.snap"), "snapshot", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult programResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
+            CancellationToken.None);
+        WorkspaceFileSearchResult snapResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("snap", "src", CaseSensitive: false),
+            CancellationToken.None);
+
+        programResult.Matches.Select(static match => match.Path).Should().Equal("src/visible/Program.cs");
+        snapResult.Matches.Select(static match => match.Path).Should().Equal("src/keep.snap");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_DenyGitIgnoredSearchPath()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "ignored", CaseSensitive: false),
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .gitignore*");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyRegexWholeWordMatching()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "SearchFilesTool.cs"), "class SearchFilesTool {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "SearchFilesToolbar.cs"), "class SearchFilesToolbar {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "SearchFilesTool",
+                "src",
+                CaseSensitive: false,
+                Mode: WorkspaceFileSearchModes.Regex,
+                Regex: true,
+                WholeWord: true),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/SearchFilesTool.cs");
+        result.Matches[0].MatchKind.Should().Be("filename_regex");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ApplyIncludeAndExcludeGlobs()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        string objDirectory = Path.Combine(srcDirectory, "obj");
+        Directory.CreateDirectory(objDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(objDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.txt"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "Program",
+                "src",
+                CaseSensitive: false,
+                IncludeGlobs: ["**/*.cs"],
+                ExcludeGlobs: ["**/obj/**"]),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ReturnPagedMatchesAndNextCursor()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(srcDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.A.cs"), "class ProgramA {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.B.cs"), "class ProgramB {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.C.cs"), "class ProgramC {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult firstPage = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, Limit: 2),
+            CancellationToken.None);
+
+        firstPage.Matches.Should().HaveCount(2);
+        firstPage.HasMore.Should().BeTrue();
+        firstPage.NextCursor.Should().NotBeNullOrWhiteSpace();
+        firstPage.TotalMatchCount.Should().Be(3);
+
+        WorkspaceFileSearchResult secondPage = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "Program",
+                "src",
+                CaseSensitive: false,
+                Limit: 2,
+                Cursor: firstPage.NextCursor),
+            CancellationToken.None);
+
+        secondPage.Matches.Should().ContainSingle();
+        secondPage.HasMore.Should().BeFalse();
+        secondPage.Offset.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ExcludeGeneratedDirectories_UnlessRequested()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string srcDirectory = Path.Combine(_workspaceRoot, "src");
+        string generatedDirectory = Path.Combine(srcDirectory, "obj");
+        Directory.CreateDirectory(generatedDirectory);
+        await File.WriteAllTextAsync(Path.Combine(srcDirectory, "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(generatedDirectory, "GeneratedProgram.cs"), "class GeneratedProgram {}", CancellationToken.None);
+
+        WorkspaceFileSearchResult defaultResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
+            CancellationToken.None);
+        WorkspaceFileSearchResult includeGeneratedResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false, IncludeGenerated: true),
+            CancellationToken.None);
+
+        defaultResult.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+        includeGeneratedResult.Matches.Select(static match => match.Path)
+            .Should()
+            .Contain(["src/Program.cs", "src/obj/GeneratedProgram.cs"]);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_IncludeIgnoredFiles_When_Requested()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false, IncludeIgnored: true),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path)
+            .Should()
+            .Contain(["src/Program.cs", "ignored/Program.cs"]);
     }
 
     [Fact]
@@ -1043,6 +1283,135 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_StripMarkdownCodeFences()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "notes.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "before\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            ```patch
+            *** Begin Patch
+            *** Update File: notes.txt
+            @@
+            -before
+            +after
+            *** End Patch
+            ```
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("after\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptUnifiedDiffHeaders()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "config.ini");
+        await File.WriteAllTextAsync(
+            filePath,
+            "setting1=old\nsetting2=value\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            --- a/config.ini
+            +++ b/config.ini
+            @@ -1,2 +1,2 @@
+            -setting1=old
+            +setting1=new
+             setting2=value
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("setting1=new\nsetting2=value\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_InsertMissingHunkHeader_BeforeDiffLines()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "old\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: sample.txt
+            -old
+            +new
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("new\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AutoPrefixBlankLine_InsideUpdateHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.cs");
+
+        await File.WriteAllTextAsync(
+            filePath,
+            "line1\n\nline3\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: sample.cs
+            @@
+             line1
+
+            -line3
+            +line4
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("line1\n\nline4\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AutoPrefixBlankLine_InsideAddFile()
+    {
+        WorkspaceFileService sut = CreateSut();
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Add File: notes.txt
+            +first
+
+            +third
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(Path.Combine(_workspaceRoot, "notes.txt"), CancellationToken.None))
+            .Should()
+            .Be("first\n\nthird\n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_PreserveExactContent_ForMoveOnlyUpdate()
     {
         WorkspaceFileService sut = CreateSut();
@@ -1085,7 +1454,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         result.FileCount.Should().Be(1);
         string actualContent = await File.ReadAllTextAsync(filePath, CancellationToken.None);
-        actualContent.Should().Be("setting1=new\nsetting2=value\n");
+        actualContent.Should().Be("setting1=new\r\nsetting2=value\r\n");
     }
 
     [Fact]
@@ -1103,6 +1472,60 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             Path.Combine(_workspaceRoot, "readme.txt"),
             CancellationToken.None);
         actualContent.Should().Be("hello world\nsecond line\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RetrySingleFileMatch_UsingSmallerChangedWindow()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "retry.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "header changed\nold value\nfooter changed\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: retry.txt
+            @@
+             header
+            -old value
+            +new value
+             footer
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("header changed\nnew value\nfooter changed\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RejectAmbiguousRepeatedMatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "ambiguous.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "dup\nkeep\n\ndup\nkeep\n",
+            CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: ambiguous.txt
+            @@
+            -dup
+            +changed
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*matched multiple locations*Candidate starting lines: 1, 4*");
     }
     public void Dispose()
     {
@@ -1123,6 +1546,20 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         Directory.CreateDirectory(nanoAgentDirectory);
         await File.WriteAllTextAsync(
             Path.Combine(nanoAgentDirectory, ".nanoignore"),
+            content,
+            CancellationToken.None);
+    }
+
+    private async Task WriteGitIgnoreAsync(
+        string content,
+        string? relativeDirectory = null)
+    {
+        string directory = string.IsNullOrWhiteSpace(relativeDirectory)
+            ? _workspaceRoot
+            : Path.Combine(_workspaceRoot, relativeDirectory);
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(
+            Path.Combine(directory, ".gitignore"),
             content,
             CancellationToken.None);
     }
@@ -1222,5 +1659,34 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         {
             return _workspaceRoot;
         }
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptSpacePrefixedBlankContextLine()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.cs");
+    
+        await File.WriteAllTextAsync(
+            filePath,
+            "line1\n\nline3\n",
+            CancellationToken.None);
+    
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: sample.cs
+            @@
+             line1
+             
+            -line3
+            +line4
+            *** End Patch
+            """,
+            CancellationToken.None);
+    
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("line1\n\nline4\n");
     }
 }

@@ -4,6 +4,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Storage;
 
@@ -84,44 +85,54 @@ public sealed class WorkspaceLessonMemoryServiceTests
     [Fact]
     public async Task ObserveToolResultAsync_Should_RedactSecretsFromAutomaticFailureLessons()
     {
-        using TempWorkspace workspace = TempWorkspace.Create();
-        WorkspaceLessonMemoryService sut = CreateService(
-            workspace.Path,
-            new MemorySettings
-            {
-                RedactSecrets = true
-            });
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        await sut.ObserveToolResultAsync(
-            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
-            CreateShellInvocation(new ShellCommandExecutionResult(
-                "dotnet test",
-                ".",
-                1,
-                "",
-                "error: token=sk-abcdefghijklmnopqrstuvwxyz123456 github_pat_abcdefghijklmnopqrstuvwxyz1234567890 AIzaabcdefghijklmnopqrstuvwxyz123456")),
-            CancellationToken.None);
+        try
+        {
+            using TempWorkspace workspace = TempWorkspace.Create();
+            WorkspaceLessonMemoryService sut = CreateService(
+                workspace.Path,
+                new MemorySettings
+                {
+                    RedactSecrets = true
+                });
 
-        await sut.ObserveToolResultAsync(
-            CreateToolCall(AgentToolNames.ShellCommand, "{}"),
-            CreateShellInvocation(new ShellCommandExecutionResult(
-                "dotnet test",
-                ".",
-                0,
-                "Passed.",
-                "")),
-            CancellationToken.None);
+            await sut.ObserveToolResultAsync(
+                CreateToolCall(AgentToolNames.ShellCommand, "{}"),
+                CreateShellInvocation(new ShellCommandExecutionResult(
+                    "dotnet test",
+                    ".",
+                    1,
+                    "",
+                    "error: token=sk-abcdefghijklmnopqrstuvwxyz123456 github_pat_abcdefghijklmnopqrstuvwxyz1234567890 AIzaabcdefghijklmnopqrstuvwxyz123456")),
+                CancellationToken.None);
 
-        IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
-            limit: 10,
-            includeFixed: true,
-            CancellationToken.None);
+            await sut.ObserveToolResultAsync(
+                CreateToolCall(AgentToolNames.ShellCommand, "{}"),
+                CreateShellInvocation(new ShellCommandExecutionResult(
+                    "dotnet test",
+                    ".",
+                    0,
+                    "Passed.",
+                    "")),
+                CancellationToken.None);
 
-        lessons.Should().ContainSingle();
-        lessons[0].FailureSignature.Should().Contain("<redacted>");
-        lessons[0].FailureSignature.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
-        lessons[0].FailureSignature.Should().NotContain("github_pat_abcdefghijklmnopqrstuvwxyz");
-        lessons[0].FailureSignature.Should().NotContain("AIzaabcdefghijklmnopqrstuvwxyz");
+            IReadOnlyList<LessonMemoryEntry> lessons = await sut.ListAsync(
+                limit: 10,
+                includeFixed: true,
+                CancellationToken.None);
+
+            lessons.Should().ContainSingle();
+            lessons[0].FailureSignature.Should().Contain("<redacted>");
+            lessons[0].FailureSignature.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+            lessons[0].FailureSignature.Should().NotContain("github_pat_abcdefghijklmnopqrstuvwxyz");
+            lessons[0].FailureSignature.Should().NotContain("AIzaabcdefghijklmnopqrstuvwxyz");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     [Fact]
@@ -337,10 +348,14 @@ public sealed class WorkspaceLessonMemoryServiceTests
         MemorySettings? settings = null,
         ILessonFailureClassifier? failureClassifier = null)
     {
+        MemorySettings effectiveSettings = settings ?? new MemorySettings();
+        effectiveSettings.LessonsEnabled = true;
+        effectiveSettings.AllowAutoFailureObservation = true;
+
         return new WorkspaceLessonMemoryService(
             new FixedWorkspaceRootProvider(workspacePath),
             TimeProvider.System,
-            settings,
+            effectiveSettings,
             failureClassifier);
     }
 

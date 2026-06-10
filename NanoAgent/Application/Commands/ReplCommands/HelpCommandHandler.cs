@@ -35,6 +35,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/help - List the available shell commands and their usage.\n" +
             "/import <json-path> - Import a session from JSON.\n" +
             "/init [recommended|minimal|custom] - Choose and initialize workspace-local NanoAgent files.\n" +
+            "/lessons [status|on|off|list [limit]|search <query>|save <trigger> | <problem> | <lesson>|edit <id> <trigger> | <problem> | <lesson>|delete <id>] - Manage local lesson memory. Off by default; when enabled, relevant lessons are injected into prompts.\n" +
             "/lsp [status|refresh|file <path> [refresh]] - Show detected language servers or inspect a specific file.\n" +
             "/mcp - Show configured MCP servers, custom tool providers, and discovered dynamic tools.\n" +
             "/models - Choose the active model with the picker.\n" +
@@ -43,6 +44,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/permissions - Show the current permission summary and override guidance.\n" +
             "/provider [list|name] - List saved providers or switch to another saved provider.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
+            "/redact [on|off] - Show or toggle secret redaction for session output.\n" +
             "/reload - Reload keybindings, extensions, skills, prompts, and themes.\n" +
             "/redo - Re-apply the most recently undone file edit transaction.\n" +
             "/resume [session-id] - Resume a different session.\n" +

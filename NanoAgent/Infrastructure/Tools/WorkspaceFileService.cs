@@ -5,8 +5,11 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
+using System.Globalization;
 using System.Runtime.ExceptionServices;
+using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace NanoAgent.Infrastructure.Tools;
 
@@ -19,8 +22,48 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private const int MaxFileSearchResults = 200;
     private const int FileWritePreviewContextLines = 1;
     private const int MaxFileWritePreviewLines = 8;
+    private const int LargeFileThresholdBytes = 262_144;
+    private const int ContentPreviewThresholdChars = 262_144;
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private static readonly Encoding Utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+    private static readonly HashSet<string> GeneratedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bin",
+        "obj",
+        "node_modules",
+        "vendor",
+        "dist",
+        "build",
+        "out",
+        "target",
+        "coverage",
+        ".next",
+        ".nuxt",
+        ".svelte-kit",
+        "packages",
+        "generated"
+    };
+    private static readonly string[] GeneratedFileSuffixes =
+    [
+        ".g.cs",
+        ".g.i.cs",
+        ".gen.cs",
+        ".generated.cs",
+        ".designer.cs",
+        ".pb.cs",
+        ".AssemblyInfo.cs"
+    ];
+
+    private readonly record struct FileEncodingInfo(bool HasBom, string NewLine);
+    private readonly record struct WorkspaceFileSearchPage(
+        IReadOnlyList<WorkspaceFileSearchMatch> Matches,
+        int Offset,
+        int Limit,
+        int TotalMatchCount,
+        bool HasMore,
+        string? NextCursor);
+
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
@@ -28,6 +71,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         _workspaceRootProvider = workspaceRootProvider;
     }
+ 
 
     public async Task<WorkspaceApplyPatchResult> ApplyPatchAsync(
         string patch,
@@ -46,7 +90,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         PatchDocument document = ParsePatch(patch);
-        string[] trackedPaths = GetTrackedPatchPaths(document);
+        string[] trackedPaths = await FilterLargeFilePathsAsync(
+            GetTrackedPatchPaths(document),
+            cancellationToken);
         WorkspaceFileEditState[] beforeStates = await CaptureFileStatesAsync(
             trackedPaths,
             cancellationToken);
@@ -106,6 +152,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         foreach (WorkspaceFileEditState state in normalizedStates.Where(static state => state.Exists))
         {
             cancellationToken.ThrowIfCancellationRequested();
+
+            if (state.Content is null)
+            {
+                continue;
+            }
 
             string fullPath = ResolveWorkspacePath(state.Path, directoryRequired: false, fileRequired: false);
             if (Directory.Exists(fullPath))
@@ -296,15 +347,38 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        string effectiveMode = GetEffectiveSearchMode(request);
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
         {
-            EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
+            if (!request.IncludeIgnored)
+            {
+                EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
+            }
         }
+
+        WorkspaceFileSearchPage page = SearchFilesManaged(request, effectiveMode, fullPath, ignoreMatcher);
 
         return new WorkspaceFileSearchResult(
             request.Query,
             ToWorkspaceRelativePath(fullPath),
-            SearchFilesManaged(request, fullPath, ignoreMatcher));
+            page.Matches,
+            request.Glob,
+            request.Fuzzy,
+            page.Limit,
+            request.CaseSensitive,
+            effectiveMode,
+            request.Regex,
+            request.WholeWord,
+            page.Offset,
+            request.Cursor,
+            page.NextCursor,
+            page.HasMore,
+            page.TotalMatchCount,
+            request.IncludeHidden,
+            request.IncludeGenerated,
+            request.IncludeIgnored,
+            request.IncludeGlobs ?? [],
+            request.ExcludeGlobs ?? []);
     }
 
     public async Task<WorkspaceTextSearchResult> SearchTextAsync(
@@ -354,12 +428,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 cancellationToken);
         }
 
+        FileEncodingInfo encoding = fileExists
+            ? DetectFileEncoding(fullPath)
+            : new FileEncodingInfo(HasBom: false, NewLine: "\n");
         EnsureParentDirectory(fullPath);
 
-        await File.WriteAllTextAsync(
+        await WriteAllTextWithEncodingAsync(
             fullPath,
             content,
-            Utf8NoBom,
+            encoding,
             cancellationToken);
 
         FileWritePreview preview = BuildFileWritePreview(previousContent, content);
@@ -409,6 +486,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 content: null);
         }
 
+        if (TryGetFileLength(fullPath, out long fileLength) && fileLength > LargeFileThresholdBytes)
+        {
+            await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+            byte[] hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
+            string hash = Convert.ToHexStringLower(hashBytes);
+            return new WorkspaceFileEditState(
+                ToWorkspaceRelativePath(fullPath),
+                exists: true,
+                content: null,
+                contentHash: hash);
+        }
+
         string content = await File.ReadAllTextAsync(
             fullPath,
             Encoding.UTF8,
@@ -435,11 +524,14 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string content = operation.AddLines.Count == 0
             ? string.Empty
             : JoinLines(operation.AddLines, trailingNewLine: true);
+        FileEncodingInfo encoding = new FileEncodingInfo(HasBom: false, NewLine: "\n");
+
+
         EnsureParentDirectory(fullPath);
-        await File.WriteAllTextAsync(
+        await WriteAllTextWithEncodingAsync(
             fullPath,
             content,
-            Utf8NoBom,
+            encoding,
             cancellationToken);
 
         return CreatePatchFileResult(
@@ -478,6 +570,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string currentFullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
         EnsurePathNotIgnored(currentFullPath, isDirectory: false, ignoreMatcher);
+        FileEncodingInfo encoding = DetectFileEncoding(currentFullPath);
         string previousContent = await File.ReadAllTextAsync(
             currentFullPath,
             Encoding.UTF8,
@@ -501,10 +594,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         EnsureParentDirectory(destinationFullPath);
 
-        await File.WriteAllTextAsync(
+        await WriteAllTextWithEncodingAsync(
             destinationFullPath,
             updatedContent,
-            Utf8NoBom,
+            encoding,
             cancellationToken);
 
         if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
@@ -561,28 +654,570 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             .ToArray();
     }
 
-    private IReadOnlyList<string> SearchFilesManaged(
+    private WorkspaceFileSearchPage SearchFilesManaged(
         WorkspaceFileSearchRequest request,
+        string effectiveMode,
         string fullPath,
         WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        StringComparison comparison = request.CaseSensitive
-            ? StringComparison.Ordinal
-            : StringComparison.OrdinalIgnoreCase;
+        bool searchPathIsDirectory = Directory.Exists(fullPath);
+        bool searchPathExists = File.Exists(fullPath) || searchPathIsDirectory;
+        if (searchPathExists &&
+            !string.Equals(ToWorkspaceRelativePath(fullPath), ".", StringComparison.Ordinal) &&
+            !ShouldIncludeSearchPath(
+                ToWorkspaceRelativePath(fullPath),
+                fullPath,
+                searchPathIsDirectory,
+                request,
+                ignoreMatcher))
+        {
+            int initialOffset = GetSearchOffset(request);
+            return new WorkspaceFileSearchPage([], initialOffset, Math.Clamp(request.Limit, 1, MaxFileSearchResults), 0, false, null);
+        }
 
         IEnumerable<string> files = File.Exists(fullPath)
             ? [fullPath]
             : Directory.Exists(fullPath)
-                ? EnumerateFilesSafely(fullPath, recursive: true, ignoreMatcher)
+                ? EnumerateSearchFiles(fullPath, request, ignoreMatcher)
                 : throw new FileNotFoundException(
                     $"Search path '{request.Path ?? "."}' does not exist.");
 
-        return files
-            .OrderBy(static path => path, StringComparer.Ordinal)
-            .Select(filePath => ToWorkspaceRelativePath(filePath))
-            .Where(relativePath => relativePath.Contains(request.Query, comparison))
-            .Take(MaxFileSearchResults)
+        List<WorkspaceFileSearchMatch> matches = files
+            .Select(filePath => CreateSearchMatch(request, effectiveMode, filePath, ignoreMatcher))
+            .Where(static match => match is not null)
+            .Select(static match => match!)
+            .OrderByDescending(static match => match.Score)
+            .ThenBy(static match => match.Path, StringComparer.Ordinal)
+            .ToList();
+
+        int limit = Math.Clamp(request.Limit, 1, MaxFileSearchResults);
+        int offset = GetSearchOffset(request);
+        if (offset > matches.Count)
+        {
+            offset = matches.Count;
+        }
+
+        WorkspaceFileSearchMatch[] pageMatches = matches
+            .Skip(offset)
+            .Take(limit)
             .ToArray();
+        bool hasMore = offset + pageMatches.Length < matches.Count;
+
+        return new WorkspaceFileSearchPage(
+            pageMatches,
+            offset,
+            limit,
+            matches.Count,
+            hasMore,
+            hasMore
+                ? EncodeSearchCursor(offset + pageMatches.Length)
+                : null);
+    }
+
+    private WorkspaceFileSearchMatch? CreateSearchMatch(
+        WorkspaceFileSearchRequest request,
+        string effectiveMode,
+        string filePath,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        string relativePath = ToWorkspaceRelativePath(filePath);
+        if (!ShouldIncludeSearchPath(relativePath, filePath, isDirectory: false, request, ignoreMatcher))
+        {
+            return null;
+        }
+
+        return TryMatchSearchPath(request, effectiveMode, relativePath);
+    }
+
+    private static WorkspaceFileSearchMatch? TryMatchSearchPath(
+        WorkspaceFileSearchRequest request,
+        string mode,
+        string relativePath)
+    {
+        return mode switch
+        {
+            WorkspaceFileSearchModes.Fuzzy => TryGetFuzzySearchMatch(relativePath, request.Query, request.CaseSensitive),
+            WorkspaceFileSearchModes.Exact => TryGetExactSearchMatch(relativePath, request.Query, request.CaseSensitive),
+            WorkspaceFileSearchModes.Regex => TryGetRegexSearchMatch(relativePath, request.Query, request.CaseSensitive, request.WholeWord),
+            WorkspaceFileSearchModes.GlobOnly => CreateGlobOnlySearchMatch(relativePath),
+            _ => TryGetSubstringSearchMatch(relativePath, request.Query, request.CaseSensitive, request.WholeWord)
+        };
+    }
+
+    private bool ShouldIncludeSearchPath(
+        string relativePath,
+        string fullPath,
+        bool isDirectory,
+        WorkspaceFileSearchRequest request,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        if (!request.IncludeIgnored &&
+            ignoreMatcher.IsIgnored(fullPath, isDirectory))
+        {
+            return false;
+        }
+
+        if (!request.IncludeHidden &&
+            IsHiddenPath(relativePath, fullPath, isDirectory))
+        {
+            return false;
+        }
+
+        if (!request.IncludeGenerated &&
+            IsGeneratedOrVendorPath(relativePath))
+        {
+            return false;
+        }
+
+        IReadOnlyList<string> includeGlobs = GetEffectiveIncludeGlobs(request);
+        if (!isDirectory &&
+            includeGlobs.Count > 0 &&
+            !includeGlobs.Any(glob => WorkspaceIgnoreMatcher.MatchesGlob(glob, relativePath, isDirectory)))
+        {
+            return false;
+        }
+
+        if (request.ExcludeGlobs?.Count > 0 &&
+            request.ExcludeGlobs.Any(glob => WorkspaceIgnoreMatcher.MatchesGlob(glob, relativePath, isDirectory)))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private static IReadOnlyList<string> GetEffectiveIncludeGlobs(WorkspaceFileSearchRequest request)
+    {
+        if (request.IncludeGlobs?.Count > 0)
+        {
+            return request.IncludeGlobs;
+        }
+
+        return string.IsNullOrWhiteSpace(request.Glob)
+            ? []
+            : [request.Glob];
+    }
+
+    private static string GetEffectiveSearchMode(WorkspaceFileSearchRequest request)
+    {
+        if (request.Regex &&
+            (string.IsNullOrWhiteSpace(request.Mode) ||
+             string.Equals(request.Mode, WorkspaceFileSearchModes.Substring, StringComparison.Ordinal)))
+        {
+            return WorkspaceFileSearchModes.Regex;
+        }
+
+        if (request.Fuzzy &&
+            (string.IsNullOrWhiteSpace(request.Mode) ||
+             string.Equals(request.Mode, WorkspaceFileSearchModes.Substring, StringComparison.Ordinal)))
+        {
+            return WorkspaceFileSearchModes.Fuzzy;
+        }
+
+        return string.IsNullOrWhiteSpace(request.Mode)
+            ? WorkspaceFileSearchModes.Substring
+            : request.Mode;
+    }
+
+    private IEnumerable<string> EnumerateSearchFiles(
+        string root,
+        WorkspaceFileSearchRequest request,
+        WorkspaceIgnoreMatcher ignoreMatcher)
+    {
+        Stack<string> pendingDirectories = new();
+        pendingDirectories.Push(root);
+
+        while (pendingDirectories.Count > 0)
+        {
+            string directoryPath = pendingDirectories.Pop();
+            string[] entries;
+            try
+            {
+                entries = Directory.GetFileSystemEntries(directoryPath);
+            }
+            catch (Exception exception) when (IsFileSystemAccessException(exception))
+            {
+                continue;
+            }
+
+            foreach (string entry in entries)
+            {
+                FileAttributes attributes;
+                try
+                {
+                    attributes = File.GetAttributes(entry);
+                }
+                catch (Exception exception) when (IsFileSystemAccessException(exception))
+                {
+                    continue;
+                }
+
+                bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
+                string relativePath = ToWorkspaceRelativePath(entry);
+                if (!ShouldIncludeSearchPath(relativePath, entry, isDirectory, request, ignoreMatcher))
+                {
+                    continue;
+                }
+
+                if (isDirectory)
+                {
+                    if (!attributes.HasFlag(FileAttributes.ReparsePoint))
+                    {
+                        pendingDirectories.Push(entry);
+                    }
+
+                    continue;
+                }
+
+                yield return entry;
+            }
+        }
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetSubstringSearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive,
+        bool wholeWord)
+    {
+        string fileName = Path.GetFileName(relativePath);
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (wholeWord)
+        {
+            if (ContainsWholeWord(fileName, query, caseSensitive))
+            {
+                return new WorkspaceFileSearchMatch(relativePath, 9_200 - relativePath.Length, "filename_whole_word");
+            }
+
+            if (ContainsWholeWord(relativePath, query, caseSensitive))
+            {
+                return new WorkspaceFileSearchMatch(relativePath, 8_700 - relativePath.Length, "path_whole_word");
+            }
+
+            return null;
+        }
+
+        if (string.Equals(fileName, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 10_000 - relativePath.Length, "filename_exact");
+        }
+
+        if (string.Equals(relativePath, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_500 - relativePath.Length, "path_exact");
+        }
+
+        if (fileName.Contains(query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_000 - relativePath.Length, "filename_contains");
+        }
+
+        if (relativePath.Contains(query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_500 - relativePath.Length, "path_contains");
+        }
+
+        return null;
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetExactSearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive)
+    {
+        string fileName = Path.GetFileName(relativePath);
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (string.Equals(fileName, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 10_000 - relativePath.Length, "filename_exact");
+        }
+
+        if (string.Equals(relativePath, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_500 - relativePath.Length, "path_exact");
+        }
+
+        return null;
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetRegexSearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive,
+        bool wholeWord)
+    {
+        string pattern = wholeWord
+            ? WrapWholeWordPattern(query)
+            : query;
+        Regex regex = new(pattern, GetSearchRegexOptions(caseSensitive));
+        string fileName = Path.GetFileName(relativePath);
+
+        if (regex.IsMatch(fileName))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_900 - relativePath.Length, "filename_regex");
+        }
+
+        if (regex.IsMatch(relativePath))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_400 - relativePath.Length, "path_regex");
+        }
+
+        return null;
+    }
+
+    private static WorkspaceFileSearchMatch CreateGlobOnlySearchMatch(string relativePath)
+    {
+        return new WorkspaceFileSearchMatch(relativePath, 1_000 - relativePath.Length, "glob");
+    }
+
+    private static WorkspaceFileSearchMatch? TryGetFuzzySearchMatch(
+        string relativePath,
+        string query,
+        bool caseSensitive)
+    {
+        string fileName = Path.GetFileName(relativePath);
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+
+        if (string.Equals(fileName, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 10_000 - relativePath.Length, "filename_exact");
+        }
+
+        if (string.Equals(relativePath, query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_500 - relativePath.Length, "path_exact");
+        }
+
+        if (fileName.Contains(query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 9_000 - relativePath.Length, "filename_contains");
+        }
+
+        if (relativePath.Contains(query, comparison))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 8_500 - relativePath.Length, "path_contains");
+        }
+
+        if (TryScoreSubsequence(fileName, query, caseSensitive, out int fileNameScore))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 7_000 + fileNameScore, "filename_subsequence");
+        }
+
+        if (TryScoreSubsequence(relativePath, query, caseSensitive, out int relativePathScore))
+        {
+            return new WorkspaceFileSearchMatch(relativePath, 6_000 + relativePathScore, "path_subsequence");
+        }
+
+        return null;
+    }
+
+    private static bool ContainsWholeWord(
+        string candidate,
+        string query,
+        bool caseSensitive)
+    {
+        if (string.IsNullOrWhiteSpace(candidate) || string.IsNullOrWhiteSpace(query))
+        {
+            return false;
+        }
+
+        Regex regex = new(
+            WrapWholeWordPattern(Regex.Escape(query)),
+            GetSearchRegexOptions(caseSensitive));
+        return regex.IsMatch(candidate);
+    }
+
+    private static string WrapWholeWordPattern(string pattern)
+    {
+        return $@"(?<![\p{{L}}\p{{N}}_])(?:{pattern})(?![\p{{L}}\p{{N}}_])";
+    }
+
+    private static RegexOptions GetSearchRegexOptions(bool caseSensitive)
+    {
+        return caseSensitive
+            ? RegexOptions.CultureInvariant
+            : RegexOptions.CultureInvariant | RegexOptions.IgnoreCase;
+    }
+
+    private static int GetSearchOffset(WorkspaceFileSearchRequest request)
+    {
+        if (!string.IsNullOrWhiteSpace(request.Cursor) &&
+            TryDecodeSearchCursor(request.Cursor, out int cursorOffset))
+        {
+            return cursorOffset;
+        }
+
+        return Math.Max(0, request.Offset);
+    }
+
+    private static string EncodeSearchCursor(int offset)
+    {
+        return Convert.ToBase64String(
+            Encoding.UTF8.GetBytes(offset.ToString(CultureInfo.InvariantCulture)));
+    }
+
+    private static bool TryDecodeSearchCursor(
+        string cursor,
+        out int offset)
+    {
+        offset = 0;
+
+        try
+        {
+            byte[] bytes = Convert.FromBase64String(cursor);
+            string text = Encoding.UTF8.GetString(bytes);
+            return int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out offset) && offset >= 0;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private static bool IsHiddenPath(
+        string relativePath,
+        string fullPath,
+        bool isDirectory)
+    {
+        try
+        {
+            FileAttributes attributes = File.GetAttributes(fullPath);
+            if (attributes.HasFlag(FileAttributes.Hidden))
+            {
+                return true;
+            }
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+        }
+
+        string normalized = relativePath.Replace('\\', '/');
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        int segmentCount = isDirectory ? segments.Length : Math.Max(0, segments.Length - 1);
+        for (int index = 0; index < segments.Length; index++)
+        {
+            if (index < segmentCount &&
+                segments[index].Length > 0 &&
+                segments[index][0] == '.' &&
+                !string.Equals(segments[index], ".", StringComparison.Ordinal) &&
+                !string.Equals(segments[index], "..", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        if (!isDirectory &&
+            segments.Length > 0 &&
+            segments[^1].Length > 0 &&
+            segments[^1][0] == '.' &&
+            !string.Equals(segments[^1], ".", StringComparison.Ordinal) &&
+            !string.Equals(segments[^1], "..", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsGeneratedOrVendorPath(string relativePath)
+    {
+        string normalized = relativePath.Replace('\\', '/');
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string segment in segments)
+        {
+            if (GeneratedDirectoryNames.Contains(segment))
+            {
+                return true;
+            }
+        }
+
+        string fileName = Path.GetFileName(relativePath);
+        return GeneratedFileSuffixes.Any(suffix => fileName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) ||
+            fileName.Contains(".generated.", StringComparison.OrdinalIgnoreCase) ||
+            fileName.Contains(".designer.", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool TryScoreSubsequence(
+        string candidate,
+        string query,
+        bool caseSensitive,
+        out int score)
+    {
+        score = 0;
+        if (string.IsNullOrEmpty(candidate) || string.IsNullOrEmpty(query))
+        {
+            return false;
+        }
+
+        int firstMatchIndex = -1;
+        int previousMatchIndex = -1;
+        int gapPenalty = 0;
+        int consecutiveBonus = 0;
+
+        for (int queryIndex = 0, candidateIndex = 0; queryIndex < query.Length; queryIndex++)
+        {
+            bool found = false;
+            while (candidateIndex < candidate.Length)
+            {
+                if (CharsEqual(candidate[candidateIndex], query[queryIndex], caseSensitive))
+                {
+                    if (firstMatchIndex < 0)
+                    {
+                        firstMatchIndex = candidateIndex;
+                    }
+
+                    if (previousMatchIndex >= 0)
+                    {
+                        if (candidateIndex == previousMatchIndex + 1)
+                        {
+                            consecutiveBonus += 4;
+                        }
+                        else
+                        {
+                            gapPenalty += candidateIndex - previousMatchIndex - 1;
+                        }
+                    }
+
+                    previousMatchIndex = candidateIndex;
+                    candidateIndex++;
+                    found = true;
+                    break;
+                }
+
+                candidateIndex++;
+            }
+
+            if (!found)
+            {
+                score = 0;
+                return false;
+            }
+        }
+
+        score = 500
+            - (firstMatchIndex * 2)
+            - gapPenalty
+            - Math.Max(0, candidate.Length - query.Length)
+            + consecutiveBonus;
+        return true;
+    }
+
+    private static bool CharsEqual(
+        char left,
+        char right,
+        bool caseSensitive)
+    {
+        return caseSensitive
+            ? left == right
+            : char.ToUpperInvariant(left) == char.ToUpperInvariant(right);
     }
 
     private async Task<IReadOnlyList<WorkspaceTextSearchMatch>> SearchTextManagedAsync(
@@ -793,13 +1428,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         bool isDirectory,
         WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        if (!ignoreMatcher.IsIgnored(fullPath, isDirectory))
+        if (!ignoreMatcher.TryGetIgnoreSource(fullPath, isDirectory, out string sourceDisplayPath))
         {
             return;
         }
 
         throw new InvalidOperationException(
-            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by .nanoagent/.nanoignore.");
+            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by {sourceDisplayPath}.");
     }
 
     private string ToWorkspaceRelativePath(string fullPath)
@@ -810,6 +1445,53 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private string GetWorkspaceRoot()
     {
         return Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+    }
+
+    private static FileEncodingInfo DetectFileEncoding(string fullPath)
+    {
+        if (!File.Exists(fullPath))
+        {
+            return new FileEncodingInfo(HasBom: false, NewLine: "\n");
+        }
+
+        byte[] bytes = File.ReadAllBytes(fullPath);
+
+        bool hasBom = bytes.Length >= 3 &&
+                      bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+
+        int start = hasBom ? 3 : 0;
+        bool hasCrlf = false;
+        for (int i = start; i < bytes.Length - 1; i++)
+        {
+            if (bytes[i] == '\r' && bytes[i + 1] == '\n')
+            {
+                hasCrlf = true;
+                break;
+            }
+        }
+
+        return new FileEncodingInfo(hasBom, hasCrlf ? "\r\n" : "\n");
+    }
+
+    private static async Task WriteAllTextWithEncodingAsync(
+        string fullPath,
+        string content,
+        FileEncodingInfo encoding,
+        CancellationToken cancellationToken)
+    {
+        string finalContent = NormalizeNewlines(content, encoding.NewLine);
+        Encoding writeEncoding = encoding.HasBom ? Utf8WithBom : Utf8NoBom;
+        await File.WriteAllTextAsync(fullPath, finalContent, writeEncoding, cancellationToken);
+    }
+
+    private static string NormalizeNewlines(string content, string targetNewLine)
+    {
+        string normalized = content
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        return targetNewLine == "\r\n"
+            ? normalized.Replace("\n", "\r\n", StringComparison.Ordinal)
+            : normalized;
     }
 
     private static void EnsureParentDirectory(string fullPath)
@@ -828,9 +1510,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             throw new FormatException("Patch text must not be empty.");
         }
 
-        string[] lines = StripPatchHeredoc(patch.Trim())
-            .Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace('\r', '\n')
+        string[] lines = NormalizePatchInput(patch)
             .Split('\n', StringSplitOptions.None);
 
         int lineIndex = FindPatchMarker(lines, "*** Begin Patch");
@@ -880,6 +1560,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return new PatchDocument(operations);
+    }
+
+    private static string NormalizePatchInput(string patch)
+    {
+        string normalized = StripPatchHeredoc(StripMarkdownCodeFence(patch).Trim())
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        if (!normalized.Contains("*** Begin Patch", StringComparison.Ordinal) &&
+            LooksLikeUnifiedDiff(normalized))
+        {
+            normalized = ConvertUnifiedDiffToApplyPatch(normalized);
+        }
+
+        return AutoRepairApplyPatchText(normalized);
     }
 
     private static PatchOperation ParseAddFile(
@@ -954,7 +1649,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                !IsPatchOperationBoundary(lines[lineIndex]))
         {
             string line = lines[lineIndex];
-            if (string.IsNullOrWhiteSpace(line))
+            if (line.Length == 0)
             {
                 if (CanSkipBlankUpdatePatchLine(lines, lineIndex, currentHunkLines))
                 {
@@ -1074,7 +1769,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         int nextNonBlankLineIndex = lineIndex + 1;
         while (nextNonBlankLineIndex < lines.Count &&
-               string.IsNullOrWhiteSpace(lines[nextNonBlankLineIndex]))
+               lines[nextNonBlankLineIndex].Length == 0)
         {
             nextNonBlankLineIndex++;
         }
@@ -1119,6 +1814,43 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return string.Join("\n", lines.Skip(1).Take(lines.Length - 2));
     }
 
+    private static string StripMarkdownCodeFence(string patch)
+    {
+        string normalized = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        string[] lines = normalized.Split('\n', StringSplitOptions.None);
+        if (lines.Length < 3)
+        {
+            return patch;
+        }
+
+        int startIndex = 0;
+        while (startIndex < lines.Length && string.IsNullOrWhiteSpace(lines[startIndex]))
+        {
+            startIndex++;
+        }
+
+        int endIndex = lines.Length - 1;
+        while (endIndex >= 0 && string.IsNullOrWhiteSpace(lines[endIndex]))
+        {
+            endIndex--;
+        }
+
+        if (startIndex >= endIndex)
+        {
+            return patch;
+        }
+
+        if (!lines[startIndex].TrimStart().StartsWith("```", StringComparison.Ordinal) ||
+            !string.Equals(lines[endIndex].Trim(), "```", StringComparison.Ordinal))
+        {
+            return patch;
+        }
+
+        return string.Join("\n", lines[(startIndex + 1)..endIndex]);
+    }
+
     private static bool TryReadHeredocMarker(
         string line,
         out string? marker)
@@ -1150,6 +1882,367 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         marker = value;
         return true;
+    }
+
+    private static bool LooksLikeUnifiedDiff(string patch)
+    {
+        string[] lines = patch.Split('\n', StringSplitOptions.None);
+        bool sawOldPath = false;
+        foreach (string rawLine in lines)
+        {
+            string line = rawLine.TrimEnd();
+            if (!sawOldPath)
+            {
+                sawOldPath = line.StartsWith("--- ", StringComparison.Ordinal);
+                continue;
+            }
+
+            if (line.StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            sawOldPath = false;
+        }
+
+        return false;
+    }
+
+    private static string ConvertUnifiedDiffToApplyPatch(string patch)
+    {
+        string[] lines = patch.Split('\n', StringSplitOptions.None);
+        List<string> converted = ["*** Begin Patch"];
+        int index = 0;
+
+        while (index < lines.Length)
+        {
+            string line = lines[index].TrimEnd();
+            if (!line.StartsWith("--- ", StringComparison.Ordinal))
+            {
+                index++;
+                continue;
+            }
+
+            if (index + 1 >= lines.Length ||
+                !lines[index + 1].TrimEnd().StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                throw new FormatException("Unified diff sections must include matching '---' and '+++' headers.");
+            }
+
+            string oldPath = ParseUnifiedDiffPath(lines[index].TrimEnd()["--- ".Length..]);
+            string newPath = ParseUnifiedDiffPath(lines[index + 1].TrimEnd()["+++ ".Length..]);
+            index += 2;
+
+            if (string.Equals(oldPath, "/dev/null", StringComparison.Ordinal))
+            {
+                converted.Add($"*** Add File: {newPath}");
+                while (index < lines.Length && !lines[index].TrimEnd().StartsWith("--- ", StringComparison.Ordinal))
+                {
+                    string hunkLine = lines[index].TrimEnd();
+                    if (hunkLine.StartsWith("@@", StringComparison.Ordinal) ||
+                        hunkLine.Length == 0)
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    if (hunkLine == "\\ No newline at end of file")
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    if (!hunkLine.StartsWith('+') || hunkLine.StartsWith("+++ ", StringComparison.Ordinal))
+                    {
+                        throw new FormatException("Unified diff add-file hunks must contain only added lines.");
+                    }
+
+                    converted.Add(hunkLine);
+                    index++;
+                }
+
+                continue;
+            }
+
+            if (string.Equals(newPath, "/dev/null", StringComparison.Ordinal))
+            {
+                converted.Add($"*** Delete File: {oldPath}");
+                while (index < lines.Length && !lines[index].TrimEnd().StartsWith("--- ", StringComparison.Ordinal))
+                {
+                    index++;
+                }
+
+                continue;
+            }
+
+            converted.Add($"*** Update File: {oldPath}");
+            if (!string.Equals(oldPath, newPath, StringComparison.Ordinal))
+            {
+                converted.Add($"*** Move to: {newPath}");
+            }
+
+            while (index < lines.Length && !lines[index].TrimEnd().StartsWith("--- ", StringComparison.Ordinal))
+            {
+                string hunkLine = lines[index].TrimEnd();
+                if (hunkLine.Length == 0)
+                {
+                    index++;
+                    continue;
+                }
+
+                if (hunkLine.StartsWith("@@", StringComparison.Ordinal))
+                {
+                    converted.Add(ConvertUnifiedDiffHunkHeader(hunkLine));
+                    index++;
+                    continue;
+                }
+
+                if (hunkLine == "\\ No newline at end of file")
+                {
+                    converted.Add(hunkLine);
+                    index++;
+                    continue;
+                }
+
+                if (hunkLine[0] is ' ' or '+' or '-')
+                {
+                    converted.Add(hunkLine);
+                    index++;
+                    continue;
+                }
+
+                index++;
+            }
+        }
+
+        converted.Add("*** End Patch");
+        return string.Join("\n", converted);
+    }
+
+    private static string ParseUnifiedDiffPath(string value)
+    {
+        string trimmed = value.Trim();
+        if (trimmed.Length == 0)
+        {
+            throw new FormatException("Unified diff file headers must include a path.");
+        }
+
+        if (string.Equals(trimmed, "/dev/null", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        int tabIndex = trimmed.IndexOf('\t');
+        if (tabIndex >= 0)
+        {
+            trimmed = trimmed[..tabIndex];
+        }
+
+        if (trimmed.Length >= 2 &&
+            ((trimmed[0] == '"' && trimmed[^1] == '"') ||
+             (trimmed[0] == '\'' && trimmed[^1] == '\'')))
+        {
+            trimmed = trimmed[1..^1];
+        }
+
+        if (trimmed.StartsWith("a/", StringComparison.Ordinal) ||
+            trimmed.StartsWith("b/", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[2..];
+        }
+
+        return trimmed;
+    }
+
+    private static string ConvertUnifiedDiffHunkHeader(string line)
+    {
+        int closingIndex = line.IndexOf("@@", 2, StringComparison.Ordinal);
+        if (closingIndex < 0)
+        {
+            return "@@";
+        }
+
+        string trailing = line[(closingIndex + 2)..].Trim();
+        return trailing.Length == 0
+            ? "@@"
+            : $"@@ {trailing}";
+    }
+
+    private static string AutoRepairApplyPatchText(string patch)
+    {
+        string[] lines = patch.Split('\n', StringSplitOptions.None);
+        List<string> repaired = new(lines.Length + 4);
+        PatchOperationKind? currentOperation = null;
+        bool insideUpdateHunk = false;
+
+        for (int index = 0; index < lines.Length; index++)
+        {
+            string line = lines[index];
+
+            if (IsPatchHeader(line, "*** Add File:"))
+            {
+                currentOperation = PatchOperationKind.Add;
+                insideUpdateHunk = false;
+                repaired.Add(line);
+                continue;
+            }
+
+            if (IsPatchHeader(line, "*** Delete File:"))
+            {
+                currentOperation = PatchOperationKind.Delete;
+                insideUpdateHunk = false;
+                repaired.Add(line);
+                continue;
+            }
+
+            if (IsPatchHeader(line, "*** Update File:"))
+            {
+                currentOperation = PatchOperationKind.Update;
+                insideUpdateHunk = false;
+                repaired.Add(line);
+                continue;
+            }
+
+            if (IsPatchHeader(line, "*** Move to:") ||
+                string.Equals(line.Trim(), "*** Begin Patch", StringComparison.Ordinal) ||
+                string.Equals(line.Trim(), "*** End Patch", StringComparison.Ordinal))
+            {
+                repaired.Add(line);
+                continue;
+            }
+
+            if (currentOperation == PatchOperationKind.Add && line.Length == 0)
+            {
+                repaired.Add("+");
+                continue;
+            }
+
+            if (currentOperation == PatchOperationKind.Update)
+            {
+                if (line.StartsWith("@@@", StringComparison.Ordinal))
+                {
+                    line = "@@" + line[3..];
+                }
+
+                if (line.StartsWith("@@", StringComparison.Ordinal))
+                {
+                    insideUpdateHunk = true;
+                    repaired.Add(line);
+                    continue;
+                }
+
+                if (!insideUpdateHunk &&
+                    IsLikelyUpdatePatchContent(line))
+                {
+                    insideUpdateHunk = true;
+                    repaired.Add("@@");
+                }
+
+                if (insideUpdateHunk &&
+                    line.Length == 0 &&
+                    !CanTreatBlankUpdateLineAsSeparator(lines, index))
+                {
+                    repaired.Add(InferBlankUpdateLinePrefix(lines, index));
+                    continue;
+                }
+            }
+
+            repaired.Add(line);
+        }
+
+        return string.Join("\n", repaired);
+    }
+
+    private static bool IsLikelyUpdatePatchContent(string line)
+    {
+        if (line.Length == 0)
+        {
+            return false;
+        }
+
+        if (line[0] is ' ' or '+' or '-' ||
+            string.Equals(line, "\\ No newline at end of file", StringComparison.Ordinal) ||
+            string.Equals(line, "*** End of File", StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static string InferBlankUpdateLinePrefix(
+        IReadOnlyList<string> lines,
+        int lineIndex)
+    {
+        char? previousPrefix = FindNearbyPatchPrefix(lines, lineIndex, searchBackward: true);
+        char? nextPrefix = FindNearbyPatchPrefix(lines, lineIndex, searchBackward: false);
+
+        if (previousPrefix.HasValue && nextPrefix.HasValue && previousPrefix.Value == nextPrefix.Value)
+        {
+            return previousPrefix.Value.ToString();
+        }
+
+        if (previousPrefix.HasValue)
+        {
+            return previousPrefix.Value.ToString();
+        }
+
+        if (nextPrefix.HasValue)
+        {
+            return nextPrefix.Value.ToString();
+        }
+
+        return " ";
+    }
+
+    private static bool CanTreatBlankUpdateLineAsSeparator(
+        IReadOnlyList<string> lines,
+        int lineIndex)
+    {
+        int nextIndex = lineIndex + 1;
+        while (nextIndex < lines.Count && lines[nextIndex].Length == 0)
+        {
+            nextIndex++;
+        }
+
+        if (nextIndex >= lines.Count)
+        {
+            return true;
+        }
+
+        string nextLine = lines[nextIndex];
+        return nextLine.StartsWith("@@", StringComparison.Ordinal) ||
+               IsPatchOperationBoundary(nextLine);
+    }
+
+    private static char? FindNearbyPatchPrefix(
+        IReadOnlyList<string> lines,
+        int lineIndex,
+        bool searchBackward)
+    {
+        int index = lineIndex + (searchBackward ? -1 : 1);
+        while (index >= 0 && index < lines.Count)
+        {
+            string candidate = lines[index];
+            if (candidate.Length == 0)
+            {
+                index += searchBackward ? -1 : 1;
+                continue;
+            }
+
+            if (candidate.StartsWith("@@", StringComparison.Ordinal) ||
+                IsPatchOperationBoundary(candidate) ||
+                IsPatchHeader(candidate, "*** Move to:"))
+            {
+                return null;
+            }
+
+            return candidate[0] is ' ' or '+' or '-'
+                ? candidate[0]
+                : null;
+        }
+
+        return null;
     }
 
     private static int FindPatchMarker(
@@ -1210,7 +2303,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             int? changeContextIndex = null;
             if (!string.IsNullOrWhiteSpace(hunk.ChangeContext))
             {
-                int contextIndex = SeekSequence(
+                int contextIndex = FindFirstSequenceMatch(
                     originalLines,
                     [hunk.ChangeContext],
                     searchStart,
@@ -1250,13 +2343,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                                      string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
                 ? changeContextIndex.Value
                 : searchStart;
-            int matchIndex = SeekSequence(
+            PatchSequenceSearchResult match = FindUniqueSequenceMatch(
                 originalLines,
                 pattern,
                 patternSearchStart,
                 hunk.IsEndOfFile);
 
-            if (matchIndex < 0 &&
+            if (match.Status == PatchSequenceSearchStatus.NotFound &&
                 pattern.Length > 0 &&
                 pattern[^1].Length == 0)
             {
@@ -1266,21 +2359,48 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     replacementLines = replacementLines[..^1];
                 }
 
-                matchIndex = SeekSequence(
+                match = FindUniqueSequenceMatch(
                     originalLines,
                     pattern,
                     patternSearchStart,
                     hunk.IsEndOfFile);
             }
 
-            if (matchIndex < 0)
+            if (match.Status == PatchSequenceSearchStatus.NotFound)
             {
-                throw new InvalidOperationException(
-                    $"Could not apply the requested patch because the target context was not found in '{path}'.");
+                PatchRetryMatch? retryMatch = TryFindRetryMatch(
+                    originalLines,
+                    hunk,
+                    patternSearchStart,
+                    hunk.IsEndOfFile);
+                if (retryMatch is not null)
+                {
+                    replacements.Add(new PatchReplacement(
+                        retryMatch.Value.StartIndex,
+                        retryMatch.Value.OldLineCount,
+                        retryMatch.Value.NewLines,
+                        hunk));
+                    searchStart = retryMatch.Value.StartIndex + retryMatch.Value.OldLineCount;
+                    continue;
+                }
             }
 
-            replacements.Add(new PatchReplacement(matchIndex, pattern.Length, replacementLines, hunk));
-            searchStart = matchIndex + pattern.Length;
+            if (match.Status == PatchSequenceSearchStatus.NotFound)
+            {
+                throw new InvalidOperationException(
+                    $"Could not apply the requested patch because the target context was not found in '{path}'. " +
+                    $"Tried the full hunk and smaller retry windows near line {patternSearchStart + 1}.");
+            }
+
+            if (match.Status == PatchSequenceSearchStatus.Ambiguous)
+            {
+                throw new InvalidOperationException(
+                    $"Could not apply the requested patch because it matched multiple locations in '{path}' " +
+                    $"using {match.MatchStyle}. Candidate starting lines: {DescribeCandidateLines(match.CandidateStartIndexes)}.");
+            }
+
+            replacements.Add(new PatchReplacement(match.StartIndex, pattern.Length, replacementLines, hunk));
+            searchStart = match.StartIndex + pattern.Length;
         }
 
         List<string> currentLines = originalLines.ToList();
@@ -1361,7 +2481,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return trailingNewLine;
     }
 
-    private static int SeekSequence(
+    private static int FindFirstSequenceMatch(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
         int startIndex,
@@ -1395,6 +2515,63 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return -1;
     }
 
+    private static PatchSequenceSearchResult FindUniqueSequenceMatch(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        int startIndex,
+        bool endOfFile)
+    {
+        if (target.Count == 0)
+        {
+            return new PatchSequenceSearchResult(
+                PatchSequenceSearchStatus.NotFound,
+                -1,
+                string.Empty,
+                []);
+        }
+
+        (string Name, Func<string, string, bool> Comparer)[] comparers =
+        [
+            ("exact text", static (left, right) => string.Equals(left, right, StringComparison.Ordinal)),
+            ("trimmed line endings", static (left, right) => string.Equals(left.TrimEnd(), right.TrimEnd(), StringComparison.Ordinal)),
+            ("trimmed whitespace", static (left, right) => string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal)),
+            ("normalized punctuation", static (left, right) => string.Equals(
+                NormalizePatchMatchText(left.Trim()),
+                NormalizePatchMatchText(right.Trim()),
+                StringComparison.Ordinal))
+        ];
+
+        foreach ((string name, Func<string, string, bool> comparer) in comparers)
+        {
+            int[] matches = FindAllSequenceMatches(source, target, startIndex, endOfFile, comparer);
+            if (matches.Length == 0)
+            {
+                continue;
+            }
+
+            if (matches.Length == 1)
+            {
+                return new PatchSequenceSearchResult(
+                    PatchSequenceSearchStatus.Matched,
+                    matches[0],
+                    name,
+                    matches);
+            }
+
+            return new PatchSequenceSearchResult(
+                PatchSequenceSearchStatus.Ambiguous,
+                -1,
+                name,
+                matches);
+        }
+
+        return new PatchSequenceSearchResult(
+            PatchSequenceSearchStatus.NotFound,
+            -1,
+            string.Empty,
+            []);
+    }
+
     private static int TryMatchSequence(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
@@ -1421,6 +2598,36 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return -1;
+    }
+
+    private static int[] FindAllSequenceMatches(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        int startIndex,
+        bool endOfFile,
+        Func<string, string, bool> comparer)
+    {
+        List<int> matches = [];
+        if (endOfFile)
+        {
+            int fromEndIndex = source.Count - target.Count;
+            if (fromEndIndex >= Math.Max(0, startIndex) &&
+                SequenceMatches(source, target, fromEndIndex, comparer))
+            {
+                matches.Add(fromEndIndex);
+                return matches.ToArray();
+            }
+        }
+
+        for (int index = Math.Max(0, startIndex); index <= source.Count - target.Count; index++)
+        {
+            if (SequenceMatches(source, target, index, comparer))
+            {
+                matches.Add(index);
+            }
+        }
+
+        return matches.ToArray();
     }
 
     private static bool SequenceMatches(
@@ -1548,6 +2755,111 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return -1;
     }
 
+    private static PatchRetryMatch? TryFindRetryMatch(
+        IReadOnlyList<string> originalLines,
+        PatchHunk hunk,
+        int searchStart,
+        bool endOfFile)
+    {
+        (string[] BeforeLines, string[] AfterLines)[] retryWindows =
+        [
+            BuildRetryWindow(hunk, includeLeadingAndTrailingContext: false),
+            BuildRetryWindow(hunk, removalsOnly: true)
+        ];
+
+        foreach ((string[] beforeRetry, string[] afterRetry) in retryWindows)
+        {
+            if (beforeRetry.Length == 0)
+            {
+                continue;
+            }
+
+            PatchSequenceSearchResult retryMatch = FindUniqueSequenceMatch(
+                originalLines,
+                beforeRetry,
+                searchStart,
+                endOfFile);
+            if (retryMatch.Status == PatchSequenceSearchStatus.Matched)
+            {
+                return new PatchRetryMatch(
+                    retryMatch.StartIndex,
+                    beforeRetry.Length,
+                    afterRetry,
+                    retryMatch.MatchStyle);
+            }
+        }
+
+        return null;
+    }
+
+    private static (string[] BeforeLines, string[] AfterLines) BuildRetryWindow(
+        PatchHunk hunk,
+        bool includeLeadingAndTrailingContext = true,
+        bool removalsOnly = false)
+    {
+        IReadOnlyList<PatchLine> workingLines = hunk.Lines;
+        if (!includeLeadingAndTrailingContext)
+        {
+            int firstChangedIndex = -1;
+            int lastChangedIndex = -1;
+            for (int index = 0; index < workingLines.Count; index++)
+            {
+                if (workingLines[index].Kind != PatchLineKind.Context)
+                {
+                    firstChangedIndex = index;
+                    break;
+                }
+            }
+
+            for (int index = workingLines.Count - 1; index >= 0; index--)
+            {
+                if (workingLines[index].Kind != PatchLineKind.Context)
+                {
+                    lastChangedIndex = index;
+                    break;
+                }
+            }
+
+            if (firstChangedIndex >= 0 && lastChangedIndex >= firstChangedIndex)
+            {
+                workingLines = workingLines
+                    .Skip(firstChangedIndex)
+                    .Take(lastChangedIndex - firstChangedIndex + 1)
+                    .ToArray();
+            }
+        }
+
+        string[] beforeLines = removalsOnly
+            ? workingLines
+                .Where(static line => line.Kind == PatchLineKind.Removal)
+                .Select(static line => line.Text)
+                .ToArray()
+            : workingLines
+                .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+                .Select(static line => line.Text)
+                .ToArray();
+        string[] afterLines = removalsOnly
+            ? workingLines
+                .Where(static line => line.Kind == PatchLineKind.Addition)
+                .Select(static line => line.Text)
+                .ToArray()
+            : workingLines
+                .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
+                .Select(static line => line.Text)
+                .ToArray();
+        return (beforeLines, afterLines);
+    }
+
+    private static string DescribeCandidateLines(
+        IReadOnlyList<int> candidateIndexes)
+    {
+        return string.Join(
+            ", ",
+            candidateIndexes
+                .Take(4)
+                .Select(static index => (index + 1).ToString(CultureInfo.InvariantCulture)));
+    }
+
     private static string JoinLines(
         IEnumerable<string> lines,
         bool trailingNewLine)
@@ -1558,22 +2870,69 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : content;
     }
 
+    private static string ComputeContentHash(string content)
+    {
+        byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
+        return Convert.ToHexStringLower(hashBytes);
+    }
+
+    private static bool IsLargeContent(string? content)
+    {
+        return content?.Length > ContentPreviewThresholdChars;
+    }
+
+
     private static string[] GetTrackedPatchPaths(PatchDocument document)
     {
-        StringComparer pathComparer = WorkspacePath.GetPathComparer();
-        return document.Operations
-            .SelectMany(static operation => operation.MoveToPath is null
-                ? [operation.Path]
-                : new[] { operation.Path, operation.MoveToPath })
-            .Where(static path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(pathComparer)
-            .ToArray();
+        HashSet<string> paths = new(WorkspacePath.GetPathComparer());
+        foreach (PatchOperation op in document.Operations)
+        {
+            paths.Add(op.Path);
+            if (op.MoveToPath is not null)
+            {
+                paths.Add(op.MoveToPath);
+            }
+        }
+        return paths.ToArray();
+    }
+
+    private async Task<string[]> FilterLargeFilePathsAsync(
+        string[] paths,
+        CancellationToken cancellationToken)
+    {
+        List<string> filtered = [];
+        foreach (string path in paths)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+                if (!File.Exists(fullPath) || !TryGetFileLength(fullPath, out long length) || length <= LargeFileThresholdBytes)
+                {
+                    filtered.Add(path);
+                }
+            }
+            catch
+            {
+                filtered.Add(path);
+            }
+        }
+        return filtered.ToArray();
     }
 
     private static FileWritePreview BuildFileWritePreview(
         string? previousContent,
         string currentContent)
     {
+        if (IsLargeContent(previousContent) || IsLargeContent(currentContent))
+        {
+            string[] prevLines = SplitLines(previousContent);
+            string[] currLines = SplitLines(currentContent);
+            int added = Math.Max(0, currLines.Length - (prevLines?.Length ?? 0));
+            int removed = Math.Max(0, (prevLines?.Length ?? 0) - currLines.Length);
+            return new FileWritePreview(added, removed, [], 0);
+        }
+
         string[] currentLines = SplitLines(currentContent);
         IReadOnlyList<PreviewDiffLine> diffLines = previousContent is null
             ? currentLines
@@ -1746,11 +3105,30 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         IReadOnlyList<string> NewLines,
         PatchHunk Hunk);
 
+    private readonly record struct PatchRetryMatch(
+        int StartIndex,
+        int OldLineCount,
+        IReadOnlyList<string> NewLines,
+        string MatchStyle);
+
+    private readonly record struct PatchSequenceSearchResult(
+        PatchSequenceSearchStatus Status,
+        int StartIndex,
+        string MatchStyle,
+        IReadOnlyList<int> CandidateStartIndexes);
+
     private enum PatchOperationKind
     {
         Add = 0,
         Delete = 1,
         Update = 2
+    }
+
+    private enum PatchSequenceSearchStatus
+    {
+        NotFound = 0,
+        Matched = 1,
+        Ambiguous = 2
     }
 
     private enum PatchLineKind
