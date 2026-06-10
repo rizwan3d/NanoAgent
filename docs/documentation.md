@@ -1086,7 +1086,7 @@ NanoAgent stores reusable workspace lessons in:
 .nanoagent/memory/lessons.jsonl
 ```
 
-Lessons help NanoAgent avoid repeating local mistakes. Memory is local, redacted by default, and write operations require approval unless policy is changed.
+Lessons help NanoAgent avoid repeating local mistakes. When lesson memory is enabled for a workspace, NanoAgent can inject relevant lessons into prompts automatically, and automatic tool-failure observation can turn repeated failures and their later fixes into reusable lessons. Memory is local, redacted by default, and write operations require approval unless policy is changed.
 
 ### Tool Audit
 
