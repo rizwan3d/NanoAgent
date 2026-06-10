@@ -199,6 +199,23 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 case "text_search":
                     AddNamedArgumentLine(root, lines, "query");
                     AddNamedArgumentLine(root, lines, "path");
+                    if (string.Equals(toolCall.Name, "search_files", StringComparison.Ordinal))
+                    {
+                        AddNamedArgumentLine(root, lines, "mode");
+                        AddNamedArgumentLine(root, lines, "caseSensitive");
+                        AddNamedArgumentLine(root, lines, "regex");
+                        AddNamedArgumentLine(root, lines, "wholeWord");
+                        AddNamedArgumentLine(root, lines, "glob");
+                        AddNamedArgumentLine(root, lines, "includeGlobs");
+                        AddNamedArgumentLine(root, lines, "excludeGlobs");
+                        AddNamedArgumentLine(root, lines, "fuzzy");
+                        AddNamedArgumentLine(root, lines, "offset");
+                        AddNamedArgumentLine(root, lines, "cursor");
+                        AddNamedArgumentLine(root, lines, "includeHidden");
+                        AddNamedArgumentLine(root, lines, "includeGenerated");
+                        AddNamedArgumentLine(root, lines, "includeIgnored");
+                        AddNamedArgumentLine(root, lines, "limit");
+                    }
                     break;
 
                 case "file_write":
@@ -793,7 +810,28 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             }
 
             TryGetJsonString(root, "Path", out string path);
-            List<string> matches = [];
+            TryGetJsonString(root, "Glob", out string glob);
+            TryGetJsonBoolean(root, "Fuzzy", out bool fuzzy);
+            TryGetJsonString(root, "Mode", out string mode);
+            TryGetJsonBoolean(root, "WholeWord", out bool wholeWord);
+            TryGetJsonBoolean(root, "CaseSensitive", out bool caseSensitive);
+            TryGetJsonBoolean(root, "IncludeHidden", out bool includeHidden);
+            TryGetJsonBoolean(root, "IncludeGenerated", out bool includeGenerated);
+            TryGetJsonBoolean(root, "IncludeIgnored", out bool includeIgnored);
+            TryGetJsonBoolean(root, "HasMore", out bool hasMore);
+            TryGetJsonInt32(root, "Limit", out int limit);
+            TryGetJsonInt32(root, "Offset", out int offset);
+            TryGetJsonInt32(root, "TotalMatchCount", out int totalMatchCount);
+            TryGetJsonString(root, "NextCursor", out string nextCursor);
+            string effectiveMode = !string.IsNullOrWhiteSpace(mode)
+                ? mode
+                : fuzzy
+                    ? "fuzzy"
+                    : "substring";
+            string searchLabel = string.IsNullOrWhiteSpace(query)
+                ? $"{effectiveMode} search"
+                : $"\"{query}\"";
+            List<SearchFileMatchDisplayResult> matches = [];
             foreach (JsonElement matchElement in matchesElement.EnumerateArray())
             {
                 if (matchElement.ValueKind == JsonValueKind.String)
@@ -801,10 +839,19 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                     string? match = matchElement.GetString()?.Trim();
                     if (!string.IsNullOrWhiteSpace(match))
                     {
-                        matches.Add(match);
+                        matches.Add(new SearchFileMatchDisplayResult(match, null, string.Empty));
                     }
                 }
-            }
+                else if (matchElement.ValueKind == JsonValueKind.Object &&
+                         TryGetJsonString(matchElement, "Path", out string matchPath))
+                {
+                    int? score = TryGetJsonInt32(matchElement, "Score", out int parsedScore)
+                        ? parsedScore
+                        : null;
+                    TryGetJsonString(matchElement, "MatchKind", out string matchKind);
+                    matches.Add(new SearchFileMatchDisplayResult(matchPath, score, matchKind));
+                    }
+                }
 
             StringBuilder builder = new();
             builder
@@ -812,10 +859,50 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 .Append(" Found ")
                 .Append(matches.Count)
                 .Append(matches.Count == 1 ? " file" : " files")
-                .Append(" for \"")
-                .Append(query)
-                .Append("\" in ")
+                .Append(" for ")
+                .Append(searchLabel)
+                .Append(" in ")
                 .Append(string.IsNullOrWhiteSpace(path) ? "." : path);
+
+            builder
+                .Append(" (limit ")
+                .Append(limit > 0 ? limit : 200)
+                .Append(", offset ")
+                .Append(Math.Max(0, offset))
+                .Append(", mode ")
+                .Append(effectiveMode)
+                .Append(", caseSensitive ")
+                .Append(caseSensitive ? "true" : "false")
+                .Append(", wholeWord ")
+                .Append(wholeWord ? "true" : "false");
+
+            if (!string.IsNullOrWhiteSpace(glob))
+            {
+                builder
+                    .Append(", glob ")
+                    .Append(glob);
+            }
+
+            if (includeHidden)
+            {
+                builder.Append(", includeHidden true");
+            }
+
+            if (includeGenerated)
+            {
+                builder.Append(", includeGenerated true");
+            }
+
+            if (includeIgnored)
+            {
+                builder.Append(", includeIgnored true");
+            }
+
+            builder
+                .Append(", hasMore ")
+                .Append(hasMore ? "true" : "false");
+
+            builder.Append(')');
 
             if (matches.Count == 0)
             {
@@ -827,10 +914,32 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             int displayedMatchCount = Math.Min(MaxToolPreviewLines, matches.Count);
             for (int index = 0; index < displayedMatchCount; index++)
             {
+                SearchFileMatchDisplayResult match = matches[index];
                 builder
                     .AppendLine()
                     .Append("  - ")
-                    .Append(matches[index]);
+                    .Append(match.Path);
+
+                if (match.Score.HasValue || !string.IsNullOrWhiteSpace(match.MatchKind))
+                {
+                    builder.Append(" (");
+                    if (match.Score.HasValue)
+                    {
+                        builder.Append("score ").Append(match.Score.Value);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(match.MatchKind))
+                    {
+                        if (match.Score.HasValue)
+                        {
+                            builder.Append(", ");
+                        }
+
+                        builder.Append(match.MatchKind);
+                    }
+
+                    builder.Append(')');
+                }
             }
 
             if (matches.Count > displayedMatchCount)
@@ -840,6 +949,22 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                     .Append("    ... +")
                     .Append(matches.Count - displayedMatchCount)
                     .Append(" files");
+            }
+
+            if (hasMore && !string.IsNullOrWhiteSpace(nextCursor))
+            {
+                builder
+                    .AppendLine()
+                    .Append("  - nextCursor: ")
+                    .Append(nextCursor);
+            }
+
+            if (totalMatchCount > 0)
+            {
+                builder
+                    .AppendLine()
+                    .Append("  - total matches: ")
+                    .Append(totalMatchCount);
             }
 
             message = builder.ToString();
@@ -1515,6 +1640,27 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             property.TryGetInt32(out value);
     }
 
+    private static bool TryGetJsonBoolean(
+        JsonElement element,
+        string propertyName,
+        out bool value)
+    {
+        value = false;
+
+        if (!TryGetJsonProperty(element, propertyName, out JsonElement property))
+        {
+            return false;
+        }
+
+        if (property.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+        {
+            return false;
+        }
+
+        value = property.GetBoolean();
+        return true;
+    }
+
     private static bool TryGetJsonProperty(
         JsonElement element,
         string propertyName,
@@ -1620,6 +1766,11 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         string Path,
         int LineNumber,
         string LineText);
+
+    private readonly record struct SearchFileMatchDisplayResult(
+        string Path,
+        int? Score,
+        string MatchKind);
 
     private readonly record struct ShellCommandDisplayResult(
         string Command,

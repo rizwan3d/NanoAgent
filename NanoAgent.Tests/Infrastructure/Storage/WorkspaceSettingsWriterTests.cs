@@ -104,6 +104,38 @@ public sealed class WorkspaceSettingsWriterTests : IDisposable
         root["Application"]!["Telemetry"]!["Enabled"]!.GetValue<bool>().Should().BeFalse();
     }
 
+    [Fact]
+    public async Task SaveMemorySettingsAsync_Should_WriteMemorySettingsToWorkspaceProfile()
+    {
+        WorkspaceSettingsWriter sut = new();
+        MemorySettings settings = new()
+        {
+            AllowAutoFailureObservation = false,
+            AllowAutoManualLessons = false,
+            Disabled = false,
+            LessonsEnabled = true,
+            MaxEntries = 250,
+            MaxPromptChars = 6000,
+            RedactSecrets = true,
+            RequireApprovalForWrites = true
+        };
+
+        await sut.SaveMemorySettingsAsync(
+            _workspaceRoot,
+            settings,
+            CancellationToken.None);
+
+        JsonObject memory = ReadProfile()["memory"]!.AsObject();
+        memory["allowAutoFailureObservation"]!.GetValue<bool>().Should().BeFalse();
+        memory["allowAutoManualLessons"]!.GetValue<bool>().Should().BeFalse();
+        memory["disabled"]!.GetValue<bool>().Should().BeFalse();
+        memory["lessonsEnabled"]!.GetValue<bool>().Should().BeTrue();
+        memory["maxEntries"]!.GetValue<int>().Should().Be(250);
+        memory["maxPromptChars"]!.GetValue<int>().Should().Be(6000);
+        memory["redactSecrets"]!.GetValue<bool>().Should().BeTrue();
+        memory["requireApprovalForWrites"]!.GetValue<bool>().Should().BeTrue();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

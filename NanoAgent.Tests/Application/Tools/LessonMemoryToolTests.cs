@@ -113,7 +113,11 @@ public sealed class LessonMemoryToolTests
     {
         return new WorkspaceLessonMemoryService(
             new FixedWorkspaceRootProvider(workspacePath),
-            TimeProvider.System);
+            TimeProvider.System,
+            new MemorySettings
+            {
+                LessonsEnabled = true
+            });
     }
 
     private static ToolExecutionContext CreateContext(string argumentsJson)

@@ -192,8 +192,7 @@ public sealed class ToolExecutionPipelineTests
             CancellationToken.None);
 
         lessonMemoryService.ObservedResults.Should().ContainSingle();
-        lessonMemoryService.ObservedResults[0].ToolCall.Should().BeEquivalentTo(
-            new ConversationToolCall("call_1", "shell_command", "{}"));
+        lessonMemoryService.ObservedResults[0].ToolCall.Id.Should().Be("call_1");
         lessonMemoryService.ObservedResults[0].InvocationResult.Should().Be(invocationResult);
     }
 

@@ -310,7 +310,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
             cancellationToken);
         bool includeLessonsJournal = await ConfirmAsync(
             "Add local lessons journal?",
-            "Creates .nanoagent/memory/lessons.jsonl for reusable local lessons. It is gitignored by default.",
+            "Creates .nanoagent/memory/lessons.jsonl for reusable local lessons. It is off by default, gitignored by default, and can later be injected automatically into prompts when enabled.",
             defaultValue: true,
             cancellationToken);
         bool includeAgentTemplate = await ConfirmAsync(
@@ -594,8 +594,9 @@ internal sealed class InitCommandHandler : IReplCommandHandler
           },
           "memory": {
             "requireApprovalForWrites": true,
-            "allowAutoFailureObservation": true,
+            "allowAutoFailureObservation": false,
             "allowAutoManualLessons": false,
+            "lessonsEnabled": false,
             "redactSecrets": true,
             "maxEntries": 500,
             "maxPromptChars": 12000,
@@ -626,7 +627,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         - `skills/**/SKILL.md`: workspace skills. Template files are inactive until renamed to `SKILL.md`.
         - `cache/codebase-index.json`: local codebase index cache created by the `codebase_index` tool.
         - `memory/*.md`: repo-scoped team memory that can be inspected, diffed, and version-controlled.
-        - `memory/lessons.jsonl`: reusable local lessons about mistakes, failures, and fixes.
+        - `memory/lessons.jsonl`: reusable local lessons about mistakes, failures, and fixes. Off by default; when enabled, relevant lessons can be injected automatically into prompts.
         - `logs/tool-audit.jsonl`: optional tool audit log when enabled in `agent-profile.json`.
 
         Memory writes require approval by default. Keep team memory focused on durable architecture, convention, decision, known-issue, and test-strategy notes.

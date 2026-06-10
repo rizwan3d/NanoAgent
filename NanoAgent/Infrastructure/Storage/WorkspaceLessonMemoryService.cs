@@ -54,7 +54,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             throw new InvalidOperationException("Lesson memory is disabled.");
         }
@@ -97,7 +97,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return [];
         }
@@ -137,7 +137,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return [];
         }
@@ -166,7 +166,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return null;
         }
@@ -228,7 +228,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return false;
         }
@@ -261,7 +261,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         string query,
         CancellationToken cancellationToken)
     {
-        if (_settings.Disabled)
+        if (!IsLessonMemoryEnabled())
         {
             return null;
         }
@@ -342,7 +342,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         ArgumentNullException.ThrowIfNull(invocationResult);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (_settings.Disabled ||
+        if (!IsLessonMemoryEnabled() ||
             !_settings.AllowAutoFailureObservation)
         {
             return;
@@ -892,8 +892,24 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
     {
         string query = GetString(arguments, "query") ?? "<missing>";
         string path = GetString(arguments, "path") ?? ".";
+        string mode = GetString(arguments, "mode") ?? (GetBoolean(arguments, "regex") == true
+            ? "regex"
+            : GetBoolean(arguments, "fuzzy") == true
+                ? "fuzzy"
+                : "substring");
         string caseSensitive = FormatBoolean(GetBoolean(arguments, "caseSensitive"), defaultValue: "false");
-        return $"{toolName} query `{query}`, path `{path}`, caseSensitive {caseSensitive}";
+        string wholeWord = FormatBoolean(GetBoolean(arguments, "wholeWord"), defaultValue: "false");
+        string glob = GetString(arguments, "glob") ?? "<none>";
+        string includeGlobs = FormatArray(arguments, "includeGlobs");
+        string excludeGlobs = FormatArray(arguments, "excludeGlobs");
+        string fuzzy = FormatBoolean(GetBoolean(arguments, "fuzzy"), defaultValue: "false");
+        string includeHidden = FormatBoolean(GetBoolean(arguments, "includeHidden"), defaultValue: "false");
+        string includeGenerated = FormatBoolean(GetBoolean(arguments, "includeGenerated"), defaultValue: "false");
+        string includeIgnored = FormatBoolean(GetBoolean(arguments, "includeIgnored"), defaultValue: "false");
+        string offset = GetInt32(arguments, "offset")?.ToString(CultureInfo.InvariantCulture) ?? "0";
+        string cursor = GetString(arguments, "cursor") ?? "<none>";
+        string limit = GetInt32(arguments, "limit")?.ToString(CultureInfo.InvariantCulture) ?? "200";
+        return $"{toolName} query `{query}`, path `{path}`, mode {mode}, caseSensitive {caseSensitive}, wholeWord {wholeWord}, glob `{glob}`, includeGlobs {includeGlobs}, excludeGlobs {excludeGlobs}, fuzzy {fuzzy}, includeHidden {includeHidden}, includeGenerated {includeGenerated}, includeIgnored {includeIgnored}, offset {offset}, cursor `{cursor}`, limit {limit}";
     }
 
     private static string SummarizeShellArguments(JsonElement arguments)
@@ -913,6 +929,29 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             : null;
     }
 
+    private static string FormatArray(
+        JsonElement arguments,
+        string propertyName)
+    {
+        if (!arguments.TryGetProperty(propertyName, out JsonElement value) ||
+            value.ValueKind != JsonValueKind.Array)
+        {
+            return "<none>";
+        }
+
+        string[] items = value
+            .EnumerateArray()
+            .Where(static item => item.ValueKind == JsonValueKind.String)
+            .Select(static item => item.GetString())
+            .Where(static item => !string.IsNullOrWhiteSpace(item))
+            .Cast<string>()
+            .ToArray();
+
+        return items.Length == 0
+            ? "[]"
+            : "[" + string.Join(", ", items) + "]";
+    }
+
     private static bool? GetBoolean(
         JsonElement arguments,
         string propertyName)
@@ -920,6 +959,17 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
         return arguments.TryGetProperty(propertyName, out JsonElement value) &&
                value.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? value.GetBoolean()
+            : null;
+    }
+
+    private static int? GetInt32(
+        JsonElement arguments,
+        string propertyName)
+    {
+        return arguments.TryGetProperty(propertyName, out JsonElement value) &&
+               value.ValueKind == JsonValueKind.Number &&
+               value.TryGetInt32(out int result)
+            ? result
             : null;
     }
 
@@ -1320,6 +1370,11 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             ? 12_000
             : Math.Min(settings.MaxPromptChars, 100_000);
         return settings;
+    }
+
+    private bool IsLessonMemoryEnabled()
+    {
+        return !_settings.Disabled && _settings.LessonsEnabled;
     }
 
     private static string NormalizeKind(string? value)
