@@ -153,6 +153,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 cancellationToken);
             string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
                 baseSystemPrompt,
+                normalizedInput,
                 session,
                 cancellationToken);
             IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
@@ -273,6 +274,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             PlanningModePolicy.CreateExecutionSystemPrompt(
                 await CreateProfileSystemPromptAsync(
                     baseSystemPrompt,
+                    pendingPlan.PlanningSummary,
                     session,
                     cancellationToken),
                 pendingPlan.PlanningSummary),
@@ -505,6 +507,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
     private async Task<string?> CreateProfileSystemPromptAsync(
         string? basePrompt,
+        string lessonMemoryQuery,
         ReplSessionContext session,
         CancellationToken cancellationToken)
     {
@@ -522,6 +525,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 session,
                 cancellationToken)
             : null;
+        string? lessonMemoryPrompt = await TryCreateLessonMemoryPromptAsync(
+            lessonMemoryQuery,
+            cancellationToken);
         string? statefulContext = session.CreateStatefulContextPrompt();
         string?[] promptSections =
         [
@@ -529,6 +535,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             contribution,
             workspaceInstructions,
             skillRouting,
+            lessonMemoryPrompt,
             statefulContext
         ];
 
@@ -542,6 +549,32 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             : string.Join(
                 $"{Environment.NewLine}{Environment.NewLine}",
                 normalizedSections);
+    }
+
+    private async Task<string?> TryCreateLessonMemoryPromptAsync(
+        string query,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _lessonMemoryService.CreatePromptAsync(
+                query,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Lesson memory is optional context; a load failure should not block the turn.
+            return null;
+        }
     }
 
     private async Task<string?> CreateBaseSystemPromptAsync(
