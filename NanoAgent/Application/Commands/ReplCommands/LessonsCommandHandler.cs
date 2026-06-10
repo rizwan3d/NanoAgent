@@ -23,7 +23,7 @@ internal sealed class LessonsCommandHandler : IReplCommandHandler
 
     public string CommandName => "lessons";
 
-    public string Description => "Manage local lesson memory from the shell. Lesson memory is command-only and off by default.";
+    public string Description => "Manage local lesson memory from the shell. It is off by default and can inject relevant lessons into prompts when enabled.";
 
     public string Usage => "/lessons [status|on|off|list [limit]|search <query>|save <trigger> | <problem> | <lesson>|edit <id> <trigger> | <problem> | <lesson>|delete <id>]";
 
@@ -70,7 +70,7 @@ internal sealed class LessonsCommandHandler : IReplCommandHandler
 
         MemorySettings updated = CloneSettings();
         updated.LessonsEnabled = enabled;
-        updated.AllowAutoFailureObservation = false;
+        updated.AllowAutoFailureObservation = enabled;
 
         await _workspaceSettingsWriter.SaveMemorySettingsAsync(
             context.Session.WorkspacePath,
@@ -80,7 +80,7 @@ internal sealed class LessonsCommandHandler : IReplCommandHandler
 
         return ReplCommandResult.Continue(
             enabled
-                ? "Lesson memory enabled for this workspace. It remains command-only and will not be injected automatically into prompts."
+                ? "Lesson memory enabled for this workspace. Relevant lessons will now be injected automatically into prompts, and automatic tool-failure observation is on."
                 : "Lesson memory disabled for this workspace.",
             ReplFeedbackKind.Info);
     }
@@ -267,9 +267,9 @@ internal sealed class LessonsCommandHandler : IReplCommandHandler
         StringBuilder builder = new();
         builder.AppendLine("Lesson memory");
         builder.AppendLine($"Status: {(_memorySettings.LessonsEnabled ? "on" : "off")}");
-        builder.AppendLine("Mode: command-only");
         builder.AppendLine($"Storage: {_lessonMemoryService.GetStoragePath()}");
-        builder.AppendLine("Automatic prompt injection: off");
+        builder.AppendLine($"Automatic prompt injection: {(_memorySettings.LessonsEnabled ? "on" : "off")}");
+        builder.AppendLine($"Automatic tool-failure observation: {(_memorySettings.AllowAutoFailureObservation ? "on" : "off")}");
         builder.Append("Usage: ").Append(Usage);
         return builder.ToString();
     }

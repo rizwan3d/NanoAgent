@@ -236,6 +236,11 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
             record.StartedAtUtc,
             record.CompletedAtUtc,
             cancellationToken);
+        await ObserveLessonMemoryAsync(
+            record.ToolCall,
+            record.InvocationResult,
+            session,
+            cancellationToken);
 
         if (onToolResult is not null)
         {
@@ -286,6 +291,35 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         {
             // Audit logs are useful operational evidence, but a log write issue should
             // not turn a completed tool call into a failed agent turn.
+        }
+    }
+
+    private async Task ObserveLessonMemoryAsync(
+        ConversationToolCall toolCall,
+        ToolInvocationResult result,
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (_lessonMemoryService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _lessonMemoryService.ObserveToolResultAsync(
+                toolCall,
+                result,
+                cancellationToken,
+                session);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Automatic lesson observation is helpful, but it should never break the tool round.
         }
     }
 
