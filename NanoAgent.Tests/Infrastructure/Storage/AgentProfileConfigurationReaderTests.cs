@@ -32,6 +32,7 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
                 "requireApprovalForWrites": true,
                 "allowAutoFailureObservation": true,
                 "allowAutoManualLessons": false,
+                "lessonsEnabled": true,
                 "redactSecrets": true,
                 "maxEntries": 500,
                 "maxPromptChars": 12000,
@@ -67,6 +68,7 @@ public sealed class AgentProfileConfigurationReaderTests : IDisposable
         settings.RequireApprovalForWrites.Should().BeTrue();
         settings.AllowAutoFailureObservation.Should().BeTrue();
         settings.AllowAutoManualLessons.Should().BeFalse();
+        settings.LessonsEnabled.Should().BeTrue();
         settings.RedactSecrets.Should().BeTrue();
         settings.MaxEntries.Should().Be(250);
         settings.MaxPromptChars.Should().Be(6000);

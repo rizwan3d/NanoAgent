@@ -50,6 +50,38 @@ internal sealed class WorkspaceSettingsWriter : IWorkspaceSettingsWriter
             cancellationToken);
     }
 
+    public async Task SaveMemorySettingsAsync(
+        string workspacePath,
+        MemorySettings settings,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
+        ArgumentNullException.ThrowIfNull(settings);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string filePath = Path.Combine(
+            Path.GetFullPath(workspacePath),
+            WorkspaceConfigurationDirectoryName,
+            WorkspaceConfigurationFileName);
+        JsonObject root = await LoadRootAsync(filePath, cancellationToken);
+        JsonObject memory = GetOrCreateObject(root, "memory");
+
+        memory["allowAutoFailureObservation"] = settings.AllowAutoFailureObservation;
+        memory["allowAutoManualLessons"] = settings.AllowAutoManualLessons;
+        memory["disabled"] = settings.Disabled;
+        memory["lessonsEnabled"] = settings.LessonsEnabled;
+        memory["maxEntries"] = settings.MaxEntries;
+        memory["maxPromptChars"] = settings.MaxPromptChars;
+        memory["redactSecrets"] = settings.RedactSecrets;
+        memory["requireApprovalForWrites"] = settings.RequireApprovalForWrites;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        await File.WriteAllTextAsync(
+            filePath,
+            root.ToJsonString(JsonOptions) + Environment.NewLine,
+            cancellationToken);
+    }
+
     public async Task SaveTelemetryEnabledAsync(
         string workspacePath,
         bool enabled,

@@ -24,6 +24,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, InitCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ImportCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, LessonsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, LspCommandHandler>();
         services.AddSingleton<IReplCommandHandler, McpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ModelsCommandHandler>();
@@ -31,6 +32,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, OnboardCommandHandler>();
         services.AddSingleton<IReplCommandHandler, PermissionsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ProviderCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, RedactCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ProfileCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ForkCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ReloadCommandHandler>();

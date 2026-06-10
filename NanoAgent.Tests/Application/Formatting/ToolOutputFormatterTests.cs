@@ -183,7 +183,20 @@ public sealed class ToolOutputFormatterTests
                 {
                   "Query": "Program",
                   "Path": "src",
-                  "Matches": ["src/Program.cs", "src/Program.Tests.cs"]
+                  "Matches": [
+                    { "Path": "src/Program.cs", "Score": 9000, "MatchKind": "filename_contains" },
+                    { "Path": "src/Program.Tests.cs", "Score": 8500, "MatchKind": "path_contains" }
+                  ],
+                  "Glob": "**/*.cs",
+                  "Mode": "fuzzy",
+                  "Fuzzy": true,
+                  "WholeWord": false,
+                  "Limit": 5,
+                  "Offset": 0,
+                  "HasMore": true,
+                  "NextCursor": "Mg==",
+                  "TotalMatchCount": 3,
+                  "CaseSensitive": false
                 }
                 """),
             CreateResult(
@@ -207,7 +220,10 @@ public sealed class ToolOutputFormatterTests
         messages[1].Should().Contain("Listed src (2 entries)");
         messages[1].Should().Contain("file: src/Program.cs");
         messages[1].Should().Contain("directory: src/Models");
-        messages[2].Should().Contain("Found 2 files for \"Program\" in src");
+        messages[2].Should().Contain("Found 2 files for \"Program\" in src (limit 5, offset 0, mode fuzzy, caseSensitive false, wholeWord false, glob **/*.cs, hasMore true)");
+        messages[2].Should().Contain("src/Program.cs (score 9000, filename_contains)");
+        messages[2].Should().Contain("nextCursor: Mg==");
+        messages[2].Should().Contain("total matches: 3");
         messages[3].Should().Contain("Searched src for \"coverage\" (1 match)");
         messages[3].Should().Contain("src/Program.cs:42 coverage threshold");
     }

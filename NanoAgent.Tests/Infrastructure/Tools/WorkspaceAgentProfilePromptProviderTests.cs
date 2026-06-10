@@ -2,6 +2,7 @@ using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Tools;
 
@@ -35,19 +36,29 @@ public sealed class WorkspaceAgentProfilePromptProviderTests : IDisposable
     [Fact]
     public async Task LoadAsync_Should_LoadWorkspacePromptForActiveProfile()
     {
-        string agentsDirectory = Path.Combine(_workspaceRoot, ".nanoagent", "agents");
-        Directory.CreateDirectory(agentsDirectory);
-        File.WriteAllText(
-            Path.Combine(agentsDirectory, "build.md"),
-            "  Prefer workspace build rules. api_key=test-secret-value  ");
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        WorkspaceAgentProfilePromptProvider sut = new();
+        try
+        {
+            string agentsDirectory = Path.Combine(_workspaceRoot, ".nanoagent", "agents");
+            Directory.CreateDirectory(agentsDirectory);
+            File.WriteAllText(
+                Path.Combine(agentsDirectory, "build.md"),
+                "  Prefer workspace build rules. api_key=test-secret-value  ");
 
-        string? result = await sut.LoadAsync(
-            CreateSession(BuiltInAgentProfiles.Build),
-            CancellationToken.None);
+            WorkspaceAgentProfilePromptProvider sut = new();
 
-        result.Should().Be("Prefer workspace build rules. api_key=<redacted>");
+            string? result = await sut.LoadAsync(
+                CreateSession(BuiltInAgentProfiles.Build),
+                CancellationToken.None);
+
+            result.Should().Be("Prefer workspace build rules. api_key=<redacted>");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     [Fact]

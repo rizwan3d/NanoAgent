@@ -1,6 +1,7 @@
 using FluentAssertions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Profiles;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Tests.Application.Models;
@@ -319,29 +320,39 @@ public sealed class ReplSessionContextTests
     [Fact]
     public void CreateSectionSnapshot_Should_RedactSecretsFromHistoryAndToolCalls()
     {
-        ReplSessionContext session = CreateSession();
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        session.AddConversationTurn(
-            "use api_key=secret-value",
-            "saw Bearer abcdefghijklmnopqrstuvwxyz",
-            [
-                new ConversationToolCall(
-                    "call_1",
-                    "shell_command",
-                    """{ "command": "echo sk-abcdefghijklmnopqrstuvwxyz123456" }""")
-            ],
-            ["\u2022 Ran echo sk-abcdefghijklmnopqrstuvwxyz123456"]);
+        try
+        {
+            ReplSessionContext session = CreateSession();
 
-        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
-            session.SectionCreatedAtUtc.AddMinutes(1));
+            session.AddConversationTurn(
+                "use api_key=secret-value",
+                "saw Bearer abcdefghijklmnopqrstuvwxyz",
+                [
+                    new ConversationToolCall(
+                        "call_1",
+                        "shell_command",
+                        """{ "command": "echo sk-abcdefghijklmnopqrstuvwxyz123456" }""")
+                ],
+                ["\u2022 Ran echo sk-abcdefghijklmnopqrstuvwxyz123456"]);
 
-        snapshot.Turns[0].UserInput.Should().Contain("api_key=<redacted>");
-        snapshot.Turns[0].AssistantResponse.Should().Contain("Bearer <redacted>");
-        snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("<redacted>");
-        snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
-        snapshot.Turns[0].ToolOutputMessages[0].Should().Contain("<redacted>");
-        snapshot.Turns[0].ToolOutputMessages[0].Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
-        session.ConversationHistory[0].Content.Should().Contain("api_key=<redacted>");
+            ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+                session.SectionCreatedAtUtc.AddMinutes(1));
+
+            snapshot.Turns[0].UserInput.Should().Contain("api_key=<redacted>");
+            snapshot.Turns[0].AssistantResponse.Should().Contain("Bearer <redacted>");
+            snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().Contain("<redacted>");
+            snapshot.Turns[0].ToolCalls[0].ArgumentsJson.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+            snapshot.Turns[0].ToolOutputMessages[0].Should().Contain("<redacted>");
+            snapshot.Turns[0].ToolOutputMessages[0].Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+            session.ConversationHistory[0].Content.Should().Contain("api_key=<redacted>");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     [Fact]
@@ -398,21 +409,31 @@ public sealed class ReplSessionContextTests
     [Fact]
     public void SessionState_Should_RedactSecretsFromTerminalHistory()
     {
-        ReplSessionContext session = CreateSession();
-        session.RecordTerminalCommand(new SessionTerminalCommand(
-            DateTimeOffset.UtcNow,
-            "echo password=hunter2",
-            ".",
-            0,
-            "github_pat_abcdefghijklmnopqrstuvwxyz1234567890",
-            "AIzaabcdefghijklmnopqrstuvwxyz123456"));
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
-            session.SectionCreatedAtUtc.AddMinutes(1));
+        try
+        {
+            ReplSessionContext session = CreateSession();
+            session.RecordTerminalCommand(new SessionTerminalCommand(
+                DateTimeOffset.UtcNow,
+                "echo password=hunter2",
+                ".",
+                0,
+                "github_pat_abcdefghijklmnopqrstuvwxyz1234567890",
+                "AIzaabcdefghijklmnopqrstuvwxyz123456"));
 
-        snapshot.SessionState.TerminalHistory[0].Command.Should().Contain("password=<redacted>");
-        snapshot.SessionState.TerminalHistory[0].StandardOutput.Should().Be("<redacted>");
-        snapshot.SessionState.TerminalHistory[0].StandardError.Should().Be("<redacted>");
+            ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(
+                session.SectionCreatedAtUtc.AddMinutes(1));
+
+            snapshot.SessionState.TerminalHistory[0].Command.Should().Contain("password=<redacted>");
+            snapshot.SessionState.TerminalHistory[0].StandardOutput.Should().Be("<redacted>");
+            snapshot.SessionState.TerminalHistory[0].StandardError.Should().Be("<redacted>");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     [Fact]

@@ -3,6 +3,7 @@ using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Logging;
 
 namespace NanoAgent.Tests.Infrastructure.Logging;
@@ -42,24 +43,34 @@ public sealed class DailyFileLoggerProviderTests : IDisposable
     [Fact]
     public void CreateLogger_Should_RedactSecretsFromMessageAndException()
     {
-        FixedTimeProvider timeProvider = new(new DateTimeOffset(2026, 4, 20, 9, 30, 0, TimeSpan.Zero));
-        DailyFileLoggerProvider sut = new(
-            new StubUserDataPathProvider(Path.Combine(_tempRoot, "logs")),
-            new StubHostEnvironment("NanoAgent"),
-            timeProvider);
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        ILogger logger = sut.CreateLogger("NanoAgent.Tests.Logging");
-        logger.LogError(
-            new InvalidOperationException("Bearer abcdefghijklmnopqrstuvwxyz"),
-            "Failed with api_key={ApiKey}",
-            "sk-abcdefghijklmnopqrstuvwxyz123456");
+        try
+        {
+            FixedTimeProvider timeProvider = new(new DateTimeOffset(2026, 4, 20, 9, 30, 0, TimeSpan.Zero));
+            DailyFileLoggerProvider sut = new(
+                new StubUserDataPathProvider(Path.Combine(_tempRoot, "logs")),
+                new StubHostEnvironment("NanoAgent"),
+                timeProvider);
 
-        string logFilePath = Path.Combine(_tempRoot, "logs", "2026-04-20.log");
-        string contents = File.ReadAllText(logFilePath);
-        contents.Should().Contain("<redacted>");
-        contents.Should().Contain("Bearer <redacted>");
-        contents.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
-        contents.Should().NotContain("Bearer abcdefghijklmnopqrstuvwxyz");
+            ILogger logger = sut.CreateLogger("NanoAgent.Tests.Logging");
+            logger.LogError(
+                new InvalidOperationException("Bearer abcdefghijklmnopqrstuvwxyz"),
+                "Failed with api_key={ApiKey}",
+                "sk-abcdefghijklmnopqrstuvwxyz123456");
+
+            string logFilePath = Path.Combine(_tempRoot, "logs", "2026-04-20.log");
+            string contents = File.ReadAllText(logFilePath);
+            contents.Should().Contain("<redacted>");
+            contents.Should().Contain("Bearer <redacted>");
+            contents.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+            contents.Should().NotContain("Bearer abcdefghijklmnopqrstuvwxyz");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     public void Dispose()
