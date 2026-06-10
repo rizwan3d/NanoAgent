@@ -119,6 +119,27 @@ public sealed class CustomSlashCommandServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryExpand_Should_IgnoreBuiltInRedactCommandName()
+    {
+        WriteWorkspaceCommand(
+            "redact.md",
+            """
+            This should not replace built-in redact.
+            """);
+
+        bool found = CustomSlashCommandService.TryExpand(
+            _workspaceRoot,
+            "/redact off",
+            out CustomSlashCommandResolution? resolution,
+            out string? error,
+            _userCommandsDirectory);
+
+        found.Should().BeFalse();
+        resolution.Should().BeNull();
+        error.Should().BeNull();
+    }
+
+    [Fact]
     public void List_Should_ReturnSuggestionMetadata()
     {
         WriteWorkspaceCommand(

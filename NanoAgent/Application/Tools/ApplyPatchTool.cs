@@ -142,6 +142,15 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
                     "Patch rejected",
                     repairGuidance));
         }
+        catch (Exception exception) when (TryBuildPatchApplyFailureGuidance(exception, out string? repairGuidance))
+        {
+            return ToolResultFactory.InvalidArguments(
+                "patch_apply_failed",
+                repairGuidance!,
+                new ToolRenderPayload(
+                    "Patch rejected",
+                    repairGuidance!));
+        }
         if (executionResult.EditTransaction is not null)
         {
             context.Session.RecordFileEditTransaction(executionResult.EditTransaction);
@@ -227,6 +236,62 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             extraHint +
             "Call apply_patch again with corrected patch text. " +
             "The patch argument must include the complete intended patch, its first non-empty line must be exactly '*** Begin Patch', and its final non-empty line must be exactly '*** End Patch'.";
+    }
+
+    private static bool TryBuildPatchApplyFailureGuidance(
+        Exception exception,
+        out string? guidance)
+    {
+        guidance = null;
+        string message = exception.Message?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return false;
+        }
+
+        if (message.Contains("target context was not found", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Read the current file contents again and rebuild the patch from exact current lines. " +
+                "For a focused retry, keep one file section, include a small amount of unchanged surrounding text, and then resubmit the full patch.";
+            return true;
+        }
+
+        if (message.Contains("matched multiple locations", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Make the patch more specific before retrying. Add more unchanged surrounding lines, use a more distinctive '@@ ...' locator, or split the edit into smaller file sections so only one location matches.";
+            return true;
+        }
+
+        if (message.Contains("does not exist", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Verify the path and operation before retrying. Use '*** Add File:' for new files, '*** Update File:' only for existing files, and re-check the current working directory if the path was relative.";
+            return true;
+        }
+
+        if (message.Contains("destination already exists", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Choose a different move target, delete the destination first if that is truly intended, or keep the edit in place and retry with an update-only patch.";
+            return true;
+        }
+
+        if (message.Contains("excluded by .nanoagent/.nanoignore", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("excluded by .gitignore", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Select a path that is allowed by the workspace ignore rules, or update the ignore rules before retrying if the file should be editable.";
+            return true;
+        }
+
+        return false;
     }
 
 }

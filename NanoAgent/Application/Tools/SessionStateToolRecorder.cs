@@ -59,7 +59,9 @@ internal static class SessionStateToolRecorder
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(result);
 
-        string matches = FormatItems(result.Matches, MaxSearchMatches);
+        string matches = FormatItems(
+            result.Matches.Select(static match => FormatFileSearchMatch(match)),
+            MaxSearchMatches);
         session.RecordFileContext(new SessionFileContext(
             result.Path,
             $"file search '{result.Query}'",
@@ -262,6 +264,11 @@ internal static class SessionStateToolRecorder
             : $"{item.Kind} {item.Name}";
 
         return $"{name} at {item.Path}:{item.StartLine}";
+    }
+
+    private static string FormatFileSearchMatch(WorkspaceFileSearchMatch match)
+    {
+        return $"{match.Path} ({match.MatchKind}, score {match.Score})";
     }
 
     private static string? NormalizeOptionalForState(

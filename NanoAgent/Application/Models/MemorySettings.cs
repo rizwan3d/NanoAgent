@@ -2,11 +2,13 @@ namespace NanoAgent.Application.Models;
 
 public sealed class MemorySettings
 {
-    public bool AllowAutoFailureObservation { get; set; } = true;
+    public bool AllowAutoFailureObservation { get; set; }
 
     public bool AllowAutoManualLessons { get; set; }
 
     public bool Disabled { get; set; }
+
+    public bool LessonsEnabled { get; set; }
 
     public int MaxEntries { get; set; } = 500;
 

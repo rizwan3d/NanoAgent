@@ -105,4 +105,16 @@ public sealed class ShellCommandTextTests
 
         act.Should().Throw<ArgumentNullException>();
     }
+
+    [Theory]
+    [InlineData("\"")]
+    [InlineData("'")]
+    [InlineData("dotnet \" --version")]
+    [InlineData("dotnet ' --version")]
+    public void Tokenize_ShouldNotThrow_WhenQuoteIsUnmatchedOrStandalone(string commandText)
+    {
+        Action act = () => ShellCommandText.Tokenize(commandText);
+    
+        act.Should().NotThrow();
+    }
 }

@@ -153,8 +153,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 cancellationToken);
             string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
                 baseSystemPrompt,
+                normalizedInput,
                 session,
-                CreateLessonQuery(normalizedInput),
                 cancellationToken);
             IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
             IReadOnlySet<string> availableToolNames = availableToolDefinitions
@@ -274,8 +274,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             PlanningModePolicy.CreateExecutionSystemPrompt(
                 await CreateProfileSystemPromptAsync(
                     baseSystemPrompt,
+                    pendingPlan.PlanningSummary,
                     session,
-                    CreateLessonQuery(normalizedInput, pendingPlan),
                     cancellationToken),
                 pendingPlan.PlanningSummary),
             allToolDefinitions,
@@ -507,8 +507,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
     private async Task<string?> CreateProfileSystemPromptAsync(
         string? basePrompt,
+        string lessonMemoryQuery,
         ReplSessionContext session,
-        string lessonQuery,
         CancellationToken cancellationToken)
     {
         string? workspaceProfilePrompt = await _workspaceAgentProfilePromptProvider.LoadAsync(
@@ -525,8 +525,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 session,
                 cancellationToken)
             : null;
-        string? lessonMemory = await CreateLessonMemoryPromptAsync(
-            lessonQuery,
+        string? lessonMemoryPrompt = await TryCreateLessonMemoryPromptAsync(
+            lessonMemoryQuery,
             cancellationToken);
         string? statefulContext = session.CreateStatefulContextPrompt();
         string?[] promptSections =
@@ -535,7 +535,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             contribution,
             workspaceInstructions,
             skillRouting,
-            lessonMemory,
+            lessonMemoryPrompt,
             statefulContext
         ];
 
@@ -551,6 +551,32 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 normalizedSections);
     }
 
+    private async Task<string?> TryCreateLessonMemoryPromptAsync(
+        string query,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return null;
+        }
+
+        try
+        {
+            return await _lessonMemoryService.CreatePromptAsync(
+                query,
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Lesson memory is optional context; a load failure should not block the turn.
+            return null;
+        }
+    }
+
     private async Task<string?> CreateBaseSystemPromptAsync(
         string? configuredSystemPrompt,
         ReplSessionContext session,
@@ -563,45 +589,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return string.IsNullOrWhiteSpace(workspaceSystemPrompt)
             ? configuredSystemPrompt
             : workspaceSystemPrompt;
-    }
-
-    private async Task<string?> CreateLessonMemoryPromptAsync(
-        string lessonQuery,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _lessonMemoryService.CreatePromptAsync(
-                lessonQuery,
-                cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string CreateLessonQuery(
-        string normalizedInput,
-        PendingExecutionPlan? pendingPlan = null)
-    {
-        if (pendingPlan is null)
-        {
-            return normalizedInput;
-        }
-
-        return string.Join(
-            Environment.NewLine,
-            [
-                normalizedInput,
-                pendingPlan.SourceUserInput,
-                pendingPlan.PlanningSummary,
-                string.Join(Environment.NewLine, pendingPlan.Tasks)
-            ]);
     }
 
     private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)
@@ -1289,6 +1276,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             return payload;
         }
         catch (ConversationProviderException)
+        {
+            throw;
+        }
+        catch (ConversationPipelineException)
         {
             throw;
         }

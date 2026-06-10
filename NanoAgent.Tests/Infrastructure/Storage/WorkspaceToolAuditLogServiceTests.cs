@@ -2,6 +2,7 @@ using FluentAssertions;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Serialization;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.Storage;
 using System.Text.Json;
@@ -36,44 +37,54 @@ public sealed class WorkspaceToolAuditLogServiceTests : IDisposable
     [Fact]
     public async Task RecordAsync_Should_AppendRedactedJsonLine_When_Enabled()
     {
-        WorkspaceToolAuditLogService sut = new(
-            new FixedWorkspaceRootProvider(_workspacePath),
-            new ToolAuditSettings
-            {
-                Enabled = true,
-                MaxArgumentsChars = 200,
-                MaxResultChars = 200,
-                RedactSecrets = true
-            });
+        bool originalValue = SecretRedactor.IsEnabled;
+        SecretRedactor.IsEnabled = true;
 
-        DateTimeOffset startedAt = new(2026, 4, 25, 10, 0, 0, TimeSpan.Zero);
-        DateTimeOffset completedAt = startedAt.AddMilliseconds(42);
-        await sut.RecordAsync(
-            CreateToolCall("""{ "path": "README.md", "token": "sk-abcdefghijklmnopqrstuvwxyz123456" }"""),
-            CreateInvocationResult("Failed with token=sk-abcdefghijklmnopqrstuvwxyz123456"),
-            CreateSession(),
-            ConversationExecutionPhase.Execution,
-            startedAt,
-            completedAt,
-            CancellationToken.None);
+        try
+        {
+            WorkspaceToolAuditLogService sut = new(
+                new FixedWorkspaceRootProvider(_workspacePath),
+                new ToolAuditSettings
+                {
+                    Enabled = true,
+                    MaxArgumentsChars = 200,
+                    MaxResultChars = 200,
+                    RedactSecrets = true
+                });
 
-        string[] lines = await File.ReadAllLinesAsync(sut.GetStoragePath());
-        lines.Should().ContainSingle();
+            DateTimeOffset startedAt = new(2026, 4, 25, 10, 0, 0, TimeSpan.Zero);
+            DateTimeOffset completedAt = startedAt.AddMilliseconds(42);
+            await sut.RecordAsync(
+                CreateToolCall("""{ "path": "README.md", "token": "sk-abcdefghijklmnopqrstuvwxyz123456" }"""),
+                CreateInvocationResult("Failed with token=sk-abcdefghijklmnopqrstuvwxyz123456"),
+                CreateSession(),
+                ConversationExecutionPhase.Execution,
+                startedAt,
+                completedAt,
+                CancellationToken.None);
 
-        ToolAuditRecord? record = JsonSerializer.Deserialize(
-            lines[0],
-            ToolAuditLogJsonContext.Default.ToolAuditRecord);
+            string[] lines = await File.ReadAllLinesAsync(sut.GetStoragePath());
+            lines.Should().ContainSingle();
 
-        record.Should().NotBeNull();
-        record!.TimestampUtc.Should().Be(completedAt);
-        record.ToolCallId.Should().Be("call_1");
-        record.ToolName.Should().Be("file_read");
-        record.Status.Should().Be("ExecutionError");
-        record.DurationMilliseconds.Should().Be(42);
-        record.ArgumentsJson.Should().Contain("<redacted>");
-        record.ArgumentsJson.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
-        record.ResultMessage.Should().Contain("<redacted>");
-        record.ResultJson.Should().Contain("<redacted>");
+            ToolAuditRecord? record = JsonSerializer.Deserialize(
+                lines[0],
+                ToolAuditLogJsonContext.Default.ToolAuditRecord);
+
+            record.Should().NotBeNull();
+            record!.TimestampUtc.Should().Be(completedAt);
+            record.ToolCallId.Should().Be("call_1");
+            record.ToolName.Should().Be("file_read");
+            record.Status.Should().Be("ExecutionError");
+            record.DurationMilliseconds.Should().Be(42);
+            record.ArgumentsJson.Should().Contain("<redacted>");
+            record.ArgumentsJson.Should().NotContain("sk-abcdefghijklmnopqrstuvwxyz");
+            record.ResultMessage.Should().Contain("<redacted>");
+            record.ResultJson.Should().Contain("<redacted>");
+        }
+        finally
+        {
+            SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     public void Dispose()
