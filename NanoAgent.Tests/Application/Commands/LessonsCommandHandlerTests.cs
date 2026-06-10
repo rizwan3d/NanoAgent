@@ -47,10 +47,11 @@ public sealed class LessonsCommandHandlerTests : IDisposable
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
         memorySettings.LessonsEnabled.Should().BeTrue();
-        memorySettings.AllowAutoFailureObservation.Should().BeFalse();
+        memorySettings.AllowAutoFailureObservation.Should().BeTrue();
         workspaceSettingsWriter.WorkspacePath.Should().Be(_workspacePath);
         workspaceSettingsWriter.MemorySettings.Should().NotBeNull();
         workspaceSettingsWriter.MemorySettings!.LessonsEnabled.Should().BeTrue();
+        workspaceSettingsWriter.MemorySettings.AllowAutoFailureObservation.Should().BeTrue();
     }
 
     [Fact]
