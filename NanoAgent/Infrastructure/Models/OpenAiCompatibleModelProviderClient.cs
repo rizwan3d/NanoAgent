@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;
@@ -56,6 +57,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private readonly IGitHubCopilotCredentialService? _gitHubCopilotCredentialService;
     private readonly INanoAgentEnterpriseCredentialService? _nanoAgentEnterpriseCredentialService;
     private readonly IOpenAiChatGptAccountCredentialService? _openAiChatGptAccountCredentialService;
+    private readonly ProviderRequestProjectHeaderProvider? _providerRequestProjectHeaderProvider;
     private readonly ILogger<OpenAiCompatibleModelProviderClient> _logger;
 
     public OpenAiCompatibleModelProviderClient(
@@ -65,7 +67,8 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         IOpenAiCodexClientVersionProvider? openAiCodexClientVersionProvider = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
         IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
-        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null,
+        ProviderRequestProjectHeaderProvider? providerRequestProjectHeaderProvider = null)
     {
         _httpClient = httpClient;
         _logger = logger;
@@ -73,6 +76,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         _anthropicClaudeAccountCredentialService = anthropicClaudeAccountCredentialService;
         _gitHubCopilotCredentialService = gitHubCopilotCredentialService;
         _nanoAgentEnterpriseCredentialService = nanoAgentEnterpriseCredentialService;
+        _providerRequestProjectHeaderProvider = providerRequestProjectHeaderProvider;
         _openAiCodexClientVersionProvider = openAiCodexClientVersionProvider ??
             new StaticOpenAiCodexClientVersionProvider(
                 GitHubOpenAiCodexClientVersionProvider.FallbackClientVersion);
@@ -158,7 +162,11 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         while (true)
         {
             using HttpRequestMessage request = new(HttpMethod.Get, new Uri(baseUri, "models"));
-            ApplyAuthenticationHeaders(request, providerProfile.ProviderKind, authorizationValue);
+            ApplyAuthenticationHeaders(
+                request,
+                providerProfile.ProviderKind,
+                authorizationValue,
+                usesNanoAgentEnterpriseCredentials);
             LogDebugApiRequest(request.Method, request.RequestUri);
 
             using HttpResponseMessage response = await _httpClient.SendAsync(
@@ -565,10 +573,11 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         return request;
     }
 
-    private static void ApplyAuthenticationHeaders(
+    private void ApplyAuthenticationHeaders(
         HttpRequestMessage request,
         ProviderKind providerKind,
-        string apiKey)
+        string apiKey,
+        bool usesNanoAgentEnterpriseCredentials)
     {
         if (providerKind == ProviderKind.Anthropic)
         {
@@ -590,6 +599,16 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         {
             request.Headers.TryAddWithoutValidation("X-KILOCODE-EDITORNAME", KiloCodeEditorName);
             request.Headers.TryAddWithoutValidation("User-Agent", KiloCodeUserAgent);
+            return;
+        }
+
+        if (usesNanoAgentEnterpriseCredentials)
+        {
+            request.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            request.Headers.TryAddWithoutValidation(
+                "X-Project",
+                _providerRequestProjectHeaderProvider?.GetProjectName() ??
+                ProviderRequestProjectHeaderProvider.ResolveProjectName(Directory.GetCurrentDirectory()));
         }
     }
 

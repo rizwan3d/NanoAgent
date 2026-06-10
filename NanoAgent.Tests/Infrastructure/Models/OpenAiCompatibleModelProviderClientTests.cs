@@ -1,8 +1,10 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
+using NanoAgent.Infrastructure;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.Models;
@@ -141,6 +143,54 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         handler.AuthorizationHeader.Should().Be("Bearer enterprise-access-token");
         models.Select(model => model.Id).Should().Equal("gpt-5");
         credentialService.VerifyAll();
+    }
+
+    [Fact]
+    public async Task GetAvailableModelsAsync_Should_SendEnterpriseProjectHeadersUsingWorkspaceName_When_NoGitRepositoryExists()
+    {
+        string tempPath = Path.Combine(Path.GetTempPath(), "nanoagent-enterprise-models-" + Guid.NewGuid().ToString("N"));
+        string workspaceRoot = Path.Combine(tempPath, "workspace-name");
+        Directory.CreateDirectory(workspaceRoot);
+
+        try
+        {
+            RecordingHandler handler = new("""
+                {
+                  "data": [
+                    { "id": "gpt-5" }
+                  ]
+                }
+                """);
+            HttpClient httpClient = new(handler);
+            Mock<INanoAgentEnterpriseCredentialService> credentialService = new(MockBehavior.Strict);
+            credentialService
+                .Setup(service => service.CanResolve("enterprise-credential-json"))
+                .Returns(true);
+            credentialService
+                .Setup(service => service.ResolveAsync(
+                    "enterprise-credential-json",
+                    false,
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new NanoAgentEnterpriseResolvedCredential("enterprise-access-token"));
+            OpenAiCompatibleModelProviderClient sut = CreateSut(
+                httpClient,
+                nanoAgentEnterpriseCredentialService: credentialService.Object,
+                providerRequestProjectHeaderProvider: new ProviderRequestProjectHeaderProvider(
+                    new StubWorkspaceRootProvider(workspaceRoot)));
+
+            await sut.GetAvailableModelsAsync(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://enterprise.example.com/v1"),
+                "enterprise-credential-json",
+                CancellationToken.None);
+
+            handler.OpenRouterTitleHeader.Should().Be("NanoAgent");
+            handler.ProjectHeader.Should().Be("workspace-name");
+            credentialService.VerifyAll();
+        }
+        finally
+        {
+            Directory.Delete(tempPath, recursive: true);
+        }
     }
 
     [Fact]
@@ -613,7 +663,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         IOpenAiCodexClientVersionProvider? versionProvider = null,
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
         IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
-        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null)
+        INanoAgentEnterpriseCredentialService? nanoAgentEnterpriseCredentialService = null,
+        ProviderRequestProjectHeaderProvider? providerRequestProjectHeaderProvider = null)
     {
         return new OpenAiCompatibleModelProviderClient(
             httpClient,
@@ -622,7 +673,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             versionProvider,
             anthropicClaudeAccountCredentialService,
             gitHubCopilotCredentialService,
-            nanoAgentEnterpriseCredentialService);
+            nanoAgentEnterpriseCredentialService,
+            providerRequestProjectHeaderProvider);
     }
 
     private sealed class StubOpenAiCodexClientVersionProvider : IOpenAiCodexClientVersionProvider
@@ -659,6 +711,8 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         public string? OpenRouterRefererHeader { get; private set; }
 
         public string? OpenRouterTitleHeader { get; private set; }
+
+        public string? ProjectHeader { get; private set; }
 
         public string? KiloCodeEditorHeader { get; private set; }
 
@@ -714,6 +768,9 @@ public sealed class OpenAiCompatibleModelProviderClientTests
             OpenRouterTitleHeader = request.Headers.TryGetValues("X-Title", out IEnumerable<string>? titleValues)
                 ? titleValues.FirstOrDefault()
                 : null;
+            ProjectHeader = request.Headers.TryGetValues("X-Project", out IEnumerable<string>? projectValues)
+                ? projectValues.FirstOrDefault()
+                : null;
             KiloCodeEditorHeader = request.Headers.TryGetValues("X-KILOCODE-EDITORNAME", out IEnumerable<string>? kiloEditorValues)
                 ? kiloEditorValues.FirstOrDefault()
                 : null;
@@ -750,6 +807,21 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         {
             AuthorizationHeaders.Add(request.Headers.Authorization?.ToString());
             return Task.FromResult(_responses.Dequeue());
+        }
+    }
+
+    private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
+    {
+        private readonly string _workspaceRoot;
+
+        public StubWorkspaceRootProvider(string workspaceRoot)
+        {
+            _workspaceRoot = workspaceRoot;
+        }
+
+        public string GetWorkspaceRoot()
+        {
+            return _workspaceRoot;
         }
     }
 }
