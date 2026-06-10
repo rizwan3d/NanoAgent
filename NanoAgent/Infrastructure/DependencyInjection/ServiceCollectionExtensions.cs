@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IConversationSectionStore, JsonConversationSectionStore>();
         services.AddSingleton<ISessionStore, JsonSessionStore>();
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
+        services.AddSingleton<ProviderRequestProjectHeaderProvider>();
         services.AddSingleton(static serviceProvider =>
             AgentProfileConfigurationReader.LoadMemorySettings(
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
