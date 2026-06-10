@@ -2680,7 +2680,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         {
             if (TryDecodeCommonJsonUnicodeEscape(value, index, out char decoded))
             {
-                builder ??= new StringBuilder(value.Length);
+                if (builder is null)
+                {
+                    builder = new StringBuilder(value.Length);
+                    builder.Append(value, 0, index);
+                }
+
                 builder.Append(decoded);
                 index += 5;
                 continue;
