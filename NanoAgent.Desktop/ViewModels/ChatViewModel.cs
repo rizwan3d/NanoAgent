@@ -12,7 +12,7 @@ using System.Globalization;
 
 namespace NanoAgent.Desktop.ViewModels;
 
-public partial class ChatViewModel : ViewModelBase
+public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
 {
     private const string BudgetControlsLocalPath = BudgetControlsSettings.DefaultLocalPath;
     private const double EstimatedLiveTokensPerSecond = 4d;
@@ -43,6 +43,9 @@ public partial class ChatViewModel : ViewModelBase
     private readonly SettingsService _settingsService;
     private readonly DispatcherTimer _progressTimer;
     private readonly DispatcherTimer _selectionPromptTimer;
+    private readonly EventHandler _progressTimerTick;
+    private readonly EventHandler _selectionPromptTimerTick;
+    private bool _isDisposed;
     private BudgetControlsSettings _budgetControlsSettings = BudgetControlsSettings.Default;
     private DateTimeOffset? _currentRunStartedAt;
     private int? _activeModelContextWindowTokens;
@@ -139,16 +142,43 @@ public partial class ChatViewModel : ViewModelBase
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _progressTimer.Tick += (_, _) => UpdateProgressText();
+        _progressTimerTick = (_, _) => UpdateProgressText();
+        _progressTimer.Tick += _progressTimerTick;
         _selectionPromptTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _selectionPromptTimer.Tick += (_, _) => ActiveSelectionPrompt?.Tick();
+        _selectionPromptTimerTick = (_, _) => ActiveSelectionPrompt?.Tick();
+        _selectionPromptTimer.Tick += _selectionPromptTimerTick;
 
         ApplyBudgetControlsSettings(_settingsService.LoadBudgetControls());
         Messages.Add(new ChatMessage("NanoAgent", "Ready."));
         Activity.Add(new AgentEvent("idle", "Idle"));
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+
+        _agentRunner.ConversationMessageReceived -= OnConversationMessageReceived;
+        _agentRunner.SelectionPromptChanged -= OnSelectionPromptChanged;
+        _agentRunner.TextPromptChanged -= OnTextPromptChanged;
+        _providerSetupRunner.ConversationMessageReceived -= OnConversationMessageReceived;
+        _providerSetupRunner.SelectionPromptChanged -= OnSelectionPromptChanged;
+        _providerSetupRunner.TextPromptChanged -= OnTextPromptChanged;
+
+        _progressTimer.Stop();
+        _progressTimer.Tick -= _progressTimerTick;
+        _selectionPromptTimer.Stop();
+        _selectionPromptTimer.Tick -= _selectionPromptTimerTick;
+
+        await _agentRunner.DisposeAsync();
+        await _providerSetupRunner.DisposeAsync();
     }
 
     public ObservableCollection<ChatMessage> Messages { get; } = new();
