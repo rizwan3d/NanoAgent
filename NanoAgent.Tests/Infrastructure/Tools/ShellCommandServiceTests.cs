@@ -95,10 +95,10 @@ public sealed class ShellCommandServiceTests : IDisposable
         request.FileName.Should().Be("powershell");
         request.MaxOutputCharacters.Should().Be(8000);
         request.Arguments.Should().Contain("-Command");
-        request.Arguments[^1].Should().Contain("Invoke-NanoSegment");
+        request.Arguments[^1].Should().Contain("$__nano_script_text");
         request.Arguments[^1].Should().Contain("FromBase64String");
         request.Arguments[^1].Should().Contain("$__nano_exit = $__nano_segment_exit");
-        request.Arguments[^1].Should().NotContain("$__nano_exit = Invoke-NanoSegment");
+        request.Arguments[^1].Should().Contain(". ([ScriptBlock]::Create($__nano_script_text))");
         request.Arguments[^1].Should().NotContain("&&");
     }
 
@@ -129,6 +129,35 @@ public sealed class ShellCommandServiceTests : IDisposable
             .Trim()
             .Should()
             .Be("ok");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_PreserveVariablesAcrossWindowsSemicolonSegments()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string filePath = Path.Combine(_workspaceRoot, "marker.txt");
+        await File.WriteAllTextAsync(filePath, "before", CancellationToken.None);
+
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest(
+                "$p = 'marker.txt'; $c = [IO.File]::ReadAllText((Resolve-Path $p).Path); $c = $c.Replace('before', 'after'); [IO.File]::WriteAllText((Resolve-Path $p).Path, $c, [Text.Encoding]::UTF8)",
+                null),
+            CancellationToken.None);
+
+        result.ExitCode.Should().Be(0);
+        File.ReadAllText(filePath).Should().Be("after");
     }
 
     [Fact]

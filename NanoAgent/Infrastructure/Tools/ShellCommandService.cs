@@ -725,27 +725,13 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         scriptBuilder.AppendLine("$ErrorActionPreference = 'Continue'");
         scriptBuilder.AppendLine("$__nano_exit = 0");
         scriptBuilder.AppendLine("$__nano_segment_exit = 0");
-        scriptBuilder.AppendLine("function Invoke-NanoSegment([string]$encoded) {");
-        scriptBuilder.AppendLine("  Set-Variable -Name LASTEXITCODE -Scope Global -Value 0 -Force");
-        scriptBuilder.AppendLine("  $script:__nano_segment_exit = 0");
-        scriptBuilder.AppendLine("  $scriptText = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($encoded))");
-        scriptBuilder.AppendLine("  try {");
-        scriptBuilder.AppendLine("    & ([ScriptBlock]::Create($scriptText))");
-        scriptBuilder.AppendLine("    if (-not $?) { $script:__nano_segment_exit = 1; return }");
-        scriptBuilder.AppendLine("    $script:__nano_segment_exit = [int]$global:LASTEXITCODE");
-        scriptBuilder.AppendLine("  }");
-        scriptBuilder.AppendLine("  catch {");
-        scriptBuilder.AppendLine("    Write-Error $_");
-        scriptBuilder.AppendLine("    $script:__nano_segment_exit = 1");
-        scriptBuilder.AppendLine("  }");
-        scriptBuilder.AppendLine("}");
 
         for (int index = 0; index < segments.Count; index++)
         {
             ShellCommandSegment segment = segments[index];
             string encodedSegment = Convert.ToBase64String(
                 Encoding.UTF8.GetBytes(segment.CommandText));
-            string invocation = $"Invoke-NanoSegment('{encodedSegment}'); $__nano_exit = $__nano_segment_exit";
+            string invocation = CreateWindowsSegmentInvocation(encodedSegment);
 
             if (index == 0 || segment.Condition == ShellCommandSegmentCondition.Always)
             {
@@ -764,6 +750,26 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
         scriptBuilder.AppendLine("exit $__nano_exit");
         return scriptBuilder.ToString();
+    }
+
+    private static string CreateWindowsSegmentInvocation(string encodedSegment)
+    {
+        StringBuilder invocation = new();
+        invocation.AppendLine("$__nano_segment_exit = 0");
+        invocation.AppendLine("Set-Variable -Name LASTEXITCODE -Scope Global -Value 0 -Force");
+        invocation.AppendLine(
+            $"$__nano_script_text = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('{encodedSegment}'))");
+        invocation.AppendLine("try {");
+        invocation.AppendLine("  . ([ScriptBlock]::Create($__nano_script_text))");
+        invocation.AppendLine("  if (-not $?) { $__nano_segment_exit = 1 }");
+        invocation.AppendLine("  else { $__nano_segment_exit = [int]$global:LASTEXITCODE }");
+        invocation.AppendLine("}");
+        invocation.AppendLine("catch {");
+        invocation.AppendLine("  Write-Error $_");
+        invocation.AppendLine("  $__nano_segment_exit = 1");
+        invocation.AppendLine("}");
+        invocation.Append("$__nano_exit = $__nano_segment_exit");
+        return invocation.ToString();
     }
 
     private string ResolveWorkspacePath(
