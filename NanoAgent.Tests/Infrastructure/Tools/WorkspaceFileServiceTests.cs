@@ -1305,6 +1305,32 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_NotIncludeBlankSeparator_BetweenAddFileAndNextOperation()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string existingPath = Path.Combine(_workspaceRoot, "existing.txt");
+        await File.WriteAllTextAsync(existingPath, "old\n", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Add File: hello.txt
+            +Hello world
+
+            *** Update File: existing.txt
+            @@
+            -old
+            +new
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(Path.Combine(_workspaceRoot, "hello.txt"), CancellationToken.None))
+            .Should()
+            .Be("Hello world\n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_PreserveExactContent_ForMoveOnlyUpdate()
     {
         WorkspaceFileService sut = CreateSut();
