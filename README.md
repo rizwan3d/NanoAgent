@@ -88,7 +88,7 @@ NanoAgent is designed for useful automation without silent surprises.
 - Permission rules decide what can run automatically, what asks first, and what is denied.
 - Sensitive actions can require approval, including file edits, shell commands, network access, MCP tools, memory writes, and elevated operations.
 - Tracked file edits can be undone and redone.
-- Secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
+- Secret redaction is off by default; when enabled, secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
 - Your workspace stays local; prompts and selected context are sent only to the model provider you configure when needed for a request.
 
 ## Benchmarks
