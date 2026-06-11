@@ -47,6 +47,7 @@ public static partial class Program
         new("/compact", "/compact [retained-turns]", "Manually compact session context.", false),
         new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
         new("/copy", "/copy", "Copy the last agent message.", false),
+        new("/doctor", "/doctor", "Show comprehensive system diagnostics.", false),
         new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
         new("/exit", "/exit", "Exit the interactive shell.", false),
         new("/export", "/export [json|html] [path]", "Export session as JSON or HTML.", false),
@@ -548,6 +549,7 @@ public static partial class Program
               --thinking <effort>  Override thinking effort
               -v, --version        Show version
               -h, --help           Show help
+              --doctor             Run system diagnostics and print doctor report
 
             Note:
               Run nanoai once to complete provider setup before using one-shot prompts.
