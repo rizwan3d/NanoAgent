@@ -17,7 +17,8 @@ internal sealed record CliInvocation(
     bool JsonOutput,
     bool AutoApproveAllTools,
     bool ShowHelp,
-    bool ShowVersion)
+    bool ShowVersion,
+    bool ShowDoctor)
 {
     public string[] BackendArgs => RuntimeArguments.RawArgs;
 
@@ -29,7 +30,8 @@ internal sealed record CliInvocation(
         JsonOutput: false,
         AutoApproveAllTools: false,
         ShowHelp: true,
-        ShowVersion: false);
+        ShowVersion: false,
+        ShowDoctor: false);
 
     public static CliInvocation Version { get; } = new(
         CliMode.Interactive,
@@ -39,7 +41,8 @@ internal sealed record CliInvocation(
         JsonOutput: false,
         AutoApproveAllTools: false,
         ShowHelp: false,
-        ShowVersion: true);
+        ShowVersion: true,
+        ShowDoctor: false);
 
     public static CliInvocation Parse(
         IReadOnlyList<string> args,
@@ -76,6 +79,20 @@ internal sealed record CliInvocation(
             if (IsVersionOption(arg))
             {
                 return Version;
+            }
+
+            if (IsDoctorOption(arg))
+            {
+                return new CliInvocation(
+                    CliMode.SingleTurn,
+                    runtimeArgumentsBuilder.Build(),
+                    providerAuthKey,
+                    Prompt: "/doctor",
+                    JsonOutput: false,
+                    AutoApproveAllTools: autoApproveAllTools,
+                    ShowHelp: false,
+                    ShowVersion: false,
+                    ShowDoctor: true);
             }
 
             if (IsAcpOption(arg))
@@ -158,7 +175,8 @@ internal sealed record CliInvocation(
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
-                ShowVersion: false);
+                ShowVersion: false,
+                ShowDoctor: false);
         }
 
         if (forceInteractive)
@@ -181,7 +199,8 @@ internal sealed record CliInvocation(
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
-                ShowVersion: false);
+                ShowVersion: false,
+                ShowDoctor: false);
         }
 
         if (readPromptFromStandardInput)
@@ -219,7 +238,8 @@ internal sealed record CliInvocation(
                 JsonOutput: false,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
-                ShowVersion: false);
+                ShowVersion: false,
+                ShowDoctor: false);
         }
 
         return new CliInvocation(
@@ -230,7 +250,8 @@ internal sealed record CliInvocation(
             jsonOutput,
             autoApproveAllTools,
             ShowHelp: false,
-            ShowVersion: false);
+            ShowVersion: false,
+            ShowDoctor: false);
     }
 
     private static bool IsHelpOption(string arg)
@@ -243,6 +264,11 @@ internal sealed record CliInvocation(
     {
         return string.Equals(arg, "-v", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(arg, "--version", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsDoctorOption(string arg)
+    {
+        return string.Equals(arg, "--doctor", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsAcpOption(string arg)
