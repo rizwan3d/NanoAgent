@@ -22,11 +22,19 @@ internal sealed class ConversationProviderResponseNormalizer
         }
 
         List<string> textParts = [];
+        List<string> thinkingParts = [];
         List<OpenAiChatCompletionToolCall> toolCalls = [];
         int toolCallOrdinal = 0;
 
         foreach (AnthropicResponseContentBlock contentBlock in response.Content)
         {
+            if (string.Equals(contentBlock.Type, "thinking", StringComparison.Ordinal) &&
+                !string.IsNullOrWhiteSpace(contentBlock.Thinking))
+            {
+                thinkingParts.Add(contentBlock.Thinking.Trim());
+                continue;
+            }
+
             if (string.Equals(contentBlock.Type, "text", StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(contentBlock.Text))
             {
@@ -51,6 +59,9 @@ internal sealed class ConversationProviderResponseNormalizer
         string content = string.Join(
             Environment.NewLine + Environment.NewLine,
             textParts);
+        string? reasoningContent = thinkingParts.Count == 0
+            ? null
+            : string.Join(Environment.NewLine + Environment.NewLine, thinkingParts);
         OpenAiChatCompletionResponse convertedResponse = new(
             response.Id,
             [
@@ -59,7 +70,8 @@ internal sealed class ConversationProviderResponseNormalizer
                         CreateStringContentElement(content),
                         toolCalls.Count == 0 ? null : toolCalls,
                         FunctionCall: null,
-                        Refusal: null),
+                        Refusal: null,
+                        ReasoningContent: reasoningContent),
                     MapAnthropicStopReason(response.StopReason))
             ],
             ConvertAnthropicUsage(response.Usage));
