@@ -2113,7 +2113,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (currentOperation == PatchOperationKind.Add && line.Length == 0)
             {
-                repaired.Add("+");
+                if (!CanTreatBlankUpdateLineAsSeparator(lines, index))
+                {
+                    repaired.Add("+");
+                }
                 continue;
             }
 
