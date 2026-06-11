@@ -871,6 +871,113 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_MatchEscapedGreaterThanInCSharpLambdaContext()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "AppDbContext.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            """
+            builder.Entity<User>()
+                .Property(entity => entity.Name)
+                .HasMaxLength(200);
+            """.Replace("\r\n", "\n", StringComparison.Ordinal) + "\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: AppDbContext.cs
+            @@ builder.Entity<User>()
+            -    .Property(entity =\u003E entity.Name)
+            +    .Property(entity => entity.DisplayName)
+                 .HasMaxLength(200);
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be(
+                """
+                builder.Entity<User>()
+                    .Property(entity => entity.DisplayName)
+                    .HasMaxLength(200);
+                """.Replace("\r\n", "\n", StringComparison.Ordinal) + "\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MatchEscapedGreaterThanInGenericAndComparisonContext()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Rules.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            """
+            if (items.Count > 0)
+            {
+                Dictionary<string, List<int>> cache = [];
+            }
+            """.Replace("\r\n", "\n", StringComparison.Ordinal) + "\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: Rules.cs
+            @@
+            -if (items.Count \u003E 0)
+            +if (items.Count > 1)
+             {
+            -    Dictionary<string, List<int\u003E\u003E cache = [];
+            +    Dictionary<string, List<long>> cache = [];
+             }
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be(
+                """
+                if (items.Count > 1)
+                {
+                    Dictionary<string, List<long>> cache = [];
+                }
+                """.Replace("\r\n", "\n", StringComparison.Ordinal) + "\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_NotBroadlyDecodeUnrelatedUnicodeEscapes()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Text.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "const string Message = \"snowman: ☃\";\n",
+            CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: Text.cs
+            @@
+            -const string Message = "snowman: \u2603";
+            +const string Message = "winter";
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*target context*");
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("const string Message = \"snowman: ☃\";\n");
+    }
+
+    [Fact]
     public async Task WriteFileWithTrackingAsync_Should_ReturnUndoableBeforeAndAfterStates()
     {
         WorkspaceFileService sut = CreateSut();
