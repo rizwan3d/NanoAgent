@@ -3,9 +3,10 @@ using NanoAgent.Desktop.Services;
 
 namespace NanoAgent.Desktop.ViewModels;
 
-public partial class MainWindowViewModel : ViewModelBase
+public partial class MainWindowViewModel : ViewModelBase, IAsyncDisposable
 {
     private bool _isRefreshingSections;
+    private bool _isDisposed;
 
     public MainWindowViewModel()
     {
@@ -47,6 +48,17 @@ public partial class MainWindowViewModel : ViewModelBase
     public ChatViewModel Chat { get; }
 
     public IAsyncRelayCommand StartNewSectionCommand { get; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        _isDisposed = true;
+        await Chat.DisposeAsync();
+    }
 
     private bool CanStartNewSection()
     {
