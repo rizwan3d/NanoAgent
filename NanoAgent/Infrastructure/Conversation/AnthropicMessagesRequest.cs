@@ -60,6 +60,7 @@ internal sealed record AnthropicMessagesResponse(
 internal sealed record AnthropicResponseContentBlock(
     [property: JsonPropertyName("type")] string? Type,
     [property: JsonPropertyName("text")] string? Text,
+    [property: JsonPropertyName("thinking")] string? Thinking,
     [property: JsonPropertyName("id")] string? Id,
     [property: JsonPropertyName("name")] string? Name,
     [property: JsonPropertyName("input")] JsonElement Input);
