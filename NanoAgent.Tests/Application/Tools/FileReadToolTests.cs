@@ -47,26 +47,36 @@ public sealed class FileReadToolTests
     [Fact]
     public async Task ExecuteAsync_Should_RedactEnvironmentFileContents()
     {
-        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
-        workspaceFileService
-            .Setup(service => service.ReadFileAsync(".env", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WorkspaceFileReadResult(
-                ".env",
-                "NODE_ENV=development\nDATABASE_URL=postgres://user:pass@example/db",
-                63));
+        bool originalValue = NanoAgent.Application.Utilities.SecretRedactor.IsEnabled;
+        NanoAgent.Application.Utilities.SecretRedactor.IsEnabled = true;
 
-        FileReadTool sut = new(workspaceFileService.Object);
+        try
+        {
+            Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+            workspaceFileService
+                .Setup(service => service.ReadFileAsync(".env", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new WorkspaceFileReadResult(
+                    ".env",
+                    "NODE_ENV=development\nDATABASE_URL=postgres://user:pass@example/db",
+                    63));
 
-        ToolResult result = await sut.ExecuteAsync(
-            CreateContext("""{ "path": ".env" }"""),
-            CancellationToken.None);
+            FileReadTool sut = new(workspaceFileService.Object);
 
-        result.Status.Should().Be(ToolResultStatus.Success);
-        result.JsonResult.Should().Contain("NODE_ENV");
-        result.JsonResult.Should().Contain("DATABASE_URL");
-        result.JsonResult.Should().Contain("redacted");
-        result.JsonResult.Should().NotContain("postgres://");
-        result.RenderPayload!.Text.Should().NotContain("development");
+            ToolResult result = await sut.ExecuteAsync(
+                CreateContext("""{ "path": ".env" }"""),
+                CancellationToken.None);
+
+            result.Status.Should().Be(ToolResultStatus.Success);
+            result.JsonResult.Should().Contain("NODE_ENV");
+            result.JsonResult.Should().Contain("DATABASE_URL");
+            result.JsonResult.Should().Contain("redacted");
+            result.JsonResult.Should().NotContain("postgres://");
+            result.RenderPayload!.Text.Should().NotContain("development");
+        }
+        finally
+        {
+            NanoAgent.Application.Utilities.SecretRedactor.IsEnabled = originalValue;
+        }
     }
 
     [Fact]
