@@ -362,7 +362,7 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task StartBackgroundAsync_Should_RejectWindowsSandboxedBackgroundTerminals()
+    public async Task StartBackgroundAsync_Should_RouteWindowsSandboxedBackgroundTerminals_ThroughSandboxRunner()
     {
         if (!OperatingSystem.IsWindows())
         {
@@ -371,6 +371,7 @@ public sealed class ShellCommandServiceTests : IDisposable
 
         FakeProcessRunner processRunner = new();
         FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new();
+        windowsSandboxProcessRunner.EnqueueBackgroundOutput("ready\n");
         ShellCommandService sut = new(
             processRunner,
             new StubWorkspaceRootProvider(_workspaceRoot),
@@ -381,11 +382,27 @@ public sealed class ShellCommandServiceTests : IDisposable
             CancellationToken.None);
 
         processRunner.Requests.Should().BeEmpty();
-        windowsSandboxProcessRunner.Requests.Should().BeEmpty();
+        windowsSandboxProcessRunner.BackgroundRequests.Should().ContainSingle();
+        ProcessExecutionRequest request = windowsSandboxProcessRunner.BackgroundRequests[0].Request;
+        WindowsSandboxExecutionContext context = windowsSandboxProcessRunner.BackgroundRequests[0].Context;
+        request.FileName.Should().Be("powershell");
+        request.EnvironmentVariables!["NANOAGENT_SANDBOX_ENFORCEMENT"].Should().Be("windows-sandbox");
+        context.Mode.Should().Be(ToolSandboxMode.WorkspaceWrite);
+
         result.Background.Should().BeTrue();
-        result.TerminalStatus.Should().Be("failed");
+        result.TerminalStatus.Should().Be("running");
         result.SandboxEnforcement.Should().Be("windows-sandbox");
-        result.StandardError.Should().Contain("Background terminals are not supported");
+        result.TerminalId.Should().NotBeNullOrWhiteSpace();
+
+        ShellCommandExecutionResult read = await sut.ReadBackgroundAsync(
+            result.TerminalId!,
+            CancellationToken.None);
+        read.StandardOutput.Should().Contain("ready");
+
+        ShellCommandExecutionResult stopped = await sut.StopBackgroundAsync(
+            result.TerminalId!,
+            CancellationToken.None);
+        stopped.TerminalStatus.Should().Be("stopped");
     }
 
     [Fact]
@@ -668,12 +685,20 @@ public sealed class ShellCommandServiceTests : IDisposable
     private sealed class FakeWindowsSandboxProcessRunner : IWindowsSandboxProcessRunner
     {
         private readonly Queue<ProcessExecutionResult> _results = new();
+        private readonly Queue<string> _backgroundOutputs = new();
 
         public List<(ProcessExecutionRequest Request, WindowsSandboxExecutionContext Context)> Requests { get; } = [];
+
+        public List<(ProcessExecutionRequest Request, WindowsSandboxExecutionContext Context)> BackgroundRequests { get; } = [];
 
         public void EnqueueResult(ProcessExecutionResult result)
         {
             _results.Enqueue(result);
+        }
+
+        public void EnqueueBackgroundOutput(string standardOutput)
+        {
+            _backgroundOutputs.Enqueue(standardOutput);
         }
 
         public Task<ProcessExecutionResult> RunAsync(
@@ -690,6 +715,84 @@ public sealed class ShellCommandServiceTests : IDisposable
             }
 
             return Task.FromResult(_results.Dequeue());
+        }
+
+        public Task<IBackgroundProcessHandle> StartBackgroundAsync(
+            ProcessExecutionRequest request,
+            WindowsSandboxExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            BackgroundRequests.Add((request, context));
+            string standardOutput = _backgroundOutputs.Count > 0
+                ? _backgroundOutputs.Dequeue()
+                : string.Empty;
+            return Task.FromResult<IBackgroundProcessHandle>(new FakeBackgroundProcessHandle(standardOutput));
+        }
+    }
+
+    private sealed class FakeBackgroundProcessHandle : IBackgroundProcessHandle
+    {
+        private readonly string _standardOutput;
+        private bool _exited;
+
+        public FakeBackgroundProcessHandle(string standardOutput)
+        {
+            _standardOutput = standardOutput;
+        }
+
+        public bool HasExited => _exited;
+
+        public int ExitCode { get; private set; }
+
+        public event EventHandler? Exited;
+
+        public void StartStreaming(
+            Action<string> onStandardOutput,
+            Action<string> onStandardError)
+        {
+            if (!string.IsNullOrEmpty(_standardOutput))
+            {
+                onStandardOutput(_standardOutput);
+            }
+        }
+
+        public Task WaitForExitAsync(CancellationToken cancellationToken)
+        {
+            Complete();
+            return Task.CompletedTask;
+        }
+
+        public bool WaitForExit(int milliseconds)
+        {
+            Complete();
+            return true;
+        }
+
+        public Task CompleteStreamingAsync(CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
+
+        public void Kill()
+        {
+            Complete();
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private void Complete()
+        {
+            if (_exited)
+            {
+                return;
+            }
+
+            _exited = true;
+            ExitCode = 0;
+            Exited?.Invoke(this, EventArgs.Empty);
         }
     }
 }

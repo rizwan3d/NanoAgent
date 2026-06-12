@@ -3,6 +3,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Secrets;
 using System.Collections;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO.Pipes;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
@@ -42,6 +43,74 @@ internal static class WindowsSandboxProcessRunner
                 innerCancellationToken));
         WindowsSandboxLog.Write(context.NanoAgentHome, $"command exit: code={result.ExitCode}");
         return result;
+    }
+
+    public static async Task<IBackgroundProcessHandle> StartBackgroundAsync(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            throw new PlatformNotSupportedException("Windows sandbox process launch is only available on Windows.");
+        }
+
+        WindowsSandboxPaths.EnsureStateDirectories(context.NanoAgentHome);
+        WindowsSandboxLog.Write(context.NanoAgentHome, $"background command start: mode={context.Mode}, cwd={context.CommandCwd}, file={request.FileName}");
+
+        WindowsAllowDenyPaths paths = WindowsAllowDenyPlanner.Compute(
+            context.Mode,
+            context.PolicyCwd,
+            context.CommandCwd,
+            context.WritableRoots,
+            request.EnvironmentVariables,
+            context.IncludeTempEnvironmentVariables);
+        EnsureSetupFresh(context, paths);
+
+        WindowsCapabilitySids capabilitySids = WindowsCapabilitySidStore.LoadOrCreate(context.NanoAgentHome);
+        string workspaceSid = WindowsCapabilitySidStore.WorkspaceSidForCwd(context.NanoAgentHome, context.CommandCwd);
+        request = MaterializeExternalExecutableIfNeeded(request, context);
+
+        // Unlike the foreground path, the prepared ACEs must remain applied for the full lifetime of
+        // the background command. Ownership of the revocation list transfers to the returned handle,
+        // which revokes them when it is disposed (i.e. when the terminal is stopped/expires).
+        List<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces = [];
+        bool transferred = false;
+        try
+        {
+            string sandboxGroupSid = SandboxGroupSids()[0];
+            PrepareAcls(context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces);
+            WindowsSandboxBackgroundProcess handle = await LaunchBackgroundViaSelfRunnerAsync(
+                request,
+                context,
+                temporaryAces,
+                cancellationToken);
+            transferred = true;
+            WindowsSandboxLog.Write(context.NanoAgentHome, "background command launched");
+            return handle;
+        }
+        catch (Exception exception)
+        {
+            WindowsSandboxLog.Write(context.NanoAgentHome, $"background command failure: {exception.GetType().Name}: {exception.Message}");
+            throw;
+        }
+        finally
+        {
+            if (!transferred)
+            {
+                foreach ((string path, string sid, FileSystemRights rights, AccessControlType type) in temporaryAces)
+                {
+                    try
+                    {
+                        WindowsSandboxAcl.RevokeAce(path, sid, rights, type);
+                    }
+                    catch (Exception exception)
+                    {
+                        WindowsSandboxLog.Write(context.NanoAgentHome, $"cleanup failure: revoke ACE {path}: {exception.Message}");
+                    }
+                }
+            }
+        }
     }
 
     internal static Task<ProcessExecutionResult> RunPreparedRestrictedChildAsync(
@@ -158,23 +227,7 @@ internal static class WindowsSandboxProcessRunner
         WindowsSandboxExecutionContext context,
         CancellationToken cancellationToken)
     {
-        WindowsSandboxRunnerPayload payload = new()
-        {
-            NanoAgentHome = context.NanoAgentHome,
-            CommandCwd = context.CommandCwd,
-            Mode = context.Mode == ToolSandboxMode.WorkspaceWrite
-                ? ToolSandboxModeDto.WorkspaceWrite
-                : ToolSandboxModeDto.ReadOnly,
-            UsePrivateDesktop = context.UsePrivateDesktop,
-            FileName = request.FileName,
-            Arguments = [.. request.Arguments],
-            StandardInput = request.StandardInput,
-            WorkingDirectory = request.WorkingDirectory ?? context.CommandCwd,
-            MaxOutputCharacters = request.MaxOutputCharacters,
-            EnvironmentVariables = request.EnvironmentVariables is null
-                ? null
-                : new Dictionary<string, string>(request.EnvironmentVariables, StringComparer.OrdinalIgnoreCase)
-        };
+        WindowsSandboxRunnerPayload payload = BuildRunnerPayload(request, context, background: false);
 
         string payloadB64 = EncodeRunnerPayload(payload);
         WindowsSandboxLaunchCommand launchCommand = CreateSelfLaunchCommand(context.NanoAgentHome);
@@ -351,6 +404,167 @@ internal static class WindowsSandboxProcessRunner
             if (processInformation.hProcess != IntPtr.Zero)
             {
                 WindowsSandboxNative.CloseHandle(processInformation.hProcess);
+            }
+        }
+    }
+
+    private static async Task<WindowsSandboxBackgroundProcess> LaunchBackgroundViaSelfRunnerAsync(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        IReadOnlyList<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces,
+        CancellationToken cancellationToken)
+    {
+        WindowsSandboxRunnerPayload payload = BuildRunnerPayload(request, context, background: true);
+        string payloadB64 = EncodeRunnerPayload(payload);
+        WindowsSandboxLaunchCommand launchCommand = CreateSelfLaunchCommand(context.NanoAgentHome);
+        (string pipeIn, string pipeOut) = WindowsSandboxRunnerClient.CreatePipeNames();
+        string parameters = CreateRunnerBootstrapParameters(
+            launchCommand.ParametersPrefix,
+            pipeIn,
+            pipeOut);
+        string commandLineText = QuoteWindowsArgument(launchCommand.FileName) + " " + parameters;
+        const string domain = ".";
+        const uint creationFlags = WindowsSandboxNative.CreateUnicodeEnvironment | WindowsSandboxNative.CreateNoWindow;
+        const bool environmentBlockIsNull = true;
+
+        WindowsSandboxNative.ProcessInformation processInformation = default;
+        string sandboxUserSid = string.Empty;
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            WindowsSandboxCredentials credentials;
+            try
+            {
+                credentials = WindowsSandboxIdentity.LoadOfflineCredentials(context.NanoAgentHome);
+            }
+            catch (Exception exception)
+            {
+                WindowsSandboxLog.Write(context.NanoAgentHome, $"background runner credential load failure: {exception.GetType().Name}: {exception.Message}");
+                if (attempt == 0 && TryRecoverRunnerStartup(context, 1326))
+                {
+                    continue;
+                }
+
+                throw new Win32Exception(1326, "credential_load_error=" + exception.Message);
+            }
+
+            WindowsSandboxRunnerStartupContext startupContext = new(
+                context.NanoAgentHome,
+                Path.GetFullPath(launchCommand.FileName),
+                commandLineText,
+                context.CommandCwd,
+                credentials.Username,
+                domain,
+                creationFlags,
+                LogonWithProfile: true,
+                environmentBlockIsNull);
+            sandboxUserSid = ResolveAccountSid(credentials.Username, domain).Value;
+
+            try
+            {
+                EnsureRunnerStartupPreflight(context, startupContext);
+            }
+            catch (Win32Exception exception) when (attempt == 0 && TryRecoverRunnerStartup(context, exception.NativeErrorCode))
+            {
+                WindowsSandboxLog.Write(context.NanoAgentHome, $"background runner startup preflight recovery attempted: error={exception.NativeErrorCode}");
+                continue;
+            }
+
+            StringBuilder commandLine = new(commandLineText);
+            WindowsSandboxNative.StartupInfo startupInfo = new()
+            {
+                cb = Marshal.SizeOf<WindowsSandboxNative.StartupInfo>()
+            };
+
+            bool created = WindowsSandboxNative.CreateProcessWithLogonW(
+                credentials.Username,
+                domain,
+                credentials.Password,
+                WindowsSandboxNative.LogonWithProfile,
+                launchCommand.FileName,
+                commandLine,
+                creationFlags,
+                IntPtr.Zero,
+                context.CommandCwd,
+                ref startupInfo,
+                out processInformation);
+            if (created)
+            {
+                break;
+            }
+
+            int error = Marshal.GetLastWin32Error();
+            WindowsSandboxRunnerStartupDiagnostics diagnostics =
+                WindowsSandboxRunnerStartupDiagnostics.FromWin32Error(
+                    error,
+                    startupContext,
+                    commandLineTooLong: IsCommandLineTooLongForCreateProcessWithLogonW(error, commandLineText));
+            diagnostics.Log(context.NanoAgentHome);
+            if (attempt == 0 && TryRecoverRunnerStartup(context, error))
+            {
+                WindowsSandboxLog.Write(context.NanoAgentHome, $"background runner startup recovery attempted: error={error}");
+                continue;
+            }
+
+            throw new Win32Exception(error, diagnostics.Text);
+        }
+
+        NamedPipeServerStream? inboundServer = null;
+        NamedPipeServerStream? outboundServer = null;
+        bool ownershipTransferred = false;
+        try
+        {
+            inboundServer = WindowsSandboxRunnerClient.CreateInboundServer(pipeIn, sandboxUserSid);
+            outboundServer = WindowsSandboxRunnerClient.CreateOutboundServer(pipeOut, sandboxUserSid);
+            WindowsSandboxLog.Write(context.NanoAgentHome, $"background runner launched: pid={processInformation.dwProcessId}, file={launchCommand.FileName}");
+
+            await Task.WhenAll(
+                inboundServer.WaitForConnectionAsync(cancellationToken),
+                outboundServer.WaitForConnectionAsync(cancellationToken));
+
+            await WindowsSandboxFramedIpc.WriteAsync(
+                inboundServer,
+                new WindowsSandboxIpcMessage
+                {
+                    Kind = WindowsSandboxIpcMessageKind.SpawnRequest,
+                    PayloadBase64 = payloadB64
+                },
+                cancellationToken);
+
+            WindowsSandboxIpcMessage ready = await WindowsSandboxFramedIpc.ReadAsync(outboundServer, cancellationToken);
+            if (ready.Kind != WindowsSandboxIpcMessageKind.SpawnReady)
+            {
+                throw new InvalidOperationException("Windows sandbox runner did not acknowledge the background spawn request.");
+            }
+
+            WindowsSandboxBackgroundProcess handle = new(
+                processInformation,
+                inboundServer,
+                outboundServer,
+                context.NanoAgentHome,
+                temporaryAces);
+            ownershipTransferred = true;
+            return handle;
+        }
+        finally
+        {
+            if (!ownershipTransferred)
+            {
+                inboundServer?.Dispose();
+                outboundServer?.Dispose();
+                if (processInformation.hProcess != IntPtr.Zero)
+                {
+                    WindowsSandboxNative.TerminateProcess(processInformation.hProcess, 1);
+                }
+
+                if (processInformation.hThread != IntPtr.Zero)
+                {
+                    WindowsSandboxNative.CloseHandle(processInformation.hThread);
+                }
+
+                if (processInformation.hProcess != IntPtr.Zero)
+                {
+                    WindowsSandboxNative.CloseHandle(processInformation.hProcess);
+                }
             }
         }
     }
@@ -550,6 +764,31 @@ internal static class WindowsSandboxProcessRunner
             new[] { request.FileName }
                 .Concat(request.Arguments)
                 .Select(QuoteWindowsArgument));
+    }
+
+    private static WindowsSandboxRunnerPayload BuildRunnerPayload(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        bool background)
+    {
+        return new WindowsSandboxRunnerPayload
+        {
+            NanoAgentHome = context.NanoAgentHome,
+            CommandCwd = context.CommandCwd,
+            Mode = context.Mode == ToolSandboxMode.WorkspaceWrite
+                ? ToolSandboxModeDto.WorkspaceWrite
+                : ToolSandboxModeDto.ReadOnly,
+            UsePrivateDesktop = context.UsePrivateDesktop,
+            Background = background,
+            FileName = request.FileName,
+            Arguments = [.. request.Arguments],
+            StandardInput = request.StandardInput,
+            WorkingDirectory = request.WorkingDirectory ?? context.CommandCwd,
+            MaxOutputCharacters = request.MaxOutputCharacters,
+            EnvironmentVariables = request.EnvironmentVariables is null
+                ? null
+                : new Dictionary<string, string>(request.EnvironmentVariables, StringComparer.OrdinalIgnoreCase)
+        };
     }
 
     private static string EncodeRunnerPayload(WindowsSandboxRunnerPayload payload)
@@ -1441,6 +1680,17 @@ internal static class WindowsSandboxProcessRunner
                 IncludeTempEnvironmentVariables: true,
                 UsePrivateDesktop: payload.UsePrivateDesktop);
 
+            if (payload.Background)
+            {
+                await RunSandboxUserChildStreamingAsync(
+                    request,
+                    context,
+                    inboundClient,
+                    outboundClient,
+                    cancellationToken);
+                return;
+            }
+
             ProcessExecutionResult result = await RunSandboxUserChildAsync(request, context, cancellationToken);
             await WindowsSandboxFramedIpc.WriteAsync(
                 outboundClient,
@@ -1490,6 +1740,261 @@ internal static class WindowsSandboxProcessRunner
         return new ProcessRunner().RunAsync(
             sandboxedRequest,
             cancellationToken);
+    }
+
+    private static async Task RunSandboxUserChildStreamingAsync(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        Stream inboundClient,
+        Stream outboundClient,
+        CancellationToken cancellationToken)
+    {
+        // Already running as the dedicated sandbox user with ACLs prepared. Launch the child directly
+        // and stream its stdout/stderr back to the host over the outbound pipe so the host can surface
+        // incremental output for a long-running background terminal.
+        ProcessExecutionRequest sandboxedRequest = request with
+        {
+            EnvironmentVariables = BuildSandboxEnvironmentMap(
+                request.EnvironmentVariables,
+                context.NanoAgentHome)
+        };
+
+        WindowsSandboxLog.Write(context.NanoAgentHome, "background child launch path: sandbox-user-direct (streaming)");
+
+        using SemaphoreSlim writeLock = new(1, 1);
+        using Process process = new()
+        {
+            StartInfo = CreateStreamingChildStartInfo(sandboxedRequest),
+            EnableRaisingEvents = true
+        };
+
+        try
+        {
+            process.Start();
+        }
+        catch (Exception exception)
+        {
+            await WriteFramedAsync(
+                outboundClient,
+                writeLock,
+                new WindowsSandboxIpcMessage
+                {
+                    Kind = WindowsSandboxIpcMessageKind.Error,
+                    ExitCode = 126,
+                    Error = $"Unable to start sandboxed background command '{sandboxedRequest.FileName}': {exception.Message}"
+                },
+                cancellationToken);
+            return;
+        }
+
+        using CancellationTokenSource terminateListenerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task standardOutputTask = PumpChildStreamAsync(
+            process.StandardOutput,
+            WindowsSandboxOutputStream.Stdout,
+            outboundClient,
+            writeLock,
+            cancellationToken);
+        Task standardErrorTask = PumpChildStreamAsync(
+            process.StandardError,
+            WindowsSandboxOutputStream.Stderr,
+            outboundClient,
+            writeLock,
+            cancellationToken);
+        Task terminateListenerTask = ListenForTerminateAsync(
+            inboundClient,
+            process,
+            terminateListenerCts.Token);
+
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKillChild(process);
+        }
+
+        terminateListenerCts.Cancel();
+
+        try
+        {
+            await Task.WhenAll(standardOutputTask, standardErrorTask);
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await terminateListenerTask;
+        }
+        catch
+        {
+        }
+
+        int exitCode = TryGetChildExitCode(process);
+        await WriteFramedAsync(
+            outboundClient,
+            writeLock,
+            new WindowsSandboxIpcMessage
+            {
+                Kind = WindowsSandboxIpcMessageKind.Exit,
+                ExitCode = exitCode,
+                PayloadBase64 = EncodeRunnerResult(new WindowsSandboxRunnerResult { ExitCode = exitCode })
+            },
+            cancellationToken);
+    }
+
+    private static ProcessStartInfo CreateStreamingChildStartInfo(ProcessExecutionRequest request)
+    {
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = request.FileName,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        if (!string.IsNullOrWhiteSpace(request.WorkingDirectory))
+        {
+            startInfo.WorkingDirectory = request.WorkingDirectory;
+        }
+
+        foreach (string argument in request.Arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        if (request.EnvironmentVariables is not null)
+        {
+            startInfo.Environment.Clear();
+            foreach (KeyValuePair<string, string> environmentVariable in request.EnvironmentVariables)
+            {
+                if (!string.IsNullOrWhiteSpace(environmentVariable.Key))
+                {
+                    startInfo.Environment[environmentVariable.Key] = environmentVariable.Value;
+                }
+            }
+        }
+
+        return startInfo;
+    }
+
+    private static async Task PumpChildStreamAsync(
+        TextReader reader,
+        WindowsSandboxOutputStream stream,
+        Stream outboundClient,
+        SemaphoreSlim writeLock,
+        CancellationToken cancellationToken)
+    {
+        char[] buffer = new char[BufferSize];
+        while (true)
+        {
+            int read;
+            try
+            {
+                read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            }
+            catch (Exception exception) when (exception is OperationCanceledException or IOException or ObjectDisposedException)
+            {
+                return;
+            }
+
+            if (read == 0)
+            {
+                return;
+            }
+
+            string chunk = new(buffer, 0, read);
+            string payloadB64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(chunk));
+            try
+            {
+                await WriteFramedAsync(
+                    outboundClient,
+                    writeLock,
+                    new WindowsSandboxIpcMessage
+                    {
+                        Kind = WindowsSandboxIpcMessageKind.Output,
+                        Stream = stream,
+                        PayloadBase64 = payloadB64
+                    },
+                    cancellationToken);
+            }
+            catch (Exception exception) when (exception is OperationCanceledException or IOException or ObjectDisposedException)
+            {
+                return;
+            }
+        }
+    }
+
+    private static async Task ListenForTerminateAsync(
+        Stream inboundClient,
+        Process process,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                WindowsSandboxIpcMessage message = await WindowsSandboxFramedIpc.ReadAsync(inboundClient, cancellationToken);
+                if (message.Kind == WindowsSandboxIpcMessageKind.Terminate)
+                {
+                    TryKillChild(process);
+                    return;
+                }
+            }
+        }
+        catch (Exception exception) when (
+            exception is OperationCanceledException or EndOfStreamException or IOException or ObjectDisposedException or InvalidDataException)
+        {
+        }
+    }
+
+    private static async Task WriteFramedAsync(
+        Stream stream,
+        SemaphoreSlim writeLock,
+        WindowsSandboxIpcMessage message,
+        CancellationToken cancellationToken)
+    {
+        await writeLock.WaitAsync(cancellationToken);
+        try
+        {
+            await WindowsSandboxFramedIpc.WriteAsync(stream, message, cancellationToken);
+        }
+        finally
+        {
+            writeLock.Release();
+        }
+    }
+
+    private static void TryKillChild(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (Win32Exception)
+        {
+        }
+    }
+
+    private static int TryGetChildExitCode(Process process)
+    {
+        try
+        {
+            return process.ExitCode;
+        }
+        catch (InvalidOperationException)
+        {
+            return 137;
+        }
     }
 
     private static async Task<string> ReadToEndCappedAsync(
