@@ -91,9 +91,6 @@ public static partial class SecretRedactor
     [GeneratedRegex(@"\b([A-Za-z0-9_.-]*(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|authorization|credential|client[_-]?secret|private[_-]?key|token(?:[_-]?(?:key|token|secret|id|value|string))?|secret(?:[_-]?(?:key|token|secret|id|value|string))?)\b\s*[:=]\s*[""']?)[^ \t\r\n\\,\""'}]+", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex SensitiveAssignmentRegex();
 
-    [GeneratedRegex(@"(?m)^(\s*(?:export\s+)?[A-Z][A-Z0-9_]{1,}\s*=\s*).+$", RegexOptions.CultureInvariant)]
-    private static partial Regex DotEnvAssignmentRegex();
-
     [GeneratedRegex(@"(?m)^(\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*).+$", RegexOptions.CultureInvariant)]
     private static partial Regex EnvironmentFileAssignmentRegex();
 }

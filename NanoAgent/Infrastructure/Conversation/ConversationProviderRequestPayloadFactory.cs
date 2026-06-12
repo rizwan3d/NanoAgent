@@ -1,5 +1,4 @@
 using NanoAgent.Application.Models;
-using NanoAgent.Domain.Models;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 

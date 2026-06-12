@@ -283,7 +283,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                                 cancellationToken)
                     };
 
-                string providerName = await CreateProviderNameAsync(profile, providerChoice, cancellationToken);
+                string providerName = CreateProviderName(profile, providerChoice);
                 await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
                 await _configurationStore.SaveAsync(
                     new AgentConfiguration(
@@ -326,15 +326,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         }
 
         return await _secretStore.LoadAsync(cancellationToken);
-    }
-
-    private async Task<string> CreateProviderNameAsync(
-        AgentProviderProfile profile,
-        OnboardingProviderChoice providerChoice,
-        CancellationToken cancellationToken)
-    {
-        await Task.CompletedTask;
-        return CreateProviderName(profile, providerChoice);
     }
 
     private static string CreateProviderName(

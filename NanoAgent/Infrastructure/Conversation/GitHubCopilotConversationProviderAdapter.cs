@@ -1,6 +1,5 @@
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Domain.Models;
 using NanoAgent.Infrastructure.GitHub;
 using System.Net.Http.Headers;
 using System.Text;

@@ -2,7 +2,6 @@ using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Domain.Models;
-using NanoAgent.Infrastructure;
 using NanoAgent.Infrastructure.Anthropic;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;

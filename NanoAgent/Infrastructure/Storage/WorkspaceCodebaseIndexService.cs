@@ -3,7 +3,6 @@ using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
 using System.Diagnostics;
-using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,8 +19,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
     private const int MaxSnippetsPerMatch = 3;
     private const int MaxSnippetCharacters = 220;
     private const int MaxStatusSamples = 8;
-
-    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     private static readonly string[] IgnoreFilePaths =
     [

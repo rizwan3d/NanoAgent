@@ -82,7 +82,7 @@ internal static class WindowsSandboxProcessRunner
         try
         {
             string sandboxGroupSid = SandboxGroupSids()[0];
-            PrepareAcls(request, context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces);
+            PrepareAcls(context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces);
             ProcessExecutionResult result = await ExecuteWithStartupRetryAsync(
                 async innerCancellationToken => await launcher(
                     request,
@@ -933,7 +933,6 @@ internal static class WindowsSandboxProcessRunner
     }
 
     private static void PrepareAcls(
-        ProcessExecutionRequest request,
         WindowsSandboxExecutionContext context,
         WindowsCapabilitySids capabilitySids,
         string workspaceSid,
