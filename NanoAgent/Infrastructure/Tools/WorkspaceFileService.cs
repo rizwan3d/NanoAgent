@@ -3079,12 +3079,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : content;
     }
 
-    private static string ComputeContentHash(string content)
-    {
-        byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(content));
-        return Convert.ToHexStringLower(hashBytes);
-    }
-
     private static bool IsLargeContent(string? content)
     {
         return content?.Length > ContentPreviewThresholdChars;
