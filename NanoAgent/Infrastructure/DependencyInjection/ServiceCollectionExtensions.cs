@@ -39,6 +39,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IUserDataPathProvider, UserDataPathProvider>();
         services.AddSingleton<IConversationSectionStore, JsonConversationSectionStore>();
         services.AddSingleton<ISessionStore, JsonSessionStore>();
+        services.AddSingleton<ISessionEventLogService, JsonSessionEventLogService>();
         services.AddSingleton<IWorkspaceRootProvider, CurrentDirectoryWorkspaceRootProvider>();
         services.AddSingleton<ProviderRequestProjectHeaderProvider>();
         services.AddSingleton(static serviceProvider =>
