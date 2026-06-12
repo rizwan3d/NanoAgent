@@ -4,6 +4,8 @@ namespace NanoAgent.Application.Abstractions;
 
 public interface IShellCommandService
 {
+    bool IsPseudoTerminalSupported { get; }
+
     Task<ShellCommandExecutionResult> ExecuteAsync(
         ShellCommandExecutionRequest request,
         CancellationToken cancellationToken);
