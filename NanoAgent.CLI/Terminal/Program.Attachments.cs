@@ -278,11 +278,6 @@ public static partial class Program
         return zeroCount > 0;
     }
 
-    private static bool IsLikelyBinaryFile(string path)
-    {
-        return !IsImageFile(path) && !IsTextExtension(path);
-    }
-
     private static bool IsImageFile(string path)
     {
         return Path.GetExtension(path).ToLowerInvariant() switch

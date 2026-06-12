@@ -67,14 +67,14 @@ internal static class WindowsSandboxSetupRoots
         bool includeTempEnvironmentVariables,
         string nanoAgentHome)
     {
-        var writeRoots = GatherWriteRoots(mode, policyCwd, commandCwd, writableRoots, envMap, includeTempEnvironmentVariables, nanoAgentHome);
+        var writeRoots = GatherWriteRoots(mode, policyCwd, commandCwd, writableRoots, envMap, includeTempEnvironmentVariables);
         writeRoots = ExpandUserProfileRoot(writeRoots);
         writeRoots = FilterUserProfileRoot(writeRoots);
         writeRoots = FilterUserProfileRootExclusions(writeRoots);
         writeRoots = FilterSshConfigDependencyRoots(writeRoots);
         writeRoots = FilterSensitiveWriteRoots(writeRoots, nanoAgentHome);
 
-        var readRoots = GatherReadRoots(mode, commandCwd, writableRoots, nanoAgentHome);
+        var readRoots = GatherReadRoots(commandCwd, writableRoots, nanoAgentHome);
         readRoots = ExpandUserProfileRoot(readRoots);
         readRoots = FilterUserProfileRoot(readRoots);
         readRoots = FilterUserProfileRootExclusions(readRoots);
@@ -115,7 +115,6 @@ internal static class WindowsSandboxSetupRoots
     }
 
    internal static List<string> GatherReadRoots(
-        ToolSandboxMode mode,
         string commandCwd,
         string[] writableRoots,
         string nanoAgentHome)
@@ -151,8 +150,7 @@ internal static class WindowsSandboxSetupRoots
         string commandCwd,
         string[] writableRoots,
         IReadOnlyDictionary<string, string>? envMap,
-        bool includeTempEnvironmentVariables,
-        string nanoAgentHome)
+        bool includeTempEnvironmentVariables)
     {
         var roots = new List<string>();
 
@@ -746,7 +744,6 @@ internal static class WindowsSandboxSetupRoots
         bool AllowLocalBinding);
 
     internal static SandboxNetworkIdentity NetworkIdentityFromPolicy(
-        ToolSandboxMode mode,
         bool proxyEnforced)
     {
         if (proxyEnforced)

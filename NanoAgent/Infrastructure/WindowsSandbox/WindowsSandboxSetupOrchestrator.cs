@@ -3,7 +3,6 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
-using NanoAgent.Application.Models;
 
 namespace NanoAgent.Infrastructure.WindowsSandbox;
 
@@ -56,7 +55,6 @@ internal static class WindowsSandboxSetupOrchestrator
 
             WindowsSandboxSetupRoots.SandboxNetworkIdentity networkIdentity =
                 WindowsSandboxSetupRoots.NetworkIdentityFromPolicy(
-                    ToolSandboxMode.ReadOnly,
                     proxyEnforced: false);
             WindowsSandboxSetupRoots.OfflineProxySettings desiredSettings = new(
                 payload.ProxyPorts ?? [],

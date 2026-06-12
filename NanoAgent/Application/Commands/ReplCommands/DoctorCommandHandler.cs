@@ -11,8 +11,6 @@ namespace NanoAgent.Application.Commands;
 
 internal sealed class DoctorCommandHandler : IReplCommandHandler
 {
-    private readonly IAgentConfigurationStore _configurationStore;
-    private readonly IAgentProfileResolver _profileResolver;
     private readonly IBudgetControlsUsageService _budgetUsageService;
     private readonly ICodeIntelligenceService _codeIntelligenceService;
     private readonly IEnumerable<IDynamicToolProvider> _dynamicToolProviders;
@@ -22,8 +20,6 @@ internal sealed class DoctorCommandHandler : IReplCommandHandler
     private readonly PermissionSettings _permissionSettings;
 
     public DoctorCommandHandler(
-        IAgentConfigurationStore configurationStore,
-        IAgentProfileResolver profileResolver,
         IBudgetControlsUsageService budgetUsageService,
         ICodeIntelligenceService codeIntelligenceService,
         IEnumerable<IDynamicToolProvider> dynamicToolProviders,
@@ -32,8 +28,6 @@ internal sealed class DoctorCommandHandler : IReplCommandHandler
         ILogger<DoctorCommandHandler> logger,
         PermissionSettings permissionSettings)
     {
-        _configurationStore = configurationStore;
-        _profileResolver = profileResolver;
         _budgetUsageService = budgetUsageService;
         _codeIntelligenceService = codeIntelligenceService;
         _dynamicToolProviders = dynamicToolProviders;
