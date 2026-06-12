@@ -5,7 +5,9 @@ using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Telemetry;
 using NanoAgent.Application.UI;
+using NanoAgent.Application.Tools;
 using NanoAgent.Domain.Models;
+using System.Text.Json;
 
 namespace NanoAgent.Application.Backend;
 
@@ -23,6 +25,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IInteractiveModelSelectionService? _modelSelectionService;
     private ReplSessionContext? _session;
     private ISessionAppService? _sessionAppService;
+    private ISessionEventLogService? _sessionEventLogService;
     private IApplicationUpdateService? _updateService;
     private IConfirmationPrompt? _confirmationPrompt;
     private IStatusMessageWriter? _statusMessageWriter;
@@ -89,6 +92,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             _autoApproveAllTools);
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
+        _sessionEventLogService = _host.Services.GetRequiredService<ISessionEventLogService>();
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
         _profileResolver = _host.Services.GetRequiredService<IAgentProfileResolver>();
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
@@ -241,20 +245,61 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
 
         _sessionAppService.EnsureTitleGenerationStarted(_session, input);
+        await RecordUserInputAsync(_session, input, cancellationToken);
 
-        ConversationTurnResult result = await _agentTurnService.RunTurnAsync(
-            new AgentTurnRequest(
-                _session,
-                input,
-                new UiConversationProgressSink(uiBridge),
-                attachments),
-            cancellationToken);
+        bool isDirectShellCommand = TryParseDirectShellCommand(input, out string? directShellCommand);
+        string? directShellWorkingDirectory = null;
+        if (isDirectShellCommand)
+        {
+            try
+            {
+                directShellWorkingDirectory = _session.ResolvePathFromWorkingDirectory(null);
+            }
+            catch (InvalidOperationException)
+            {
+                directShellWorkingDirectory = null;
+            }
+        }
+
+        ConversationTurnResult result;
+        try
+        {
+            result = await _agentTurnService.RunTurnAsync(
+                new AgentTurnRequest(
+                    _session,
+                    input,
+                    CreateProgressSink(_session, uiBridge),
+                    attachments),
+                cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            await RecordTurnFailureAsync(_session, input, exception, cancellationToken);
+            throw;
+        }
 
         ConversationTurnMetrics? metrics = result.Metrics;
         if (!string.IsNullOrWhiteSpace(result.ResponseText) && metrics is not null)
         {
             int sessionTotal = _session.AddEstimatedOutputTokens(metrics.EstimatedOutputTokens);
             metrics = metrics.WithSessionEstimatedOutputTokens(sessionTotal);
+        }
+
+        if (isDirectShellCommand &&
+            !string.IsNullOrWhiteSpace(directShellCommand) &&
+            result.ToolExecutionResult is not null)
+        {
+            await RecordDirectShellEventsAsync(
+                _session,
+                directShellCommand!,
+                directShellWorkingDirectory,
+                result.ToolExecutionResult,
+                cancellationToken);
+        }
+
+        if (result.Kind == ConversationTurnResultKind.AssistantMessage)
+        {
+            await RecordAssistantOutputAsync(_session, result.ResponseText, cancellationToken);
         }
 
         await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
@@ -429,5 +474,127 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
 
         await _statusMessageWriter.ShowErrorAsync(installResult.Message, cancellationToken);
+    }
+
+    private IConversationProgressSink CreateProgressSink(
+        ReplSessionContext session,
+        IUiBridge uiBridge)
+    {
+        IConversationProgressSink innerSink = new UiConversationProgressSink(uiBridge);
+        return _sessionEventLogService is null
+            ? innerSink
+            : new PersistingConversationProgressSink(
+                innerSink,
+                _sessionEventLogService,
+                session);
+    }
+
+    private Task RecordUserInputAsync(
+        ReplSessionContext session,
+        string input,
+        CancellationToken cancellationToken)
+    {
+        return _sessionEventLogService is null
+            ? Task.CompletedTask
+            : _sessionEventLogService.RecordUserInputAsync(
+                session,
+                input,
+                cancellationToken);
+    }
+
+    private Task RecordAssistantOutputAsync(
+        ReplSessionContext session,
+        string output,
+        CancellationToken cancellationToken)
+    {
+        return _sessionEventLogService is null
+            ? Task.CompletedTask
+            : _sessionEventLogService.RecordAssistantOutputAsync(
+                session,
+                output,
+                cancellationToken);
+    }
+
+    private Task RecordTurnFailureAsync(
+        ReplSessionContext session,
+        string input,
+        Exception exception,
+        CancellationToken cancellationToken)
+    {
+        return _sessionEventLogService is null
+            ? Task.CompletedTask
+            : _sessionEventLogService.RecordTurnFailureAsync(
+                session,
+                input,
+                exception,
+                cancellationToken);
+    }
+
+    private async Task RecordDirectShellEventsAsync(
+        ReplSessionContext session,
+        string command,
+        string? workingDirectory,
+        ToolExecutionBatchResult toolExecutionResult,
+        CancellationToken cancellationToken)
+    {
+        if (_sessionEventLogService is null ||
+            toolExecutionResult.Results.Count == 0)
+        {
+            return;
+        }
+
+        ToolInvocationResult invocationResult = toolExecutionResult.Results[0];
+        string argumentsJson = SerializeDirectShellArguments(
+            command,
+            workingDirectory ?? ".",
+            "require_escalated",
+            "User-entered direct shell command.");
+
+        await _sessionEventLogService.RecordToolCallRequestedAsync(
+            session,
+            new ConversationToolCall(
+                invocationResult.ToolCallId,
+                AgentToolNames.ShellCommand,
+                argumentsJson),
+            cancellationToken);
+        await _sessionEventLogService.RecordToolResultAsync(
+            session,
+            invocationResult,
+            cancellationToken);
+    }
+
+    private static string SerializeDirectShellArguments(
+        string command,
+        string workingDirectory,
+        string sandboxPermissions,
+        string justification)
+    {
+        return
+            "{" +
+            $"\"command\":\"{EscapeJson(command)}\"," +
+            $"\"workingDirectory\":\"{EscapeJson(workingDirectory)}\"," +
+            $"\"sandbox_permissions\":\"{EscapeJson(sandboxPermissions)}\"," +
+            $"\"justification\":\"{EscapeJson(justification)}\"" +
+            "}";
+    }
+
+    private static bool TryParseDirectShellCommand(
+        string input,
+        out string? command)
+    {
+        command = null;
+        string trimmedInput = input.Trim();
+        if (!trimmedInput.StartsWith('!'))
+        {
+            return false;
+        }
+
+        command = trimmedInput[1..].Trim();
+        return true;
+    }
+
+    private static string EscapeJson(string value)
+    {
+        return JsonEncodedText.Encode(value ?? string.Empty).ToString();
     }
 }
