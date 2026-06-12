@@ -681,6 +681,13 @@ public static partial class Program
             state.AddSystemMessage(statusMessage.Trim());
         }
 
+        if (!string.IsNullOrWhiteSpace(sessionInfo.SessionContentText))
+        {
+            state.AddSystemMessage(
+                "Restored session content:\n\n" +
+                sessionInfo.SessionContentText.Trim());
+        }
+
         foreach (BackendConversationMessage message in sessionInfo.ConversationHistory)
         {
             Role? role = message.Role switch
