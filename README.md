@@ -47,6 +47,21 @@ NanoAgent gives developers an AI teammate that can work inside a real repository
 
 It is built for practical engineering work: local projects, real shells, version-controlled memory, reviewable changes, and explicit approval for sensitive actions.
 
+## Table of Contents
+
+- [What You Can Do](#what-you-can-do)
+- [Product Surfaces](#product-surfaces)
+- [Built For Control](#built-for-control)
+- [Get Started](#get-started)
+- [Quick Start](#quick-start)
+- [Provider Choice](#provider-choice)
+- [Benchmarks](#benchmarks)
+- [Telemetry](#telemetry)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [Support](#support)
+- [License](#license)
+
 ## What You Can Do
 
 - Understand unfamiliar code faster with repository-aware search, summaries, and focused file inspection.
@@ -90,53 +105,6 @@ NanoAgent is designed for useful automation without silent surprises.
 - Tracked file edits can be undone and redone.
 - Secret redaction is off by default; when enabled, secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
 - Your workspace stays local; prompts and selected context are sent only to the model provider you configure when needed for a request.
-
-## Benchmarks
-
-NanoAgent includes task-based benchmarks in [`benchmarks/`](benchmarks) so we can measure real coding-agent behavior, not just chat-style answers. The benchmark suites currently cover bug fixing, repository understanding, patch quality, security review, tool safety, and a regression bundle that reruns the same tasks over time.
-
-Tasks are defined in [`benchmarks/tasks/`](benchmarks/tasks) and grouped by [`benchmarks/manifest.json`](benchmarks/manifest.json). Each task can score the agent with response checks, validation commands, and diff constraints against small local fixtures or this repository itself.
-
-Run the full benchmark set locally with:
-
-```bash
-python benchmarks/scripts/run_benchmarks.py --all --system --skip-preflight
-```
-
-Run the regression-only suite with:
-
-```bash
-python benchmarks/scripts/run_benchmarks.py --suite regression --system --skip-preflight
-```
-
-Generated summaries are refreshed in [`benchmarks/results/latest.md`](benchmarks/results/latest.md) and [`benchmarks/results/latest.json`](benchmarks/results/latest.json).
-
-## Telemetry
-
-NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.nanoagent/agent-profile.json` for the current workspace.
-
-Collected:
-- NanoAgent version
-- OS family
-- app surface such as CLI, Desktop, VS Code, Visual Studio, JetBrains, GitHub Actions, GitLab CI, or Bitbucket Pipelines
-- execution environment (`local` or `ci`)
-- CI provider when detected (`github_actions`, `gitlab_ci`, `bitbucket_pipelines`, or generic CI)
-- feature names used
-- success and failure counts
-- token and duration buckets
-- daily runs and usage-time buckets
-
-Never collected:
-- prompts
-- source code
-- file paths
-- repository names or URLs
-- API keys
-- terminal output
-
-## Provider Choice
-
-NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Kilo Code, Cerebras, Groq, Anthropic, Google AI Studio, Ollama, LM Studio, Ollama Cloud, and OpenAI-compatible providers.
 
 ## Get Started
 
@@ -185,9 +153,124 @@ nanoai
 
 The tag-based release workflows publish only `NanoAgent` to NuGet.org.
 
+## Quick Start
+
+On first launch, NanoAgent walks you through provider setup: pick a subscription account, API-key provider, OpenAI-compatible endpoint, or a local provider, then let it discover available models. After that you are ready to work.
+
+Start an interactive session in your repository:
+
+```bash
+nanoai
+```
+
+Run a single prompt and print the response:
+
+```bash
+nanoai "Find risky changes in this branch"
+```
+
+Pipe context in from another command:
+
+```bash
+git diff --stat | nanoai --stdin --profile review
+```
+
+Resume where you left off (NanoAgent prints a resume command when you exit):
+
+```bash
+nanoai --session <session-guid>
+```
+
+Once inside a session, common commands include:
+
+| Command | What it does |
+| --- | --- |
+| `/help` | List all commands and usage. |
+| `/models` | Pick the active model with the arrow-key picker. |
+| `/profile <name>` | Switch between implementation, planning, and review profiles. |
+| `/permissions` | Review what runs automatically, asks first, or is denied. |
+| `/init` | Scaffold workspace-local `.nanoagent` files. |
+| `/undo` / `/redo` | Roll back or re-apply the most recent tracked edit. |
+
+Save your own repeatable prompts as `.nanoagent/commands/*.md` and run them as slash commands. See the [full documentation](docs/documentation.md) for the complete command, profile, and configuration reference.
+
+## Provider Choice
+
+NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Kilo Code, Cerebras, Groq, Anthropic, Google AI Studio, Ollama, LM Studio, Ollama Cloud, and OpenAI-compatible providers.
+
+## Benchmarks
+
+NanoAgent includes task-based benchmarks in [`benchmarks/`](benchmarks) so we can measure real coding-agent behavior, not just chat-style answers. The benchmark suites currently cover bug fixing, repository understanding, patch quality, security review, tool safety, and a regression bundle that reruns the same tasks over time.
+
+Tasks are defined in [`benchmarks/tasks/`](benchmarks/tasks) and grouped by [`benchmarks/manifest.json`](benchmarks/manifest.json). Each task can score the agent with response checks, validation commands, and diff constraints against small local fixtures or this repository itself.
+
+Run the full benchmark set locally with:
+
+```bash
+python benchmarks/scripts/run_benchmarks.py --all --system --skip-preflight
+```
+
+Run the regression-only suite with:
+
+```bash
+python benchmarks/scripts/run_benchmarks.py --suite regression --system --skip-preflight
+```
+
+Generated summaries are refreshed in [`benchmarks/results/latest.md`](benchmarks/results/latest.md) and [`benchmarks/results/latest.json`](benchmarks/results/latest.json).
+
+## Telemetry
+
+NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.nanoagent/agent-profile.json` for the current workspace.
+
+Collected:
+- NanoAgent version
+- OS family
+- app surface such as CLI, Desktop, VS Code, Visual Studio, JetBrains, GitHub Actions, GitLab CI, or Bitbucket Pipelines
+- execution environment (`local` or `ci`)
+- CI provider when detected (`github_actions`, `gitlab_ci`, `bitbucket_pipelines`, or generic CI)
+- feature names used
+- success and failure counts
+- token and duration buckets
+- daily runs and usage-time buckets
+
+Never collected:
+- prompts
+- source code
+- file paths
+- repository names or URLs
+- API keys
+- terminal output
+
 ## Documentation
 
 The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
+
+## Contributing
+
+Contributions are welcome. To work on NanoAgent from source:
+
+1. Fork and clone the repository.
+2. Restore, build, and run the CLI:
+
+   ```bash
+   dotnet restore NanoAgent.CrossPlatform.slnx
+   dotnet build NanoAgent.CrossPlatform.slnx
+   dotnet run --project NanoAgent.CLI/NanoAgent.CLI.csproj
+   ```
+
+3. Run the test suite before opening a pull request:
+
+   ```bash
+   dotnet test NanoAgent.Tests/NanoAgent.Tests.csproj
+   ```
+
+Open an [issue](https://github.com/rizwan3d/NanoAgent/issues) to report bugs or propose features, and keep pull requests focused with a clear description of the change. See [docs/documentation.md](docs/documentation.md#build-from-source) for full source-build details.
+
+## Support
+
+- Browse the [documentation](docs/documentation.md) for setup, workflows, and troubleshooting.
+- Report bugs or request features via [GitHub Issues](https://github.com/rizwan3d/NanoAgent/issues).
+- Find the latest builds on the [Releases](https://github.com/rizwan3d/NanoAgent/releases/latest) page.
 
 ## License
 
