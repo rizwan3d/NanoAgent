@@ -11,57 +11,62 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
         Use the `apply_patch` tool to edit files.
 
         A valid patch MUST have this exact outer structure:
-        
+
         *** Begin Patch
         [file operations]
         *** End Patch
-        
-        Each file operation MUST start with exactly one action      header:
-        
+
+        Each file operation MUST start with exactly one action header:
+
         *** Add File: <path>
         *** Delete File: <path>
         *** Update File: <path>
-        
+
         Rules:
-        
+
         1. `*** Add File: <path>`
            - Creates a new file.
-           - Every file-content line that follows MUST start        with `+`.
+           - Every file-content line that follows MUST start with `+`.
            - Lines without `+` are invalid.
-        
+
         2. `*** Delete File: <path>`
            - Deletes an existing file.
            - No content lines may follow this operation.
-        
+
         3. `*** Update File: <path>`
            - Edits an existing file.
            - Each hunk starts with `@@` or `@@ <anchor text>`.
            - Every file line inside a hunk MUST start with ` `, `+`, or `-`.
            - The text after `@@` is only a locator. If you want to keep that file line, repeat it with a leading space. If you want to change it, include `-old line` and `+new line` entries in the hunk.
+           - Include a few unchanged context lines (prefixed with ` `) around each change so the edit matches a unique location. If the same lines appear more than once, add more context or a distinctive `@@ <anchor text>` locator.
            - May include:
              *** Move to: <new path>
-           - `*** Move to:` is only valid inside an `Update         File` operation.
-        
+           - `*** Move to:` is only valid inside an `*** Update File` operation.
+
+        Optional markers (inside an `*** Update File` hunk):
+        - `*** End of File` on its own line anchors the preceding hunk to the end of the file.
+        - `\ No newline at end of file` directly after a content line indicates the resulting file has no trailing newline.
+
         Example:
-        
+
         *** Begin Patch
         *** Add File: hello.txt
         +Hello world
-        
+
         *** Update File: src/app.py
         *** Move to: src/main.py
         @@ def greet():
         -print("Hi")
         +print("Hello, world!")
-        
+
         *** Delete File: obsolete.txt
         *** End Patch
-        
+
         Mandatory requirements:
         - Every operation MUST include an action header.
-        - New files MUST use `+` at the start of every content      line.
+        - New files MUST use `+` at the start of every content line.
         - Delete operations MUST NOT include file content.
-        - Patches missing `*** Begin Patch` or `*** End Patch`      are invalid.
+        - Patches missing `*** Begin Patch` or `*** End Patch` are invalid.
         - Patches with unknown headers are invalid.
         """;
 
