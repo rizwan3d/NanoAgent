@@ -4,6 +4,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 
 namespace NanoAgent.Infrastructure.Conversation;
 
@@ -46,11 +47,30 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
             using HttpRequestMessage httpRequest = createRequest();
             LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
 
-            using HttpResponseMessage response = await _httpClient.SendAsync(
-                httpRequest,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken);
+            HttpResponseMessage? response;
+            try
+            {
+                response = await _httpClient.SendAsync(
+                    httpRequest,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken);
+            }
+            catch (HttpRequestException ex) when (IsTransientNetworkError(ex) && attempt < MaxRetryAttempts)
+            {
+                retryCount++;
+                TimeSpan networkRetryDelay = CalculateRetryDelay(retryCount, null);
+                _logger.LogWarning(
+                    ex,
+                    "Transient network error on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                    attempt + 1,
+                    MaxRetryAttempts + 1,
+                    Math.Round(networkRetryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await _delayAsync(networkRetryDelay, cancellationToken);
+                continue;
+            }
 
+            using (response)
+            {
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
             LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
 
@@ -96,6 +116,7 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
             }
 
             ThrowConversationRequestFailed(response.StatusCode, responseBody);
+            } // using (response)
         }
 
         throw new ConversationProviderException(
@@ -123,6 +144,22 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         int numericStatusCode = (int)statusCode;
         return statusCode is HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests ||
             numericStatusCode is >= 500 and <= 599;
+    }
+
+    private static bool IsTransientNetworkError(HttpRequestException ex)
+    {
+        SocketException? socketEx = ex.InnerException as SocketException
+            ?? ex.InnerException?.InnerException as SocketException;
+
+        if (socketEx is not null)
+        {
+            return socketEx.SocketErrorCode is
+                SocketError.ConnectionReset or
+                SocketError.ConnectionAborted or
+                SocketError.TimedOut;
+        }
+
+        return ex.InnerException is IOException;
     }
 
     private TimeSpan CalculateRetryDelay(
