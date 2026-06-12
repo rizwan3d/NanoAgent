@@ -311,6 +311,8 @@ public sealed class AgentTurnServiceTests
             _result = result;
         }
 
+        public bool IsPseudoTerminalSupported => false;
+
         public List<ShellCommandExecutionRequest> Requests { get; } = [];
 
         public Task<ShellCommandExecutionResult> ExecuteAsync(

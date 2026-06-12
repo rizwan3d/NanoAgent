@@ -62,6 +62,19 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         AppDomain.CurrentDomain.ProcessExit += _processExitHandler;
     }
 
+    public bool IsPseudoTerminalSupported => _isPseudoTerminalSupported.Value;
+
+    private static readonly Lazy<bool> _isPseudoTerminalSupported = new(DetectPseudoTerminalSupport);
+
+    private static bool DetectPseudoTerminalSupport()
+    {
+        if (OperatingSystem.IsWindows())
+            return true;
+        if (OperatingSystem.IsLinux())
+            return File.Exists("/usr/bin/script") || File.Exists("/bin/script");
+        return false;
+    }
+
     public async Task<ShellCommandExecutionResult> ExecuteAsync(
         ShellCommandExecutionRequest request,
         CancellationToken cancellationToken)
