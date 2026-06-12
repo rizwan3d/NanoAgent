@@ -198,7 +198,7 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             normalizedRequest.PseudoTerminal);
     }
 
-    public Task<ShellCommandExecutionResult> StartBackgroundAsync(
+    public async Task<ShellCommandExecutionResult> StartBackgroundAsync(
         ShellCommandExecutionRequest request,
         CancellationToken cancellationToken)
     {
@@ -216,26 +216,24 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         }
 
         PreparedShellCommand prepared = PrepareShellCommand(normalizedRequest);
-        if (IsWindowsSandboxEnforcement(prepared.SandboxPlan.Enforcement))
-        {
-            return Task.FromResult(CreateExecutionFailureResult(
-                normalizedRequest,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                "Background terminals are not supported when Windows OS sandboxing is active. Re-run in the foreground or request sandbox escalation.",
-                background: true,
-                terminalAction: "start"));
-        }
 
         if (prepared.ProcessRequest.UsePseudoTerminal)
         {
-            return Task.FromResult(CreateExecutionFailureResult(
+            return CreateExecutionFailureResult(
                 normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 "Background terminals do not support pseudo-terminal mode.",
                 background: true,
-                terminalAction: "start"));
+                terminalAction: "start");
+        }
+
+        if (IsWindowsSandboxEnforcement(prepared.SandboxPlan.Enforcement))
+        {
+            return await StartWindowsSandboxBackgroundTerminalAsync(
+                normalizedRequest,
+                prepared,
+                cancellationToken);
         }
 
         try
@@ -244,19 +242,9 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             {
                 RemoveExpiredCompletedTerminals();
                 string sessionId = NormalizeSessionId(normalizedRequest.SessionId);
-                int runningCount = _backgroundTerminals.Values.Count(terminal =>
-                    string.Equals(terminal.SessionId, sessionId, StringComparison.Ordinal) &&
-                    terminal.IsRunning);
-
-                if (runningCount >= _maxConcurrentBackgroundTerminalsPerSession)
+                if (CountRunningTerminals(sessionId) >= _maxConcurrentBackgroundTerminalsPerSession)
                 {
-                    return Task.FromResult(CreateExecutionFailureResult(
-                        normalizedRequest,
-                        prepared.WorkingDirectory,
-                        prepared.SandboxPlan.Enforcement,
-                        $"Maximum background terminals per session reached ({_maxConcurrentBackgroundTerminalsPerSession}). Stop one with /terminals stop <id> before starting another.",
-                        background: true,
-                        terminalAction: "start"));
+                    return CreateBackgroundCapReachedResult(normalizedRequest, prepared);
                 }
 
                 BackgroundTerminal terminal = StartBackgroundTerminal(
@@ -264,35 +252,123 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
                     prepared);
                 _backgroundTerminals[terminal.Id] = terminal;
 
-                return Task.FromResult(CreateBackgroundResult(
+                return CreateBackgroundResult(
                     terminal,
                     terminalAction: "start",
                     terminalStatus: terminal.Status,
                     exitCode: 0,
                     standardOutput: string.Empty,
-                    standardError: string.Empty));
+                    standardError: string.Empty);
             }
-        }
-        catch (Win32Exception exception) when (IsSandboxRunnerEnforcement(prepared.SandboxPlan.Enforcement))
-        {
-            return Task.FromResult(CreateExecutionFailureResult(
-                normalizedRequest,
-                prepared.WorkingDirectory,
-                prepared.SandboxPlan.Enforcement,
-                $"Unable to start OS-level shell sandbox runner '{prepared.ProcessRequest.FileName}': {exception.Message}",
-                background: true,
-                terminalAction: "start"));
         }
         catch (Win32Exception exception)
         {
-            return Task.FromResult(CreateExecutionFailureResult(
+            return CreateExecutionFailureResult(
                 normalizedRequest,
                 prepared.WorkingDirectory,
                 prepared.SandboxPlan.Enforcement,
                 $"Unable to start shell '{prepared.ProcessRequest.FileName}': {exception.Message}",
                 background: true,
-                terminalAction: "start"));
+                terminalAction: "start");
         }
+    }
+
+    private async Task<ShellCommandExecutionResult> StartWindowsSandboxBackgroundTerminalAsync(
+        ShellCommandExecutionRequest request,
+        PreparedShellCommand prepared,
+        CancellationToken cancellationToken)
+    {
+        if (_windowsSandboxProcessRunner is null)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                "Windows OS sandboxing is not configured for shell execution.",
+                background: true,
+                terminalAction: "start");
+        }
+
+        string sessionId = NormalizeSessionId(request.SessionId);
+        lock (_backgroundTerminalGate)
+        {
+            RemoveExpiredCompletedTerminals();
+            if (CountRunningTerminals(sessionId) >= _maxConcurrentBackgroundTerminalsPerSession)
+            {
+                return CreateBackgroundCapReachedResult(request, prepared);
+            }
+        }
+
+        IBackgroundProcessHandle handle;
+        try
+        {
+            handle = await _windowsSandboxProcessRunner.StartBackgroundAsync(
+                prepared.ProcessRequest,
+                CreateWindowsSandboxExecutionContext(
+                    prepared.WorkingDirectory,
+                    prepared.EffectiveSandboxMode),
+                cancellationToken);
+        }
+        catch (Exception exception) when (exception is PlatformNotSupportedException or Win32Exception or InvalidOperationException)
+        {
+            return CreateExecutionFailureResult(
+                request,
+                prepared.WorkingDirectory,
+                prepared.SandboxPlan.Enforcement,
+                $"Unable to start Windows OS sandbox background terminal: {exception.Message}",
+                background: true,
+                terminalAction: "start");
+        }
+
+        BackgroundTerminal terminal = CreateBackgroundTerminal(request, prepared, handle);
+        terminal.StartReaders();
+
+        bool registered;
+        lock (_backgroundTerminalGate)
+        {
+            RemoveExpiredCompletedTerminals();
+            registered = CountRunningTerminals(sessionId) < _maxConcurrentBackgroundTerminalsPerSession;
+            if (registered)
+            {
+                _backgroundTerminals[terminal.Id] = terminal;
+            }
+        }
+
+        if (!registered)
+        {
+            // Lost the concurrency race after launching; tear the sandboxed terminal back down.
+            await terminal.StopAsync(cancellationToken);
+            terminal.Dispose();
+            return CreateBackgroundCapReachedResult(request, prepared);
+        }
+
+        return CreateBackgroundResult(
+            terminal,
+            terminalAction: "start",
+            terminalStatus: terminal.Status,
+            exitCode: 0,
+            standardOutput: string.Empty,
+            standardError: string.Empty);
+    }
+
+    private int CountRunningTerminals(string sessionId)
+    {
+        return _backgroundTerminals.Values.Count(terminal =>
+            string.Equals(terminal.SessionId, sessionId, StringComparison.Ordinal) &&
+            terminal.IsRunning);
+    }
+
+    private ShellCommandExecutionResult CreateBackgroundCapReachedResult(
+        ShellCommandExecutionRequest request,
+        PreparedShellCommand prepared)
+    {
+        return CreateExecutionFailureResult(
+            request,
+            prepared.WorkingDirectory,
+            prepared.SandboxPlan.Enforcement,
+            $"Maximum background terminals per session reached ({_maxConcurrentBackgroundTerminalsPerSession}). Stop one with /terminals stop <id> before starting another.",
+            background: true,
+            terminalAction: "start");
     }
 
     public async Task<ShellCommandExecutionResult> ReadBackgroundAsync(
@@ -493,20 +569,8 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             EnableRaisingEvents = true
         };
 
-        string terminalId = "terminal-" + Interlocked.Increment(ref _backgroundTerminalSequence).ToString("D", System.Globalization.CultureInfo.InvariantCulture);
-        BackgroundTerminal terminal = new(
-            terminalId,
-            NormalizeSessionId(request.SessionId),
-            request.Command,
-            ToWorkspaceRelativePath(prepared.WorkingDirectory),
-            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
-            string.IsNullOrWhiteSpace(request.Justification)
-                ? null
-                : request.Justification.Trim(),
-            ToWireValue(prepared.EffectiveSandboxMode),
-            prepared.SandboxPlan.Enforcement,
-            process,
-            _timeProvider);
+        LocalProcessBackgroundHandle handle = new(process);
+        BackgroundTerminal terminal = CreateBackgroundTerminal(request, prepared, handle);
         try
         {
             process.Start();
@@ -519,6 +583,28 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
         terminal.StartReaders();
         return terminal;
+    }
+
+    private BackgroundTerminal CreateBackgroundTerminal(
+        ShellCommandExecutionRequest request,
+        PreparedShellCommand prepared,
+        IBackgroundProcessHandle handle)
+    {
+        string terminalId = "terminal-" + Interlocked.Increment(ref _backgroundTerminalSequence)
+            .ToString("D", System.Globalization.CultureInfo.InvariantCulture);
+        return new BackgroundTerminal(
+            terminalId,
+            NormalizeSessionId(request.SessionId),
+            request.Command,
+            ToWorkspaceRelativePath(prepared.WorkingDirectory),
+            ShellCommandSandboxArguments.ToWireValue(request.SandboxPermissions),
+            string.IsNullOrWhiteSpace(request.Justification)
+                ? null
+                : request.Justification.Trim(),
+            ToWireValue(prepared.EffectiveSandboxMode),
+            prepared.SandboxPlan.Enforcement,
+            handle,
+            _timeProvider);
     }
 
     private static ProcessStartInfo CreateBackgroundStartInfo(ProcessExecutionRequest request)
@@ -885,11 +971,10 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         private readonly StringBuilder _standardOutput = new();
         private readonly object _syncRoot = new();
         private readonly TimeProvider _timeProvider;
+        private readonly IBackgroundProcessHandle _handle;
         private DateTimeOffset? _completedAtUtc;
         private bool _stopped;
-        private Task _standardErrorTask = Task.CompletedTask;
         private int _standardErrorCursor;
-        private Task _standardOutputTask = Task.CompletedTask;
         private int _standardOutputCursor;
 
         public BackgroundTerminal(
@@ -901,7 +986,7 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             string? justification,
             string sandboxMode,
             string sandboxEnforcement,
-            Process process,
+            IBackgroundProcessHandle handle,
             TimeProvider timeProvider)
         {
             Id = id;
@@ -912,10 +997,10 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             Justification = justification;
             SandboxMode = sandboxMode;
             SandboxEnforcement = sandboxEnforcement;
-            Process = process;
+            _handle = handle;
             _timeProvider = timeProvider;
             StartedAtUtc = timeProvider.GetUtcNow();
-            process.Exited += (_, _) => MarkCompleted();
+            handle.Exited += (_, _) => MarkCompleted();
         }
 
         public string Command { get; }
@@ -934,8 +1019,6 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         public bool IsRunning => string.Equals(Status, RunningStatus, StringComparison.Ordinal);
 
         public string? Justification { get; }
-
-        public Process Process { get; }
 
         public string SandboxEnforcement { get; }
 
@@ -970,11 +1053,8 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
         public void StartReaders()
         {
-            _standardOutputTask = ReadStreamAsync(
-                Process.StandardOutput,
-                AppendStandardOutput);
-            _standardErrorTask = ReadStreamAsync(
-                Process.StandardError,
+            _handle.StartStreaming(
+                AppendStandardOutput,
                 AppendStandardError);
         }
 
@@ -996,42 +1076,29 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
         public int ExitCodeOrDefault()
         {
-            try
-            {
-                return HasExited()
-                    ? Process.ExitCode
-                    : 0;
-            }
-            catch (InvalidOperationException)
-            {
-                return 0;
-            }
+            return HasExited()
+                ? _handle.ExitCode
+                : 0;
         }
 
         public async Task StopAsync(CancellationToken cancellationToken)
         {
             _stopped = true;
-            KillIfRunning();
-            await WaitForExitAsync(cancellationToken);
+            _handle.Kill();
+            await _handle.WaitForExitAsync(cancellationToken);
             await CompleteReadersAsync(cancellationToken);
         }
 
         public void Stop()
         {
             _stopped = true;
-            KillIfRunning();
-            try
-            {
-                Process.WaitForExit(milliseconds: 2_000);
-            }
-            catch (InvalidOperationException)
-            {
-            }
+            _handle.Kill();
+            _handle.WaitForExit(2_000);
         }
 
         public async Task CompleteReadersAsync(CancellationToken cancellationToken)
         {
-            await Task.WhenAll(_standardOutputTask, _standardErrorTask).WaitAsync(cancellationToken);
+            await _handle.CompleteStreamingAsync(cancellationToken);
         }
 
         public bool IsExpired(
@@ -1049,47 +1116,12 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
         public void Dispose()
         {
-            Process.Dispose();
-        }
-
-        private async Task WaitForExitAsync(CancellationToken cancellationToken)
-        {
-            try
-            {
-                await Process.WaitForExitAsync(cancellationToken);
-            }
-            catch (InvalidOperationException)
-            {
-            }
+            _handle.Dispose();
         }
 
         private bool HasExited()
         {
-            try
-            {
-                return Process.HasExited;
-            }
-            catch (InvalidOperationException)
-            {
-                return true;
-            }
-        }
-
-        private void KillIfRunning()
-        {
-            try
-            {
-                if (!HasExited())
-                {
-                    Process.Kill(entireProcessTree: true);
-                }
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (Win32Exception)
-            {
-            }
+            return _handle.HasExited;
         }
 
         private void MarkCompleted()
@@ -1136,37 +1168,6 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
                 int overflow = builder.Length - MaxBackgroundOutputCharacters;
                 builder.Remove(0, overflow);
                 cursor = Math.Max(0, cursor - overflow);
-            }
-        }
-
-        private static async Task ReadStreamAsync(
-            TextReader reader,
-            Action<string> append)
-        {
-            char[] buffer = new char[4096];
-            while (true)
-            {
-                int read;
-                try
-                {
-                    read = await reader.ReadAsync(buffer.AsMemory(0, buffer.Length));
-                }
-                catch (IOException exception)
-                {
-                    append($"{Environment.NewLine}Output capture stopped: {exception.Message}");
-                    return;
-                }
-                catch (ObjectDisposedException)
-                {
-                    return;
-                }
-
-                if (read == 0)
-                {
-                    return;
-                }
-
-                append(new string(buffer, 0, read));
             }
         }
     }

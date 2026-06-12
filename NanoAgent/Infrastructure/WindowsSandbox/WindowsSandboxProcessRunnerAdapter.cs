@@ -14,4 +14,15 @@ internal sealed class WindowsSandboxProcessRunnerAdapter : IWindowsSandboxProces
             context,
             cancellationToken);
     }
+
+    public Task<IBackgroundProcessHandle> StartBackgroundAsync(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        return WindowsSandboxProcessRunner.StartBackgroundAsync(
+            request,
+            context,
+            cancellationToken);
+    }
 }
