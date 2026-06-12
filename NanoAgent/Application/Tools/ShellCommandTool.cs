@@ -42,7 +42,11 @@ internal sealed class ShellCommandTool : ITool
         }
         """;
 
-    public string Schema => """
+    public string Schema => _shellCommandService.IsPseudoTerminalSupported
+        ? SchemaWithPty
+        : SchemaWithoutPty;
+
+    private const string SchemaWithPty = """
         {
           "type": "object",
           "properties": {
@@ -80,6 +84,50 @@ internal sealed class ShellCommandTool : ITool
             "pty": {
               "type": "boolean",
               "description": "When true, run the command attached to a pseudo-terminal so terminal-aware programs can emit interactive-style output."
+            },
+            "background": {
+              "type": "boolean",
+              "description": "Shortcut for terminal_action 'start'."
+            }
+          },
+          "additionalProperties": false
+        }
+        """;
+
+    private const string SchemaWithoutPty = """
+        {
+          "type": "object",
+          "properties": {
+            "command": {
+              "type": "string",
+              "description": "Shell command to execute. Required for terminal_action 'run' and 'start'."
+            },
+            "terminal_action": {
+              "type": "string",
+              "enum": ["run", "start", "read", "stop", "list"],
+              "description": "Use 'run' for foreground execution, 'start' to create a background terminal, 'read' to collect new output from a background terminal, 'stop' to terminate one, or 'list' to show active and recently completed terminals. Defaults to 'run'."
+            },
+            "terminal_id": {
+              "type": "string",
+              "description": "Background terminal id. Required for terminal_action 'read' and 'stop'."
+            },
+            "workingDirectory": {
+              "type": "string",
+              "description": "Optional working directory relative to the current session working directory. Defaults to the current session working directory."
+            },
+            "sandbox_permissions": {
+              "type": "string",
+              "enum": ["use_default", "require_escalated"],
+              "description": "Use 'use_default' for normal sandboxed execution. Use 'require_escalated' only when the command truly needs to run outside the configured sandbox."
+            },
+            "justification": {
+              "type": "string",
+              "description": "Required when sandbox_permissions is 'require_escalated'; briefly explain why sandbox escalation is needed."
+            },
+            "prefix_rule": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Optional command prefix that may be reused for similar future approvals."
             },
             "background": {
               "type": "boolean",
