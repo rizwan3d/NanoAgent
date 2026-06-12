@@ -355,6 +355,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             BackendConversationHistoryFormatter.Create(session))
         {
             AvailableAgentProfiles = CreateAgentProfileInfos(session, profileResolver),
+            SessionContentText = session.CreateStatefulContextPrompt(),
             TotalEstimatedOutputTokens = session.TotalEstimatedOutputTokens,
             SectionEstimatedContextTokens = EstimateSectionContextTokens(session)
         };
