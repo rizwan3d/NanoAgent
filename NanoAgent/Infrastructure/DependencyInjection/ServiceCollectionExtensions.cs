@@ -182,6 +182,11 @@ public static class ServiceCollectionExtensions
             client.Timeout = ResolveHttpClientTimeout(
                 serviceProvider.GetRequiredService<ToolExecutionSettings>(),
                 Timeout.InfiniteTimeSpan);
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromSeconds(90),
+            PooledConnectionIdleTimeout = TimeSpan.FromSeconds(30),
         });
         services.AddHttpClient<IModelProviderClient, OpenAiCompatibleModelProviderClient>((serviceProvider, client) =>
         {
