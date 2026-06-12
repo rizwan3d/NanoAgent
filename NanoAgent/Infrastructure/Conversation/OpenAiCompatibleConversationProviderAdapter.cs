@@ -1,6 +1,5 @@
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
-using NanoAgent.Infrastructure;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using System.Net.Http.Headers;
 using System.Text;

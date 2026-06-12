@@ -61,7 +61,7 @@ public static partial class Program
                 new Layout("input").Size(inputSize),
                 new Layout("footer").Size(footerSize));
 
-        root["header"].Update(BuildHeader(state));
+        root["header"].Update(BuildHeader());
 
         if (state.ActiveModal is not null)
         {
@@ -110,7 +110,7 @@ public static partial class Program
             .Expand();
     }
 
-    private static IRenderable BuildHeader(AppState state)
+    private static IRenderable BuildHeader()
     {
         return new Panel(new Markup(CliBranding.BuildHeaderBodyMarkup()))
             .Header(CliBranding.BuildStatusHeaderMarkup())

@@ -258,25 +258,6 @@ internal static class WindowsSandboxHelperMaterializer
             : null;
     }
 
-    private static string GetBundleIdentitySourcePath(string processPath)
-    {
-        string processName = Path.GetFileNameWithoutExtension(processPath);
-        if (!string.Equals(processName, "dotnet", StringComparison.OrdinalIgnoreCase))
-        {
-            return processPath;
-        }
-
-        string entryAssemblyName = Assembly.GetEntryAssembly()?.GetName().Name ??
-            throw new InvalidOperationException("Unable to locate the current NanoAgent assembly for Windows sandbox runner.");
-        string entryAssemblyPath = Path.Combine(AppContext.BaseDirectory, entryAssemblyName + ".dll");
-        if (!File.Exists(entryAssemblyPath))
-        {
-            throw new InvalidOperationException("Unable to locate the current NanoAgent assembly for Windows sandbox runner.");
-        }
-
-        return entryAssemblyPath;
-    }
-
     private static string? GetResourcesDirectory(string sourceDirectory)
     {
         string candidate = Path.Combine(sourceDirectory, "codex-resources");

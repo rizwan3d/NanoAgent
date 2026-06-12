@@ -1,6 +1,5 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Tools;
 using System.Globalization;
 
 namespace NanoAgent.Application.Commands;
