@@ -71,7 +71,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         _workspaceRootProvider = workspaceRootProvider;
     }
- 
+
 
     public async Task<WorkspaceApplyPatchResult> ApplyPatchAsync(
         string patch,
@@ -2292,9 +2292,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     }
 
     private static string ApplyUpdatePatch(
-        string path,
-        string previousContent,
-        IReadOnlyList<PatchHunk> hunks)
+    string path,
+    string previousContent,
+    IReadOnlyList<PatchHunk> hunks)
     {
         string[] originalLines = SplitLines(previousContent);
         List<PatchReplacement> replacements = [];
@@ -2342,10 +2342,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             string[] pattern = beforeLines;
             string[] replacementLines = afterLines;
             int patternSearchStart = changeContextIndex is not null &&
-                                     beforeLines.Length > 0 &&
-                                     string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
-                ? changeContextIndex.Value
-                : searchStart;
+                beforeLines.Length > 0 &&
+                string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
+                    ? changeContextIndex.Value
+                    : searchStart;
             PatchSequenceSearchResult match = FindUniqueSequenceMatch(
                 originalLines,
                 pattern,
@@ -2388,6 +2388,33 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 }
             }
 
+            // New fallback:
+            // If the full hunk and retry windows fail, try applying each independent
+            // removal/addition pair as a unique exact replacement.
+            //
+            // This fixes cases like XAML:
+            // -<Run Text="{Binding InvoiceDisplay}"/>
+            // +<Run Text="{Binding InvoiceDisplay, Mode=OneWay}"/>
+            //
+            // where stale surrounding context makes the full hunk fail, but the exact
+            // old text still exists uniquely in the current file.
+            if (match.Status == PatchSequenceSearchStatus.NotFound)
+            {
+                IReadOnlyList<PatchReplacement>? independentReplacements =
+                    TryFindIndependentReplacementMatches(originalLines, hunk);
+
+                if (independentReplacements is not null)
+                {
+                    replacements.AddRange(independentReplacements);
+
+                    searchStart = independentReplacements
+                        .Max(static replacement =>
+                            replacement.StartIndex + replacement.OldLineCount);
+
+                    continue;
+                }
+            }
+
             if (match.Status == PatchSequenceSearchStatus.NotFound)
             {
                 throw new InvalidOperationException(
@@ -2407,6 +2434,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         List<string> currentLines = originalLines.ToList();
+
         PatchReplacement[] orderedReplacements = replacements
             .OrderBy(static replacement => replacement.StartIndex)
             .ToArray();
@@ -2420,6 +2448,179 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         bool trailingNewLine = trailingNewLineOverride ?? true;
         return JoinLines(currentLines, trailingNewLine);
+    }
+
+    private static IReadOnlyList<PatchReplacement>? TryFindIndependentReplacementMatches(
+    IReadOnlyList<string> originalLines,
+    PatchHunk hunk)
+    {
+        IReadOnlyList<PatchIndependentReplacementGroup> groups =
+            BuildIndependentReplacementGroups(hunk);
+
+        if (groups.Count == 0)
+        {
+            return null;
+        }
+
+        List<PatchReplacement> replacements = [];
+
+        foreach (PatchIndependentReplacementGroup group in groups)
+        {
+            PatchReplacement? substringReplacement =
+                TryFindIndependentSubstringReplacement(originalLines, group, hunk);
+
+            if (substringReplacement is not null)
+            {
+                replacements.Add(substringReplacement.Value);
+                continue;
+            }
+
+            PatchSequenceSearchResult match = FindUniqueSequenceMatch(
+                originalLines,
+                group.BeforeLines,
+                startIndex: 0,
+                endOfFile: false);
+
+            if (match.Status == PatchSequenceSearchStatus.NotFound)
+            {
+                return null;
+            }
+
+            if (match.Status == PatchSequenceSearchStatus.Ambiguous)
+            {
+                throw new InvalidOperationException(
+                    "Could not apply the requested patch because an independent replacement matched multiple locations. " +
+                    $"Candidate starting lines: {DescribeCandidateLines(match.CandidateStartIndexes)}.");
+            }
+
+            replacements.Add(new PatchReplacement(
+                match.StartIndex,
+                group.BeforeLines.Count,
+                group.AfterLines,
+                hunk));
+        }
+
+        PatchReplacement[] ordered = replacements
+            .OrderBy(static replacement => replacement.StartIndex)
+            .ToArray();
+
+        for (int index = 1; index < ordered.Length; index++)
+        {
+            int previousEnd = ordered[index - 1].StartIndex + ordered[index - 1].OldLineCount;
+            if (ordered[index].StartIndex < previousEnd)
+            {
+                throw new InvalidOperationException(
+                    "Could not apply the requested patch because independent replacements overlap.");
+            }
+        }
+
+        return ordered;
+    }
+
+    private static PatchReplacement? TryFindIndependentSubstringReplacement(
+        IReadOnlyList<string> originalLines,
+        PatchIndependentReplacementGroup group,
+        PatchHunk hunk)
+    {
+        if (group.BeforeLines.Count != 1 ||
+            group.AfterLines.Count != 1 ||
+            string.IsNullOrEmpty(group.BeforeLines[0]))
+        {
+            return null;
+        }
+
+        string oldText = group.BeforeLines[0];
+        string newText = group.AfterLines[0];
+        List<int> matches = [];
+
+        for (int index = 0; index < originalLines.Count; index++)
+        {
+            if (originalLines[index].Contains(oldText, StringComparison.Ordinal))
+            {
+                matches.Add(index);
+            }
+        }
+
+        if (matches.Count == 0)
+        {
+            return null;
+        }
+
+        if (matches.Count > 1)
+        {
+            throw new InvalidOperationException(
+                "Could not apply the requested patch because an independent text replacement matched multiple lines. " +
+                $"Candidate starting lines: {DescribeCandidateLines(matches)}.");
+        }
+
+        int matchIndex = matches[0];
+        string replacementLine = originalLines[matchIndex]
+            .Replace(oldText, newText, StringComparison.Ordinal);
+
+        return new PatchReplacement(
+            matchIndex,
+            OldLineCount: 1,
+            [replacementLine],
+            hunk);
+    }
+
+    private static IReadOnlyList<PatchIndependentReplacementGroup> BuildIndependentReplacementGroups(
+        PatchHunk hunk)
+    {
+        List<PatchIndependentReplacementGroup> groups = [];
+        int index = 0;
+
+        while (index < hunk.Lines.Count)
+        {
+            while (index < hunk.Lines.Count &&
+                   hunk.Lines[index].Kind == PatchLineKind.Context)
+            {
+                index++;
+            }
+
+            if (index >= hunk.Lines.Count)
+            {
+                break;
+            }
+
+            if (hunk.Lines[index].Kind != PatchLineKind.Removal)
+            {
+                return [];
+            }
+
+            List<string> beforeLines = [];
+            while (index < hunk.Lines.Count &&
+                   hunk.Lines[index].Kind == PatchLineKind.Removal)
+            {
+                beforeLines.Add(hunk.Lines[index].Text);
+                index++;
+            }
+
+            if (index >= hunk.Lines.Count ||
+                hunk.Lines[index].Kind != PatchLineKind.Addition)
+            {
+                return [];
+            }
+
+            List<string> afterLines = [];
+            while (index < hunk.Lines.Count &&
+                   hunk.Lines[index].Kind == PatchLineKind.Addition)
+            {
+                afterLines.Add(hunk.Lines[index].Text);
+                index++;
+            }
+
+            if (beforeLines.Count == 0 || afterLines.Count == 0)
+            {
+                return [];
+            }
+
+            groups.Add(new PatchIndependentReplacementGroup(
+                beforeLines,
+                afterLines));
+        }
+
+        return groups;
     }
 
     private static bool? GetTrailingNewLineOverride(
@@ -3118,6 +3319,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int OldLineCount,
         IReadOnlyList<string> NewLines,
         string MatchStyle);
+    private readonly record struct PatchIndependentReplacementGroup(
+        IReadOnlyList<string> BeforeLines,
+        IReadOnlyList<string> AfterLines);
 
     private readonly record struct PatchSequenceSearchResult(
         PatchSequenceSearchStatus Status,
