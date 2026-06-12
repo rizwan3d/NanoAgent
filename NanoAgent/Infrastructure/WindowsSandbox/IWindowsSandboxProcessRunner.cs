@@ -8,4 +8,9 @@ internal interface IWindowsSandboxProcessRunner
         ProcessExecutionRequest request,
         WindowsSandboxExecutionContext context,
         CancellationToken cancellationToken);
+
+    Task<IBackgroundProcessHandle> StartBackgroundAsync(
+        ProcessExecutionRequest request,
+        WindowsSandboxExecutionContext context,
+        CancellationToken cancellationToken);
 }

@@ -110,6 +110,14 @@ internal sealed class WindowsSandboxRunnerPayload
 
     public bool UsePrivateDesktop { get; set; }
 
+    /// <summary>
+    /// When <see langword="true"/>, the runner streams stdout/stderr as incremental
+    /// <see cref="WindowsSandboxIpcMessageKind.Output"/> messages and stays alive until the child
+    /// exits or a <see cref="WindowsSandboxIpcMessageKind.Terminate"/> message is received, instead
+    /// of buffering output and returning a single <see cref="WindowsSandboxIpcMessageKind.Exit"/>.
+    /// </summary>
+    public bool Background { get; set; }
+
     public string FileName { get; set; } = string.Empty;
 
     public string[] Arguments { get; set; } = [];
