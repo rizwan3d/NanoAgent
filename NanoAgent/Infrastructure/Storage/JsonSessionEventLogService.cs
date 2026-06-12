@@ -1,6 +1,5 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
-using NanoAgent.Application.Tools;
 using NanoAgent.Application.Utilities;
 using System.Text;
 using System.Text.Json;

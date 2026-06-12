@@ -110,10 +110,8 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="BuildNanoAgentCliPayload" BeforeTargets="GetVsixSourceItems" Condition="Exists('$(NanoAgentCliProjectPath)')">
-    <Exec Condition="'$(BuildNanoAgentCliProject)' == 'true'"
-          Command="dotnet build &quot;$(NanoAgentCliProjectPath)&quot; --configuration &quot;$(Configuration)&quot; --nologo" />
-    <Error Condition="!Exists('$(NanoAgentCliOutputDir)NanoAgent.CLI.exe') and !Exists('$(NanoAgentCliOutputDir)NanoAgent.CLI.dll')"
-           Text="NanoAgent CLI payload was not found in '$(NanoAgentCliOutputDir)'. Build NanoAgent.CLI first or set BuildNanoAgentCliProject=true." />
+    <Exec Condition="'$(BuildNanoAgentCliProject)' == 'true'" Command="dotnet build &quot;$(NanoAgentCliProjectPath)&quot; --configuration &quot;$(Configuration)&quot; --nologo" />
+    <Error Condition="!Exists('$(NanoAgentCliOutputDir)NanoAgent.CLI.exe') and !Exists('$(NanoAgentCliOutputDir)NanoAgent.CLI.dll')" Text="NanoAgent CLI payload was not found in '$(NanoAgentCliOutputDir)'. Build NanoAgent.CLI first or set BuildNanoAgentCliProject=true." />
     <ItemGroup>
       <NanoAgentCliRootPayload Include="$(NanoAgentCliOutputDir)*.exe;$(NanoAgentCliOutputDir)*.dll;$(NanoAgentCliOutputDir)*.json" Exclude="$(NanoAgentCliOutputDir)**\*.pdb" />
       <NanoAgentCliRuntimePayload Include="$(NanoAgentCliOutputDir)runtimes\**\*" Exclude="$(NanoAgentCliOutputDir)**\*.pdb" />
@@ -130,12 +128,8 @@
         <Visible>false</Visible>
       </Content>
     </ItemGroup>
-    <Copy SourceFiles="@(NanoAgentCliRootPayload)"
-          DestinationFiles="@(NanoAgentCliRootPayload->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(NanoAgentCliRuntimePayload)"
-          DestinationFiles="@(NanoAgentCliRuntimePayload->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NanoAgentCliRootPayload)" DestinationFiles="@(NanoAgentCliRootPayload->'$(OutDir)%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NanoAgentCliRuntimePayload)" DestinationFiles="@(NanoAgentCliRuntimePayload->'$(OutDir)runtimes\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
   <Import Project="$(VSToolsPath)\VSSDK\Microsoft.VsSDK.targets" Condition="'$(VSToolsPath)' != ''" />
 </Project>

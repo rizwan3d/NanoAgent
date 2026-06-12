@@ -52,7 +52,7 @@ internal sealed class LanguageServerRegistry : ILanguageServerRegistry
             ClearWorkspaceCache(workspaceRoot);
         }
 
-        List<LanguageServerDescriptor> servers = BuildDescriptors(workspaceRoot)
+        List<LanguageServerDescriptor> servers = BuildDescriptors()
             .Where(server => server.Enabled && server.FileExtensions.Any(candidate => string.Equals(candidate, extension, StringComparison.OrdinalIgnoreCase)))
             .OrderByDescending(static server => server.Priority)
             .ThenBy(static server => server.Key, StringComparer.OrdinalIgnoreCase)
@@ -84,7 +84,7 @@ internal sealed class LanguageServerRegistry : ILanguageServerRegistry
             ClearWorkspaceCache(workspaceRoot);
         }
 
-        LanguageServerStatusEntry[] entries = BuildDescriptors(workspaceRoot)
+        LanguageServerStatusEntry[] entries = BuildDescriptors()
             .GroupBy(static descriptor => descriptor.Language, StringComparer.OrdinalIgnoreCase)
             .OrderBy(static group => group.Key, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
@@ -150,7 +150,7 @@ internal sealed class LanguageServerRegistry : ILanguageServerRegistry
         };
     }
 
-    private List<LanguageServerDescriptor> BuildDescriptors(string workspaceRoot)
+    private List<LanguageServerDescriptor> BuildDescriptors()
     {
         Dictionary<string, LanguageServerDescriptor> descriptors = CreateBuiltIns()
             .ToDictionary(static item => item.Key, StringComparer.OrdinalIgnoreCase);

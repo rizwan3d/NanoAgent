@@ -46,7 +46,6 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
     private readonly EventHandler _progressTimerTick;
     private readonly EventHandler _selectionPromptTimerTick;
     private bool _isDisposed;
-    private BudgetControlsSettings _budgetControlsSettings = BudgetControlsSettings.Default;
     private DateTimeOffset? _currentRunStartedAt;
     private int? _activeModelContextWindowTokens;
     private bool _isApplyingSessionInfo;
@@ -1279,7 +1278,6 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
 
     private void ApplyBudgetControlsSettings(BudgetControlsSettings settings)
     {
-        _budgetControlsSettings = settings;
         SelectedBudgetControlSource = settings.Source;
 
         if (string.Equals(settings.Source, BudgetControlsSettings.CloudSource, StringComparison.OrdinalIgnoreCase))
