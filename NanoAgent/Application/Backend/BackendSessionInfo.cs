@@ -15,6 +15,8 @@ public sealed record BackendSessionInfo(
 {
     public IReadOnlyList<BackendAgentProfileInfo> AvailableAgentProfiles { get; init; } = [];
 
+    public string? SessionContentText { get; init; }
+
     public int TotalEstimatedOutputTokens { get; init; }
 
     public int SectionEstimatedContextTokens { get; init; }
