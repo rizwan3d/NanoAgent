@@ -125,6 +125,42 @@ public sealed class SessionCommandHandlerTests : IDisposable
         session.ConversationTurns[2].UserInput.Should().Be("prompt 5");
     }
 
+    [Fact]
+    public async Task NewAsync_Should_StartFreshSectionWithoutAccumulatingPreviousContext()
+    {
+        ReplSessionContext currentSession = CreateSession();
+        currentSession.SetReasoningEffort("on");
+
+        ReplSessionContext nextSession = new(
+            currentSession.ProviderProfile,
+            currentSession.ActiveModelId,
+            currentSession.AvailableModelIds,
+            agentProfile: currentSession.AgentProfile,
+            reasoningEffort: currentSession.ReasoningEffort,
+            modelContextWindowTokens: currentSession.ModelContextWindowTokens,
+            activeProviderName: currentSession.ActiveProviderName);
+        RecordingNewSessionAppService sessionAppService = new(nextSession);
+        NewSessionCommandHandler sut = new(sessionAppService);
+
+        ReplCommandResult result = await sut.ExecuteAsync(
+            CreateContext(currentSession),
+            CancellationToken.None);
+
+        sessionAppService.SaveIfDirtyCalls.Should().Be(1);
+        sessionAppService.CreateAsyncCalls.Should().Be(1);
+        sessionAppService.CreateNewSectionInSessionCalls.Should().Be(0);
+        sessionAppService.LastCreateRequest.Should().NotBeNull();
+        sessionAppService.LastCreateRequest!.ProviderProfile.Should().Be(currentSession.ProviderProfile);
+        sessionAppService.LastCreateRequest.ActiveModelId.Should().Be(currentSession.ActiveModelId);
+        sessionAppService.LastCreateRequest.AvailableModelIds.Should().Equal(currentSession.AvailableModelIds);
+        sessionAppService.LastCreateRequest.ProfileName.Should().Be(currentSession.AgentProfileName);
+        sessionAppService.LastCreateRequest.ReasoningEffort.Should().Be(currentSession.ReasoningEffort);
+        sessionAppService.LastCreateRequest.ModelContextWindowTokens.Should().BeSameAs(currentSession.ModelContextWindowTokens);
+        sessionAppService.LastCreateRequest.ActiveProviderName.Should().Be(currentSession.ActiveProviderName);
+        result.SessionOverride.Should().BeSameAs(nextSession);
+        result.Message.Should().Contain("Started fresh section.");
+    }
+
     public void Dispose()
     {
         try
@@ -347,6 +383,75 @@ public sealed class SessionCommandHandlerTests : IDisposable
             CancellationToken cancellationToken)
         {
             throw new PromptCancelledException();
+        }
+    }
+
+    private sealed class RecordingNewSessionAppService : ISessionAppService
+    {
+        private readonly ReplSessionContext _nextSession;
+
+        public RecordingNewSessionAppService(ReplSessionContext nextSession)
+        {
+            _nextSession = nextSession;
+        }
+
+        public int CreateAsyncCalls { get; private set; }
+
+        public int CreateNewSectionInSessionCalls { get; private set; }
+
+        public CreateSessionRequest? LastCreateRequest { get; private set; }
+
+        public int SaveIfDirtyCalls { get; private set; }
+
+        public Task<ReplSessionContext> CreateAsync(
+            CreateSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            CreateAsyncCalls++;
+            LastCreateRequest = request;
+            return Task.FromResult(_nextSession);
+        }
+
+        public Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+            ReplSessionContext currentSession,
+            CancellationToken cancellationToken)
+        {
+            CreateNewSectionInSessionCalls++;
+            throw new NotSupportedException();
+        }
+
+        public void EnsureTitleGenerationStarted(
+            ReplSessionContext session,
+            string firstUserPrompt)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<SessionSummary>> ListAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> ResumeAsync(
+            ResumeSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task SaveIfDirtyAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            SaveIfDirtyCalls++;
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
         }
     }
 }
