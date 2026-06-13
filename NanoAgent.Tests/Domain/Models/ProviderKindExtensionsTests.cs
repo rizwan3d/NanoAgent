@@ -20,6 +20,7 @@ public sealed class ProviderKindExtensionsTests
     [InlineData(ProviderKind.Cerebras, "Cerebras")]
     [InlineData(ProviderKind.Groq, "Groq")]
     [InlineData(ProviderKind.OpenCodeZen, "OpenCode Zen")]
+    [InlineData(ProviderKind.DeepSeek, "DeepSeek")]
     [InlineData(ProviderKind.OpenAiCompatible, "OpenAI-compatible provider")]
     public void ToDisplayName_Should_ReturnExpectedName_For_EachProviderKind(ProviderKind kind, string expected)
     {
@@ -43,6 +44,7 @@ public sealed class ProviderKindExtensionsTests
     [InlineData(ProviderKind.Cerebras, "https://api.cerebras.ai/v1")]
     [InlineData(ProviderKind.Groq, "https://api.groq.com/openai/v1")]
     [InlineData(ProviderKind.OpenCodeZen, "https://opencode.ai/zen/v1")]
+    [InlineData(ProviderKind.DeepSeek, "https://api.deepseek.com/v1")]
     public void GetManagedBaseUrl_Should_ReturnBaseUrl_For_ManagedProviders(ProviderKind kind, string expected)
     {
         string? result = kind.GetManagedBaseUrl();

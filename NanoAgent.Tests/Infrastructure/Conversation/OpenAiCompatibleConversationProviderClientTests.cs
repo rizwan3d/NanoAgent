@@ -474,6 +474,43 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_PostChatCompletionsToDeepSeekEndpoint_When_ProviderIsSelected()
+    {
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_deepseek",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello from DeepSeek."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.DeepSeek, null),
+                "deepseek-key",
+                "deepseek-chat",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.RequestUri.Should().Be(new Uri("https://api.deepseek.com/v1/chat/completions"));
+        handler.AuthorizationHeader.Should().Be("Bearer deepseek-key");
+        handler.RequestBody.Should().Contain("\"model\":\"deepseek-chat\"");
+        payload.ProviderKind.Should().Be(ProviderKind.DeepSeek);
+        payload.ResponseId.Should().Be("req_789");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToOpenCodeZenEndpoint_When_ProviderIsSelected()
     {
         RecordingHandler handler = new("""

@@ -299,6 +299,7 @@ public sealed class FirstRunOnboardingServiceTests
                         "Kilo Code",
                         "Cerebras",
                         "Groq",
+                        "DeepSeek",
                         "OpenCode Zen",
                         "Ollama Cloud");
 

@@ -69,6 +69,11 @@ internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
         return new AgentProviderProfile(ProviderKind.OpenCodeZen, BaseUrl: null);
     }
 
+    public AgentProviderProfile CreateDeepSeek()
+    {
+        return new AgentProviderProfile(ProviderKind.DeepSeek, BaseUrl: null);
+    }
+
     public AgentProviderProfile CreateGoogleAiStudio()
     {
         return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);
