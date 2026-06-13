@@ -596,6 +596,18 @@ Indexing respects `.gitignore`, `.nanoagent/.nanoignore`, and built-in exclusion
 
 Use `codebase_index` for broad discovery first, then use `file_read`, `text_search`, or `code_intelligence` to verify exact behavior before editing.
 
+### Manual Index Updates
+
+Use the `/index` REPL command to refresh the local codebase index from a terminal or desktop session:
+
+```text
+/index
+/index update
+/index status
+/index rebuild
+/index list
+/index list 50
+
 ## Providers and Models
 
 NanoAgent stores a provider profile locally and discovers models from that provider when possible.
