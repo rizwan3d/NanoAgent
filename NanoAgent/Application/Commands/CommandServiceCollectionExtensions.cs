@@ -17,6 +17,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, ConfigCommandHandler>();
         services.AddSingleton<IReplCommandHandler, CloneCommandHandler>();
         services.AddSingleton<IReplCommandHandler, CompactCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, CodebaseIndexCommandHandler>();
         services.AddSingleton<IReplCommandHandler, CopyCommandHandler>();
         services.AddSingleton<IReplCommandHandler, DisableAnalyticsCommandHandler>();
         services.AddSingleton<IReplCommandHandler, DoctorCommandHandler>();
