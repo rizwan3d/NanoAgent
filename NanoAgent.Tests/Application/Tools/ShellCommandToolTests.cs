@@ -299,6 +299,7 @@ public sealed class ShellCommandToolTests
         shellCommandService
             .Setup(service => service.ReadBackgroundAsync(
                 "terminal-1",
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ShellCommandExecutionResult(
                 "npm run dev",
@@ -365,6 +366,7 @@ public sealed class ShellCommandToolTests
         shellCommandService
             .Setup(service => service.ReadBackgroundAsync(
                 "terminal-missing",
+                It.IsAny<string?>(),
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ShellCommandExecutionResult(
                 string.Empty,

@@ -396,11 +396,13 @@ public sealed class ShellCommandServiceTests : IDisposable
 
         ShellCommandExecutionResult read = await sut.ReadBackgroundAsync(
             result.TerminalId!,
+            sessionId: null,
             CancellationToken.None);
         read.StandardOutput.Should().Contain("ready");
 
         ShellCommandExecutionResult stopped = await sut.StopBackgroundAsync(
             result.TerminalId!,
+            sessionId: null,
             CancellationToken.None);
         stopped.TerminalStatus.Should().Be("stopped");
     }
@@ -435,6 +437,7 @@ public sealed class ShellCommandServiceTests : IDisposable
             {
                 ShellCommandExecutionResult read = await sut.ReadBackgroundAsync(
                     terminalId,
+                    sessionId: null,
                     CancellationToken.None);
                 output += read.StandardOutput;
                 await Task.Delay(100);
@@ -444,12 +447,14 @@ public sealed class ShellCommandServiceTests : IDisposable
 
             ShellCommandExecutionResult stopped = await sut.StopBackgroundAsync(
                 terminalId,
+                sessionId: null,
                 CancellationToken.None);
             stopped.TerminalStatus.Should().Be("stopped");
             stopped.ExitCode.Should().Be(0);
 
             ShellCommandExecutionResult missing = await sut.ReadBackgroundAsync(
                 terminalId,
+                sessionId: null,
                 CancellationToken.None);
             missing.TerminalStatus.Should().Be("not_found");
         }
@@ -457,6 +462,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             await sut.StopBackgroundAsync(
                 terminalId,
+                sessionId: null,
                 CancellationToken.None);
         }
     }
@@ -505,6 +511,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             await sut.StopBackgroundAsync(
                 first.TerminalId!,
+                "session-a",
                 CancellationToken.None);
         }
     }
@@ -542,6 +549,7 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             completed = await sut.ReadBackgroundAsync(
                 terminalId,
+                "session-a",
                 CancellationToken.None);
             output += completed.StandardOutput;
             if (completed.TerminalStatus == "exited")
@@ -565,6 +573,7 @@ public sealed class ShellCommandServiceTests : IDisposable
 
         ShellCommandExecutionResult secondRead = await sut.ReadBackgroundAsync(
             terminalId,
+            "session-a",
             CancellationToken.None);
         secondRead.TerminalStatus.Should().Be("exited");
 
@@ -577,6 +586,7 @@ public sealed class ShellCommandServiceTests : IDisposable
 
         ShellCommandExecutionResult missing = await sut.ReadBackgroundAsync(
             terminalId,
+            "session-a",
             CancellationToken.None);
         missing.TerminalStatus.Should().Be("not_found");
     }
@@ -611,6 +621,7 @@ public sealed class ShellCommandServiceTests : IDisposable
             {
                 read = await sut.ReadBackgroundAsync(
                     terminalId,
+                    sessionId: null,
                     CancellationToken.None);
                 output += read.StandardOutput;
                 if (read.TerminalStatus == "exited")
@@ -628,6 +639,62 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             await sut.StopBackgroundAsync(
                 terminalId,
+                sessionId: null,
+                CancellationToken.None);
+        }
+    }
+
+    [Fact]
+    public async Task BackgroundTerminal_Should_RejectReadAndStopFromAnotherSession()
+    {
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+
+        ShellCommandExecutionResult started = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest(CreateSleepCommand(seconds: 30), null, SessionId: "session-a"),
+            CancellationToken.None);
+
+        started.TerminalStatus.Should().Be("running");
+        string terminalId = started.TerminalId!;
+
+        try
+        {
+            ShellCommandExecutionResult foreignRead = await sut.ReadBackgroundAsync(
+                terminalId,
+                "session-b",
+                CancellationToken.None);
+            foreignRead.TerminalStatus.Should().Be("not_found");
+
+            ShellCommandExecutionResult foreignStop = await sut.StopBackgroundAsync(
+                terminalId,
+                "session-b",
+                CancellationToken.None);
+            foreignStop.TerminalStatus.Should().Be("not_found");
+
+            // The foreign stop attempt must not have terminated the owner's terminal.
+            IReadOnlyList<BackgroundTerminalInfo> ownerTerminals = await sut.ListBackgroundAsync(
+                "session-a",
+                CancellationToken.None);
+            ownerTerminals.Should().ContainSingle(terminal =>
+                terminal.Id == terminalId &&
+                terminal.Status == "running");
+
+            ShellCommandExecutionResult ownerRead = await sut.ReadBackgroundAsync(
+                terminalId,
+                "session-a",
+                CancellationToken.None);
+            ownerRead.TerminalStatus.Should().Be("running");
+        }
+        finally
+        {
+            await sut.StopBackgroundAsync(
+                terminalId,
+                "session-a",
                 CancellationToken.None);
         }
     }
