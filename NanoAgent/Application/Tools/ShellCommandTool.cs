@@ -269,6 +269,7 @@ internal sealed class ShellCommandTool : ITool
 
         ShellCommandExecutionResult result = await _shellCommandService.ReadBackgroundAsync(
             terminalId!,
+            context.Session.SessionId,
             cancellationToken);
         return CreateBackgroundTerminalToolResult(context, result);
     }
@@ -289,6 +290,7 @@ internal sealed class ShellCommandTool : ITool
 
         ShellCommandExecutionResult result = await _shellCommandService.StopBackgroundAsync(
             terminalId!,
+            context.Session.SessionId,
             cancellationToken);
         return CreateBackgroundTerminalToolResult(context, result);
     }
