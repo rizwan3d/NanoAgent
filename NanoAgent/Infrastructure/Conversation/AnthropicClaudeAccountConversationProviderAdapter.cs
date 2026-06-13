@@ -54,7 +54,6 @@ internal sealed class AnthropicClaudeAccountConversationProviderAdapter : IConve
 
         return await _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
-            requestBody,
             () => CreateHttpRequest(baseUri, credential, requestBody),
             cancellationToken,
             _responseNormalizer.ConvertAnthropicMessagesResponseToChatCompletion,

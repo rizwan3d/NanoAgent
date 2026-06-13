@@ -57,7 +57,6 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
 
             return await _httpExecutor.ExecuteAsync(
                 request.ProviderProfile.ProviderKind,
-                requestBody,
                 () => CreateHttpRequest(
                     baseUri,
                     request.ProviderProfile.ProviderKind,
@@ -78,7 +77,6 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
 
         return await _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
-            requestBody,
             () => CreateHttpRequest(
                 baseUri,
                 request.ProviderProfile.ProviderKind,

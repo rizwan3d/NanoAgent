@@ -174,7 +174,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 cancellationToken);
 
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            LogDebugApiResponse(response.StatusCode, responseBody);
+            LogDebugApiResponse(response.StatusCode);
 
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
                 usesNanoAgentEnterpriseCredentials &&
@@ -283,7 +283,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     cancellationToken);
 
                 string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                LogDebugApiResponse(response.StatusCode, responseBody);
+                LogDebugApiResponse(response.StatusCode);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
                     !forcedRefreshAfterAuthFailure)
@@ -366,7 +366,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     cancellationToken);
 
                 string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                LogDebugApiResponse(response.StatusCode, responseBody);
+                LogDebugApiResponse(response.StatusCode);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
                     !forcedRefreshAfterAuthFailure)
@@ -444,7 +444,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     cancellationToken);
 
                 string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                LogDebugApiResponse(response.StatusCode, responseBody);
+                LogDebugApiResponse(response.StatusCode);
 
                 if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized &&
                     !forcedRefreshAfterAuthFailure)
@@ -507,7 +507,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             cancellationToken);
 
         string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-        LogDebugApiResponse(response.StatusCode, responseBody);
+        LogDebugApiResponse(response.StatusCode);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -826,14 +826,13 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     }
 
     private void LogDebugApiResponse(
-        System.Net.HttpStatusCode statusCode,
-        string responseBody)
+        System.Net.HttpStatusCode statusCode)
     {
 #if DEBUG
+        // Intentionally omits the response body to avoid logging provider payloads.
         _logger.LogInformation(
-            "OpenAI-compatible models API response {StatusCode}: {ResponseBody}",
-            (int)statusCode,
-            responseBody);
+            "OpenAI-compatible models API response {StatusCode}",
+            (int)statusCode);
 #endif
     }
 
