@@ -8,6 +8,7 @@ using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Conversation;
@@ -176,6 +177,36 @@ public sealed class ConversationProviderAdapterTests
         handler.RequestUri.Should().Be(new Uri("https://opencode.ai/zen/v1/messages"));
         handler.AnthropicVersionHeader.Should().Be("2023-06-01");
         payload.RawContent.Should().Contain("\"Zen reply.\"");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_CapServerProvidedRetryDelay()
+    {
+        HttpResponseMessage rateLimited = CreateResponse(HttpStatusCode.TooManyRequests, "slow down");
+        rateLimited.Headers.RetryAfter = new RetryConditionHeaderValue(TimeSpan.FromHours(1));
+        SequenceHandler handler = new(
+            rateLimited,
+            CreateResponse(HttpStatusCode.OK, CreateJsonResponse("resp_capped", "Hello.")));
+
+        List<TimeSpan> delays = [];
+        ConversationProviderHttpExecutor executor = new(
+            new HttpClient(handler),
+            NullLogger.Instance,
+            (delay, _) =>
+            {
+                delays.Add(delay);
+                return Task.CompletedTask;
+            },
+            () => 0d);
+
+        ConversationProviderPayload payload = await executor.ExecuteAsync(
+            ProviderKind.OpenRouter,
+            () => new HttpRequestMessage(HttpMethod.Post, "https://example.test/v1/chat/completions"),
+            CancellationToken.None);
+
+        payload.RetryCount.Should().Be(1);
+        delays.Should().ContainSingle();
+        delays[0].Should().Be(TimeSpan.FromSeconds(5));
     }
 
     private static ConversationProviderRequest CreateRequest(

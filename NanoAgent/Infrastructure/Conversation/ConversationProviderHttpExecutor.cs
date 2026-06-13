@@ -173,9 +173,15 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
             Math.Clamp(_nextJitter(), 0d, 1d) * exponentialDelay.TotalMilliseconds);
         TimeSpan? retryAfterDelay = GetRetryAfterDelay(retryAfter);
 
-        return retryAfterDelay is { } serverDelay && serverDelay > jitteredDelay
-            ? serverDelay
-            : jitteredDelay;
+        if (retryAfterDelay is not { } serverDelay || serverDelay <= jitteredDelay)
+        {
+            return jitteredDelay;
+        }
+
+        // Honor the server's Retry-After hint, but never wait longer than the
+        // configured ceiling so a hostile or misconfigured server cannot stall
+        // the request for an arbitrarily long time.
+        return serverDelay > MaxRetryDelay ? MaxRetryDelay : serverDelay;
     }
 
     private static TimeSpan? GetRetryAfterDelay(RetryConditionHeaderValue? retryAfter)
