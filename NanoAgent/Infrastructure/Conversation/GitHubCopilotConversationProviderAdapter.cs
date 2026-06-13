@@ -45,7 +45,6 @@ internal sealed class GitHubCopilotConversationProviderAdapter : IConversationPr
 
         return await _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
-            requestBody,
             () => CreateHttpRequest(credential, request, requestBody),
             cancellationToken,
             refreshAuthorizationAsync: async token =>
