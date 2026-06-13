@@ -361,7 +361,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
 
         static bool ContainsAny(string value, params string[] fragments)
         {
-            return fragments.All(fragment =>
+            return fragments.Any(fragment =>
                 value.Contains(fragment, StringComparison.OrdinalIgnoreCase));
         }
     }
