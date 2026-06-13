@@ -248,26 +248,47 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
         out string? guidance)
     {
         guidance = null;
-        string message = exception.Message?.Trim() ?? string.Empty;
+
+        string message = GetExceptionMessage(exception);
         if (string.IsNullOrWhiteSpace(message))
         {
             return false;
         }
 
-        if (message.Contains("target context was not found", StringComparison.OrdinalIgnoreCase))
+        if (ContainsAny(
+                message,
+                "target context was not found",
+                "context",
+                "was not found"))
         {
             guidance =
                 $"{message} " +
                 "Read the current file contents again and rebuild the patch from exact current lines. " +
-                "For a focused retry, keep one file section, include a small amount of unchanged surrounding text, and then resubmit the full patch.";
+                "For a focused retry, keep one file section, include a small amount of unchanged surrounding text, " +
+                "and then resubmit the full patch.";
             return true;
         }
 
-        if (message.Contains("matched multiple locations", StringComparison.OrdinalIgnoreCase))
+        if (ContainsAny(
+                message,
+                "matched multiple locations",
+                "matched multiple lines",
+                "matched multiple location",
+                "matched multiple line"))
         {
             guidance =
                 $"{message} " +
-                "Make the patch more specific before retrying. Add more unchanged surrounding lines, use a more distinctive '@@ ...' locator, or split the edit into smaller file sections so only one location matches.";
+                "Make the patch more specific before retrying. Add more unchanged surrounding lines, " +
+                "use a more distinctive '@@ ...' locator, or split the edit into smaller file sections " +
+                "so only one location matches.";
+            return true;
+        }
+
+        if (message.Contains("independent replacements overlap", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Split the patch into smaller hunks or rebuild it from the current file contents so each replacement targets a separate, non-overlapping range.";
             return true;
         }
 
@@ -275,7 +296,8 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
         {
             guidance =
                 $"{message} " +
-                "Verify the path and operation before retrying. Use '*** Add File:' for new files, '*** Update File:' only for existing files, and re-check the current working directory if the path was relative.";
+                "Verify the path and operation before retrying. Use '*** Add File:' for new files, " +
+                "'*** Update File:' only for existing files, and re-check the current working directory if the path was relative.";
             return true;
         }
 
@@ -283,7 +305,17 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
         {
             guidance =
                 $"{message} " +
-                "Choose a different move target, delete the destination first if that is truly intended, or keep the edit in place and retry with an update-only patch.";
+                "Choose a different move target, delete the destination first if that is truly intended, " +
+                "or keep the edit in place and retry with an update-only patch.";
+            return true;
+        }
+
+        if (message.Contains("already exists", StringComparison.OrdinalIgnoreCase))
+        {
+            guidance =
+                $"{message} " +
+                "Use '*** Update File:' for existing files, choose a different path for '*** Add File:', " +
+                "or delete the existing file first if replacing it is intended.";
             return true;
         }
 
@@ -297,6 +329,41 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
         }
 
         return false;
+
+        static string GetExceptionMessage(Exception exception)
+        {
+            if (exception is AggregateException aggregateException)
+            {
+                string aggregateMessages = string.Join(
+                    " ",
+                    aggregateException
+                        .Flatten()
+                        .InnerExceptions
+                        .Select(GetExceptionMessage)
+                        .Where(static value => !string.IsNullOrWhiteSpace(value)));
+
+                if (!string.IsNullOrWhiteSpace(aggregateMessages))
+                {
+                    return aggregateMessages.Trim();
+                }
+            }
+
+            string message = exception.Message?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                return message;
+            }
+
+            return exception.InnerException is null
+                ? string.Empty
+                : GetExceptionMessage(exception.InnerException);
+        }
+
+        static bool ContainsAny(string value, params string[] fragments)
+        {
+            return fragments.All(fragment =>
+                value.Contains(fragment, StringComparison.OrdinalIgnoreCase));
+        }
     }
 
 }
