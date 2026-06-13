@@ -16,7 +16,7 @@ internal sealed class NewSessionCommandHandler : IReplCommandHandler
 
     public string CommandName => "new";
 
-    public string Description => "Start a new section within the current session.";
+    public string Description => "Start a fresh section without carrying over prior context.";
 
     public string Usage => "/new";
 
@@ -31,14 +31,21 @@ internal sealed class NewSessionCommandHandler : IReplCommandHandler
         // Save the current section before creating a new one
         await _sessionAppService.SaveIfDirtyAsync(current, cancellationToken);
 
-        // Create a new section within the same session, accumulating context
-        ReplSessionContext next = await _sessionAppService.CreateNewSectionInSessionAsync(
-            current,
+        // Start a fresh section with the current session configuration.
+        ReplSessionContext next = await _sessionAppService.CreateAsync(
+            new CreateSessionRequest(
+                current.ProviderProfile,
+                current.ActiveModelId,
+                current.AvailableModelIds,
+                current.AgentProfileName,
+                current.ReasoningEffort,
+                current.ModelContextWindowTokens,
+                current.ActiveProviderName),
             cancellationToken);
 
         return ReplCommandResult.SwitchSession(
             next,
-            $"Started new section within session.\nNew section: {next.SectionId}\nResume command: {next.SessionResumeCommand}\nAccumulated context from previous section is available.");
+            $"Started fresh section.\nNew section: {next.SectionId}\nResume command: {next.SessionResumeCommand}");
     }
 }
 
