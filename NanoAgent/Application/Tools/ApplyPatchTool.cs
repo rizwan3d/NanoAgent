@@ -7,7 +7,8 @@ namespace NanoAgent.Application.Tools;
 
 internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService) : ITool
 {
-    public string Description => """
+    public string Description => 
+    """
         Use the `apply_patch` tool to edit files.
 
         A valid patch MUST have this exact outer structure:
@@ -34,41 +35,87 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
            - No content lines may follow this operation.
 
         3. `*** Update File: <path>`
-           - Edits an existing file.
-           - Each hunk starts with `@@` or `@@ <anchor text>`.
-           - Every file line inside a hunk MUST start with ` `, `+`, or `-`.
-           - The text after `@@` is only a locator. If you want to keep that file line, repeat it with a leading space. If you want to change it, include `-old line` and `+new line` entries in the hunk.
-           - Include a few unchanged context lines (prefixed with ` `) around each change so the edit matches a unique location. If the same lines appear more than once, add more context or a distinctive `@@ <anchor text>` locator.
-           - May include:
-             *** Move to: <new path>
-           - `*** Move to:` is only valid inside an `*** Update File` operation.
+            - Edits an existing file.
+            - Each edit hunk MUST start with either:
+            @@
+            or
+            @@ <plain anchor text>
 
-        Optional markers (inside an `*** Update File` hunk):
-        - `*** End of File` on its own line anchors the preceding hunk to the end of the file.
-        - `\ No newline at end of file` directly after a content line indicates the resulting file has no trailing newline.
+            - The `@@` line is ONLY a locator.
+            - The `@@` line NEVER removes, adds, or preserves file content.
+            - Do NOT put patch content on the `@@` line.
 
-        Example:
+            INVALID:
+            @@ -old line
+            @@ +new line
+            @@  context line
+        
+            VALID:
+            @@
+             context line
+            -old line
+            +new line
+        
+            VALID with locator:
+            @@ public void Save()
+             context line
+            -old line
+            +new line
 
-        *** Begin Patch
-        *** Add File: hello.txt
-        +Hello world
+        - If using `@@ <plain anchor text>`, the anchor text MUST NOT begin with `+`, `-`, or a space.
+        - If you want to keep a file line, repeat it inside the hunk with a leading space.
+        - If you want to remove a file line, repeat it inside the hunk with a leading `-`.
+        - If you want to add a file line, write it inside the hunk with a leading `+`.
+        - Every file line inside a hunk MUST start with exactly one of: space, `+`, or `-`.
 
-        *** Update File: src/app.py
-        *** Move to: src/main.py
-        @@ def greet():
-        -print("Hi")
-        +print("Hello, world!")
+        - Include unchanged context lines around each change so the edit matches a unique location.
+        - If the same context appears more than once, add more context or use a distinctive `@@ <plain anchor text>` locator.
+        - Do not use line numbers as a fallback.
+        - Do not guess file content. Read the current file before generating the patch.
 
-        *** Delete File: obsolete.txt
-        *** End Patch
+        - Hunk locator text after `@@` MUST NOT start with `+`, `-`, or a space.
+        - These are invalid:
+          @@ -old line
+          @@ +new line
+          @@  context line
+          @@ -10,7 +10,6 @@
+        - To remove, add, or preserve a line, put it inside the hunk on the following lines with `-`, `+`, or ` `.
 
-        Mandatory requirements:
-        - Every operation MUST include an action header.
-        - New files MUST use `+` at the start of every content line.
-        - Delete operations MUST NOT include file content.
-        - Patches missing `*** Begin Patch` or `*** End Patch` are invalid.
-        - Patches with unknown headers are invalid.
-        """;
+    - May include:
+     *** Move to: <new path>
+
+    - `*** Move to:` is only valid inside an `*** Update File` operation.
+
+    Optional markers inside an `*** Update File` hunk:
+
+    - `*** End of File` on its own line anchors the preceding hunk to the end of the file.
+    - `\ No newline at end of file` directly after a content line indicates the resulting file has no trailing newline.
+
+    Example:
+
+    *** Begin Patch
+    *** Add File: hello.txt
+    +Hello world
+
+    *** Update File: src/app.py
+    *** Move to: src/main.py
+    @@ def greet():
+    -print("Hi")
+    +print("Hello, world!")
+
+    *** Delete File: obsolete.txt
+    *** End Patch
+
+    Mandatory requirements:
+    - Every operation MUST include an action header.
+    - New files MUST use `+` at the start of every content line.
+    - Delete operations MUST NOT include file content.
+    - Patches missing `*** Begin Patch` or `*** End Patch` are invalid.
+    - Patches with unknown headers are invalid.
+    - Hunk locator lines beginning with `@@ -`, `@@ +`, or `@@  ` are invalid.
+    - A failed patch MUST NOT be followed by destructive fallback edits such as line-number deletion.
+    - After a failed patch, re-read the file and generate a new patch using exact current context.
+    """;
 
     public string Name => AgentToolNames.ApplyPatch;
 
