@@ -16,10 +16,12 @@ public interface IShellCommandService
 
     Task<ShellCommandExecutionResult> ReadBackgroundAsync(
         string terminalId,
+        string? sessionId,
         CancellationToken cancellationToken);
 
     Task<ShellCommandExecutionResult> StopBackgroundAsync(
         string terminalId,
+        string? sessionId,
         CancellationToken cancellationToken);
 
     Task<IReadOnlyList<BackgroundTerminalInfo>> ListBackgroundAsync(
