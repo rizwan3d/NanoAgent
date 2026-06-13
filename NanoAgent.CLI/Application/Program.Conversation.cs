@@ -61,6 +61,11 @@ public static partial class Program
         string prompt,
         IReadOnlyList<ConversationAttachment>? attachments = null)
     {
+        if (state.HasCompletedPlan)
+        {
+            state.ClearPlanState();
+        }
+
         state.ResetTurnCancellation();
         state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
 

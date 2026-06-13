@@ -54,7 +54,14 @@ public sealed class AppState
 
     public bool IsPlanPinned { get; set; }
 
+    public ExecutionPlanProgress? LatestPlanProgress { get; set; }
+
     public string? LatestPlanText { get; set; }
+
+    public bool HasCompletedPlan =>
+        LatestPlanProgress is { } progress &&
+        progress.Tasks.Count > 0 &&
+        progress.CompletedTaskCount >= progress.Tasks.Count;
 
     public CancellationTokenSource LifetimeCancellation { get; } = new();
 
@@ -74,6 +81,7 @@ public sealed class AppState
     public void ClearPlanState()
     {
         IsPlanPinned = false;
+        LatestPlanProgress = null;
         LatestPlanText = null;
     }
 
