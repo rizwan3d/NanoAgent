@@ -37,7 +37,6 @@ internal sealed class OpenCodeZenConversationProviderAdapter : IConversationProv
 
         return _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
-            requestBody,
             () => CreateHttpRequest(baseUri, path, request.ApiKey, requestBody),
             cancellationToken,
             ResolveResponseNormalizer(path));
