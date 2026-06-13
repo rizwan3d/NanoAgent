@@ -80,7 +80,8 @@ public static partial class Program
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
         new("/update", "/update [now]", "Check for updates.", false),
         new("/use", "/use <model>", "Switch the active model directly.", true),
-        new("/version", "/version", "Show the current NanoAgent CLI version.", false)
+        new("/version", "/version", "Show the current NanoAgent CLI version.", false),
+        new("/index", "/index [update|status|rebuild|list|list <count>]", "Refresh the local codebase index.", false)
     ];
 
     public static async Task<int> Main(string[]? args)
