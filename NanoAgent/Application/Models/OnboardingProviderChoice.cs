@@ -17,5 +17,6 @@ public enum OnboardingProviderChoice
     Cerebras = 12,
     Groq = 13,
     OpenCodeZen = 14,
-    LmStudio = 15
+    LmStudio = 15,
+    DeepSeek = 16
 }

@@ -113,6 +113,14 @@ public sealed class AgentProviderProfileFactoryTests
     }
 
     [Fact]
+    public void CreateDeepSeek_Should_ReturnDeepSeekProfile_When_Called()
+    {
+        AgentProviderProfile profile = _sut.CreateDeepSeek();
+
+        profile.Should().Be(new AgentProviderProfile(ProviderKind.DeepSeek, null));
+    }
+
+    [Fact]
     public void CreateGoogleAiStudio_Should_ReturnGoogleAiStudioProfile_When_Called()
     {
         AgentProviderProfile profile = _sut.CreateGoogleAiStudio();

@@ -190,7 +190,7 @@ Save your own repeatable prompts as `.nanoagent/commands/*.md` and run them as s
 
 ## Provider Choice
 
-NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Kilo Code, Cerebras, Groq, Anthropic, Google AI Studio, Ollama, LM Studio, Ollama Cloud, and OpenAI-compatible providers.
+NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Kilo Code, Cerebras, Groq, DeepSeek, Anthropic, Google AI Studio, Ollama, LM Studio, Ollama Cloud, and OpenAI-compatible providers.
 
 ## Benchmarks
 

@@ -28,6 +28,8 @@ public interface IAgentProviderProfileFactory
 
     AgentProviderProfile CreateOpenCodeZen();
 
+    AgentProviderProfile CreateDeepSeek();
+
     AgentProviderProfile CreateCompatible(string baseUrl);
 
     AgentProviderProfile CreateGoogleAiStudio();
