@@ -1688,6 +1688,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (line.StartsWith("@@", StringComparison.Ordinal))
             {
+                ValidateApplyPatchHunkHeader(line);
                 if (currentHunkLines is not null)
                 {
                     hunks.Add(new PatchHunk(
@@ -1760,6 +1761,42 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             moveToPath,
             [],
             hunks);
+    }
+
+    private static void ValidateApplyPatchHunkHeader(string line)
+    {
+        if (line == "@@")
+        {
+            return;
+        }
+    
+        if (!line.StartsWith("@@ ", StringComparison.Ordinal))
+        {
+            throw new FormatException(
+                "Invalid hunk header. Use '@@' or '@@ <anchor text>'.");
+        }
+    
+        string anchor = line[3..];
+    
+        if (anchor.Length == 0)
+        {
+            throw new FormatException(
+                "Invalid hunk header. Use '@@' for an empty locator.");
+        }
+    
+        if (anchor[0] is '+' or '-' or ' ')
+        {
+            throw new FormatException(
+                "Invalid hunk header. Do not put added, removed, or context lines on the '@@' locator line. " +
+                "Put them inside the hunk with '+', '-', or ' ' prefixes.");
+        }
+    
+        if (anchor.Contains("@@", StringComparison.Ordinal))
+        {
+            throw new FormatException(
+                "Invalid hunk header. Unified diff ranges like '@@ -1,2 +1,2 @@' are not valid inside apply_patch format. " +
+                "Use '@@' or '@@ <anchor text>'.");
+        }
     }
 
     private static bool CanSkipBlankUpdatePatchLine(
