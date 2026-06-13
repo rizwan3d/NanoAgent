@@ -434,6 +434,21 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task LoadAsync_Should_CreateDeepSeekEnvironmentConfiguration_When_ProviderIsSet()
+    {
+        using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "deepseek");
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.DeepSeek, null),
+            PreferredModelId: null,
+            ReasoningEffort: null));
+    }
+
+    [Fact]
     public async Task LoadAsync_Should_CreateOpenCodeZenEnvironmentConfiguration_When_ProviderIsSet()
     {
         using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "opencode-zen");

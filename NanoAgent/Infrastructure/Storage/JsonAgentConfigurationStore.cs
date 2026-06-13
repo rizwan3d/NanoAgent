@@ -457,12 +457,13 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             "cerebras" => ProviderKind.Cerebras,
             "groq" => ProviderKind.Groq,
             "opencodezen" or "opencode" => ProviderKind.OpenCodeZen,
+            "deepseek" => ProviderKind.DeepSeek,
             "ollama" => ProviderKind.Ollama,
             "lmstudio" => ProviderKind.LmStudio,
             "ollamacloud" => ProviderKind.OllamaCloud,
             "openaichatgptaccount" or "chatgpt" => ProviderKind.OpenAiChatGptAccount,
             _ => throw new InvalidOperationException(
-                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code, cerebras, groq, opencode-zen, ollama, lm-studio, ollama-cloud.")
+                $"Unsupported {ProviderEnvironmentVariableName} value '{providerName}'. Supported values: openai, openai-compatible, google-ai-studio, anthropic, anthropic-claude-account, github-copilot, openrouter, kilo-code, cerebras, groq, opencode-zen, deepseek, ollama, lm-studio, ollama-cloud.")
         };
     }
 
@@ -517,6 +518,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 ProviderKind.Cerebras => new AgentProviderProfile(ProviderKind.Cerebras, BaseUrl: null),
                 ProviderKind.Groq => new AgentProviderProfile(ProviderKind.Groq, BaseUrl: null),
                 ProviderKind.OpenCodeZen => new AgentProviderProfile(ProviderKind.OpenCodeZen, BaseUrl: null),
+                ProviderKind.DeepSeek => new AgentProviderProfile(ProviderKind.DeepSeek, BaseUrl: null),
                 ProviderKind.Ollama => new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null),
                 ProviderKind.LmStudio => new AgentProviderProfile(
                     ProviderKind.LmStudio,

@@ -16,5 +16,6 @@ public enum ProviderKind
     Cerebras = 13,
     Groq = 14,
     OpenCodeZen = 15,
-    LmStudio = 16
+    LmStudio = 16,
+    DeepSeek = 17
 }
