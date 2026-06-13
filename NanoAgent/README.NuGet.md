@@ -6,8 +6,9 @@
 - Documentation: https://github.com/rizwan3d/NanoAgent/blob/master/docs/documentation.md
 - Releases: https://github.com/rizwan3d/NanoAgent/releases/latest
 
-If you want the end-user command-line experience, install the `NanoAgent.CLI` .NET tool instead:
+If you want the end-user command-line experience, install the `nanoai` CLI from the release installers:
 
-```bash
-dotnet tool install --global NanoAgent.CLI
-```
+- macOS / Linux: `curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash`
+- Windows PowerShell: `irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex`
+
+See the [releases page](https://github.com/rizwan3d/NanoAgent/releases/latest) for all download options.
