@@ -67,6 +67,7 @@ public sealed class TerminalsCommandHandlerTests
         shellCommandService
             .Setup(service => service.StopBackgroundAsync(
                 "terminal-1",
+                session.SessionId,
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(new ShellCommandExecutionResult(
                 "npm run dev",

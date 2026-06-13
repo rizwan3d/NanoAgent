@@ -333,6 +333,7 @@ public sealed class AgentTurnServiceTests
 
         public Task<ShellCommandExecutionResult> ReadBackgroundAsync(
             string terminalId,
+            string? sessionId,
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
@@ -340,6 +341,7 @@ public sealed class AgentTurnServiceTests
 
         public Task<ShellCommandExecutionResult> StopBackgroundAsync(
             string terminalId,
+            string? sessionId,
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();

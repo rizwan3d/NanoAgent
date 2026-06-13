@@ -373,13 +373,15 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
     public async Task<ShellCommandExecutionResult> ReadBackgroundAsync(
         string terminalId,
+        string? sessionId,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
         RemoveExpiredCompletedTerminals();
 
-        if (!TryGetBackgroundTerminal(terminalId, out BackgroundTerminal? terminal))
+        if (!TryGetBackgroundTerminal(terminalId, out BackgroundTerminal? terminal) ||
+            !IsOwnedBySession(terminal!, sessionId))
         {
             return CreateBackgroundNotFoundResult(terminalId, "read");
         }
@@ -408,13 +410,17 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
 
     public async Task<ShellCommandExecutionResult> StopBackgroundAsync(
         string terminalId,
+        string? sessionId,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ThrowIfDisposed();
         RemoveExpiredCompletedTerminals();
 
-        if (!_backgroundTerminals.TryRemove(NormalizeTerminalId(terminalId), out BackgroundTerminal? terminal))
+        string normalizedTerminalId = NormalizeTerminalId(terminalId);
+        if (!_backgroundTerminals.TryGetValue(normalizedTerminalId, out BackgroundTerminal? terminal) ||
+            !IsOwnedBySession(terminal, sessionId) ||
+            !_backgroundTerminals.TryRemove(normalizedTerminalId, out terminal))
         {
             return CreateBackgroundNotFoundResult(terminalId, "stop");
         }
@@ -715,6 +721,14 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         return _backgroundTerminals.TryGetValue(
             NormalizeTerminalId(terminalId),
             out terminal);
+    }
+
+    private static bool IsOwnedBySession(BackgroundTerminal terminal, string? sessionId)
+    {
+        return string.Equals(
+            terminal.SessionId,
+            NormalizeSessionId(sessionId),
+            StringComparison.Ordinal);
     }
 
     private void RemoveExpiredCompletedTerminals()

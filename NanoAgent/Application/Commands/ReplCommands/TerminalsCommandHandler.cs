@@ -87,6 +87,7 @@ internal sealed class TerminalsCommandHandler : IReplCommandHandler
 
         ShellCommandExecutionResult result = await _shellCommandService.StopBackgroundAsync(
             normalizedTerminalId,
+            context.Session.SessionId,
             cancellationToken);
 
         return string.Equals(result.TerminalStatus, "not_found", StringComparison.Ordinal)
@@ -109,6 +110,7 @@ internal sealed class TerminalsCommandHandler : IReplCommandHandler
         {
             await _shellCommandService.StopBackgroundAsync(
                 terminal.Id,
+                context.Session.SessionId,
                 cancellationToken);
         }
 
