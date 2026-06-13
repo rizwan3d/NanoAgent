@@ -33,7 +33,6 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
 
     public async Task<ConversationProviderPayload> ExecuteAsync(
         ProviderKind providerKind,
-        string requestBody,
         Func<HttpRequestMessage> createRequest,
         CancellationToken cancellationToken,
         Func<string, string>? normalizeResponseBody = null,
@@ -45,7 +44,7 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
         {
             using HttpRequestMessage httpRequest = createRequest();
-            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri, requestBody);
+            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri);
 
             HttpResponseMessage? response;
             try
@@ -72,7 +71,7 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
             using (response)
             {
             string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response), responseBody);
+            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response));
 
             if (response.IsSuccessStatusCode)
             {
@@ -218,29 +217,28 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
 
     private void LogDebugApiRequest(
         HttpMethod method,
-        Uri? requestUri,
-        string requestBody)
+        Uri? requestUri)
     {
 #if DEBUG
+        // Intentionally omits the request body: it can carry prompts, file
+        // contents, and other sensitive material that must not reach logs.
         _logger.LogInformation(
-            "OpenAI-compatible chat API request {Method} {RequestUri}: {RequestBody}",
+            "OpenAI-compatible chat API request {Method} {RequestUri}",
             method,
-            requestUri,
-            requestBody);
+            requestUri);
 #endif
     }
 
     private void LogDebugApiResponse(
         HttpStatusCode statusCode,
-        string? responseId,
-        string responseBody)
+        string? responseId)
     {
 #if DEBUG
+        // Intentionally omits the response body to avoid logging model output.
         _logger.LogInformation(
-            "OpenAI-compatible chat API response {StatusCode} {ResponseId}: {ResponseBody}",
+            "OpenAI-compatible chat API response {StatusCode} {ResponseId}",
             (int)statusCode,
-            responseId ?? "(none)",
-            responseBody);
+            responseId ?? "(none)");
 #endif
     }
 }

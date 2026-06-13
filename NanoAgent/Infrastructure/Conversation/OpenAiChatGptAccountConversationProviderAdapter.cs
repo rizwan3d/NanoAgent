@@ -53,7 +53,6 @@ internal sealed class OpenAiChatGptAccountConversationProviderAdapter : IConvers
 
         return await _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
-            requestBody,
             () => CreateHttpRequest(baseUri, credential, requestBody, _sessionId),
             cancellationToken,
             _responseNormalizer.NormalizeOpenAiResponsesBody,

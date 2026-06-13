@@ -39,7 +39,6 @@ internal sealed class OllamaCloudConversationProviderAdapter : IConversationProv
 
         return _httpExecutor.ExecuteAsync(
             request.ProviderProfile.ProviderKind,
-            requestBody,
             () => CreateHttpRequest(baseUri, request.ApiKey, requestBody),
             cancellationToken,
             _responseNormalizer.ConvertOllamaChatResponseToChatCompletion);
