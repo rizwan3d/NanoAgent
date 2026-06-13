@@ -15,6 +15,7 @@ public static class ProviderKindExtensions
     private const string CerebrasBaseUrl = "https://api.cerebras.ai/v1";
     private const string GroqBaseUrl = "https://api.groq.com/openai/v1";
     private const string OpenCodeZenBaseUrl = "https://opencode.ai/zen/v1";
+    private const string DeepSeekBaseUrl = "https://api.deepseek.com/v1";
     private const string OllamaApiKeyPlaceholder = "ollama";
 
     public static string ToDisplayName(this ProviderKind providerKind)
@@ -35,6 +36,7 @@ public static class ProviderKindExtensions
             ProviderKind.Cerebras => "Cerebras",
             ProviderKind.Groq => "Groq",
             ProviderKind.OpenCodeZen => "OpenCode Zen",
+            ProviderKind.DeepSeek => "DeepSeek",
             ProviderKind.OpenAiCompatible => "OpenAI-compatible provider",
             _ => providerKind.ToString()
         };
@@ -58,6 +60,7 @@ public static class ProviderKindExtensions
             ProviderKind.Cerebras => CerebrasBaseUrl,
             ProviderKind.Groq => GroqBaseUrl,
             ProviderKind.OpenCodeZen => OpenCodeZenBaseUrl,
+            ProviderKind.DeepSeek => DeepSeekBaseUrl,
             _ => null
         };
     }
