@@ -7,6 +7,8 @@ namespace NanoAgent.CLI;
 public static partial class Program
 {
     private const string MessagesPanelScrollHint = "[ Scroll: ↑/↓ | PgUp/PgDn | Wheel ]";
+    private const string PlanPanelHideHint = "F3 to hide";
+    private const string PlanPanelScrollHint = "Scroll: '[' up / ']' down";
     private const int FallbackWindowWidth = 80;
     private const int FallbackWindowHeight = 24;
     private const int MinimumPanelHeight = 3;
@@ -168,9 +170,43 @@ public static partial class Program
     private static IRenderable BuildPinnedPlanPanel(AppState state)
     {
         return new Panel(new Markup(BuildPinnedPlanMarkup(state)))
-            .Header("[bold cyan]Plan[/] [grey](F3 to hide)[/]")
+            .Header($"[bold cyan]Plan[/] [grey]({PlanPanelHideHint})[/]")
+            .Header(BuildPinnedPlanPanelHeaderMarkup(state))
             .Border(BoxBorder.Square)
             .Expand();
+    }
+
+    private static string BuildPinnedPlanPanelHeaderMarkup(AppState state)
+    {
+        const string leftPlain = "Plan ";
+        int headerWidth = Math.Max(20, GetWindowWidth() - 6);
+        string rightPlain = BuildPinnedPlanPanelHeaderInfo(state);
+        int rightBudget = Math.Max(0, headerWidth - leftPlain.Length - 1);
+        string displayRight = TruncateFromRight(rightPlain, rightBudget);
+        int spacerLength = Math.Max(
+            1,
+            headerWidth - leftPlain.Length - displayRight.Length);
+
+        return $"[bold cyan]Plan[/] {new string('─', spacerLength)}[grey]{Markup.Escape(displayRight)}[/]";
+    }
+
+    private static string BuildPinnedPlanPanelHeaderInfo(AppState state)
+    {
+        int totalLineCount = GetPinnedPlanRenderedLineCount(state);
+        int viewportLineCount = GetPinnedPlanViewportLineCount(state);
+        int maxScrollOffset = Math.Max(0, totalLineCount - viewportLineCount);
+
+        if (totalLineCount <= viewportLineCount)
+        {
+            return PlanPanelHideHint;
+        }
+
+        int startLine = Math.Clamp(state.PlanScrollOffset, 0, maxScrollOffset) + 1;
+        int endLine = Math.Min(
+            totalLineCount,
+            startLine + viewportLineCount - 1);
+
+        return $"{PlanPanelScrollHint} · {startLine}-{endLine}/{totalLineCount} · {PlanPanelHideHint}";
     }
 
     private static IRenderable BuildPromptPanel(UiModalState modal)
@@ -414,7 +450,7 @@ public static partial class Program
 
     private static int GetPinnedPlanPanelSize(AppState state)
     {
-        int contentWidth = Math.Max(20, GetWindowWidth() - 8);
+        int contentWidth = GetPinnedPlanContentWidth();
         int bodyLineCount = GetPinnedPlanLines(state)
             .Sum(line => WrapText(line, contentWidth).Count);
         int availableBodySize = Math.Max(
@@ -425,30 +461,93 @@ public static partial class Program
         return Math.Clamp(bodyLineCount + 2, 5, maxPanelSize);
     }
 
+    private static int GetPinnedPlanContentWidth()
+    {
+        return Math.Max(20, GetWindowWidth() - 8);
+    }
+
+    private static int GetPinnedPlanViewportLineCount(AppState state)
+    {
+        return Math.Max(1, GetPinnedPlanPanelSize(state) - 2);
+    }
+
+    private static int GetPinnedPlanRenderedLineCount(AppState state)
+    {
+        return BuildPinnedPlanRenderableLines(
+            state,
+            GetPinnedPlanContentWidth()).Count;
+    }
+
+    private static int GetMaxPinnedPlanScrollOffset(AppState state)
+    {
+        int lineCount = GetPinnedPlanRenderedLineCount(state);
+        return Math.Max(0, lineCount - GetPinnedPlanViewportLineCount(state));
+    }
+
+    private static void ScrollPinnedPlan(AppState state, int delta)
+    {
+        if (!HasPinnedPlan(state))
+        {
+            return;
+        }
+
+        int maxScrollOffset = GetMaxPinnedPlanScrollOffset(state);
+        state.PlanScrollOffset = Math.Clamp(
+            state.PlanScrollOffset + delta,
+            0,
+            maxScrollOffset);
+    }
+
     private static string BuildPinnedPlanMarkup(AppState state)
     {
-        int contentWidth = Math.Max(20, GetWindowWidth() - 8);
-        int maxBodyLines = Math.Max(1, GetPinnedPlanPanelSize(state) - 2);
-        List<string> renderedLines = [];
+
+        int contentWidth = GetPinnedPlanContentWidth();
+        int viewportLineCount = GetPinnedPlanViewportLineCount(state);
+        List<ConversationLine> renderedLines = BuildPinnedPlanRenderableLines(
+            state,
+            contentWidth);
+        int maxScrollOffset = Math.Max(0, renderedLines.Count - viewportLineCount);
+        state.PlanScrollOffset = Math.Clamp(
+            state.PlanScrollOffset,
+            0,
+            maxScrollOffset);
+
+        List<ConversationLine> visibleLines = renderedLines
+            .Skip(state.PlanScrollOffset)
+            .Take(viewportLineCount)
+            .ToList();
+
+        while (visibleLines.Count < viewportLineCount)
+        {
+            visibleLines.Add(new ConversationLine(string.Empty, string.Empty));
+        }
+
+        return string.Join('\n', visibleLines.Select(static line => line.Markup));
+    }
+
+    private static List<ConversationLine> BuildPinnedPlanRenderableLines(
+        AppState state,
+        int contentWidth)
+    {
+        List<ConversationLine> renderedLines = [];
 
         foreach (string line in GetPinnedPlanLines(state))
         {
             foreach (string wrappedLine in WrapText(line, contentWidth))
             {
-                renderedLines.Add(FormatPinnedPlanLine(wrappedLine));
+                renderedLines.Add(new ConversationLine(
+                    FormatPinnedPlanLine(wrappedLine),
+                    wrappedLine));
             }
         }
 
-        if (renderedLines.Count > maxBodyLines)
+        if (renderedLines.Count == 0)
         {
-            renderedLines = renderedLines
-                .Take(Math.Max(0, maxBodyLines - 1))
-                .ToList();
-            renderedLines.Add("[grey]...[/]");
+            renderedLines.Add(new ConversationLine(string.Empty, string.Empty));
         }
 
-        return string.Join('\n', renderedLines);
-    }
+        return renderedLines;
+     }
 
     private static string[] GetPinnedPlanLines(AppState state)
     {
