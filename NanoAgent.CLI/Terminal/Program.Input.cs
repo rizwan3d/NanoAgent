@@ -79,6 +79,11 @@ public static partial class Program
                 return;
             }
 
+            if (HandlePlanScrollInput(state, key))
+            {
+                continue;
+            }
+
             if (HandleInputEditingKey(state, key))
             {
                 continue;
@@ -274,6 +279,27 @@ public static partial class Program
     {
         return key.Key == ConsoleKey.Escape ||
             key.KeyChar == '\u001b';
+    }
+    private static bool HandlePlanScrollInput(AppState state, ConsoleKeyInfo key)
+    {
+        if (!HasPinnedPlan(state) || key.Modifiers != 0)
+        {
+            return false;
+        }
+
+        switch (key.KeyChar)
+        {
+            case '[':
+                ScrollPinnedPlan(state, -MouseWheelScrollLineCount);
+                return true;
+
+            case ']':
+                ScrollPinnedPlan(state, MouseWheelScrollLineCount);
+                return true;
+
+            default:
+                return false;
+        }
     }
 
     private static bool HandleConversationScrollInput(AppState state, ConsoleKeyInfo key)

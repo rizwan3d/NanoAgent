@@ -12,6 +12,7 @@ public sealed class AppState
     {
         UiBridge = uiBridge;
         Backend = backend;
+        PlanScrollOffset = 0;
     }
 
     public string? ActiveModelId { get; set; }
@@ -53,6 +54,8 @@ public sealed class AppState
     public bool IsStreaming { get; set; }
 
     public bool IsPlanPinned { get; set; }
+
+    public int PlanScrollOffset { get; set; }
 
     public ExecutionPlanProgress? LatestPlanProgress { get; set; }
 
