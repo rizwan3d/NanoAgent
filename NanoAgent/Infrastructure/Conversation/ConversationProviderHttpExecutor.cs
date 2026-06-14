@@ -10,7 +10,7 @@ namespace NanoAgent.Infrastructure.Conversation;
 
 internal sealed class ConversationProviderHttpExecutor : IConversationProviderHttpExecutor
 {
-    private const int MaxRetryAttempts = 3;
+    private const int MaxRetryAttempts = 10;
     private static readonly TimeSpan BaseRetryDelay = TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(5);
 
@@ -36,7 +36,8 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         Func<HttpRequestMessage> createRequest,
         CancellationToken cancellationToken,
         Func<string, string>? normalizeResponseBody = null,
-        Func<CancellationToken, Task<bool>>? refreshAuthorizationAsync = null)
+        Func<CancellationToken, Task<bool>>? refreshAuthorizationAsync = null,
+        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync = null)
     {
         int retryCount = 0;
         bool forcedRefreshAfterAuthFailure = false;
@@ -64,6 +65,11 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
                     attempt + 1,
                     MaxRetryAttempts + 1,
                     Math.Round(networkRetryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await ReportRetryAsync(
+                    onRetryAsync,
+                    retryCount,
+                    DescribeNetworkRetryReason(ex),
+                    cancellationToken);
                 await _delayAsync(networkRetryDelay, cancellationToken);
                 continue;
             }
@@ -110,6 +116,11 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
                     attempt + 1,
                     MaxRetryAttempts + 1,
                     Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                await ReportRetryAsync(
+                    onRetryAsync,
+                    retryCount,
+                    $"HTTP {(int)response.StatusCode}",
+                    cancellationToken);
                 await _delayAsync(retryDelay, cancellationToken);
                 continue;
             }
@@ -155,10 +166,59 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
             return socketEx.SocketErrorCode is
                 SocketError.ConnectionReset or
                 SocketError.ConnectionAborted or
-                SocketError.TimedOut;
+                SocketError.TimedOut or
+                SocketError.HostNotFound or
+                SocketError.TryAgain or
+                SocketError.HostUnreachable or
+                SocketError.NetworkUnreachable;
         }
 
         return ex.InnerException is IOException;
+    }
+
+    private static string DescribeNetworkRetryReason(HttpRequestException ex)
+    {
+        SocketException? socketEx = ex.InnerException as SocketException
+            ?? ex.InnerException?.InnerException as SocketException;
+
+        return socketEx?.SocketErrorCode switch
+        {
+            SocketError.HostNotFound or SocketError.TryAgain => "host not found",
+            SocketError.HostUnreachable => "host unreachable",
+            SocketError.NetworkUnreachable => "network unreachable",
+            SocketError.ConnectionReset => "connection reset",
+            SocketError.ConnectionAborted => "connection aborted",
+            SocketError.TimedOut => "connection timed out",
+            _ => "network error"
+        };
+    }
+
+    private static async Task ReportRetryAsync(
+        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync,
+        int attempt,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (onRetryAsync is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await onRetryAsync(
+                new ProviderRetryProgress(attempt, MaxRetryAttempts, reason),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Surfacing retry progress is best-effort: a misbehaving listener
+            // must never abort the request that is otherwise about to retry.
+        }
     }
 
     private TimeSpan CalculateRetryDelay(

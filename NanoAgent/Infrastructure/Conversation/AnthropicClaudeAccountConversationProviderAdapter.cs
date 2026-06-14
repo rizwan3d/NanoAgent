@@ -64,7 +64,8 @@ internal sealed class AnthropicClaudeAccountConversationProviderAdapter : IConve
                     forceRefresh: true,
                     token);
                 return true;
-            });
+            },
+            onRetryAsync: request.OnProviderRetryAsync);
     }
 
     private static HttpRequestMessage CreateHttpRequest(

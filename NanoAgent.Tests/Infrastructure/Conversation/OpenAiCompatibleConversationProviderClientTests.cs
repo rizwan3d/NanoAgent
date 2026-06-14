@@ -12,6 +12,7 @@ using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
 using System.Net;
+using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 
@@ -1408,6 +1409,93 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         handler.RequestBodies.Should().ContainSingle();
     }
 
+    [Fact]
+    public async Task SendAsync_Should_RetryAndReportProgress_When_HostCannotBeResolved()
+    {
+        ThrowingSequenceHandler handler = new(
+            new HttpRequestException(
+                "No such host is known.",
+                new SocketException((int)SocketError.HostNotFound)),
+            CreateResponse(HttpStatusCode.OK, """
+                {
+                  "id": "resp_recovered",
+                  "choices": [
+                    {
+                      "message": {
+                        "content": "Recovered after DNS retry."
+                      }
+                    }
+                  ]
+                }
+                """));
+        List<ProviderRetryProgress> retries = [];
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(
+            httpClient,
+            (_, _) => Task.CompletedTask,
+            () => 0.5d);
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            CreateRequest() with
+            {
+                OnProviderRetryAsync = (progress, _) =>
+                {
+                    retries.Add(progress);
+                    return Task.CompletedTask;
+                }
+            },
+            CancellationToken.None);
+
+        payload.RawContent.Should().Contain("Recovered after DNS retry.");
+        payload.RetryCount.Should().Be(1);
+        handler.RequestCount.Should().Be(2);
+        retries.Should().ContainSingle();
+        retries[0].Attempt.Should().Be(1);
+        retries[0].MaxAttempts.Should().Be(10);
+        retries[0].Reason.Should().Be("host not found");
+    }
+
+    [Fact]
+    public async Task SendAsync_Should_ReportRetryProgress_When_RetryableHttpStatusReturned()
+    {
+        SequenceHandler handler = new(
+            CreateResponse(HttpStatusCode.ServiceUnavailable, """{ "error": "later" }"""),
+            CreateResponse(HttpStatusCode.OK, """
+                {
+                  "id": "resp_ok",
+                  "choices": [
+                    {
+                      "message": {
+                        "content": "Recovered."
+                      }
+                    }
+                  ]
+                }
+                """));
+        List<ProviderRetryProgress> retries = [];
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(
+            httpClient,
+            (_, _) => Task.CompletedTask,
+            () => 0.5d);
+
+        await sut.SendAsync(
+            CreateRequest() with
+            {
+                OnProviderRetryAsync = (progress, _) =>
+                {
+                    retries.Add(progress);
+                    return Task.CompletedTask;
+                }
+            },
+            CancellationToken.None);
+
+        retries.Should().ContainSingle();
+        retries[0].Attempt.Should().Be(1);
+        retries[0].MaxAttempts.Should().Be(10);
+        retries[0].Reason.Should().Be("HTTP 503");
+    }
+
     private static ToolDefinition CreateToolDefinition(string name)
     {
         using JsonDocument schemaDocument = JsonDocument.Parse(
@@ -1657,6 +1745,38 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
             }
 
             return _responses.Dequeue();
+        }
+    }
+
+    private sealed class ThrowingSequenceHandler : HttpMessageHandler
+    {
+        private readonly Queue<object> _steps;
+
+        public ThrowingSequenceHandler(params object[] steps)
+        {
+            _steps = new Queue<object>(steps);
+        }
+
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+
+            if (_steps.Count == 0)
+            {
+                throw new InvalidOperationException("No HTTP step was queued for this request.");
+            }
+
+            return _steps.Dequeue() switch
+            {
+                Exception exception => Task.FromException<HttpResponseMessage>(exception),
+                HttpResponseMessage response => Task.FromResult(response),
+                object step => throw new InvalidOperationException(
+                    $"Unsupported queued step type '{step.GetType()}'.")
+            };
         }
     }
 

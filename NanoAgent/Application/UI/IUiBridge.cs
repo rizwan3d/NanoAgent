@@ -26,4 +26,10 @@ public interface IUiBridge
     void ShowToolResults(ToolExecutionBatchResult toolExecutionResult);
 
     void ShowExecutionPlan(ExecutionPlanProgress progress);
+
+    // Optional: surface a provider request retry (e.g. "Trying 1/10"). Bridges
+    // that do not render live activity can keep the default no-op.
+    void ShowProviderRetry(ProviderRetryProgress progress)
+    {
+    }
 }
