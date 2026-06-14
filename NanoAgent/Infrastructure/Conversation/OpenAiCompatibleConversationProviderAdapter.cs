@@ -72,7 +72,8 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
                         token);
                     authorizationValue = credential.AccessToken;
                     return true;
-                });
+                },
+                onRetryAsync: request.OnProviderRetryAsync);
         }
 
         return await _httpExecutor.ExecuteAsync(
@@ -83,7 +84,8 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
                 authorizationValue,
                 requestBody,
                 usesNanoAgentEnterpriseCredentials),
-            cancellationToken);
+            cancellationToken,
+            onRetryAsync: request.OnProviderRetryAsync);
     }
 
     private HttpRequestMessage CreateHttpRequest(

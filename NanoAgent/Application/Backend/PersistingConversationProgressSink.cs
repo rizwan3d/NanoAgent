@@ -56,6 +56,15 @@ internal sealed class PersistingConversationProgressSink : IConversationProgress
         }
     }
 
+    public Task ReportProviderRetryAsync(
+        ProviderRetryProgress providerRetryProgress,
+        CancellationToken cancellationToken)
+    {
+        // Retries are transient transport noise rather than conversation state,
+        // so forward them to the live UI without writing to the session log.
+        return _inner.ReportProviderRetryAsync(providerRetryProgress, cancellationToken);
+    }
+
     public async Task ReportToolResultsAsync(
         ToolExecutionBatchResult toolExecutionResult,
         CancellationToken cancellationToken)

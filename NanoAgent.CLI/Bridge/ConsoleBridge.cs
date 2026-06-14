@@ -186,6 +186,13 @@ public sealed class ConsoleBridge : IUiBridge
         WriteBlock(_planOutputFormatter.Format(progress));
     }
 
+    public void ShowProviderRetry(ProviderRetryProgress progress)
+    {
+        WriteStatus(
+            "Retry",
+            $"Provider unreachable ({progress.Reason}). Trying {progress.Attempt}/{progress.MaxAttempts}.");
+    }
+
     private void WriteSelectionPrompt<T>(
         SelectionPromptRequest<T> request,
         int defaultIndex)

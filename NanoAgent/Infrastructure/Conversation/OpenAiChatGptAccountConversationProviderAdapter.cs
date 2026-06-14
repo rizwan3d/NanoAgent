@@ -63,7 +63,8 @@ internal sealed class OpenAiChatGptAccountConversationProviderAdapter : IConvers
                     forceRefresh: true,
                     token);
                 return true;
-            });
+            },
+            onRetryAsync: request.OnProviderRetryAsync);
     }
 
     private static HttpRequestMessage CreateHttpRequest(

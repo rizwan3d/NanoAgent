@@ -668,6 +668,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 settings,
                 timeoutSource,
                 telemetry,
+                progressSink,
                 cancellationToken);
 
             if (response.CompletionTokens is > 0)
@@ -1033,6 +1034,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ConversationSettings settings,
         CancellationTokenSource timeoutSource,
         ConversationTelemetryAccumulator telemetry,
+        IConversationProgressSink progressSink,
         CancellationToken cancellationToken)
     {
         string? requestSystemPrompt = systemPrompt;
@@ -1048,6 +1050,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 settings,
                 timeoutSource,
                 telemetry,
+                progressSink,
                 cancellationToken);
 
             try
@@ -1250,6 +1253,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ConversationSettings settings,
         CancellationTokenSource timeoutSource,
         ConversationTelemetryAccumulator telemetry,
+        IConversationProgressSink progressSink,
         CancellationToken cancellationToken)
     {
         try
@@ -1265,7 +1269,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 messages.ToArray(),
                 systemPrompt,
                 availableTools,
-                session.ReasoningEffort);
+                session.ReasoningEffort,
+                (retryProgress, retryCancellationToken) =>
+                    progressSink.ReportProviderRetryAsync(retryProgress, retryCancellationToken));
 
             telemetry.AddEstimatedInputTokens(EstimateInputTokens(request));
 
