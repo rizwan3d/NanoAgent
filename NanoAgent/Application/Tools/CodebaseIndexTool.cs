@@ -14,7 +14,7 @@ internal sealed class CodebaseIndexTool : ITool
         _codebaseIndexService = codebaseIndexService;
     }
 
-    public string Description => "Build, inspect, and search NanoAgent's local codebase index. The index is stored under .nanoagent/cache, refreshes incrementally when searched or built, respects workspace ignore rules, and helps answer repository-wide code questions without copying another editor's implementation.";
+    public string Description => "Build, inspect, and search NanoAgent's local codebase index. The index is stored under .nanoagent/cache, persists lightweight file embeddings plus metadata, refreshes incrementally when searched or built, respects workspace ignore rules, and helps answer repository-wide code questions without copying another editor's implementation.";
 
     public string Name => AgentToolNames.CodebaseIndex;
 
