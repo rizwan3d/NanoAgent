@@ -3,6 +3,7 @@ using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Tests.Application.Utilities;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class SecretRedactorTests
 {
     [Theory]
