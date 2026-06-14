@@ -8,6 +8,7 @@ using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class FileReadToolTests
 {
     [Fact]

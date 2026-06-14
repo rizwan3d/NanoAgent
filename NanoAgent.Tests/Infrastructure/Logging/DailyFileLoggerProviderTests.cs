@@ -8,6 +8,7 @@ using NanoAgent.Infrastructure.Logging;
 
 namespace NanoAgent.Tests.Infrastructure.Logging;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class DailyFileLoggerProviderTests : IDisposable
 {
     private readonly string _tempRoot;

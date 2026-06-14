@@ -8,6 +8,7 @@ using NanoAgent.Infrastructure.Tools;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class WorkspaceAgentProfilePromptProviderTests : IDisposable
 {
     private readonly string _workspaceRoot;

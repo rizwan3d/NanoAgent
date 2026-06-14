@@ -6,6 +6,7 @@ using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Tests.Application.Models;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class ReplSessionContextTests
 {
     [Fact]

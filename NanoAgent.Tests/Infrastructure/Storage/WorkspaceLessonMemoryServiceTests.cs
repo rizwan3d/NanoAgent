@@ -10,6 +10,7 @@ using NanoAgent.Infrastructure.Storage;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class WorkspaceLessonMemoryServiceTests
 {
     [Fact]
