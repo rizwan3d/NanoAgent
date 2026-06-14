@@ -9,6 +9,7 @@ using System.Text.Json;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
 
+[Collection(global::NanoAgent.Tests.TestCollections.SecretRedactorState)]
 public sealed class WorkspaceToolAuditLogServiceTests : IDisposable
 {
     private readonly string _workspacePath = Path.Combine(

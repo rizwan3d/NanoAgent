@@ -65,6 +65,8 @@ public sealed class WorkspaceCodebaseIndexServiceTests
 
         indexJson.Should().Contain("\"embedding\"");
         indexJson.Should().NotContain("\"terms\"");
+        indexJson.Should().NotContain("\"sha256\"");
+        indexJson.Should().NotContain("\"workspaceRoot\"");
     }
 
     [Fact]

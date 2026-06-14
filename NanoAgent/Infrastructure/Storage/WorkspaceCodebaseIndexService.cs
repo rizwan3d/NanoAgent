@@ -3,7 +3,6 @@ using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
 using System.Diagnostics;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -173,7 +172,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         {
             Version = CurrentIndexVersion,
             BuiltAtUtc = builtAtUtc,
-            WorkspaceRoot = workspaceRoot,
             Files = indexedFiles
                 .OrderBy(static file => file.Path, StringComparer.OrdinalIgnoreCase)
                 .ToList()
@@ -475,7 +473,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             Path = candidate.RelativePath,
             Length = candidate.Length,
             LastWriteTimeUtc = candidate.LastWriteTimeUtc,
-            Sha256 = ComputeSha256(content),
             Language = GetLanguage(candidate.RelativePath),
             LineCount = CountLines(content),
             Symbols = symbols,
@@ -996,13 +993,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         yield return value[start..];
     }
 
-    private static string ComputeSha256(string content)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(content);
-        byte[] hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
     private static int CountLines(string content)
     {
         if (content.Length == 0)
@@ -1134,8 +1124,6 @@ internal sealed class CodebaseIndexDocument
 
     public DateTimeOffset BuiltAtUtc { get; set; }
 
-    public string WorkspaceRoot { get; set; } = string.Empty;
-
     public List<CodebaseIndexedFileDocument> Files { get; set; } = [];
 }
 
@@ -1146,8 +1134,6 @@ internal sealed class CodebaseIndexedFileDocument
     public long Length { get; set; }
 
     public DateTimeOffset LastWriteTimeUtc { get; set; }
-
-    public string Sha256 { get; set; } = string.Empty;
 
     public string Language { get; set; } = "text";
 
