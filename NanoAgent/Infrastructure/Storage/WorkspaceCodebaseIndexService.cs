@@ -11,10 +11,12 @@ namespace NanoAgent.Infrastructure.Storage;
 
 internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
 {
-    private const int CurrentIndexVersion = 1;
+    private const int CurrentIndexVersion = 2;
+    private const int EmbeddingDimensions = 256;
     private const int MaxIndexedFiles = 5_000;
     private const int MaxIndexFileBytes = 262_144;
-    private const int MaxTermsPerFile = 1_200;
+    private const int MaxEmbeddingTokensPerFile = 16_000;
+    private const int MaxEmbeddingTokensPerQuery = 256;
     private const int MaxSymbolsPerFile = 80;
     private const int MaxSnippetsPerMatch = 3;
     private const int MaxSnippetCharacters = 220;
@@ -297,11 +299,13 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         string normalizedQuery = query.Trim();
         string[] queryTerms = Tokenize(normalizedQuery)
             .Distinct(StringComparer.Ordinal)
+            .Take(MaxEmbeddingTokensPerQuery)
             .ToArray();
+        float[] queryEmbedding = CreateQueryEmbedding(normalizedQuery, queryTerms);
         int maxResults = Math.Clamp(limit, 1, 50);
 
         CodebaseIndexSearchMatch[] matches = index.Files
-            .Select(file => ScoreFile(workspaceRoot, file, normalizedQuery, queryTerms, includeSnippets, cancellationToken))
+            .Select(file => ScoreFile(workspaceRoot, file, normalizedQuery, queryTerms, queryEmbedding, includeSnippets, cancellationToken))
             .Where(static match => match.Score > 0)
             .OrderByDescending(static match => match.Score)
             .ThenBy(static match => match.Path, StringComparer.OrdinalIgnoreCase)
@@ -358,46 +362,34 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         CodebaseIndexedFileDocument file,
         string normalizedQuery,
         IReadOnlyList<string> queryTerms,
+        IReadOnlyList<float> queryEmbedding,
         bool includeSnippets,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        double score = 0;
         string normalizedPath = file.Path.Replace('\\', '/');
+        double similarity = CosineSimilarity(queryEmbedding, file.Embedding);
+        double score = Math.Max(0, similarity);
+
         if (normalizedPath.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase))
         {
-            score += 20;
+            score += 0.08;
         }
 
-        foreach (string queryTerm in queryTerms)
+        if (file.Symbols.Any(symbol => symbol.Contains(normalizedQuery, StringComparison.OrdinalIgnoreCase)))
         {
-            if (file.Terms.TryGetValue(queryTerm, out int count))
-            {
-                score += Math.Log(count + 1, 2);
-            }
-
-            if (normalizedPath.Contains(queryTerm, StringComparison.OrdinalIgnoreCase))
-            {
-                score += 5;
-            }
-
-            score += file.Symbols.Count(symbol =>
-                symbol.Contains(queryTerm, StringComparison.OrdinalIgnoreCase)) * 4;
+            score += 0.05;
         }
 
         CodebaseIndexSnippet[] snippets = score <= 0 || !includeSnippets
             ? []
             : CreateSnippets(workspaceRoot, file.Path, normalizedQuery, queryTerms, cancellationToken);
-        if (snippets.Length > 0)
-        {
-            score += 2;
-        }
 
         return new CodebaseIndexSearchMatch(
             file.Path,
             file.Language,
-            Math.Round(score, 3),
+            Math.Round(score * 100, 3),
             file.Symbols.Take(10).ToArray(),
             snippets);
     }
@@ -473,24 +465,10 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             return null;
         }
 
-        Dictionary<string, int> terms = new(StringComparer.Ordinal);
-        AddPathTerms(candidate.RelativePath, terms);
-        foreach (string token in Tokenize(content))
-        {
-            AddTerm(token, terms);
-        }
-
         string[] symbols = ExtractSymbols(content)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(MaxSymbolsPerFile)
             .ToArray();
-        foreach (string symbol in symbols)
-        {
-            foreach (string token in Tokenize(symbol))
-            {
-                AddTerm(token, terms, weight: 2);
-            }
-        }
 
         return new CodebaseIndexedFileDocument
         {
@@ -501,7 +479,7 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             Language = GetLanguage(candidate.RelativePath),
             LineCount = CountLines(content),
             Symbols = symbols,
-            Terms = terms
+            Embedding = CreateFileEmbedding(candidate.RelativePath, content, symbols)
         };
     }
 
@@ -774,15 +752,171 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         }
     }
 
-    private static void AddPathTerms(
+    private static float[] CreateFileEmbedding(
         string relativePath,
-        Dictionary<string, int> terms)
+        string content,
+        IReadOnlyList<string> symbols)
     {
-        string withoutExtension = Path.ChangeExtension(relativePath, null) ?? relativePath;
-        foreach (string token in Tokenize(withoutExtension))
+        float[] embedding = new float[EmbeddingDimensions];
+        int tokenBudget = MaxEmbeddingTokensPerFile;
+
+        AddEmbeddingTokens(
+            Tokenize(Path.ChangeExtension(relativePath, null) ?? relativePath),
+            embedding,
+            weight: 3f,
+            ref tokenBudget);
+        AddEmbeddingTokens(
+            Tokenize(content),
+            embedding,
+            weight: 1f,
+            ref tokenBudget);
+
+        foreach (string symbol in symbols)
         {
-            AddTerm(token, terms, weight: 3);
+            if (tokenBudget <= 0)
+            {
+                break;
+            }
+
+            AddEmbeddingTokens(
+                Tokenize(symbol),
+                embedding,
+                weight: 2f,
+                ref tokenBudget);
         }
+
+        NormalizeEmbedding(embedding);
+        return embedding;
+    }
+
+    private static float[] CreateQueryEmbedding(
+        string query,
+        IReadOnlyList<string> queryTerms)
+    {
+        float[] embedding = new float[EmbeddingDimensions];
+        int tokenBudget = MaxEmbeddingTokensPerQuery;
+
+        AddEmbeddingTokens(
+            queryTerms,
+            embedding,
+            weight: 1.5f,
+            ref tokenBudget);
+
+        if (tokenBudget > 0)
+        {
+            AddEmbeddingTokens(
+                EnumerateCharacterGrams(query, 3),
+                embedding,
+                weight: 0.5f,
+                ref tokenBudget);
+        }
+
+        NormalizeEmbedding(embedding);
+        return embedding;
+    }
+
+    private static void AddEmbeddingTokens(
+        IEnumerable<string> tokens,
+        float[] embedding,
+        float weight,
+        ref int remainingBudget)
+    {
+        foreach (string token in tokens)
+        {
+            if (remainingBudget <= 0)
+            {
+                break;
+            }
+
+            uint primaryHash = ComputeStableHash(token, 2166136261u);
+            int primaryIndex = (int)(primaryHash % EmbeddingDimensions);
+            embedding[primaryIndex] += (primaryHash & 1) == 0
+                ? weight
+                : -weight;
+
+            uint secondaryHash = ComputeStableHash(token, 2166136261u ^ 16777619u);
+            int secondaryIndex = (int)(secondaryHash % EmbeddingDimensions);
+            embedding[secondaryIndex] += (secondaryHash & 1) == 0
+                ? weight * 0.5f
+                : -weight * 0.5f;
+
+            remainingBudget--;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateCharacterGrams(
+        string value,
+        int gramLength)
+    {
+        string normalized = new string(
+            value
+                .ToLowerInvariant()
+                .Where(static character => char.IsLetterOrDigit(character))
+                .ToArray());
+
+        if (normalized.Length < gramLength)
+        {
+            yield break;
+        }
+
+        for (int index = 0; index <= normalized.Length - gramLength; index++)
+        {
+            yield return normalized.Substring(index, gramLength);
+        }
+    }
+
+    private static uint ComputeStableHash(
+        string value,
+        uint seed)
+    {
+        uint hash = seed;
+        foreach (char character in value)
+        {
+            hash ^= character;
+            hash *= 16777619u;
+        }
+
+        return hash;
+    }
+
+    private static void NormalizeEmbedding(float[] embedding)
+    {
+        double sumSquares = 0;
+        foreach (float component in embedding)
+        {
+            sumSquares += component * component;
+        }
+
+        if (sumSquares <= double.Epsilon)
+        {
+            return;
+        }
+
+        float scale = (float)(1d / Math.Sqrt(sumSquares));
+        for (int index = 0; index < embedding.Length; index++)
+        {
+            embedding[index] *= scale;
+        }
+    }
+
+    private static double CosineSimilarity(
+        IReadOnlyList<float> left,
+        IReadOnlyList<float> right)
+    {
+        if (left.Count == 0 ||
+            right.Count == 0 ||
+            left.Count != right.Count)
+        {
+            return 0;
+        }
+
+        double sum = 0;
+        for (int index = 0; index < left.Count; index++)
+        {
+            sum += left[index] * right[index];
+        }
+
+        return sum;
     }
 
     private static IEnumerable<string> Tokenize(string value)
@@ -860,33 +994,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         }
 
         yield return value[start..];
-    }
-
-    private static void AddTerm(
-        string token,
-        Dictionary<string, int> terms,
-        int weight = 1)
-    {
-        if (string.IsNullOrWhiteSpace(token))
-        {
-            return;
-        }
-
-        string normalized = token.Trim().ToLowerInvariant();
-        if (normalized.Length < 2)
-        {
-            return;
-        }
-
-        if (!terms.ContainsKey(normalized) &&
-            terms.Count >= MaxTermsPerFile)
-        {
-            return;
-        }
-
-        terms[normalized] = terms.TryGetValue(normalized, out int count)
-            ? count + weight
-            : weight;
     }
 
     private static string ComputeSha256(string content)
@@ -1048,5 +1155,5 @@ internal sealed class CodebaseIndexedFileDocument
 
     public string[] Symbols { get; set; } = [];
 
-    public Dictionary<string, int> Terms { get; set; } = new(StringComparer.Ordinal);
+    public float[] Embedding { get; set; } = [];
 }

@@ -42,6 +42,32 @@ public sealed class WorkspaceCodebaseIndexServiceTests
     }
 
     [Fact]
+    public async Task BuildAsync_Should_PersistEmbeddingsInsteadOfLexicalTerms()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Path, "service.cs"),
+            """
+            public sealed class ServiceRegistry
+            {
+                public void ConfigureServices()
+                {
+                }
+            }
+            """);
+
+        WorkspaceCodebaseIndexService sut = CreateService(workspace.Path);
+
+        await sut.BuildAsync(force: false, CancellationToken.None);
+
+        string indexJson = await File.ReadAllTextAsync(
+            Path.Combine(workspace.Path, ".nanoagent", "cache", "codebase-index.json"));
+
+        indexJson.Should().Contain("\"embedding\"");
+        indexJson.Should().NotContain("\"terms\"");
+    }
+
+    [Fact]
     public async Task BuildAsync_Should_RespectIgnoreFilesAndDefaultGeneratedDirectories()
     {
         using TempWorkspace workspace = TempWorkspace.Create();

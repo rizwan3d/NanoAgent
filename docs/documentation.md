@@ -584,13 +584,13 @@ NanoAgent includes a local codebase index for repository-wide discovery. The `co
 - `search`: rank likely relevant files for a natural-language, symbol, path, or behavior query.
 - `list`: show indexed file paths.
 
-NanoAgent implements codebase indexing by computing embeddings for files, starts indexing automatically when a project opens, synchronizes new files incrementally, and respects ignore files such as `.gitignore`.
+NanoAgent implements codebase indexing by computing and caching lightweight local embeddings for files, refreshing incrementally when the index is searched or rebuilt, and respecting ignore files such as `.gitignore`.
 
 ```text
 .nanoagent/cache/codebase-index.json
 ```
 
-The cache does not store full file contents. Search snippets are read from current workspace files when results are returned.
+The cache does not store full file contents. It stores per-file metadata such as path, length, hash, language, line count, symbols, and the local embedding vector used for ranking. Search snippets are read from current workspace files when results are returned.
 
 Indexing respects `.gitignore`, `.nanoagent/.nanoignore`, and built-in exclusions for generated or local runtime directories such as `.git/`, `node_modules/`, `bin/`, `obj/`, `.nanoagent/cache/`, `.nanoagent/logs/`, and `.nanoagent/sessions/`.
 
