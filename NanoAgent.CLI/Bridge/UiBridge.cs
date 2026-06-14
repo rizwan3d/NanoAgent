@@ -217,6 +217,12 @@ public sealed class UiBridge : IUiBridge
                 : $"Plan {progress.CompletedTaskCount}/{progress.Tasks.Count}";
             state.LatestPlanProgress = progress;
             state.LatestPlanText = description;
+
+            if (!state.IsPlanPinned)
+            {
+                state.PlanScrollOffset = 0;
+            }
+
             state.IsPlanPinned = true;
 
             state.AddSystemMessage(description);
