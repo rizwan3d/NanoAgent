@@ -19,4 +19,11 @@ public interface IConversationProgressSink
     Task ReportToolResultsAsync(
         ToolExecutionBatchResult toolExecutionResult,
         CancellationToken cancellationToken);
+
+    // Optional capability: surfaces provider request retries (e.g. "Trying 1/10
+    // (host not found)"). Sinks that do not present live progress ignore it.
+    Task ReportProviderRetryAsync(
+        ProviderRetryProgress providerRetryProgress,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
 }

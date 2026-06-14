@@ -39,7 +39,8 @@ internal sealed class OpenCodeZenConversationProviderAdapter : IConversationProv
             request.ProviderProfile.ProviderKind,
             () => CreateHttpRequest(baseUri, path, request.ApiKey, requestBody),
             cancellationToken,
-            ResolveResponseNormalizer(path));
+            ResolveResponseNormalizer(path),
+            onRetryAsync: request.OnProviderRetryAsync);
     }
 
     private Func<string, string>? ResolveResponseNormalizer(string path)

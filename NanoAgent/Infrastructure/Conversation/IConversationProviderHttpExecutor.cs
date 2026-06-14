@@ -10,5 +10,6 @@ internal interface IConversationProviderHttpExecutor
         Func<HttpRequestMessage> createRequest,
         CancellationToken cancellationToken,
         Func<string, string>? normalizeResponseBody = null,
-        Func<CancellationToken, Task<bool>>? refreshAuthorizationAsync = null);
+        Func<CancellationToken, Task<bool>>? refreshAuthorizationAsync = null,
+        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync = null);
 }
