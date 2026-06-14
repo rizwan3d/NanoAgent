@@ -47,4 +47,13 @@ public sealed class UiConversationProgressSink : IConversationProgressSink
         _uiBridge.ShowToolResults(toolExecutionResult);
         return Task.CompletedTask;
     }
+
+    public Task ReportProviderRetryAsync(
+        ProviderRetryProgress providerRetryProgress,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _uiBridge.ShowProviderRetry(providerRetryProgress);
+        return Task.CompletedTask;
+    }
 }

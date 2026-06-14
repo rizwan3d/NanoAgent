@@ -9,4 +9,7 @@ public sealed record ConversationProviderRequest(
     IReadOnlyList<ConversationRequestMessage> Messages,
     string? SystemPrompt,
     IReadOnlyList<ToolDefinition> AvailableTools,
-    string? ReasoningEffort = null);
+    string? ReasoningEffort = null,
+    // Invoked by the transport before each retry back-off so the UI can surface
+    // attempt progress. Optional: null when nobody is listening for retries.
+    Func<ProviderRetryProgress, CancellationToken, Task>? OnProviderRetryAsync = null);

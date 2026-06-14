@@ -54,7 +54,8 @@ internal sealed class GitHubCopilotConversationProviderAdapter : IConversationPr
                     forceRefresh: true,
                     token);
                 return true;
-            });
+            },
+            onRetryAsync: request.OnProviderRetryAsync);
     }
 
     private static HttpRequestMessage CreateHttpRequest(

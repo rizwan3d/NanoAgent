@@ -229,6 +229,16 @@ public sealed class UiBridge : IUiBridge
         });
     }
 
+    public void ShowProviderRetry(ProviderRetryProgress progress)
+    {
+        Enqueue(state =>
+        {
+            state.ActivityText = $"Trying {progress.Attempt}/{progress.MaxAttempts}";
+            state.AddSystemMessage(
+                $"Provider unreachable ({progress.Reason}). Retrying… ({progress.Attempt}/{progress.MaxAttempts})");
+        });
+    }
+
     private static string Truncate(string value, int maxLength)
     {
         string normalized = value.Trim();
