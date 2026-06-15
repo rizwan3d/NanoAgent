@@ -15,6 +15,7 @@ internal sealed class HeadlessUiBridge : IUiBridge
 {
     private readonly NanoAgentClient _client;
     private readonly IAgentInteractionHandler? _interactionHandler;
+    private int _assistantMessageChunkCount;
 
     public HeadlessUiBridge(
         NanoAgentClient client,
@@ -74,6 +75,17 @@ internal sealed class HeadlessUiBridge : IUiBridge
         _client.RaiseStatus(StatusMessageSeverity.Success, message);
     }
 
+    public void ShowAssistantMessageChunk(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _assistantMessageChunkCount);
+        _client.RaiseAssistantMessageChunk(text);
+    }
+
     public void ShowAssistantReasoning(string reasoningText)
     {
         _client.RaiseReasoning(reasoningText);
@@ -97,5 +109,15 @@ internal sealed class HeadlessUiBridge : IUiBridge
     public void ShowProviderRetry(ProviderRetryProgress progress)
     {
         _client.RaiseProviderRetry(progress);
+    }
+
+    internal void ResetAssistantMessageChunkTracking()
+    {
+        Interlocked.Exchange(ref _assistantMessageChunkCount, 0);
+    }
+
+    internal bool HasObservedAssistantMessageChunks()
+    {
+        return Volatile.Read(ref _assistantMessageChunkCount) > 0;
     }
 }

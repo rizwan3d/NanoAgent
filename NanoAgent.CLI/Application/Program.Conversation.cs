@@ -74,6 +74,7 @@ public static partial class Program
         state.CurrentTurnStartedAt = DateTimeOffset.UtcNow;
         state.PendingCompletionNote = null;
         state.ActivityText = "Thinking";
+        state.UiBridge.ResetAssistantMessageChunkTracking();
 
         state.ActiveOperation = Task.Run(async () =>
         {
@@ -100,7 +101,8 @@ public static partial class Program
                         : completionNote;
                     appState.CurrentTurnStartedAt = null;
 
-                    if (!string.IsNullOrWhiteSpace(result.ResponseText))
+                    if (!state.UiBridge.HasObservedAssistantMessageChunks() &&
+                        !string.IsNullOrWhiteSpace(result.ResponseText))
                     {
                         appState.BeginAssistantStream(result.ResponseText);
                         appState.ClearBusyWhenStreamCompletes = true;

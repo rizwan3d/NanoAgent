@@ -19,6 +19,15 @@ internal sealed class PersistingConversationProgressSink : IConversationProgress
         _session = session;
     }
 
+    public Task ReportAssistantMessageChunkAsync(
+        string text,
+        CancellationToken cancellationToken)
+    {
+        // Assistant text chunks are transient live output rather than durable
+        // conversation state, so forward them without writing to the session log.
+        return _inner.ReportAssistantMessageChunkAsync(text, cancellationToken);
+    }
+
     public async Task ReportAssistantReasoningAsync(
         string reasoningText,
         CancellationToken cancellationToken)

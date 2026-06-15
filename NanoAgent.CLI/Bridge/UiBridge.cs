@@ -13,6 +13,7 @@ public sealed class UiBridge : IUiBridge
     private readonly IPlanOutputFormatter _planOutputFormatter;
     private readonly IToolOutputFormatter _toolOutputFormatter;
     private readonly object _providerAuthKeySync = new();
+    private int _assistantMessageChunkCount;
     private string? _providerAuthKey;
     private bool _providerAuthKeyConsumed;
 
@@ -138,6 +139,23 @@ public sealed class UiBridge : IUiBridge
         Enqueue(state => state.AddSystemMessage($"Success: {message}"));
     }
 
+    public void ShowAssistantMessageChunk(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _assistantMessageChunkCount);
+
+        Enqueue(state =>
+        {
+            state.ActivityText = "Streaming response";
+            state.ClearBusyWhenStreamCompletes = true;
+            state.AppendAssistantStreamChunk(text);
+        });
+    }
+
     public void ShowAssistantReasoning(string reasoningText)
     {
         if (string.IsNullOrWhiteSpace(reasoningText))
@@ -237,6 +255,16 @@ public sealed class UiBridge : IUiBridge
             state.AddSystemMessage(
                 $"Provider unreachable ({progress.Reason}). Retrying… ({progress.Attempt}/{progress.MaxAttempts})");
         });
+    }
+
+    internal bool HasObservedAssistantMessageChunks()
+    {
+        return Volatile.Read(ref _assistantMessageChunkCount) > 0;
+    }
+
+    internal void ResetAssistantMessageChunkTracking()
+    {
+        Interlocked.Exchange(ref _assistantMessageChunkCount, 0);
     }
 
     private static string Truncate(string value, int maxLength)

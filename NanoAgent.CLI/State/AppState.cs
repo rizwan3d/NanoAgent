@@ -143,11 +143,24 @@ public sealed class AppState
             ? string.Empty
             : text.Trim();
 
-        ChatMessage message = AddMessage(Role.Assistant, string.Empty);
-        StreamingMessageId = message.Id;
-        StreamQueue.Clear();
+        AppendAssistantStreamChunk(normalized);
+    }
 
-        foreach (char character in normalized)
+    public void AppendAssistantStreamChunk(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        if (StreamingMessageId is null || GetStreamingMessage() is null)
+        {
+            ChatMessage message = AddMessage(Role.Assistant, string.Empty);
+            StreamingMessageId = message.Id;
+            StreamQueue.Clear();
+        }
+
+        foreach (char character in text)
         {
             StreamQueue.Enqueue(character);
         }
