@@ -52,7 +52,8 @@ public static class NanoAgentHostFactory
         IUiBridge uiBridge,
         BackendRuntimeArguments runtimeArguments,
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
-        bool autoApproveAllTools)
+        bool autoApproveAllTools,
+        Action<IServiceCollection>? configureServices = null)
     {
         ArgumentNullException.ThrowIfNull(uiBridge);
         ArgumentNullException.ThrowIfNull(runtimeArguments);
@@ -89,6 +90,12 @@ public static class NanoAgentHostFactory
         builder.Services.AddSingleton<ISecretPrompt, UiSecretPrompt>();
         builder.Services.AddSingleton<IConfirmationPrompt, UiConfirmationPrompt>();
         builder.Services.AddSingleton<IStatusMessageWriter, UiStatusMessageWriter>();
+
+        // SDK/embedder extension point: runs after Application + Infrastructure + the
+        // default UI prompt registrations so callers can override services (for example
+        // an in-memory provider configuration to skip interactive onboarding, a fixed
+        // workspace root, or custom ITool registrations) and add their own.
+        configureServices?.Invoke(builder.Services);
 
         return builder.Build();
     }
