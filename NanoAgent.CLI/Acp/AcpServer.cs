@@ -576,9 +576,11 @@ internal sealed class AcpServer : IAsyncDisposable
         try
         {
             Directory.SetCurrentDirectory(session.WorkingDirectory);
+            session.Bridge.ResetAssistantMessageChunkTracking();
 
             string responseText;
             ConversationTurnMetrics? metrics = null;
+            bool shouldEmitCompletionChunk = true;
             if (prompt.Attachments.Count == 0 &&
                 prompt.Text.StartsWith("/", StringComparison.Ordinal))
             {
@@ -601,6 +603,7 @@ internal sealed class AcpServer : IAsyncDisposable
                             promptCancellation.Token);
                         responseText = result.ResponseText;
                         metrics = result.Metrics;
+                        shouldEmitCompletionChunk = !session.Bridge.HasObservedAssistantMessageChunks();
                     }
                 }
                 else
@@ -622,11 +625,13 @@ internal sealed class AcpServer : IAsyncDisposable
                     promptCancellation.Token);
                 responseText = result.ResponseText;
                 metrics = result.Metrics;
+                shouldEmitCompletionChunk = !session.Bridge.HasObservedAssistantMessageChunks();
             }
 
             await session.Bridge.FlushAsync();
 
-            if (!string.IsNullOrWhiteSpace(responseText))
+            if (shouldEmitCompletionChunk &&
+                !string.IsNullOrWhiteSpace(responseText))
             {
                 await SendAgentMessageChunkAsync(session.SessionId, responseText, cancellationToken);
             }
@@ -2021,6 +2026,7 @@ internal sealed class AcpServer : IAsyncDisposable
         private readonly object _tailSync = new();
         private readonly IToolOutputFormatter _toolOutputFormatter = new ToolOutputFormatter();
         private readonly TimeSpan _requestTimeout;
+        private int _assistantMessageChunkCount;
         private string? _providerAuthKey;
         private bool _providerAuthKeyConsumed;
         private Task _tail = Task.CompletedTask;
@@ -2082,6 +2088,19 @@ internal sealed class AcpServer : IAsyncDisposable
         public void ShowSuccess(string message)
         {
             EnqueueSessionText($"Success: {message}");
+        }
+
+        public void ShowAssistantMessageChunk(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref _assistantMessageChunkCount);
+
+            string sessionId = SessionId ?? string.Empty;
+            EnqueueNotification(token => _server.SendAgentMessageChunkAsync(sessionId, text, token));
         }
 
         public void ShowAssistantReasoning(string reasoningText)
@@ -2179,6 +2198,16 @@ internal sealed class AcpServer : IAsyncDisposable
             {
                 return _tail;
             }
+        }
+
+        public bool HasObservedAssistantMessageChunks()
+        {
+            return Volatile.Read(ref _assistantMessageChunkCount) > 0;
+        }
+
+        public void ResetAssistantMessageChunkTracking()
+        {
+            Interlocked.Exchange(ref _assistantMessageChunkCount, 0);
         }
 
         private async Task<T> RequestSelectionViaAcpAsync<T>(

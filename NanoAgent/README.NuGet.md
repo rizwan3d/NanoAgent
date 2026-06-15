@@ -31,7 +31,8 @@ await using NanoAgentClient client = NanoAgentClient.CreateBuilder()
     .AutoApproveTools()                          // for trusted / sandboxed automation
     .Build();
 
-// Surface progress in your UI (final answer is returned from RunTurnAsync).
+// Surface progress in your UI (final answer is still returned from RunTurnAsync).
+client.AssistantMessageChunkReceived += (_, e) => Console.Write(e.Text);
 client.ToolCallsStarted += (_, e) => Console.WriteLine($"Running {e.ToolCalls.Count} tool(s)...");
 client.StatusMessage   += (_, e) => Console.WriteLine($"[{e.Severity}] {e.Message}");
 

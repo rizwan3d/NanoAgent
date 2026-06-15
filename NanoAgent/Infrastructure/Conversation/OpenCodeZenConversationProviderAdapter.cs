@@ -40,7 +40,13 @@ internal sealed class OpenCodeZenConversationProviderAdapter : IConversationProv
             () => CreateHttpRequest(baseUri, path, request.ApiKey, requestBody),
             cancellationToken,
             ResolveResponseNormalizer(path),
-            onRetryAsync: request.OnProviderRetryAsync);
+            onRetryAsync: request.OnProviderRetryAsync,
+            readResponseBodyAsync: path == ResponsesPath
+                ? OpenAiResponsesEventStreamParser.ReadResponseBodyAsync
+                : null,
+            onAssistantMessageChunkAsync: path == ResponsesPath
+                ? request.OnAssistantMessageChunkAsync
+                : null);
     }
 
     private Func<string, string>? ResolveResponseNormalizer(string path)

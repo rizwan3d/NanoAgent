@@ -64,7 +64,9 @@ internal sealed class OpenAiChatGptAccountConversationProviderAdapter : IConvers
                     token);
                 return true;
             },
-            onRetryAsync: request.OnProviderRetryAsync);
+            onRetryAsync: request.OnProviderRetryAsync,
+            readResponseBodyAsync: OpenAiResponsesEventStreamParser.ReadResponseBodyAsync,
+            onAssistantMessageChunkAsync: request.OnAssistantMessageChunkAsync);
     }
 
     private static HttpRequestMessage CreateHttpRequest(

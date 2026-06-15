@@ -20,16 +20,21 @@ public sealed class HeadlessUiBridgeTests
         HeadlessUiBridge bridge = new(client, interactionHandler: null);
 
         StatusMessageEventArgs? statusArgs = null;
+        AssistantMessageChunkEventArgs? messageChunkArgs = null;
         AssistantReasoningEventArgs? reasoningArgs = null;
         client.StatusMessage += (_, e) => statusArgs = e;
+        client.AssistantMessageChunkReceived += (_, e) => messageChunkArgs = e;
         client.ReasoningReceived += (_, e) => reasoningArgs = e;
 
         bridge.ShowSuccess("done");
+        bridge.ShowAssistantMessageChunk("hello");
         bridge.ShowAssistantReasoning("thinking");
 
         statusArgs.Should().NotBeNull();
         statusArgs!.Severity.Should().Be(StatusMessageSeverity.Success);
         statusArgs.Message.Should().Be("done");
+        messageChunkArgs.Should().NotBeNull();
+        messageChunkArgs!.Text.Should().Be("hello");
         reasoningArgs.Should().NotBeNull();
         reasoningArgs!.ReasoningText.Should().Be("thinking");
     }

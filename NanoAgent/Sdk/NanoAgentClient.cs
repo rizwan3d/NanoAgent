@@ -12,8 +12,8 @@ namespace NanoAgent.Sdk;
 /// Create one with the fluent <see cref="CreateBuilder"/>, configure a provider
 /// and model, call <see cref="InitializeAsync"/> once, then drive turns with
 /// <see cref="RunTurnAsync(string, CancellationToken)"/>. Subscribe to the
-/// progress events to surface reasoning, tool activity, and plans in your UI.
-/// The completed assistant answer is returned from each turn.
+/// progress events to surface assistant text, reasoning, tool activity, and
+/// plans in your UI. The completed assistant answer is returned from each turn.
 /// </summary>
 /// <example>
 /// <code>
@@ -23,6 +23,7 @@ namespace NanoAgent.Sdk;
 ///     .AutoApproveTools()
 ///     .Build();
 ///
+/// client.AssistantMessageChunkReceived += (_, e) => Console.Write(e.Text);
 /// client.ToolCallsStarted += (_, e) => Console.WriteLine($"Running {e.ToolCalls.Count} tool(s)...");
 ///
 /// await client.InitializeAsync(cancellationToken);
@@ -46,6 +47,9 @@ public sealed class NanoAgentClient : IAsyncDisposable
 
     /// <summary>Raised when the agent emits intermediate reasoning text.</summary>
     public event EventHandler<AssistantReasoningEventArgs>? ReasoningReceived;
+
+    /// <summary>Raised when the agent emits incremental assistant text.</summary>
+    public event EventHandler<AssistantMessageChunkEventArgs>? AssistantMessageChunkReceived;
 
     /// <summary>Raised when the agent is about to execute a batch of tool calls.</summary>
     public event EventHandler<ToolCallsEventArgs>? ToolCallsStarted;
@@ -95,11 +99,7 @@ public sealed class NanoAgentClient : IAsyncDisposable
         IReadOnlyList<ConversationAttachment> attachments,
         CancellationToken cancellationToken = default)
     {
-        EnsureInitialized();
-        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
-        ArgumentNullException.ThrowIfNull(attachments);
-
-        return _backend.RunTurnAsync(prompt, attachments, _uiBridge, cancellationToken);
+        return RunTurnCoreAsync(prompt, attachments, cancellationToken);
     }
 
     /// <summary>
@@ -124,6 +124,11 @@ public sealed class NanoAgentClient : IAsyncDisposable
     internal void RaiseReasoning(string reasoningText)
     {
         ReasoningReceived?.Invoke(this, new AssistantReasoningEventArgs(reasoningText));
+    }
+
+    internal void RaiseAssistantMessageChunk(string text)
+    {
+        AssistantMessageChunkReceived?.Invoke(this, new AssistantMessageChunkEventArgs(text));
     }
 
     internal void RaiseToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
@@ -158,5 +163,30 @@ public sealed class NanoAgentClient : IAsyncDisposable
             throw new InvalidOperationException(
                 "The NanoAgent client has not been initialized. Call InitializeAsync(...) first.");
         }
+    }
+
+    private async Task<ConversationTurnResult> RunTurnCoreAsync(
+        string prompt,
+        IReadOnlyList<ConversationAttachment> attachments,
+        CancellationToken cancellationToken)
+    {
+        EnsureInitialized();
+        ArgumentException.ThrowIfNullOrWhiteSpace(prompt);
+        ArgumentNullException.ThrowIfNull(attachments);
+
+        _uiBridge.ResetAssistantMessageChunkTracking();
+        ConversationTurnResult result = await _backend.RunTurnAsync(
+            prompt,
+            attachments,
+            _uiBridge,
+            cancellationToken).ConfigureAwait(false);
+
+        if (!_uiBridge.HasObservedAssistantMessageChunks() &&
+            !string.IsNullOrWhiteSpace(result.ResponseText))
+        {
+            RaiseAssistantMessageChunk(result.ResponseText);
+        }
+
+        return result;
     }
 }

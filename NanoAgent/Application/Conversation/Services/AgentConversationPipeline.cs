@@ -1270,6 +1270,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 systemPrompt,
                 availableTools,
                 session.ReasoningEffort,
+                (text, textCancellationToken) =>
+                    progressSink.ReportAssistantMessageChunkAsync(text, textCancellationToken),
                 (retryProgress, retryCancellationToken) =>
                     progressSink.ReportProviderRetryAsync(retryProgress, retryCancellationToken));
 

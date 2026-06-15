@@ -61,6 +61,53 @@ public sealed class ConversationProviderAdapterTests
     }
 
     [Fact]
+    public async Task OpenAiChatGptAccountAdapter_Should_StreamAssistantTextDeltas()
+    {
+        RecordingHandler handler = new("""
+            event: response.created
+            data: {"type":"response.created","response":{"id":"resp_stream"}}
+
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","response_id":"resp_stream","delta":"Hello "}
+
+            event: response.output_text.delta
+            data: {"type":"response.output_text.delta","response_id":"resp_stream","delta":"world"}
+
+            event: response.completed
+            data: {"type":"response.completed","response":{"id":"resp_stream","error":null,"output":[]}}
+
+            data: [DONE]
+
+            """);
+        List<string> chunks = [];
+        Mock<IOpenAiChatGptAccountCredentialService> credentialService = new(MockBehavior.Strict);
+        credentialService
+            .Setup(service => service.ResolveAsync("stored", false, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new OpenAiChatGptAccountResolvedCredential("token", "account-1"));
+        OpenAiChatGptAccountConversationProviderAdapter sut = new(
+            CreateExecutor(handler),
+            new ConversationProviderRequestPayloadFactory(),
+            new ConversationProviderResponseNormalizer(),
+            credentialService.Object,
+            sessionId: "session-1");
+
+        ConversationProviderPayload payload = await sut.SendAsync(
+            CreateRequest(ProviderKind.OpenAiChatGptAccount) with
+            {
+                OnAssistantMessageChunkAsync = (text, _) =>
+                {
+                    chunks.Add(text);
+                    return Task.CompletedTask;
+                }
+            },
+            CancellationToken.None);
+
+        chunks.Should().Equal("Hello ", "world");
+        payload.AssistantMessageWasStreamed.Should().BeTrue();
+        payload.RawContent.Should().Contain("\"Hello world\"");
+    }
+
+    [Fact]
     public async Task AnthropicClaudeAccountAdapter_Should_NormalizeMessagesResponse()
     {
         RecordingHandler handler = new("""
