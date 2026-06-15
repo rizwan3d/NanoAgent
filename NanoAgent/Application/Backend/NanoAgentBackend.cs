@@ -16,6 +16,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private readonly BackendRuntimeArguments _runtimeArguments;
     private readonly bool _autoApproveAllTools;
     private readonly IReadOnlyList<BackendMcpServerConfiguration> _sessionMcpServers;
+    private readonly Action<IServiceCollection>? _configureServices;
     private IAgentTurnService? _agentTurnService;
     private IAgentProfileResolver? _profileResolver;
     private IHost? _host;
@@ -65,11 +66,13 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     internal NanoAgentBackend(
         BackendRuntimeArguments runtimeArguments,
         IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
-        bool autoApproveAllTools)
+        bool autoApproveAllTools,
+        Action<IServiceCollection>? configureServices = null)
     {
         _runtimeArguments = runtimeArguments ?? throw new ArgumentNullException(nameof(runtimeArguments));
         _sessionMcpServers = sessionMcpServers ?? [];
         _autoApproveAllTools = autoApproveAllTools;
+        _configureServices = configureServices;
     }
 
     public async Task<BackendSessionInfo> InitializeAsync(
@@ -89,7 +92,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             uiBridge,
             options,
             _sessionMcpServers,
-            _autoApproveAllTools);
+            _autoApproveAllTools,
+            _configureServices);
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _sessionEventLogService = _host.Services.GetRequiredService<ISessionEventLogService>();
