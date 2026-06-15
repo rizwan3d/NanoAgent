@@ -5,6 +5,65 @@ namespace NanoAgent.Infrastructure.Conversation;
 
 internal static class OpenAiResponsesEventStreamParser
 {
+    public static async Task<StreamingResponseReadResult> ReadResponseBodyAsync(
+        Stream stream,
+        Func<string, CancellationToken, Task>? onAssistantMessageChunkAsync,
+        CancellationToken cancellationToken)
+    {
+        using StreamReader reader = new(stream, leaveOpen: true);
+        StringBuilder rawBody = new();
+        StringBuilder data = new();
+        bool assistantMessageWasStreamed = false;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string? line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+
+            rawBody.Append(line);
+            rawBody.Append('\n');
+
+            if (line.Length == 0)
+            {
+                assistantMessageWasStreamed |= await TryReportAssistantTextDeltaAsync(
+                    data,
+                    onAssistantMessageChunkAsync,
+                    cancellationToken);
+                data.Clear();
+                continue;
+            }
+
+            if (!line.StartsWith("data:", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (data.Length > 0)
+            {
+                data.Append('\n');
+            }
+
+            string value = line[5..];
+            if (value.StartsWith(' '))
+            {
+                value = value[1..];
+            }
+
+            data.Append(value);
+        }
+
+        assistantMessageWasStreamed |= await TryReportAssistantTextDeltaAsync(
+            data,
+            onAssistantMessageChunkAsync,
+            cancellationToken);
+
+        return new StreamingResponseReadResult(rawBody.ToString(), assistantMessageWasStreamed);
+    }
+
     public static string? TryParseResponsePayload(string responseBody)
     {
         if (!LooksLikeEventStream(responseBody))
@@ -162,6 +221,36 @@ internal static class OpenAiResponsesEventStreamParser
     {
         using JsonDocument document = JsonDocument.Parse(outputItemPayload);
         return HasUsableOutputItem(document.RootElement);
+    }
+
+    private static async Task<bool> TryReportAssistantTextDeltaAsync(
+        StringBuilder data,
+        Func<string, CancellationToken, Task>? onAssistantMessageChunkAsync,
+        CancellationToken cancellationToken)
+    {
+        if (data.Length == 0 || onAssistantMessageChunkAsync is null)
+        {
+            return false;
+        }
+
+        string trimmedData = data.ToString().Trim();
+        if (trimmedData.Length == 0 || string.Equals(trimmedData, "[DONE]", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        using JsonDocument document = JsonDocument.Parse(trimmedData);
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object ||
+            !string.Equals(TryGetString(root, "type"), "response.output_text.delta", StringComparison.Ordinal) ||
+            TryGetStringPreservingWhitespace(root, "delta") is not string delta ||
+            delta.Length == 0)
+        {
+            return false;
+        }
+
+        await onAssistantMessageChunkAsync(delta, cancellationToken);
+        return true;
     }
 
     private static bool HasUsableOrReasoningOutputItemPayload(string outputItemPayload)

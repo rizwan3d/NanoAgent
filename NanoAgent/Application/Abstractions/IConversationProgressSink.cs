@@ -4,6 +4,11 @@ namespace NanoAgent.Application.Abstractions;
 
 public interface IConversationProgressSink
 {
+    Task ReportAssistantMessageChunkAsync(
+        string text,
+        CancellationToken cancellationToken)
+        => Task.CompletedTask;
+
     Task ReportAssistantReasoningAsync(
         string reasoningText,
         CancellationToken cancellationToken);

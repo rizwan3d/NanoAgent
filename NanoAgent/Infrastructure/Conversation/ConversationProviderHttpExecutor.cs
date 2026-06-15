@@ -37,7 +37,9 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         CancellationToken cancellationToken,
         Func<string, string>? normalizeResponseBody = null,
         Func<CancellationToken, Task<bool>>? refreshAuthorizationAsync = null,
-        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync = null)
+        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync = null,
+        Func<Stream, Func<string, CancellationToken, Task>?, CancellationToken, Task<StreamingResponseReadResult>>? readResponseBodyAsync = null,
+        Func<string, CancellationToken, Task>? onAssistantMessageChunkAsync = null)
     {
         int retryCount = 0;
         bool forcedRefreshAfterAuthFailure = false;
@@ -76,7 +78,24 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
 
             using (response)
             {
-            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            string responseBody;
+            bool assistantMessageWasStreamed = false;
+            if (response.IsSuccessStatusCode &&
+                readResponseBodyAsync is not null)
+            {
+                await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                StreamingResponseReadResult readResult = await readResponseBodyAsync(
+                    responseStream,
+                    onAssistantMessageChunkAsync,
+                    cancellationToken);
+                responseBody = readResult.ResponseBody;
+                assistantMessageWasStreamed = readResult.AssistantMessageWasStreamed;
+            }
+            else
+            {
+                responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            }
+
             LogDebugApiResponse(response.StatusCode, TryGetResponseId(response));
 
             if (response.IsSuccessStatusCode)
@@ -94,7 +113,8 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
                     providerKind,
                     normalizedResponseBody,
                     TryGetResponseId(response),
-                    retryCount);
+                    retryCount,
+                    assistantMessageWasStreamed);
             }
 
             if (response.StatusCode == HttpStatusCode.Unauthorized &&
@@ -308,3 +328,7 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
 #endif
     }
 }
+
+internal readonly record struct StreamingResponseReadResult(
+    string ResponseBody,
+    bool AssistantMessageWasStreamed);
