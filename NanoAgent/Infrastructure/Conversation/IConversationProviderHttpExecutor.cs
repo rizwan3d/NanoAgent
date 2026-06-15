@@ -11,5 +11,7 @@ internal interface IConversationProviderHttpExecutor
         CancellationToken cancellationToken,
         Func<string, string>? normalizeResponseBody = null,
         Func<CancellationToken, Task<bool>>? refreshAuthorizationAsync = null,
-        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync = null);
+        Func<ProviderRetryProgress, CancellationToken, Task>? onRetryAsync = null,
+        Func<Stream, Func<string, CancellationToken, Task>?, CancellationToken, Task<StreamingResponseReadResult>>? readResponseBodyAsync = null,
+        Func<string, CancellationToken, Task>? onAssistantMessageChunkAsync = null);
 }

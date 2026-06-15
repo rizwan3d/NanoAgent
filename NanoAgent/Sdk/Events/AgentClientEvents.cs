@@ -21,6 +21,17 @@ public sealed class AssistantReasoningEventArgs : EventArgs
     public string ReasoningText { get; }
 }
 
+/// <summary>Raised when the agent emits incremental assistant text.</summary>
+public sealed class AssistantMessageChunkEventArgs : EventArgs
+{
+    public AssistantMessageChunkEventArgs(string text)
+    {
+        Text = text ?? string.Empty;
+    }
+
+    public string Text { get; }
+}
+
 /// <summary>Raised when the agent is about to execute a batch of tool calls.</summary>
 public sealed class ToolCallsEventArgs : EventArgs
 {

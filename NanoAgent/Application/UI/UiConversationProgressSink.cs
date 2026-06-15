@@ -21,6 +21,15 @@ public sealed class UiConversationProgressSink : IConversationProgressSink
         return Task.CompletedTask;
     }
 
+    public Task ReportAssistantMessageChunkAsync(
+        string text,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        _uiBridge.ShowAssistantMessageChunk(text);
+        return Task.CompletedTask;
+    }
+
     public Task ReportExecutionPlanAsync(
         ExecutionPlanProgress executionPlanProgress,
         CancellationToken cancellationToken)
