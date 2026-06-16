@@ -254,6 +254,7 @@ internal sealed class ReplSectionService : IReplSectionService
             isResumedSection: true,
             agentProfile: profileOverride ?? _profileResolver.Resolve(snapshot.AgentProfileName),
             reasoningEffort: snapshot.ReasoningEffort,
+            thinkingMode: snapshot.ThinkingMode,
             sessionState: snapshot.SessionState,
             workspacePath: snapshot.WorkspacePath,
             modelContextWindowTokens: snapshot.ModelContextWindowTokens,

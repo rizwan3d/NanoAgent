@@ -68,6 +68,7 @@ public static partial class Program
         new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
         new("/reload", "/reload", "Reload local resources.", false),
         new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
+        new("/reasoning", "/reasoning [show|<none|minimal|low|medium|high|xhigh|max>]", "Show or set reasoning effort.", false),
         new("/resume", "/resume [session-id]", "Resume a saved session.", false),
         new("/rules", "/rules", "List effective permission rules.", false),
         new("/session", "/session", "Show session info and stats.", false),
@@ -547,7 +548,7 @@ public static partial class Program
               --section <id>       Resume an existing section
               --session <id>       Alias for --section
               --profile <name>     Use an agent profile
-              --thinking <effort>  Override thinking effort
+              --thinking <on|off>  Override thinking mode
               -v, --version        Show version
               -h, --help           Show help
               --doctor             Run system diagnostics and print doctor report
@@ -701,7 +702,9 @@ public static partial class Program
 
             if (role is not null && !string.IsNullOrWhiteSpace(message.Content))
             {
-                if (role == Role.Assistant && !string.IsNullOrWhiteSpace(message.ReasoningContent))
+                if (sessionInfo.ShowThinking &&
+                    role == Role.Assistant &&
+                    !string.IsNullOrWhiteSpace(message.ReasoningContent))
                 {
                     state.AddThinkingMessage("Thinking:\n\n" + message.ReasoningContent.Trim());
                 }

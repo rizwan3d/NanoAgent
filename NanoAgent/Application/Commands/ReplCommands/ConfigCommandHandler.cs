@@ -39,6 +39,10 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
                 ? "(legacy/default)"
                 : configuration.ActiveProviderName);
 
+        string thinkingOutputMode = context.Session.ShowThinking
+            ? "shown when the provider returns supported summaries"
+            : "hidden";
+
         string message =
             "Current configuration:\n" +
             $"Session: {context.Session.SessionId}\n" +
@@ -49,7 +53,9 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
             $"Configuration file: {_userDataPathProvider.GetConfigurationFilePath()}\n" +
             $"MCP configuration: agent-profile.json mcpServers\n" +
             $"Agent profile: {context.Session.AgentProfile.Name} - {context.Session.AgentProfile.Description}\n" +
-            $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
+            $"Thinking mode: {ThinkingModeOptions.Format(context.Session.ThinkingMode)}\n" +
+            $"Reasoning effort: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
+            $"Thinking output: {thinkingOutputMode}\n" +
             $"Active model: {context.Session.ActiveModelId}";
 
         return ReplCommandResult.Continue(message);

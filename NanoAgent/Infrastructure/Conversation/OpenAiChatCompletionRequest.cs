@@ -8,7 +8,11 @@ internal sealed record OpenAiChatCompletionRequest(
     [property: JsonPropertyName("messages")] IReadOnlyList<OpenAiChatCompletionRequestMessage> Messages,
     [property: JsonPropertyName("tools")] IReadOnlyList<OpenAiChatCompletionToolDefinition> Tools,
     [property: JsonPropertyName("reasoning_effort")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ReasoningEffort = null);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ReasoningEffort = null,
+    [property: JsonPropertyName("reasoning")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProviderReasoningConfig? Reasoning = null,
+    [property: JsonPropertyName("thinkingConfig")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] GeminiThinkingConfig? ThinkingConfig = null);
 
 internal sealed record OpenAiChatCompletionRequestMessage(
     [property: JsonPropertyName("role")] string Role,

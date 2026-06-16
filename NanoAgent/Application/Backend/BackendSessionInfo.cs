@@ -8,6 +8,8 @@ public sealed record BackendSessionInfo(
     int? ActiveModelContextWindowTokens,
     IReadOnlyList<string> AvailableModelIds,
     string ThinkingMode,
+    string? ReasoningEffort,
+    bool ShowThinking,
     string AgentProfileName,
     string SectionTitle,
     bool IsResumedSection,

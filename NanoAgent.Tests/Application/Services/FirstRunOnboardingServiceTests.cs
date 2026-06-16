@@ -78,7 +78,12 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgentConfiguration(existingProfile, null, "on", "OpenAI"));
+            .ReturnsAsync(new AgentConfiguration(
+                existingProfile,
+                null,
+                ReasoningEffort: null,
+                ActiveProviderName: "OpenAI",
+                ThinkingMode: "on"));
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore.Setup(store => store.LoadAsync("OpenAI", It.IsAny<CancellationToken>()))
             .ReturnsAsync("existing-key");
@@ -97,7 +102,12 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(existingProfile, false, "on", "OpenAI"));
+        result.Should().Be(new OnboardingResult(
+            existingProfile,
+            false,
+            ReasoningEffort: null,
+            ActiveProviderName: "OpenAI",
+            ThinkingMode: "on"));
         secretStore.Verify(store => store.LoadAsync(It.IsAny<CancellationToken>()), Times.Never);
         selectionPrompt.VerifyNoOtherCalls();
         textPrompt.VerifyNoOtherCalls();

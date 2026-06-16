@@ -21,6 +21,7 @@ internal static class AgentDelegationSupport
             parentSession.AvailableModelIds,
             agentProfile: subagentProfile,
             reasoningEffort: parentSession.ReasoningEffort,
+            thinkingMode: parentSession.ThinkingMode,
             workspacePath: parentSession.WorkspacePath,
             modelContextWindowTokens: parentSession.ModelContextWindowTokens);
 

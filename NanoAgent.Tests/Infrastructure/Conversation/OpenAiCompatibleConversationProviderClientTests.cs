@@ -849,7 +849,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 ],
                 "You are helpful.",
                 [CreateToolDefinition("file_read")],
-                "on"),
+                ReasoningEffort: null,
+                ThinkingMode: "on"),
             CancellationToken.None);
 
         handler.RequestUri.Should().Be(new Uri("https://api.anthropic.com/v1/messages"));
@@ -859,8 +860,9 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         handler.AnthropicBetaHeader.Should().Contain("oauth-2025-04-20");
         handler.AnthropicAppHeader.Should().Be("cli");
         handler.RequestBody.Should().Contain("\"model\":\"claude-sonnet-4-6\"");
-        handler.RequestBody.Should().Contain("You are Claude Code");
-        handler.RequestBody.Should().Contain("\"type\":\"enabled\"");
+        handler.RequestBody.Should().Contain("\"type\":\"adaptive\"");
+        handler.RequestBody.Should().Contain("\"display\":\"summarized\"");
+        handler.RequestBody.Should().Contain("\"effort\":\"medium\"");
         handler.RequestBody.Should().Contain("\"name\":\"file_read\"");
         payload.ProviderKind.Should().Be(ProviderKind.AnthropicClaudeAccount);
 
@@ -960,7 +962,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 [ConversationRequestMessage.User("Think carefully.")],
                 "You are helpful.",
                 [],
-                "on"),
+                ReasoningEffort: "high",
+                ThinkingMode: "on"),
             CancellationToken.None);
 
         handler.RequestBody.Should().Contain("\"reasoning_effort\":\"high\"");
@@ -1058,7 +1061,8 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
                 ],
                 "You are helpful.",
                 [CreateToolDefinition("file_read")],
-                "on"),
+                ReasoningEffort: "high",
+                ThinkingMode: "on"),
             CancellationToken.None);
 
         handler.RequestUri.Should().Be(new Uri("https://chatgpt.com/backend-api/codex/responses"));

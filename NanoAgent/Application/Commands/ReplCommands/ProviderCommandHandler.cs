@@ -158,7 +158,8 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
                 context.Session.ProviderProfile,
                 context.Session.ActiveModelId,
                 context.Session.ReasoningEffort,
-                provider.Name),
+                provider.Name,
+                context.Session.ThinkingMode),
             cancellationToken);
 
         return ReplCommandResult.Continue(
