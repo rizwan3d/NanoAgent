@@ -8,6 +8,7 @@ using NanoAgent.Application.UI;
 using NanoAgent.Application.Tools;
 using NanoAgent.Domain.Models;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 
 namespace NanoAgent.Application.Backend;
 
@@ -587,22 +588,22 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     }
 
     private static bool TryParseDirectShellCommand(
-        string input,
-        out string? command)
-    {
-        command = null;
-        string trimmedInput = input.Trim();
-        if (!trimmedInput.StartsWith('!'))
-        {
-            return false;
-        }
+       string input,
+       out string? command)
+   {
+       command = null;
+       string trimmedInput = input.Trim();
+       if (!trimmedInput.StartsWith('!'))
+       {
+           return false;
+       }
 
-        command = trimmedInput[1..].Trim();
-        return true;
-    }
+       command = trimmedInput[1..].Trim();
+       return true;
+   }
 
     private static string EscapeJson(string value)
     {
-        return JsonEncodedText.Encode(value ?? string.Empty).ToString();
+        return JsonEncodedText.Encode(value ?? string.Empty, JavaScriptEncoder.UnsafeRelaxedJsonEscaping).ToString();
     }
 }
