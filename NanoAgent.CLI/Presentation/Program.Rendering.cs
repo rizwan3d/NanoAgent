@@ -32,7 +32,7 @@ public static partial class Program
 
         int footerSize = 1;
         int inputSize = Math.Max(MinimumPanelHeight, GetInputPanelSize(state));
-        int headerSize = HeaderPanelSize;
+        int headerSize = GetHeaderPanelSize(state);
         int bodyMinimumSize = HasPinnedPlan(state) ? 8 : MinimumPanelHeight;
         int totalFixedSize = headerSize + inputSize + footerSize;
         if (totalFixedSize + bodyMinimumSize > windowHeight)
@@ -64,7 +64,7 @@ public static partial class Program
                 new Layout("input").Size(inputSize),
                 new Layout("footer").Size(footerSize));
 
-        root["header"].Update(BuildHeader());
+        root["header"].Update(BuildHeader(state));
 
         if (state.ActiveModal is not null)
         {
@@ -113,10 +113,17 @@ public static partial class Program
             .Expand();
     }
 
-    private static IRenderable BuildHeader()
+    private static IRenderable BuildHeader(AppState state)
     {
-        return new Panel(new Markup(CliBranding.BuildHeaderBodyMarkup()))
-            .Header(CliBranding.BuildStatusHeaderMarkup())
+        if (!state.HasMadeFirstLlmCall)
+        {
+            return new Panel(new Markup(CliBranding.BuildHeaderBodyMarkup()))
+                .Header(CliBranding.BuildStatusHeaderMarkup())
+                .Border(BoxBorder.Square)
+                .Expand();
+        }
+
+        return new Panel(new Markup(CliBranding.BuildStatusHeaderMarkup()))
             .Border(BoxBorder.Square)
             .Expand();
     }
@@ -442,7 +449,7 @@ public static partial class Program
 
     private static int GetMessageViewportLineCount(AppState state)
     {
-        int reservedLines = HeaderPanelSize +
+        int reservedLines = GetHeaderPanelSize(state) +
             (state.ActiveModal is null
                 ? GetInputPanelSize(state) + 6
                 : state.ActiveModal.PanelSize + GetInputPanelSize(state) + 7);
@@ -482,7 +489,7 @@ public static partial class Program
             .Sum(line => WrapText(line, contentWidth).Count);
         int availableBodySize = Math.Max(
             5,
-            GetWindowHeight() - HeaderPanelSize - GetInputPanelSize(state) - 1);
+            GetWindowHeight() - GetHeaderPanelSize(state) - GetInputPanelSize(state) - 1);
         int maxPanelSize = Math.Min(12, Math.Max(5, availableBodySize - 5));
 
         return Math.Clamp(bodyLineCount + 2, 5, maxPanelSize);

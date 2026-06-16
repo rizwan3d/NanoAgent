@@ -75,6 +75,7 @@ public static partial class Program
         state.PendingCompletionNote = null;
         state.ActivityText = "Thinking";
         state.UiBridge.ResetAssistantMessageChunkTracking();
+        state.HasMadeFirstLlmCall = true;
 
         state.ActiveOperation = Task.Run(async () =>
         {
