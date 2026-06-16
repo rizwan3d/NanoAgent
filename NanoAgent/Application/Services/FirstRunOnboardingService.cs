@@ -165,7 +165,16 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         if (existingProfile is not null && !string.IsNullOrWhiteSpace(existingApiKey))
         {
             string existingProviderName = existingConfiguration?.ActiveProviderName
-                ?? existingProfile.ProviderKind.ToDisplayName();
+                ?? CreateProviderName(existingProfile);
+
+            if (string.IsNullOrWhiteSpace(existingConfiguration?.ActiveProviderName))
+            {
+                await PersistExistingConfigurationAsync(
+                    existingConfiguration!,
+                    existingProviderName,
+                    existingApiKey,
+                    cancellationToken);
+            }
 
             ApplicationLogMessages.ExistingOnboardingDetected(
                 _logger,
@@ -184,7 +193,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 existingProfile,
                 WasOnboardedDuringCurrentRun: false,
                 normalizedReasoningEffort,
-                existingConfiguration?.ActiveProviderName,
+                existingProviderName,
                 normalizedThinkingMode);
         }
 
@@ -211,6 +220,18 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return await RunOnboardingAsync(
             "Welcome to NanoAgent. Let's configure your provider for first run.",
             cancellationToken);
+    }
+
+    private async Task PersistExistingConfigurationAsync(
+        AgentConfiguration configuration,
+        string providerName,
+        string providerSecret,
+        CancellationToken cancellationToken)
+    {
+        await _configurationStore.SaveAsync(
+            configuration with { ActiveProviderName = providerName },
+            cancellationToken);
+        await _secretStore.SaveAsync(providerName, providerSecret, cancellationToken);
     }
 
     public Task<OnboardingResult> ReconfigureAsync(CancellationToken cancellationToken)
@@ -343,9 +364,27 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         AgentProviderProfile profile,
         OnboardingProviderChoice providerChoice)
     {
-        string providerName = GetProviderDisplayName(providerChoice, profile);
-        if (profile.ProviderKind == ProviderKind.OpenAiCompatible &&
-            providerChoice != OnboardingProviderChoice.NanoAgentEnterprise &&
+        return CreateProviderName(
+            profile,
+            GetProviderDisplayName(providerChoice, profile),
+            includeCompatibleHostSuffix: providerChoice != OnboardingProviderChoice.NanoAgentEnterprise);
+    }
+
+    private static string CreateProviderName(AgentProviderProfile profile)
+    {
+        return CreateProviderName(
+            profile,
+            profile.ProviderKind.ToDisplayName(),
+            includeCompatibleHostSuffix: true);
+    }
+
+    private static string CreateProviderName(
+        AgentProviderProfile profile,
+        string providerName,
+        bool includeCompatibleHostSuffix)
+    {
+        if (includeCompatibleHostSuffix &&
+            profile.ProviderKind == ProviderKind.OpenAiCompatible &&
             Uri.TryCreate(profile.ResolveBaseUrl(), UriKind.Absolute, out Uri? uri) &&
             !string.IsNullOrWhiteSpace(uri.Host))
         {

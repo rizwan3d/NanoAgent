@@ -31,9 +31,16 @@ public sealed class FirstRunOnboardingServiceTests
         Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new AgentConfiguration(existingProfile, null));
+            .ReturnsAsync(new AgentConfiguration(
+                existingProfile,
+                PreferredModelId: null,
+                ReasoningEffort: null,
+                ActiveProviderName: "OpenAI",
+                ThinkingMode: null));
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
-        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync("existing-key");
+        secretStore
+            .Setup(store => store.LoadAsync("OpenAI", It.IsAny<CancellationToken>()))
+            .ReturnsAsync("existing-key");
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
 
         FirstRunOnboardingService sut = CreateSut(
@@ -49,7 +56,12 @@ public sealed class FirstRunOnboardingServiceTests
 
         OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
 
-        result.Should().Be(new OnboardingResult(existingProfile, false));
+        result.Should().Be(new OnboardingResult(
+            existingProfile,
+            false,
+            ReasoningEffort: null,
+            ActiveProviderName: "OpenAI",
+            ThinkingMode: null));
         selectionPrompt.VerifyNoOtherCalls();
         textPrompt.VerifyNoOtherCalls();
         secretPrompt.VerifyNoOtherCalls();
@@ -114,6 +126,77 @@ public sealed class FirstRunOnboardingServiceTests
         secretPrompt.VerifyNoOtherCalls();
         confirmationPrompt.VerifyNoOtherCalls();
         configurationStore.Verify(store => store.SaveAsync(It.IsAny<AgentConfiguration>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task EnsureOnboardedAsync_Should_PersistHeadlessConfiguration_When_ProviderNameIsMissing()
+    {
+        AgentProviderProfile existingProfile = new(ProviderKind.OpenRouter, null);
+
+        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
+        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
+        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
+        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
+        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
+        statusMessageWriter
+            .Setup(writer => writer.ShowInfoAsync(
+                "Using existing provider configuration: OpenRouter.",
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AgentConfiguration(
+                existingProfile,
+                "poolside/laguna-m.1:free",
+                ReasoningEffort: null,
+                ActiveProviderName: null,
+                ThinkingMode: "on"));
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(
+                    existingProfile,
+                    "poolside/laguna-m.1:free",
+                    ReasoningEffort: null,
+                    ActiveProviderName: "OpenRouter",
+                    ThinkingMode: "on"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync("existing-key");
+        secretStore
+            .Setup(store => store.SaveAsync("OpenRouter", "existing-key", It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
+
+        FirstRunOnboardingService sut = CreateSut(
+            selectionPrompt.Object,
+            textPrompt.Object,
+            secretPrompt.Object,
+            confirmationPrompt.Object,
+            statusMessageWriter.Object,
+            inputValidator.Object,
+            configurationStore.Object,
+            secretStore.Object,
+            profileFactory.Object);
+
+        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
+
+        result.Should().Be(new OnboardingResult(
+            existingProfile,
+            false,
+            ReasoningEffort: null,
+            ActiveProviderName: "OpenRouter",
+            ThinkingMode: "on"));
+        selectionPrompt.VerifyNoOtherCalls();
+        textPrompt.VerifyNoOtherCalls();
+        secretPrompt.VerifyNoOtherCalls();
+        confirmationPrompt.VerifyNoOtherCalls();
+        statusMessageWriter.VerifyAll();
+        configurationStore.VerifyAll();
+        secretStore.VerifyAll();
     }
 
     [Fact]
