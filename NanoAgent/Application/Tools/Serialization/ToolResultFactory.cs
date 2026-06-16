@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
@@ -6,6 +7,12 @@ namespace NanoAgent.Application.Tools.Serialization;
 
 internal static class ToolResultFactory
 {
+    private static readonly ToolJsonContext RelaxedJsonContext = new(
+        new JsonSerializerOptions
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        });
+
     public static ToolResult ExecutionError(
         string code,
         string message,
@@ -66,6 +73,9 @@ internal static class ToolResultFactory
         TPayload payload,
         JsonTypeInfo<TPayload> typeInfo)
     {
-        return JsonSerializer.Serialize(payload, typeInfo);
+        JsonTypeInfo<TPayload> relaxedTypeInfo =
+            RelaxedJsonContext.GetTypeInfo(typeInfo.Type) as JsonTypeInfo<TPayload> ?? typeInfo;
+
+        return JsonSerializer.Serialize(payload, relaxedTypeInfo);
     }
 }
