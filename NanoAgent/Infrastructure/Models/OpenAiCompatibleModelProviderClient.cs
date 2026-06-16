@@ -23,6 +23,12 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
     private const string KiloCodeEditorName = "NanoAgent";
     private const string KiloCodeUserAgent = "nanoagent-kilo-provider";
+    private static readonly IReadOnlyDictionary<string, int> ContextWindowFallbacks =
+        new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["deepseek-v4-pro"] = 1_000_000,
+            ["deepseek-v4-flash"] = 1_000_000
+        };
     private static readonly string[] ContextWindowPropertyNames =
     [
         "context_length",
@@ -632,9 +638,10 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             string? id = TryGetModelId(item);
             if (!string.IsNullOrWhiteSpace(id))
             {
+                string normalizedId = id.Trim();
                 models.Add(new AvailableModel(
-                    id.Trim(),
-                    TryGetContextWindowTokens(item)));
+                    normalizedId,
+                    TryGetContextWindowTokens(item) ?? TryGetFallbackContextWindowTokens(normalizedId)));
             }
         }
 
@@ -741,6 +748,13 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         return null;
+    }
+
+    private static int? TryGetFallbackContextWindowTokens(string modelId)
+    {
+        return ContextWindowFallbacks.TryGetValue(modelId, out int contextWindowTokens)
+            ? contextWindowTokens
+            : null;
     }
 
     private static bool TryReadPositiveInt32(JsonElement value, out int result)

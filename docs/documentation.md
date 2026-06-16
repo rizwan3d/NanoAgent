@@ -112,7 +112,7 @@ When a newer NanoAgent release is available, startup can ask whether to update n
 | API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
 | API key | Cerebras | API key | Uses the Cerebras OpenAI-compatible endpoint. |
 | API key | Groq | API key | Uses the Groq OpenAI-compatible endpoint. |
-| API key | DeepSeek | API key | Uses the DeepSeek OpenAI-compatible endpoint at `https://api.deepseek.com/v1`. |
+| API key | DeepSeek | API key | Uses the DeepSeek OpenAI-compatible endpoint at `https://api.deepseek.com/`. |
 | API key | Ollama Cloud | API key | Uses Ollama's hosted native chat and tags APIs. |
 | OpenAI-compatible provider | OpenAI-compatible provider | Base URL and API key | Use for local or third-party compatible APIs. |
 | Local provider | Ollama | None | Uses Ollama's local OpenAI-compatible endpoint at `http://127.0.0.1:11434/v1`. |

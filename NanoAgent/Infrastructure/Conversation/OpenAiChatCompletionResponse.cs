@@ -34,7 +34,9 @@ internal sealed record OpenAiChatCompletionUsage(
     [property: JsonPropertyName("completion_tokens")] int? CompletionTokens,
     [property: JsonPropertyName("prompt_tokens")] int? PromptTokens,
     [property: JsonPropertyName("total_tokens")] int? TotalTokens,
-    [property: JsonPropertyName("prompt_tokens_details")] OpenAiChatCompletionUsageDetails? PromptTokensDetails);
+    [property: JsonPropertyName("prompt_tokens_details")] OpenAiChatCompletionUsageDetails? PromptTokensDetails,
+    [property: JsonPropertyName("prompt_cache_hit_tokens")] int? PromptCacheHitTokens = null,
+    [property: JsonPropertyName("prompt_cache_miss_tokens")] int? PromptCacheMissTokens = null);
 
 internal sealed record OpenAiChatCompletionUsageDetails(
     [property: JsonPropertyName("cached_tokens")] int? CachedTokens);
