@@ -752,7 +752,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 
     private static int? TryGetFallbackContextWindowTokens(string modelId)
     {
-        return ContextWindowFallbacks.TryGetValue(modelId, out int contextWindowTokens)
+        return ContextWindowFallbacks.TryGetValue(modelId.Replace("-free","").Replace("free",""), out int contextWindowTokens)
             ? contextWindowTokens
             : null;
     }
