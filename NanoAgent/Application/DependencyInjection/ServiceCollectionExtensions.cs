@@ -47,7 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, SkillLoadTool>();
         services.AddSingleton<ITool, TextSearchTool>();
         services.AddSingleton<ITool, UpdatePlanTool>();
-        services.AddSingleton<ITool, WebRunTool>();
+        services.AddSingleton<ITool, WebSearchTool>();
         services.AddSingleton<ITool, ShellCommandTool>();
         services.AddSingleton<IModelDiscoveryService, ModelDiscoveryService>();
         services.AddSingleton<IFirstRunOnboardingService, FirstRunOnboardingService>();

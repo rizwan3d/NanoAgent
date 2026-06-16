@@ -15,7 +15,7 @@ tools:
   - search_files
   - shell_command
   - text_search
-  - web_run
+  - web_search
 permissionDescription: Senior .NET implementation profile with scoped repository edits, diagnostic investigation, toolchain execution, and validation governed by permissions.
 ---
 

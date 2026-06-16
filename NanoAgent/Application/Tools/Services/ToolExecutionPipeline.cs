@@ -254,7 +254,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
             AgentToolNames.DirectoryList or
             AgentToolNames.SearchFiles or
             AgentToolNames.TextSearch or
-            AgentToolNames.WebRun or
+            AgentToolNames.WebSearch or
             AgentToolNames.SkillLoad;
     }
 

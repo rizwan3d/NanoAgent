@@ -11,7 +11,7 @@ tools:
   - search_files
   - shell_command
   - text_search
-  - web_run
+  - web_search
 permissionDescription: Read-only code review with safe inspection shell commands.
 ---
 Active workspace agent profile: code-reviewer.

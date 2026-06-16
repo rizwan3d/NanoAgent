@@ -952,7 +952,7 @@ internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
         {
             AddWebRequestSubjects(requestElement, subjects);
         }
-        else if (string.Equals(context.ToolName, AgentToolNames.WebRun, StringComparison.OrdinalIgnoreCase))
+        else if (string.Equals(context.ToolName, AgentToolNames.WebSearch, StringComparison.OrdinalIgnoreCase))
         {
             AddWebRequestSubjects(context.Arguments, subjects);
         }

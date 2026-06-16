@@ -8,25 +8,25 @@ using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools;
 
-public sealed class WebRunToolTests
+public sealed class WebSearchToolTests
 {
     [Fact]
-    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_RequestHasNoOperations()
+    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_RequestHasNoSearches()
     {
-        WebRunTool sut = new(Mock.Of<IWebRunService>());
+        WebSearchTool sut = new(Mock.Of<IWebSearchService>());
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext("{}"),
             CancellationToken.None);
 
         result.Status.Should().Be(ToolResultStatus.InvalidArguments);
-        result.Message.Should().Contain("Provide at least one operation array");
+        result.Message.Should().Contain("Provide at least one search");
     }
 
     [Fact]
     public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_ResponseLengthIsInvalid()
     {
-        WebRunTool sut = new(Mock.Of<IWebRunService>());
+        WebSearchTool sut = new(Mock.Of<IWebSearchService>());
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext("""{ "response_length": "verbose", "search_query": [{ "q": "dotnet" }] }"""),
@@ -39,42 +39,30 @@ public sealed class WebRunToolTests
     [Fact]
     public async Task ExecuteAsync_Should_ReturnStructuredResults_When_RequestIsValid()
     {
-        Mock<IWebRunService> webRunService = new(MockBehavior.Strict);
-        webRunService
+        Mock<IWebSearchService> webSearchService = new(MockBehavior.Strict);
+        webSearchService
             .Setup(service => service.RunAsync(
-                It.Is<WebRunRequest>(request =>
+                It.Is<WebSearchRequest>(request =>
                     request.ResponseLength == "short" &&
                     request.SearchQuery.Count == 1 &&
-                    request.SearchQuery[0].Query == "dotnet" &&
-                    request.ImageQuery.Count == 0 &&
-                    request.Open.Count == 0),
+                    request.SearchQuery[0].Query == "dotnet"),
                 It.IsAny<string>(),
                 It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WebRunResult(
+            .ReturnsAsync(new WebSearchResult(
                 "short",
                 [
-                    new WebRunSearchResult(
+                    new WebSearchQueryResult(
                         "dotnet",
+                        "Title: .NET documentation\nURL: https://learn.microsoft.com/en-us/dotnet/",
                         [
-                            new WebRunSearchItem(
-                                "web_run_1",
+                            new WebSearchItem(
                                 ".NET documentation",
-                                "https://learn.microsoft.com/en-us/dotnet/",
-                                "learn.microsoft.com/en-us/dotnet/",
-                                "Learn to use .NET.")
+                                "https://learn.microsoft.com/en-us/dotnet/")
                         ])
                 ],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
-                [],
                 []));
 
-        WebRunTool sut = new(webRunService.Object);
+        WebSearchTool sut = new(webSearchService.Object);
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext("""{ "response_length": "short", "search_query": [{ "q": "dotnet" }] }"""),
@@ -90,7 +78,7 @@ public sealed class WebRunToolTests
         using JsonDocument document = JsonDocument.Parse(argumentsJson);
         return new ToolExecutionContext(
             "call_1",
-            "web_run",
+            "web_search",
             document.RootElement.Clone(),
             TestSessionFactory.Create());
     }
