@@ -47,6 +47,41 @@ public sealed class OpenAiConversationResponseMapperTests
     }
 
     [Fact]
+    public void Map_Should_UseDeepSeekPromptCacheHitTokens_When_ChatCompletionUsageIncludesCacheFields()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.DeepSeek,
+            """
+            {
+              "id": "resp_deepseek_cache",
+              "choices": [
+                {
+                  "message": {
+                    "content": "DeepSeek cache stats are available."
+                  }
+                }
+              ],
+              "usage": {
+                "prompt_tokens": 24,
+                "completion_tokens": 6,
+                "total_tokens": 30,
+                "prompt_cache_hit_tokens": 10,
+                "prompt_cache_miss_tokens": 14
+              }
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("DeepSeek cache stats are available.");
+        response.PromptTokens.Should().Be(24);
+        response.CompletionTokens.Should().Be(6);
+        response.TotalTokens.Should().Be(30);
+        response.CachedPromptTokens.Should().Be(10);
+    }
+
+    [Fact]
     public void Map_Should_PreserveAssistantReasoningMetadata_When_ResponseContainsThinkingFields()
     {
         OpenAiConversationResponseMapper sut = new();
@@ -305,6 +340,45 @@ public sealed class OpenAiConversationResponseMapperTests
         response.CompletionTokens.Should().Be(9);
         response.TotalTokens.Should().Be(31);
         response.CachedPromptTokens.Should().Be(4);
+    }
+
+    [Fact]
+    public void Map_Should_UseDeepSeekPromptCacheHitTokens_When_ResponsesUsageIncludesCacheFields()
+    {
+        OpenAiConversationResponseMapper sut = new();
+
+        ConversationResponse response = sut.Map(new ConversationProviderPayload(
+            ProviderKind.OpenAiChatGptAccount,
+            """
+            {
+              "id": "resp_deepseek_responses_cache",
+              "output": [
+                {
+                  "type": "message",
+                  "content": [
+                    {
+                      "type": "output_text",
+                      "text": "Cache stats parsed."
+                    }
+                  ]
+                }
+              ],
+              "usage": {
+                "input_tokens": 20,
+                "output_tokens": 5,
+                "total_tokens": 25,
+                "prompt_cache_hit_tokens": 8,
+                "prompt_cache_miss_tokens": 12
+              }
+            }
+            """,
+            null));
+
+        response.AssistantMessage.Should().Be("Cache stats parsed.");
+        response.PromptTokens.Should().Be(20);
+        response.CompletionTokens.Should().Be(5);
+        response.TotalTokens.Should().Be(25);
+        response.CachedPromptTokens.Should().Be(8);
     }
 
     [Fact]
