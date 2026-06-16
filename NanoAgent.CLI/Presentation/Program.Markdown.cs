@@ -471,7 +471,7 @@ public static partial class Program
             return "bold yellow";
         }
 
-        if (trimmedStart.StartsWith("• web_run ", StringComparison.Ordinal))
+        if (trimmedStart.StartsWith("• web_search ", StringComparison.Ordinal))
         {
             return "bold fuchsia";
         }

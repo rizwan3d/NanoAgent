@@ -19,7 +19,7 @@ public sealed class ToolOutputFormatterTests
             """);
         ConversationToolCall webCall = new(
             "call-2",
-            "web_run",
+            "web_search",
             """
             { "search_query": [{ "q": "nanoagent coverage" }] }
             """);
@@ -229,51 +229,25 @@ public sealed class ToolOutputFormatterTests
     }
 
     [Fact]
-    public void FormatResults_ShouldSummarizeWebRunOperationsAndWarnings()
+    public void FormatResults_ShouldSummarizeWebSearchSearchesAndWarnings()
     {
         ToolExecutionBatchResult batch = new(
         [
             CreateResult(
-                "web_run",
+                "web_search",
                 """
                 {
                   "SearchQuery": [
                     {
                       "Query": "nanoagent",
+                      "Content": "Title: NanoAgent\nURL: https://example.test/nanoagent",
                       "Results": [
                         {
                           "Title": "NanoAgent",
-                          "RefId": "turn0search0",
-                          "DisplayUrl": "https://example.test/nanoagent"
+                          "Url": "https://example.test/nanoagent"
                         }
                       ],
                       "Warning": "slow response"
-                    }
-                  ],
-                  "Open": [
-                    {
-                      "RequestedRefId": "turn0search0",
-                      "Title": "NanoAgent Docs",
-                      "StartLine": 10,
-                      "EndLine": 20,
-                      "Text": "alpha\nbeta"
-                    }
-                  ],
-                  "Find": [
-                    {
-                      "RequestedRefId": "turn0search0",
-                      "Pattern": "coverage",
-                      "Matches": [
-                        { "LineNumber": 12, "LineText": "coverage threshold" }
-                      ]
-                    }
-                  ],
-                  "Finance": [
-                    {
-                      "Ticker": "MSFT",
-                      "Price": 420.5,
-                      "Currency": "USD",
-                      "MarketState": "open"
                     }
                   ],
                   "Warnings": ["global warning"]
@@ -284,13 +258,10 @@ public sealed class ToolOutputFormatterTests
         IReadOnlyList<string> messages = _sut.FormatResults(batch);
 
         messages.Should().ContainSingle();
-        messages[0].Should().Contain("web_run completed (4 operations)");
+        messages[0].Should().Contain("web_search completed (1 search)");
         messages[0].Should().Contain("search \"nanoagent\": 1 result");
-        messages[0].Should().Contain("turn0search0: NanoAgent - https://example.test/nanoagent");
+        messages[0].Should().Contain("NanoAgent - https://example.test/nanoagent");
         messages[0].Should().Contain("warning: slow response");
-        messages[0].Should().Contain("open turn0search0: NanoAgent Docs (lines 10-20)");
-        messages[0].Should().Contain("find \"coverage\" in turn0search0: 1 match");
-        messages[0].Should().Contain("finance MSFT: 420.5 USD open");
         messages[0].Should().Contain("warning: global warning");
     }
 

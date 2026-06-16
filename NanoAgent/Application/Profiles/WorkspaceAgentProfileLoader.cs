@@ -29,7 +29,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -49,7 +49,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -69,7 +69,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.ShellCommand,
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -85,7 +85,7 @@ internal static class WorkspaceAgentProfileLoader
             AgentToolNames.ShellCommand,
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 

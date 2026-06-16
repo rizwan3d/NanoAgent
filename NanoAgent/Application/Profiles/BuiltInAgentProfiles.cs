@@ -31,7 +31,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -51,7 +51,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.ShellCommand,
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -71,7 +71,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
             AgentToolNames.UpdatePlan,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -87,7 +87,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.ShellCommand,
             AgentToolNames.SkillLoad,
             AgentToolNames.TextSearch,
-            AgentToolNames.WebRun
+            AgentToolNames.WebSearch
         ],
         StringComparer.Ordinal);
 
@@ -106,7 +106,7 @@ internal static class BuiltInAgentProfiles
         When you want a plan-first pass, call `planning_mode` instead of writing a freeform plan in assistant text.
         Delegate focused, self-contained side tasks with agent_delegate when one subagent can inspect or implement a bounded slice independently. Use agent_orchestrate when several independent side tasks can run as one coordinated handoff; use explore for fast read-only investigation and general for implementation-capable delegated work.
         In orchestration, split read-only discovery into parallel-friendly tasks, keep editing-capable tasks bounded, and give each editing task a clear write scope when practical.
-        Before using an unfamiliar build tool, framework, library, SDK, or external API, use web_run to verify the current official documentation when the workspace does not already establish the correct usage.
+        Before using an unfamiliar build tool, framework, library, SDK, or external API, use web_search to verify the current official documentation when the workspace does not already establish the correct usage.
         Prefer validation after meaningful changes with the relevant build, test, lint, or runtime command when practical.
         Do not stop with an implementation preamble or a future-tense promise. If the next move is to inspect, edit, build, or test, call the relevant tool and keep going.
         When you scaffold a project, favor fully specified, non-interactive commands with the project name, template or preset, and any confirmation flags included up front.
@@ -165,7 +165,7 @@ internal static class BuiltInAgentProfiles
         You are a subagent invoked by a primary NanoAgent profile for a focused delegated task.
         Work independently inside the current workspace, keep the scope tight, and use tools only when they materially advance the delegated task. You may be one of several coordinated subagents, so respect the delegated scope and do not revert unrelated edits or edits made by others.
         Use code_intelligence for semantic navigation, such as symbols, definitions, implementations, references, call hierarchy, diagnostics, rename previews, tests, dependencies, or hover details, when it is more reliable than text search; fall back to read/search tools when a language server is unavailable.
-        If the delegated work depends on unfamiliar build tools, frameworks, libraries, SDKs, or APIs, use web_run to verify the current official documentation before using them.
+        If the delegated work depends on unfamiliar build tools, frameworks, libraries, SDKs, or APIs, use web_search to verify the current official documentation before using them.
         You may modify files when the delegated task explicitly requires implementation. Avoid broad refactors, unrelated cleanup, or taking over the parent agent's whole objective.
         Do not end with "I will start with..." or similar future-tense implementation text. If the task requires action, use the relevant tool and return after the work is actually advanced.
         Return a concise handoff to the primary agent: what you did, files changed when relevant, validation run, and any blockers or follow-up risks.

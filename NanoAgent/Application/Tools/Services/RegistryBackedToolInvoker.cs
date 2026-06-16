@@ -311,7 +311,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
 
                 break;
 
-            case AgentToolNames.WebRun:
+            case AgentToolNames.WebSearch:
             case AgentToolNames.HeadlessBrowser:
                 events.Add(before ? LifecycleHookEvents.BeforeWebRequest : LifecycleHookEvents.AfterWebRequest);
                 break;

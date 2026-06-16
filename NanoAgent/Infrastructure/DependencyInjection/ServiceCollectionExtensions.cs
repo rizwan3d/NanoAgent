@@ -75,7 +75,7 @@ public static class ServiceCollectionExtensions
             ApplicationSettingsFactory.CreatePermissionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value,
                 serviceProvider.GetService<BackendRuntimeOptions>()?.AutoApproveAllTools == true));
-        services.AddHttpClient<IWebRunService, WebRunService>((serviceProvider, client) =>
+        services.AddHttpClient<IWebSearchService, WebSearchService>((serviceProvider, client) =>
         {
             ConfigureHttpClient(
                 client,

@@ -620,7 +620,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
     }
 
     [Fact]
-    public void Evaluate_Should_CollectNestedWebRunSubjects_ForPermissionMatching()
+    public void Evaluate_Should_CollectNestedWebSearchSubjects_ForPermissionMatching()
     {
         ToolPermissionEvaluator sut = new(
             new StubWorkspaceRootProvider(_workspaceRoot),
@@ -637,7 +637,7 @@ public sealed class ToolPermissionEvaluatorTests : IDisposable
             },
             new PermissionEvaluationContext(CreateContext(
                 """{ "search_query": [{ "q": "dotnet docs" }], "open": [{ "ref_id": "https://example.com" }] }""",
-                toolName: AgentToolNames.WebRun)));
+                toolName: AgentToolNames.WebSearch)));
 
         result.Decision.Should().Be(PermissionEvaluationDecision.RequiresApproval);
         result.Request.Should().NotBeNull();
