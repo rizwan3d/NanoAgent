@@ -410,9 +410,30 @@ public static partial class Program
             .Split('\n');
 
         bool firstLine = true;
+        ToolOutputHighlightContext toolOutputContext = default;
 
         for (int lineIndex = 0; lineIndex < rawLines.Length; lineIndex++)
         {
+            if (TryReadFencedCodeBlock(
+                rawLines,
+                lineIndex,
+                out string? codeLanguage,
+                out List<string> codeBlockLines,
+                out int codeConsumedLineCount))
+            {
+                AddCodeBlockLines(
+                    lines,
+                    codeLanguage,
+                    codeBlockLines,
+                    ref firstLine,
+                    roleName,
+                    roleColor,
+                    contentWidth);
+
+                lineIndex += codeConsumedLineCount - 1;
+                continue;
+            }
+
             if (TryReadMarkdownTable(rawLines, lineIndex, out List<string[]> tableRows, out int consumedLineCount))
             {
                 AddMarkdownTableLines(
@@ -425,6 +446,23 @@ public static partial class Program
 
                 lineIndex += consumedLineCount - 1;
                 continue;
+            }
+
+            if (message.Role == Role.System)
+            {
+                UpdateToolOutputHighlightContext(rawLines[lineIndex], ref toolOutputContext);
+
+                if (TryAddHighlightedToolOutputLine(
+                        lines,
+                        rawLines[lineIndex],
+                        toolOutputContext,
+                        ref firstLine,
+                        roleName,
+                        roleColor,
+                        contentWidth))
+                {
+                    continue;
+                }
             }
 
             AddMarkdownTextLine(
