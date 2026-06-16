@@ -154,19 +154,12 @@ jobs:
             NanoAgent.Desktop/packages.lock.json
             NanoAgent.Tests/packages.lock.json
 
-      - name: Restore CLI publish dependencies
-        run: >
-          dotnet restore ${{ env.CLI_PROJECT }}
-          --locked-mode
-          -p:UseCurrentRuntimeIdentifier=false
-
       - name: Publish CLI test build
         run: >
           dotnet publish ${{ env.CLI_PROJECT }}
           --configuration ${{ env.CONFIGURATION }}
           --runtime ${{ matrix.rid }}
           --self-contained true
-          --no-restore
           --output ./artifacts/publish/cli/${{ matrix.rid }}
 
       - name: Upload CLI test artifact
