@@ -22,7 +22,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.SearchFiles => "Approve file search?",
             AgentToolNames.ShellCommand => "Approve shell command?",
             AgentToolNames.TextSearch => "Approve text search?",
-            AgentToolNames.WebRun => "Approve web request?",
+            AgentToolNames.WebSearch => "Approve web request?",
             _ => $"Approve {request.ToolName}?"
         };
     }
@@ -50,7 +50,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.SearchFiles => "search path",
             AgentToolNames.ShellCommand => "run command",
             AgentToolNames.TextSearch => "search text in path",
-            AgentToolNames.WebRun => "send request",
+            AgentToolNames.WebSearch => "send request",
             _ => "access target"
         };
 
@@ -108,7 +108,7 @@ internal static class PermissionRequestDisplayFormatter
                 pluralLabel = "File paths";
                 break;
 
-            case AgentToolNames.WebRun:
+            case AgentToolNames.WebSearch:
             case AgentToolNames.HeadlessBrowser:
                 singularLabel = "Web target";
                 pluralLabel = "Web targets";

@@ -16,7 +16,7 @@ public sealed class PermissionRequestDisplayFormatterTests
     [InlineData("search_files", "Approve file search?")]
     [InlineData("shell_command", "Approve shell command?")]
     [InlineData("text_search", "Approve text search?")]
-    [InlineData("web_run", "Approve web request?")]
+    [InlineData("web_search", "Approve web request?")]
     [InlineData("unknown_tool", "Approve unknown_tool?")]
     public void BuildApprovalTitle_Should_ReturnExpected(string toolName, string expected)
     {
@@ -99,7 +99,7 @@ public sealed class PermissionRequestDisplayFormatterTests
 
     [Theory]
     [InlineData("headless_browser", "open browser target")]
-    [InlineData("web_run", "send request")]
+    [InlineData("web_search", "send request")]
     [InlineData("search_files", "search path")]
     [InlineData("text_search", "search text in path")]
     [InlineData("directory_list", "list path")]

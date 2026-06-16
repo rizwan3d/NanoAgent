@@ -57,7 +57,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"subagent orchestration: {taskCount} {(taskCount == 1 ? "task" : "tasks")}",
             "repo_memory" when TryGetArgumentString(toolCall.ArgumentsJson, "document", out string memoryDocument) =>
                 $"repo memory: {memoryDocument}",
-            "web_run" => DescribeWebRunCall(toolCall.ArgumentsJson),
+            "web_search" => DescribeWebSearchCall(toolCall.ArgumentsJson),
             _ => name
         };
 
@@ -139,29 +139,14 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             .ToArray();
     }
 
-    private static string DescribeWebRunCall(string argumentsJson)
+    private static string DescribeWebSearchCall(string argumentsJson)
     {
         if (TryGetFirstArrayObjectString(argumentsJson, "search_query", "q", out string query))
         {
             return $"web search: \"{query}\"";
         }
 
-        if (TryGetFirstArrayObjectString(argumentsJson, "image_query", "q", out string imageQuery))
-        {
-            return $"image search: \"{imageQuery}\"";
-        }
-
-        if (TryGetFirstArrayObjectString(argumentsJson, "open", "ref_id", out string refId))
-        {
-            return $"web open: {refId}";
-        }
-
-        if (TryGetFirstArrayObjectString(argumentsJson, "find", "pattern", out string pattern))
-        {
-            return $"web find: \"{pattern}\"";
-        }
-
-        return "web_run";
+        return "web_search";
     }
 
     private static IReadOnlyList<string> BuildSavedCallPreviewLines(ConversationToolCall toolCall)
@@ -454,9 +439,9 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             return searchFilesMessage;
         }
 
-        if (TryBuildWebRunResultMessage(invocationResult, out string webRunMessage))
+        if (TryBuildWebSearchResultMessage(invocationResult, out string webSearchMessage))
         {
-            return webRunMessage;
+            return webSearchMessage;
         }
 
         ToolRenderPayload? renderPayload = invocationResult.Result.RenderPayload;
@@ -976,13 +961,13 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
     }
 
-    private static bool TryBuildWebRunResultMessage(
+    private static bool TryBuildWebSearchResultMessage(
         ToolInvocationResult invocationResult,
         out string message)
     {
         message = string.Empty;
 
-        if (!string.Equals(invocationResult.ToolName, "web_run", StringComparison.Ordinal))
+        if (!string.Equals(invocationResult.ToolName, "web_search", StringComparison.Ordinal))
         {
             return false;
         }
@@ -993,34 +978,17 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             JsonElement root = document.RootElement;
             List<string> lines = [];
 
-            AddWebRunSearchLines(root, "SearchQuery", "search", lines);
-            AddWebRunSearchLines(root, "ImageQuery", "image search", lines);
-            AddWebRunOpenLines(root, lines);
-            AddWebRunFindLines(root, lines);
-            AddWebRunSimpleArrayLines(root, "Screenshot", "screenshot", lines);
-            AddWebRunSimpleArrayLines(root, "Finance", "finance", lines);
-            AddWebRunSimpleArrayLines(root, "Weather", "weather", lines);
-            AddWebRunSimpleArrayLines(root, "Sports", "sports", lines);
-            AddWebRunSimpleArrayLines(root, "Time", "time", lines);
-            AddWebRunWarningLines(root, lines);
+            AddWebSearchLines(root, "SearchQuery", "search", lines);
+            AddWebSearchWarningLines(root, lines);
 
-            int operationCount =
-                GetJsonArrayCount(root, "SearchQuery") +
-                GetJsonArrayCount(root, "ImageQuery") +
-                GetJsonArrayCount(root, "Open") +
-                GetJsonArrayCount(root, "Find") +
-                GetJsonArrayCount(root, "Screenshot") +
-                GetJsonArrayCount(root, "Finance") +
-                GetJsonArrayCount(root, "Weather") +
-                GetJsonArrayCount(root, "Sports") +
-                GetJsonArrayCount(root, "Time");
+            int searchCount = GetJsonArrayCount(root, "SearchQuery");
 
             StringBuilder builder = new();
             builder
                 .Append(Bullet)
-                .Append(" web_run completed (")
-                .Append(operationCount)
-                .Append(operationCount == 1 ? " operation)" : " operations)");
+                .Append(" web_search completed (")
+                .Append(searchCount)
+                .Append(searchCount == 1 ? " search)" : " searches)");
 
             if (lines.Count == 0)
             {
@@ -1053,7 +1021,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
     }
 
-    private static void AddWebRunSearchLines(
+    private static void AddWebSearchLines(
         JsonElement root,
         string sectionName,
         string label,
@@ -1076,17 +1044,15 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 results.GetArrayLength() > 0)
             {
                 JsonElement first = results.EnumerateArray().First();
-                string title = GetFirstJsonString(first, "Title", "Url", "ImageUrl");
-                string refId = GetFirstJsonString(first, "RefId");
-                string url = GetFirstJsonString(first, "DisplayUrl", "Url", "ImageUrl", "SourcePageUrl");
-                string prefix = string.IsNullOrWhiteSpace(refId) ? string.Empty : $"{refId}: ";
+                string title = GetFirstJsonString(first, "Title", "Url");
+                string url = GetFirstJsonString(first, "Url");
                 string summary = string.Join(
                     " - ",
                     new[] { title, url }.Where(static value => !string.IsNullOrWhiteSpace(value)));
 
                 if (!string.IsNullOrWhiteSpace(summary))
                 {
-                    lines.Add($"    {prefix}{Truncate(summary, 180)}");
+                    lines.Add($"    {Truncate(summary, 180)}");
                 }
             }
 
@@ -1094,130 +1060,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
     }
 
-    private static void AddWebRunOpenLines(JsonElement root, List<string> lines)
-    {
-        if (!TryGetJsonProperty(root, "Open", out JsonElement section) ||
-            section.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        foreach (JsonElement item in section.EnumerateArray())
-        {
-            string refId = GetFirstJsonString(item, "RequestedRefId");
-            string title = GetFirstJsonString(item, "Title", "ResolvedUrl");
-            TryGetJsonInt32(item, "StartLine", out int startLine);
-            TryGetJsonInt32(item, "EndLine", out int endLine);
-            lines.Add($"  - open {refId}: {Truncate(title, 160)} (lines {startLine}-{endLine})");
-
-            if (TryGetJsonString(item, "Text", out string text, trim: false))
-            {
-                string[] preview = NormalizePreviewLines(text);
-                for (int index = 0; index < Math.Min(2, preview.Length); index++)
-                {
-                    lines.Add($"    {Truncate(preview[index], 180)}");
-                }
-            }
-
-            AddWarningLine(item, lines);
-        }
-    }
-
-    private static void AddWebRunFindLines(JsonElement root, List<string> lines)
-    {
-        if (!TryGetJsonProperty(root, "Find", out JsonElement section) ||
-            section.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        foreach (JsonElement item in section.EnumerateArray())
-        {
-            string refId = GetFirstJsonString(item, "RequestedRefId");
-            string pattern = GetFirstJsonString(item, "Pattern");
-            int matchCount = GetJsonArrayCount(item, "Matches");
-            lines.Add($"  - find \"{pattern}\" in {refId}: {matchCount} {(matchCount == 1 ? "match" : "matches")}");
-
-            if (TryGetJsonProperty(item, "Matches", out JsonElement matches) &&
-                matches.ValueKind == JsonValueKind.Array &&
-                matches.GetArrayLength() > 0)
-            {
-                JsonElement first = matches.EnumerateArray().First();
-                TryGetJsonInt32(first, "LineNumber", out int lineNumber);
-                string lineText = GetFirstJsonString(first, "LineText");
-                lines.Add($"    {lineNumber}: {Truncate(lineText, 180)}");
-            }
-
-            AddWarningLine(item, lines);
-        }
-    }
-
-    private static void AddWebRunSimpleArrayLines(
-        JsonElement root,
-        string sectionName,
-        string label,
-        List<string> lines)
-    {
-        if (!TryGetJsonProperty(root, sectionName, out JsonElement section) ||
-            section.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        foreach (JsonElement item in section.EnumerateArray())
-        {
-            string name = GetFirstJsonString(
-                item,
-                "Ticker",
-                "Location",
-                "UtcOffset",
-                "League",
-                "RequestedRefId",
-                "ResolvedUrl",
-                "Function");
-            string detail = BuildSimpleWebRunDetail(item);
-
-            lines.Add(string.IsNullOrWhiteSpace(detail)
-                ? $"  - {label} {name}".TrimEnd()
-                : $"  - {label} {name}: {detail}".TrimEnd());
-
-            AddWarningLine(item, lines);
-        }
-    }
-
-    private static string BuildSimpleWebRunDetail(JsonElement item)
-    {
-        string[] candidates =
-        [
-            GetJsonScalarString(item, "Price"),
-            GetFirstJsonString(item, "Currency"),
-            GetFirstJsonString(item, "MarketState"),
-            GetFirstJsonString(item, "Condition"),
-            GetFirstJsonString(item, "TemperatureC"),
-            GetFirstJsonString(item, "DisplayTime"),
-            GetFirstJsonString(item, "ContentType")
-        ];
-
-        string summary = string.Join(
-            " ",
-            candidates.Where(static value => !string.IsNullOrWhiteSpace(value)));
-
-        if (!string.IsNullOrWhiteSpace(summary))
-        {
-            return Truncate(summary, 120);
-        }
-
-        int entryCount = GetJsonArrayCount(item, "Entries");
-        if (entryCount > 0)
-        {
-            return $"{entryCount} {(entryCount == 1 ? "entry" : "entries")}";
-        }
-
-        string byteCount = GetJsonScalarString(item, "ByteCount");
-        return string.IsNullOrWhiteSpace(byteCount) ? string.Empty : $"{byteCount} bytes";
-    }
-
-    private static void AddWebRunWarningLines(JsonElement root, List<string> lines)
+    private static void AddWebSearchWarningLines(JsonElement root, List<string> lines)
     {
         if (!TryGetJsonProperty(root, "Warnings", out JsonElement warnings) ||
             warnings.ValueKind != JsonValueKind.Array)
@@ -1714,25 +1557,6 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
 
         return string.Empty;
-    }
-
-    private static string GetJsonScalarString(
-        JsonElement element,
-        string propertyName)
-    {
-        if (!TryGetJsonProperty(element, propertyName, out JsonElement property))
-        {
-            return string.Empty;
-        }
-
-        return property.ValueKind switch
-        {
-            JsonValueKind.String => property.GetString()?.Trim() ?? string.Empty,
-            JsonValueKind.Number => property.ToString(),
-            JsonValueKind.True => "true",
-            JsonValueKind.False => "false",
-            _ => string.Empty
-        };
     }
 
     private static string Truncate(string value, int maxLength)

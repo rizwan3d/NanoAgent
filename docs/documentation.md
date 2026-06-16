@@ -821,7 +821,7 @@ Overrides are session-scoped. For durable policy, edit configuration.
 
 `shell_safe` controls the mode applied to the command patterns you list under `shell.allow.commands`; NanoAgent does not ship a built-in shell command allow catalog.
 
-The `network` shortcut applies to built-in `webfetch` tools, including `web_run` and `headless_browser`. `headless_browser` renders pages through an installed Chromium-family browser such as Microsoft Edge, Google Chrome, or Chromium.
+The `network` shortcut applies to built-in `webfetch` tools, including `web_search` and `headless_browser`. `headless_browser` renders pages through an installed Chromium-family browser such as Microsoft Edge, Google Chrome, or Chromium.
 
 ### Auto-Approve All Tools
 

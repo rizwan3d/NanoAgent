@@ -451,7 +451,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                             new SelectionPromptOption<SettingPermissionAction>(
                                 "Network",
                                 SettingPermissionAction.Network,
-                                "Set a session rule for webfetch/web_run."),
+                                "Set a session rule for webfetch/web_search."),
                             new SelectionPromptOption<SettingPermissionAction>(
                                 "Memory writes",
                                 SettingPermissionAction.MemoryWrite,
@@ -570,7 +570,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                 await PromptAndAddToolOverrideAsync(
                     context,
                     "Network permission",
-                    ["webfetch", AgentToolNames.WebRun],
+                    ["webfetch", AgentToolNames.WebSearch],
                     cancellationToken);
                 return;
 

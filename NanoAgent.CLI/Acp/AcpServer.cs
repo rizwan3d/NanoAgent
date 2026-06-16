@@ -2418,7 +2418,7 @@ internal sealed class AcpServer : IAsyncDisposable
                 "search_files" or "text_search" => "search",
                 "shell_command" => "execute",
                 "update_plan" => "think",
-                "web_run" or "headless_browser" => "fetch",
+                "web_search" or "headless_browser" => "fetch",
                 _ => "other"
             };
         }
