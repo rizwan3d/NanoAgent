@@ -231,6 +231,11 @@ public static partial class Program
             return;
         }
 
+        if (TryHandleTerminalView(state, command))
+        {
+            return;
+        }
+
         if (TryStartCustomSlashCommand(state, command))
         {
             return;

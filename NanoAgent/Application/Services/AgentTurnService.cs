@@ -12,6 +12,7 @@ namespace NanoAgent.Application.Services;
 internal sealed class AgentTurnService : IAgentTurnService
 {
     private const string DirectShellPrefix = "!";
+    private const string DirectShellBackgroundPrefix = "!!";
 
     private readonly IConversationPipeline _conversationPipeline;
     private readonly IAgentProfileResolver _profileResolver;
@@ -69,6 +70,14 @@ internal sealed class AgentTurnService : IAgentTurnService
                         customCommand.ExpandedPrompt,
                         request,
                         cancellationToken);
+            }
+            else if (TryParseDirectShellBackgroundCommand(request.UserInput, out string? bgCommand))
+            {
+                featureName = TelemetryFeatureNames.DirectShellBackground;
+                result = await RunDirectShellBackgroundCommandAsync(
+                    ShellCommandText.NormalizeCommandText(bgCommand),
+                    request,
+                    cancellationToken);
             }
             else if (TryParseDirectShellCommand(request.UserInput, out string? command))
             {
@@ -319,6 +328,190 @@ internal sealed class AgentTurnService : IAgentTurnService
         }
 
         return false;
+    }
+
+    private async Task<ConversationTurnResult> RunDirectShellBackgroundCommandAsync(
+        string command,
+        AgentTurnRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return ConversationTurnResult.AssistantMessage(
+                "Enter a shell command after !!.");
+        }
+
+        if (_shellCommandService is null)
+        {
+            return ConversationTurnResult.AssistantMessage(
+                "Direct shell commands are unavailable in this session.");
+        }
+
+        string effectiveWorkingDirectory;
+        try
+        {
+            effectiveWorkingDirectory = request.Session.ResolvePathFromWorkingDirectory(null);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return ConversationTurnResult.AssistantMessage(exception.Message);
+        }
+
+       ShellCommandExecutionResult startResult = await _shellCommandService.StartBackgroundAsync(
+            new ShellCommandExecutionRequest(
+                command,
+                effectiveWorkingDirectory,
+                ShellCommandSandboxPermissions.RequireEscalated,
+                Justification: "User-entered direct shell background command.",
+                SessionId: request.Session.SessionId),
+            cancellationToken);
+       SessionStateToolRecorder.RecordShellCommand(request.Session, startResult);
+
+        // If the background terminal failed to start, return the failure result immediately
+        if (string.Equals(startResult.TerminalStatus, "failed", StringComparison.Ordinal) ||
+            string.Equals(startResult.TerminalStatus, "not_found", StringComparison.Ordinal))
+        {
+            ToolExecutionBatchResult failureBatchResult = CreateDirectShellBackgroundBatchResult(
+                startResult,
+                request.Session.WorkingDirectory);
+            return ConversationTurnResult.ToolExecution(failureBatchResult);
+        }
+
+        string? terminalId = startResult.TerminalId;
+        if (string.IsNullOrWhiteSpace(terminalId))
+        {
+            // No terminal ID to poll; just return the start result as-is
+            ToolExecutionBatchResult emptyBatchResult = CreateDirectShellBackgroundBatchResult(
+                startResult,
+                request.Session.WorkingDirectory);
+            return ConversationTurnResult.ToolExecution(emptyBatchResult);
+        }
+
+        // Poll the background terminal until it completes, streaming new output
+        // to the user as it arrives. Each ReadBackgroundAsync returns only the
+        // output produced since the previous read, so the read result already
+        // carries the incremental chunk for this iteration.
+        string accumulatedStdout = string.Empty;
+        string accumulatedStderr = string.Empty;
+        ShellCommandExecutionResult? finalResult = null;
+        bool detached = false;
+
+        // Header streamed before each chunk of live output, to label which
+        // background terminal and command the streamed text belongs to. It is
+        // display-only and intentionally excluded from the accumulated output
+        // that feeds the consolidated tool result.
+        string streamHeader = $"{terminalId} - {command}{Environment.NewLine}";
+
+        try
+        {
+            while (true)
+            {
+                await Task.Delay(200, cancellationToken);
+
+                ShellCommandExecutionResult readResult = await _shellCommandService.ReadBackgroundAsync(
+                    terminalId,
+                    request.Session.SessionId,
+                    cancellationToken);
+                SessionStateToolRecorder.RecordShellCommand(request.Session, readResult);
+
+                // Stream and accumulate any new output from this poll iteration.
+                if (!string.IsNullOrEmpty(readResult.StandardOutput))
+                {
+                    accumulatedStdout += readResult.StandardOutput;
+                    await request.ProgressSink.ReportAssistantMessageChunkAsync(
+                        streamHeader + readResult.StandardOutput,
+                        cancellationToken);
+                }
+
+                if (!string.IsNullOrEmpty(readResult.StandardError))
+                {
+                    accumulatedStderr += readResult.StandardError;
+                    await request.ProgressSink.ReportAssistantMessageChunkAsync(
+                        streamHeader + readResult.StandardError,
+                        cancellationToken);
+                }
+
+                if (!string.Equals(readResult.TerminalStatus, "running", StringComparison.Ordinal))
+                {
+                    finalResult = readResult;
+                    break;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Esc cancels streaming, not the terminal: detach and leave it running.
+            detached = true;
+        }
+
+        if (detached)
+        {
+            string detachNote =
+                $"{Environment.NewLine}[Detached — background terminal {terminalId} is still running. " +
+                $"Re-attach with /terminals view {terminalId}]";
+            await request.ProgressSink.ReportAssistantMessageChunkAsync(
+                detachNote,
+                CancellationToken.None);
+            return ConversationTurnResult.AssistantMessage(detachNote);
+        }
+
+        // Build a consolidated result with the accumulated output from all reads
+        ShellCommandExecutionResult consolidatedResult = finalResult! with
+        {
+            StandardOutput = accumulatedStdout,
+            StandardError = accumulatedStderr,
+        };
+
+        ToolExecutionBatchResult batchResult = CreateDirectShellBackgroundBatchResult(
+            consolidatedResult,
+            request.Session.WorkingDirectory);
+        return ConversationTurnResult.ToolExecution(batchResult);
+    }
+
+    private static ToolExecutionBatchResult CreateDirectShellBackgroundBatchResult(
+        ShellCommandExecutionResult result,
+        string sessionWorkingDirectory)
+    {
+        string displayCommand = SuspiciousUnicodeText.RenderVisible(result.Command);
+        string renderText =
+            $"Working directory: {result.WorkingDirectory}{Environment.NewLine}" +
+            $"Session working directory: {sessionWorkingDirectory}{Environment.NewLine}" +
+            $"Background terminal: {result.TerminalId}{Environment.NewLine}" +
+            $"Terminal status: {result.TerminalStatus} (exit code {result.ExitCode}){Environment.NewLine}" +
+            $"STDOUT:{Environment.NewLine}{SuspiciousUnicodeText.RenderVisible(result.StandardOutput)}{Environment.NewLine}{Environment.NewLine}" +
+            $"STDERR:{Environment.NewLine}{SuspiciousUnicodeText.RenderVisible(result.StandardError)}";
+        string message = $"Ran shell command '{displayCommand}' in background with exit code {result.ExitCode}.";
+
+        ToolResult toolResult = ToolResultFactory.Success(
+            message,
+            result,
+            ToolJsonContext.Default.ShellCommandExecutionResult,
+            new ToolRenderPayload(
+                $"Shell command (background): {displayCommand}",
+                renderText));
+
+        return new ToolExecutionBatchResult(
+        [
+            new ToolInvocationResult(
+                "direct-shell-bg-" + Guid.NewGuid().ToString("N"),
+                AgentToolNames.ShellCommand,
+                toolResult)
+        ]);
+    }
+
+    private static bool TryParseDirectShellBackgroundCommand(
+        string input,
+        out string command)
+    {
+        string trimmedInput = input.Trim();
+        if (!trimmedInput.StartsWith(DirectShellBackgroundPrefix, StringComparison.Ordinal))
+        {
+            command = string.Empty;
+            return false;
+        }
+
+        command = trimmedInput[DirectShellBackgroundPrefix.Length..].Trim();
+        return true;
     }
 
     private static bool TryParseDirectShellCommand(

@@ -6,6 +6,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Telemetry;
 using NanoAgent.Application.UI;
 using NanoAgent.Application.Tools;
+using NanoAgent.Application.Tools.Models;
 using NanoAgent.Domain.Models;
 using System.Text.Json;
 using System.Text.Encodings.Web;
@@ -22,6 +23,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IAgentProfileResolver? _profileResolver;
     private IHost? _host;
     private IProviderSetupService? _providerSetupService;
+    private IShellCommandService? _shellCommandService;
     private IReplCommandDispatcher? _commandDispatcher;
     private IReplCommandParser? _commandParser;
     private IInteractiveModelSelectionService? _modelSelectionService;
@@ -96,6 +98,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             _autoApproveAllTools,
             _configureServices);
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
+        _shellCommandService = _host.Services.GetRequiredService<IShellCommandService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _sessionEventLogService = _host.Services.GetRequiredService<ISessionEventLogService>();
         _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
@@ -316,6 +319,34 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             result.ToolExecutionResult,
             metrics,
             result.ReasoningText);
+    }
+
+    public Task<IReadOnlyList<BackgroundTerminalInfo>> ListBackgroundTerminalsAsync(
+        CancellationToken cancellationToken)
+    {
+        if (_session is null || _shellCommandService is null)
+        {
+            throw new InvalidOperationException("NanoAgent backend has not been initialized.");
+        }
+
+        return _shellCommandService.ListBackgroundAsync(_session.SessionId, cancellationToken);
+    }
+
+    public Task<ShellCommandExecutionResult> ReadBackgroundTerminalAsync(
+        string terminalId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(terminalId);
+
+        if (_session is null || _shellCommandService is null)
+        {
+            throw new InvalidOperationException("NanoAgent backend has not been initialized.");
+        }
+
+        return _shellCommandService.ReadBackgroundAsync(
+            terminalId.Trim(),
+            _session.SessionId,
+            cancellationToken);
     }
 
     public async ValueTask DisposeAsync()
