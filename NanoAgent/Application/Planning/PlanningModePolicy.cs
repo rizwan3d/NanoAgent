@@ -79,7 +79,7 @@ internal static class PlanningModePolicy
         - An update_plan call must contain a concise ordered task list. Use statuses `completed`, `in_progress`, and `pending`; keep at most one step `in_progress`; keep completed steps first, then the active step, then pending steps.
         - Before planning, gather repo evidence with read-only tools instead of guessing.
         - When relevant and permitted by policy, use `shell_command` to inspect the environment with simple help/version probes for installed build tools, SDKs, compilers, package managers, or runtimes.
-        - When the correct usage of a build tool, framework, library, SDK, or API is unfamiliar or likely to have changed, use `web_run` to check the current official documentation or domain references before you rely on it.
+        - When the correct usage of a build tool, framework, library, SDK, or API is unfamiliar or likely to have changed, use `web_search` to check the current official documentation or domain references before you rely on it.
         - During execution, use `shell_command` for real toolchain work when it materially advances the task: scaffold projects, restore or install dependencies, run code generation, build, test, lint, format, or inspect runtime behavior.
         - For project scaffolding commands, include the project name, template or preset, and any supported confirmation flags in the initial command so the scaffold stays non-interactive.
         - Prefer repo-native validation commands for the detected project toolchain when those toolchains are present.

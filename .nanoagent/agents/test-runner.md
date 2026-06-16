@@ -11,7 +11,7 @@ tools:
   - search_files
   - shell_command
   - text_search
-  - web_run
+  - web_search
 permissionDescription: Read-only validation profile that can execute repo-native test and build commands.
 ---
 Active workspace agent profile: test-runner.

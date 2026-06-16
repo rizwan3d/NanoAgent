@@ -11,7 +11,7 @@ internal sealed class PlanningModeTool : ITool
     [
         "Inspect the relevant codebase and facts before editing, and ground the plan in actual repo evidence instead of guesses.",
         "Check installed build tools, compilers, SDKs, package managers, or runtimes with safe shell probes before choosing scaffold, build, or test commands.",
-        "Use web_run to check the current official documentation or domain references before relying on unfamiliar build tools, frameworks, libraries, SDKs, or APIs.",
+        "Use web_search to check the current official documentation or domain references before relying on unfamiliar build tools, frameworks, libraries, SDKs, or APIs.",
         "Name the likely files, modules, commands, toolchains, constraints, and validation paths that matter for this task.",
         "Separate verified facts from assumptions or open questions, and call out what still needs confirmation.",
         "When multiple reasonable approaches exist, compare them briefly and recommend one.",

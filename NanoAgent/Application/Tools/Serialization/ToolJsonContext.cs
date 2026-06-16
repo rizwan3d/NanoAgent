@@ -40,7 +40,7 @@ namespace NanoAgent.Application.Tools.Serialization;
 [JsonSerializable(typeof(WorkspaceDirectoryEntry))]
 [JsonSerializable(typeof(WorkspaceTextSearchResult))]
 [JsonSerializable(typeof(WorkspaceTextSearchMatch))]
-[JsonSerializable(typeof(WebRunResult))]
+[JsonSerializable(typeof(WebSearchResult))]
 [JsonSerializable(typeof(ShellCommandExecutionResult))]
 [JsonSerializable(typeof(BackgroundTerminalInfo))]
 [JsonSerializable(typeof(BackgroundTerminalListResult))]
