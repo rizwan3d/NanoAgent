@@ -1330,7 +1330,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             session,
             cancellationToken);
 
-        if (status.MonthlyBudgetUsd is not decimal monthlyBudgetUsd ||
+        if (!status.Enabled ||
+            status.MonthlyBudgetUsd is not decimal monthlyBudgetUsd ||
             monthlyBudgetUsd <= 0m ||
             status.SpentUsd < monthlyBudgetUsd)
         {
@@ -1466,14 +1467,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(new BudgetControlsStatus(
-                BudgetControlsSettings.LocalSource,
-                MonthlyBudgetUsd: null,
-                SpentUsd: 0m,
-                AlertThresholdPercent: 80,
-                BudgetControlsSettings.DefaultLocalPath,
-                CloudApiUrl: null,
-                HasCloudAuthKey: false));
+            return Task.FromResult(BudgetControlsStatus.Disabled);
         }
 
         public Task RecordUsageAsync(

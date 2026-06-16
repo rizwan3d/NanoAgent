@@ -74,7 +74,12 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
         ArgumentNullException.ThrowIfNull(session);
         cancellationToken.ThrowIfCancellationRequested();
 
-        BudgetControlsSettings settings = await LoadSettingsAsync(cancellationToken);
+        BudgetControlsSettings? settings = await ResolveActiveSettingsAsync(session, cancellationToken);
+        if (settings is null)
+        {
+            return BudgetControlsStatus.Disabled;
+        }
+
         if (string.Equals(settings.Source, BudgetControlsSettings.CloudSource, StringComparison.OrdinalIgnoreCase))
         {
             return await GetCloudStatusAsync(settings, cancellationToken);
@@ -111,7 +116,14 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
             return;
         }
 
-        BudgetControlsSettings settings = await LoadSettingsAsync(cancellationToken);
+        BudgetControlsSettings? settings = await ResolveActiveSettingsAsync(session, cancellationToken);
+        if (settings is null)
+        {
+            // Budget controls are disabled by default; do not create tracking files or post usage
+            // unless they were explicitly configured or a budget-controls.*.json file exists.
+            return;
+        }
+
         if (string.Equals(settings.Source, BudgetControlsSettings.CloudSource, StringComparison.OrdinalIgnoreCase))
         {
             await PostCloudUsageAsync(settings, normalizedUsage, cancellationToken);
@@ -255,10 +267,60 @@ internal sealed class BudgetControlsUsageService : IBudgetControlsUsageService
         }
     }
 
-    private async Task<BudgetControlsSettings> LoadSettingsAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Resolves the active budget controls settings, or <see langword="null"/> when budget
+    /// controls are disabled. Budget controls are disabled by default and become active only
+    /// when explicitly configured (saved settings) or when a workspace
+    /// <c>.nanoagent/budget-controls.*.json</c> file exists.
+    /// </summary>
+    private async Task<BudgetControlsSettings?> ResolveActiveSettingsAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
     {
-        return BudgetControlsSettings.NormalizeOrDefault(
-            await _configurationStore.LoadAsync(cancellationToken));
+        BudgetControlsSettings? configured = await _configurationStore.LoadAsync(cancellationToken);
+        if (configured is not null)
+        {
+            return BudgetControlsSettings.NormalizeOrDefault(configured);
+        }
+
+        string? existingLocalPath = FindExistingLocalDocument(session.WorkspacePath);
+        return existingLocalPath is null
+            ? null
+            : BudgetControlsSettings.Local(existingLocalPath);
+    }
+
+    /// <summary>
+    /// Returns the workspace-relative path of an existing <c>budget-controls.*.json</c> file in
+    /// the default <c>.nanoagent</c> directory, preferring the default local file, or
+    /// <see langword="null"/> when none exist.
+    /// </summary>
+    private static string? FindExistingLocalDocument(string workspacePath)
+    {
+        string defaultFullPath = ResolveLocalPath(
+            workspacePath,
+            BudgetControlsSettings.DefaultLocalPath);
+        if (File.Exists(defaultFullPath))
+        {
+            return BudgetControlsSettings.DefaultLocalPath;
+        }
+
+        string? directory = Path.GetDirectoryName(defaultFullPath);
+        if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+        {
+            return null;
+        }
+
+        string[] matches = Directory.GetFiles(
+            directory,
+            BudgetControlsSettings.LocalFileSearchPattern,
+            SearchOption.TopDirectoryOnly);
+        if (matches.Length == 0)
+        {
+            return null;
+        }
+
+        Array.Sort(matches, WorkspacePath.GetPathComparer());
+        return WorkspacePath.ToRelativePath(workspacePath, matches[0]);
     }
 
     private static async Task<LocalBudgetControlsDocument?> LoadLocalDocumentAsync(

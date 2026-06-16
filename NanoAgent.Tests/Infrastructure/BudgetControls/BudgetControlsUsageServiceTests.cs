@@ -178,6 +178,100 @@ public sealed class BudgetControlsUsageServiceTests
         body.RootElement.GetProperty("outputTokens").GetInt32().Should().Be(67);
     }
 
+    [Fact]
+    public async Task GetStatusAsync_Should_ReportDisabled_WhenNoConfigurationOrFile()
+    {
+        string workspacePath = CreateWorkspace();
+        BudgetControlsUsageService sut = new(
+            new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            new InMemoryBudgetConfigurationStore(),
+            new InMemoryBudgetSecretStore());
+
+        BudgetControlsStatus status = await sut.GetStatusAsync(
+            CreateSession(workspacePath),
+            CancellationToken.None);
+
+        status.Enabled.Should().BeFalse();
+        status.Source.Should().Be(BudgetControlsSettings.DisabledSource);
+        status.MonthlyBudgetUsd.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task RecordUsageAsync_Should_NotCreateFile_WhenDisabledByDefault()
+    {
+        string workspacePath = CreateWorkspace();
+        BudgetControlsUsageService sut = new(
+            new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            new InMemoryBudgetConfigurationStore(),
+            new InMemoryBudgetSecretStore());
+
+        await sut.RecordUsageAsync(
+            CreateSession(workspacePath),
+            new BudgetControlsUsageDelta(
+                InputTokens: 1_000,
+                CachedInputTokens: 200,
+                OutputTokens: 500),
+            CancellationToken.None);
+
+        string budgetPath = Path.Combine(workspacePath, ".nanoagent", "budget-controls.local.json");
+        File.Exists(budgetPath).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_Should_ReportEnabled_WhenLocalFileExists()
+    {
+        string workspacePath = CreateWorkspace();
+        string budgetDirectory = Path.Combine(workspacePath, ".nanoagent");
+        Directory.CreateDirectory(budgetDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(budgetDirectory, "budget-controls.local.json"),
+            """{"source":"local","monthlyBudgetUsd":42,"alertThresholdPercent":65,"usage":{"totalCostUsd":1.25}}""",
+            CancellationToken.None);
+        BudgetControlsUsageService sut = new(
+            new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            new InMemoryBudgetConfigurationStore(),
+            new InMemoryBudgetSecretStore());
+
+        BudgetControlsStatus status = await sut.GetStatusAsync(
+            CreateSession(workspacePath),
+            CancellationToken.None);
+
+        status.Enabled.Should().BeTrue();
+        status.Source.Should().Be(BudgetControlsSettings.LocalSource);
+        status.MonthlyBudgetUsd.Should().Be(42m);
+        status.SpentUsd.Should().Be(1.25m);
+        status.AlertThresholdPercent.Should().Be(65);
+    }
+
+    [Fact]
+    public async Task RecordUsageAsync_Should_UpdateExistingFile_WhenFileExistsWithoutConfiguration()
+    {
+        string workspacePath = CreateWorkspace();
+        string budgetDirectory = Path.Combine(workspacePath, ".nanoagent");
+        Directory.CreateDirectory(budgetDirectory);
+        string budgetPath = Path.Combine(budgetDirectory, "budget-controls.local.json");
+        await File.WriteAllTextAsync(
+            budgetPath,
+            """{"source":"local","pricing":{"inputUsdPerMillionTokens":1,"cachedInputUsdPerMillionTokens":0.1,"outputUsdPerMillionTokens":2},"usage":{"totalCostUsd":0}}""",
+            CancellationToken.None);
+        BudgetControlsUsageService sut = new(
+            new HttpClient(new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK))),
+            new InMemoryBudgetConfigurationStore(),
+            new InMemoryBudgetSecretStore());
+
+        await sut.RecordUsageAsync(
+            CreateSession(workspacePath),
+            new BudgetControlsUsageDelta(
+                InputTokens: 1_000,
+                CachedInputTokens: 200,
+                OutputTokens: 500),
+            CancellationToken.None);
+
+        using JsonDocument document = JsonDocument.Parse(await File.ReadAllTextAsync(budgetPath));
+        document.RootElement.GetProperty("usage").GetProperty("inputTokens").GetInt64().Should().Be(1_000);
+        document.RootElement.GetProperty("spentUsd").GetDecimal().Should().Be(0.00182m);
+    }
+
     private static ReplSessionContext CreateSession(string workspacePath)
     {
         return new ReplSessionContext(

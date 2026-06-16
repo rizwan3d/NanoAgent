@@ -159,6 +159,8 @@ The desktop controls expose common actions:
 - Add permission overrides.
 - Undo or redo tracked file edits.
 
+Budget controls are disabled by default. They become active only after you enable them with `/budget local` or `/budget cloud`, or when a `.nanoagent/budget-controls.*.json` file already exists in the active workspace. While disabled, no usage is recorded, no tracking file is created, and provider requests are never blocked; `/budget status` reports `Disabled`.
+
 Budget controls can run in local mode or cloud mode. Local mode asks for the monthly budget USD, alert threshold percent, and input, cached-input, and output prices per 1M tokens, then creates and updates `.nanoagent/budget-controls.local.json` in the active workspace. Cloud mode asks for the budget API URL and auth key; the URL is saved with user settings and the key is stored through the platform credential store. In the terminal, use `/budget`, `/budget local`, `/budget cloud`, or `/budget status`.
 
 Cloud budget APIs use `Authorization: Bearer <auth-key>`.

@@ -375,6 +375,14 @@ internal sealed class BudgetCommandHandler : IReplCommandHandler
 
     private static string FormatStatus(BudgetControlsStatus status)
     {
+        if (!status.Enabled)
+        {
+            return "Budget controls:\n" +
+                "Source: Disabled\n" +
+                "Budget controls are disabled by default. Run /budget local or /budget cloud to " +
+                "enable them, or add a .nanoagent/budget-controls.*.json file to the workspace.";
+        }
+
         if (string.Equals(status.Source, BudgetControlsSettings.CloudSource, StringComparison.OrdinalIgnoreCase))
         {
             return "Budget controls:\n" +
