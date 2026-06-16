@@ -41,7 +41,16 @@ internal sealed class ProcessRunner : IProcessRunner
         ProcessStartInfo startInfo = new()
         {
             FileName = request.FileName,
-            RedirectStandardInput = request.StandardInput is not null,
+            // Always redirect stdin, even when we have nothing to send. With
+            // UseShellExecute = false a non-redirected child inherits this
+            // process's console stdin handle, and on Windows every process
+            // sharing the console reads from the same CONIN$ input buffer. A
+            // child that polls stdin (cmd, many build/test runners, REPLs) then
+            // steals the user's keystrokes - including the Esc press that is
+            // supposed to cancel the turn - so cancellation never fires while a
+            // command is running. Giving the child its own redirected stdin
+            // keeps console input flowing to NanoAgent's key reader.
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -90,8 +99,12 @@ internal sealed class ProcessRunner : IProcessRunner
         {
             await process.StandardInput.WriteAsync(request.StandardInput.AsMemory(), cancellationToken);
             await process.StandardInput.FlushAsync(cancellationToken);
-            process.StandardInput.Close();
         }
+
+        // Close stdin unconditionally so a child that reads input observes EOF
+        // immediately instead of holding (and draining) the shared console
+        // input. This is what keeps Esc available to NanoAgent's key reader.
+        process.StandardInput.Close();
 
         try
         {
