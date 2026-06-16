@@ -454,6 +454,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             ModelIdMatcher.NormalizeOrNull(Environment.GetEnvironmentVariable(ModelEnvironmentVariableName)),
             ReasoningEffort: ReasoningEffortOptions.NormalizeOrThrow(
                 Environment.GetEnvironmentVariable(ReasoningEnvironmentVariableName)),
+            ActiveProviderName: CreateProviderName(profile),
             ThinkingMode: ThinkingModeOptions.NormalizeOrNull(
                 Environment.GetEnvironmentVariable(ThinkingEnvironmentVariableName)));
     }
