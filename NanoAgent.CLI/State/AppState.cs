@@ -98,6 +98,8 @@ public sealed class AppState
 
     public string? ProviderName { get; set; }
 
+    public string? ReasoningEffort { get; set; }
+
     public string RootDirectory { get; } = Directory.GetCurrentDirectory();
 
     public string? SectionResumeCommand { get; set; }

@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Commands;
 
@@ -140,7 +141,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     new SelectionPromptOption<SettingCommandArea>(
                         "Model",
                         SettingCommandArea.Model,
-                        $"Pick the active model. Current: {context.Session.ActiveModelId}."),
+                        $"Pick the active model. Current: {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}."),
                     new SelectionPromptOption<SettingCommandArea>(
                         "Profile",
                         SettingCommandArea.Profile,
@@ -219,7 +220,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                                 StringComparison.Ordinal);
 
                             return new SelectionPromptOption<string>(
-                                modelId,
+                                modelId.ToDisplayNameWithProvider(context.Session.ProviderName),
                                 modelId,
                                 active ? "Currently active." : "Use this model for subsequent prompts.");
                         })
@@ -261,16 +262,16 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
         return result.Status switch
         {
             ModelActivationStatus.Switched =>
-                ReplCommandResult.Continue($"Active model switched to '{result.ResolvedModelId}'."),
+                ReplCommandResult.Continue($"Active model switched to '{result.ResolvedModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}'."),
             ModelActivationStatus.AlreadyActive =>
-                ReplCommandResult.Continue($"Already using '{result.ResolvedModelId}'."),
+                ReplCommandResult.Continue($"Already using '{result.ResolvedModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}'."),
             ModelActivationStatus.Ambiguous =>
                 ReplCommandResult.Continue(
-                    "Model name is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds),
+                    "Model name is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds.Select(id => id.ToDisplayNameWithProvider(context.Session.ProviderName))),
                     ReplFeedbackKind.Error),
             _ =>
                 ReplCommandResult.Continue(
-                    $"Model '{selectedModel}' is not available. Use /models to choose from valid models.",
+                    $"Model '{selectedModel.ToDisplayNameWithProvider(context.Session.ProviderName)}' is not available. Use /models to choose from valid models.",
                     ReplFeedbackKind.Error)
         };
     }
@@ -900,7 +901,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                             SettingSummaryAction.Back,
                             "Choose Provider in settings to switch saved providers."),
                         new SelectionPromptOption<SettingSummaryAction>(
-                            $"Model: {context.Session.ActiveModelId}",
+                            $"Model: {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}",
                             SettingSummaryAction.Back,
                             "Choose Model in settings to change it."),
                         new SelectionPromptOption<SettingSummaryAction>(
@@ -1196,7 +1197,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
     {
         return "Current settings: " +
             $"provider {context.Session.ProviderName}, " +
-            $"model {context.Session.ActiveModelId}, " +
+            $"model {context.Session.ActiveModelId.ToDisplayName()}, " +
             $"profile {context.Session.AgentProfile.Name}, " +
             $"thinking {ThinkingModeOptions.Format(context.Session.ThinkingMode)}, " +
             $"reasoning {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.";

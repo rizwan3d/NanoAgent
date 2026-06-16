@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Services;
 
@@ -75,17 +76,17 @@ internal sealed class InteractiveModelSelectionService : IInteractiveModelSelect
         {
             ModelActivationStatus.Switched =>
                 ReplCommandResult.Continue(
-                    $"Active model switched to '{result.ResolvedModelId}'."),
+                    $"Active model switched to '{result.ResolvedModelId.ToDisplayName()}'."),
             ModelActivationStatus.AlreadyActive =>
                 ReplCommandResult.Continue(
-                    $"Already using '{result.ResolvedModelId}'."),
+                    $"Already using '{result.ResolvedModelId.ToDisplayName()}'."),
             ModelActivationStatus.Ambiguous =>
                 ReplCommandResult.Continue(
-                    "Selected model is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds),
+                    "Selected model is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds.Select(id => id.ToDisplayName())),
                     ReplFeedbackKind.Error),
             _ =>
                 ReplCommandResult.Continue(
-                    $"Selected model '{selectedModelId}' is not available.",
+                    $"Selected model '{selectedModelId.ToDisplayName()}' is not available.",
                     ReplFeedbackKind.Error)
         };
     }
@@ -95,7 +96,7 @@ internal sealed class InteractiveModelSelectionService : IInteractiveModelSelect
     {
         return session.AvailableModelIds
             .Select(modelId => new SelectionPromptOption<string>(
-                modelId,
+                modelId.ToDisplayName(),
                 modelId,
                 string.Equals(modelId, session.ActiveModelId, StringComparison.Ordinal)
                     ? "Currently active."

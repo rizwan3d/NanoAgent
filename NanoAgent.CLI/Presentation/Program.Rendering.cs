@@ -1,3 +1,4 @@
+using NanoAgent.Application.Utilities;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using System.Text;
@@ -88,7 +89,7 @@ public static partial class Program
         string status = state.ActiveModal is null
             ? (state.IsBusy || state.IsStreaming ? "Busy" : "Ready")
             : "Action required";
-        string model = string.IsNullOrWhiteSpace(state.ActiveModelId) ? "n/a" : state.ActiveModelId;
+        string model = string.IsNullOrWhiteSpace(state.ActiveModelId) ? "n/a" : state.ActiveModelId.ToDisplayName();
         string lastMessage = state.Messages.Count == 0
             ? "No messages yet."
             : state.Messages[^1].Text;
@@ -227,7 +228,8 @@ public static partial class Program
 
     private static string BuildInputPanelHeaderMarkup(AppState state)
     {
-        string model = state.ActiveModelId ?? "n/a";
+        string rawModel = state.ActiveModelId ?? "n/a";
+        string modelName = rawModel.ToDisplayName();
         string completionNote = BuildHeaderCompletionNote(state);
         const string plainPrefix = "Input -- Model: ";
         const int minimumNoteLength = 16;
@@ -237,10 +239,35 @@ public static partial class Program
             3,
             headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
 
-        string displayModel = TruncateFromRight(model, modelBudget);
+        string plainModel = modelName;
+        string markupModel = Markup.Escape(modelName);
+        if (!string.IsNullOrWhiteSpace(state.ProviderName))
+        {
+            string plainProvider = $" ({state.ProviderName})";
+            string markupProvider = $" [grey]{Markup.Escape(state.ProviderName)}[/]";
+            if (plainModel.Length + plainProvider.Length <= modelBudget)
+            {
+                plainModel += plainProvider;
+                markupModel += markupProvider;
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ReasoningEffort))
+        {
+            string plainEffort = $" ·{state.ReasoningEffort}";
+            string markupEffort = $" ·[green]{Markup.Escape(state.ReasoningEffort)}[/]";
+            if (plainModel.Length + plainEffort.Length <= modelBudget)
+            {
+                plainModel += plainEffort;
+                markupModel += markupEffort;
+            }
+        }
+
+        string displayPlainModel = TruncateFromRight(plainModel, modelBudget);
+        string displayMarkupModel = TruncateFromRight(markupModel, modelBudget);
         int noteBudget = headerBudget -
             plainPrefix.Length -
-            displayModel.Length -
+            displayPlainModel.Length -
             minimumSeparatorLength -
             2;
         string displayCompletionNote = noteBudget >= minimumNoteLength
@@ -251,10 +278,10 @@ public static partial class Program
             : " " +
                 $"{new string('─', Math.Max(
                     minimumSeparatorLength,
-                    headerBudget - plainPrefix.Length - displayModel.Length - displayCompletionNote.Length - 2))}" +
+                    headerBudget - plainPrefix.Length - displayPlainModel.Length - displayCompletionNote.Length - 2))}" +
                 $" [grey]{Markup.Escape(displayCompletionNote)}[/]";
 
-        return $"[bold green]Input[/] ── [grey]Model:[/] [aqua]{Markup.Escape(displayModel)}[/]{noteMarkup}";
+        return $"[bold green]Input[/] ── [grey]Model:[/] [aqua]{displayMarkupModel}[/]{noteMarkup}";
     }
 
     private static string BuildMessagesMarkup(AppState state)

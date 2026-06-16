@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Commands;
@@ -56,7 +57,7 @@ internal sealed class ConfigCommandHandler : IReplCommandHandler
             $"Thinking mode: {ThinkingModeOptions.Format(context.Session.ThinkingMode)}\n" +
             $"Reasoning effort: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}\n" +
             $"Thinking output: {thinkingOutputMode}\n" +
-            $"Active model: {context.Session.ActiveModelId}";
+            $"Active model: {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}";
 
         return ReplCommandResult.Continue(message);
     }

@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
 using System.ComponentModel;
 using System.Globalization;
@@ -393,7 +394,7 @@ internal sealed class SessionInfoCommandHandler : IReplCommandHandler
             $"Session: {session.SessionId}\n" +
             $"Resume command: {session.SessionResumeCommand}\n" +
             $"Provider: {session.ProviderName}\n" +
-            $"Model: {session.ActiveModelId}\n" +
+            $"Model: {session.ActiveModelId.ToDisplayNameWithProvider(session.ProviderName)}\n" +
             $"Profile: {session.AgentProfile.Name}\n" +
             $"Thinking: {ThinkingModeOptions.Format(session.ThinkingMode)}\n" +
             $"Reasoning effort: {ReasoningEffortOptions.Format(session.ReasoningEffort)}\n" +
