@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Commands;
@@ -89,7 +90,7 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
             "Provider onboarding complete.\n" +
             $"Saved provider: {onboardingResult.ActiveProviderName ?? context.Session.ProviderName}\n" +
             $"Provider: {context.Session.ProviderName}\n" +
-            $"Active model: {context.Session.ActiveModelId}\n" +
+            $"Active model: {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}\n" +
             $"Available models: {context.Session.AvailableModelIds.Count}\n" +
             "Use the model picker to switch models.");
     }

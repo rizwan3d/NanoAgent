@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Application.Commands;
@@ -165,7 +166,7 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
         return ReplCommandResult.Continue(
             $"Switched provider to '{provider.Name}'.\n" +
             $"Provider: {context.Session.ProviderName}\n" +
-            $"Active model: {context.Session.ActiveModelId}\n" +
+            $"Active model: {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}\n" +
             $"Available models: {context.Session.AvailableModelIds.Count}");
     }
 
@@ -188,7 +189,7 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
                     : "  ";
                 string model = string.IsNullOrWhiteSpace(provider.PreferredModelId)
                     ? "no default model"
-                    : provider.PreferredModelId;
+                    : provider.PreferredModelId.ToDisplayName();
                 return $"{activeMarker}{provider.Name} - {provider.ProviderProfile.ProviderKind.ToDisplayName()} ({model})";
             }));
     }
