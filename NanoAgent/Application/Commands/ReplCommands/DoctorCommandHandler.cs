@@ -406,6 +406,10 @@ internal sealed class DoctorCommandHandler : IReplCommandHandler
             {
                 report.AppendLine("  Budget status unavailable.");
             }
+            else if (!status.Enabled)
+            {
+                report.AppendLine("  Source:             Disabled (no configuration or budget-controls.*.json file)");
+            }
             else
             {
                 report.AppendLine($"  Source:             {status.Source}");

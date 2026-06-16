@@ -9,7 +9,15 @@ public sealed record BudgetControlsSettings(
 {
     public const string CloudSource = "Cloud";
     public const string DefaultLocalPath = ".nanoagent/budget-controls.local.json";
+    public const string DisabledSource = "Disabled";
     public const string LocalSource = "Local";
+
+    /// <summary>
+    /// Glob used to discover workspace budget controls files (for example
+    /// <c>budget-controls.local.json</c>). When such a file exists, budget controls are
+    /// treated as enabled even without explicit configuration.
+    /// </summary>
+    public const string LocalFileSearchPattern = "budget-controls.*.json";
 
     public static BudgetControlsSettings Default =>
         Local(DefaultLocalPath);
