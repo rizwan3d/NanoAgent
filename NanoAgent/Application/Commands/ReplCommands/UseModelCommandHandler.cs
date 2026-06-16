@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Commands;
 
@@ -58,13 +59,13 @@ internal sealed class UseModelCommandHandler : IReplCommandHandler
         {
             ModelActivationStatus.Switched =>
                 ReplCommandResult.Continue(
-                    $"Active model switched to '{result.ResolvedModelId}'."),
+                    $"Active model switched to '{result.ResolvedModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}'."),
             ModelActivationStatus.AlreadyActive =>
                 ReplCommandResult.Continue(
-                    $"Already using '{result.ResolvedModelId}'."),
+                    $"Already using '{result.ResolvedModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}'."),
             ModelActivationStatus.Ambiguous =>
                 ReplCommandResult.Continue(
-                    "Model name is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds),
+                    "Model name is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds.Select(id => id.ToDisplayNameWithProvider(context.Session.ProviderName))),
                     ReplFeedbackKind.Error),
             _ =>
                 ReplCommandResult.Continue(

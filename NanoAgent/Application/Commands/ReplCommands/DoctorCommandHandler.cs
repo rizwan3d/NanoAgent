@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -151,7 +152,7 @@ internal sealed class DoctorCommandHandler : IReplCommandHandler
         report.AppendLine($"  Base URL:           {baseUrl}");
 
         report.AppendLine($"  Active Provider:    {context.Session.ActiveProviderName ?? "(default)"}");
-        report.AppendLine($"  Active Model:       {context.Session.ActiveModelId}");
+        report.AppendLine($"  Active Model:       {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}");
         report.AppendLine($"  Available Models:   {context.Session.AvailableModelIds.Count} total");
 
         int? contextWindow = context.Session.ActiveModelContextWindowTokens;
@@ -163,7 +164,7 @@ internal sealed class DoctorCommandHandler : IReplCommandHandler
             foreach ((string modelId, int window) in context.Session.ModelContextWindowTokens
                          .OrderBy(static kvp => kvp.Key, StringComparer.Ordinal))
             {
-                report.AppendLine($"    - {modelId}: {window:N0} tokens");
+                report.AppendLine($"    - {modelId.ToDisplayName()}: {window:N0} tokens");
             }
         }
         report.AppendLine();

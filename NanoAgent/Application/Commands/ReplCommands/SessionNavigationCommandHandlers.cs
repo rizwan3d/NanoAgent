@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using System.Globalization;
 
 namespace NanoAgent.Application.Commands;
@@ -152,7 +153,7 @@ internal sealed class ResumeCommandHandler : IReplCommandHandler
                             return new SelectionPromptOption<SessionSummary>(
                                 FormatSessionLabel(session, isCurrent),
                                 session,
-                                $"{session.ProviderName} / {session.ActiveModelId}. Updated {SessionCommandSupport.FormatTimestamp(session.UpdatedAtUtc)}.");
+                                $"{session.ProviderName} / {session.ActiveModelId.ToDisplayName()}. Updated {SessionCommandSupport.FormatTimestamp(session.UpdatedAtUtc)}.");
                         })
                         .ToArray(),
                     description,

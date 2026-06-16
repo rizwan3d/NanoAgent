@@ -646,6 +646,7 @@ public static partial class Program
         state.ProviderName = sessionInfo.ProviderName;
         state.ActiveModelId = sessionInfo.ModelId;
         state.ActiveModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;
+        state.ReasoningEffort = sessionInfo.ReasoningEffort;
     }
 
     private static void RenderResumedSection(
