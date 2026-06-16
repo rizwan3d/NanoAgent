@@ -4,6 +4,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Services;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Tests.Application.Commands;
@@ -39,7 +40,8 @@ public sealed class UseModelCommandHandlerTests
             CancellationToken.None);
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
-        result.Message.Should().Be("Active model switched to 'model-b'.");
+        result.Message.Should().Be(
+            $"Active model switched to '{"model-b".ToDisplayNameWithProvider(session.ProviderName)}'.");
         session.ActiveModelId.Should().Be("model-b");
         configurationStore.VerifyAll();
     }
