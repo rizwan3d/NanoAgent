@@ -25,7 +25,7 @@ public sealed class ThinkingCommandHandlerTests
                 new AgentConfiguration(providerProfile, "gpt-5.4", "high", null, "off"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-        ThinkingCommandHandler sut = new(configurationStore.Object);
+        ThinkingCommandHandler sut = new(configurationStore.Object, Mock.Of<ISelectionPrompt>());
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext(
