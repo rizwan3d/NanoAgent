@@ -44,7 +44,10 @@ jobs:
             NanoAgent.Tests/packages.lock.json
 
       - name: Restore
-        run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
+        run: >
+          dotnet restore ${{ env.SOLUTION_FILE }}
+          --locked-mode
+          -p:UseCurrentRuntimeIdentifier=false
 
       - name: Build
         run: dotnet build ${{ env.SOLUTION_FILE }} --configuration ${{ env.CONFIGURATION }} --no-restore
@@ -154,8 +157,8 @@ jobs:
       - name: Restore CLI publish dependencies
         run: >
           dotnet restore ${{ env.CLI_PROJECT }}
-          --runtime ${{ matrix.rid }}
           --locked-mode
+          -p:UseCurrentRuntimeIdentifier=false
 
       - name: Publish CLI test build
         run: >
