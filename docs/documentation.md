@@ -92,6 +92,30 @@ NanoAgent will guide you through provider setup:
 
 In terminal runs, `--provider-auth-key <key>` can supply the provider API key when onboarding asks for it.
 
+If you already know the provider settings you want, you can skip the interactive onboarding prompts by setting `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_THINKING`, and `NANOAGENT_API_KEY` before the first run. NanoAgent treats that as a complete headless setup and saves it as the active provider profile.
+
+PowerShell example:
+
+```powershell
+$env:NANOAGENT_PROVIDER="openrouter"
+$env:NANOAGENT_MODEL="poolside/laguna-m.1:free"
+$env:NANOAGENT_THINKING="on"
+$env:NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
+
+nanoai -p "Say hello in one short line"
+```
+
+Bash example:
+
+```bash
+export NANOAGENT_PROVIDER="openrouter"
+export NANOAGENT_MODEL="poolside/laguna-m.1:free"
+export NANOAGENT_THINKING="on"
+export NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
+
+nanoai -p "Say hello in one short line"
+```
+
 If NanoAgent detects incomplete local provider setup, it asks whether to reconfigure. Choose reconfigure when a previous setup was interrupted or credentials were not saved. If provider validation fails after setup, NanoAgent offers to run onboarding again.
 
 Use `/onboard` in an active desktop or terminal session to re-run provider setup later. You can also use `/setting provider` or the `/setting` picker. The command opens setup-type and provider submenus, supports every provider listed below, and switches the active session to the validated provider and selected default model.

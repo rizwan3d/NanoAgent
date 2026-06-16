@@ -151,6 +151,26 @@ The CLI is distributed only through the release installers above; the tag-based 
 
 On first launch, NanoAgent walks you through provider setup: pick a subscription account, API-key provider, OpenAI-compatible endpoint, or a local provider, then let it discover available models. After that you are ready to work.
 
+If you already know the provider, model, thinking mode, and API key you want, you can preseed them with environment variables before the first run. NanoAgent will use that complete setup without prompting for onboarding and will save it as the active provider profile for later runs.
+
+```powershell
+$env:NANOAGENT_PROVIDER="openrouter"
+$env:NANOAGENT_MODEL="poolside/laguna-m.1:free"
+$env:NANOAGENT_THINKING="on"
+$env:NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
+
+nanoai -p "Say hello in one short line"
+```
+
+```bash
+export NANOAGENT_PROVIDER="openrouter"
+export NANOAGENT_MODEL="poolside/laguna-m.1:free"
+export NANOAGENT_THINKING="on"
+export NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
+
+nanoai -p "Say hello in one short line"
+```
+
 Start an interactive session in your repository:
 
 ```bash
