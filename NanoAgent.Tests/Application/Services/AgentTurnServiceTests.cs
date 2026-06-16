@@ -293,6 +293,85 @@ public sealed class AgentTurnServiceTests
         conversationPipeline.VerifyNoOtherCalls();
     }
 
+    [Fact]
+    public async Task RunTurnAsync_Should_RunDirectShellBackgroundCommandAndShowOutput_When_InputStartsWithDoubleBang()
+    {
+        ReplSessionContext session = CreateSession();
+        RecordingProgressSink progressSink = new();
+        RecordingShellCommandService shellCommandService = new(
+            new ShellCommandExecutionResult(
+                "dotnet build",
+                ".",
+                0,
+                "Build succeeded.",
+                string.Empty));
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        AgentTurnService sut = new(
+            conversationPipeline.Object,
+            new BuiltInAgentProfileResolver(),
+            shellCommandService);
+
+        ConversationTurnResult result = await sut.RunTurnAsync(
+            new AgentTurnRequest(session, "!! dotnet build", progressSink),
+            CancellationToken.None);
+
+        result.Kind.Should().Be(ConversationTurnResultKind.ToolExecution);
+        result.ResponseText.Should().Contain("Shell command (background): dotnet build");
+        result.ResponseText.Should().Contain("Build succeeded.");
+        result.ResponseText.Should().Contain("exit code 0");
+        shellCommandService.BackgroundRequests.Should().ContainSingle();
+        shellCommandService.BackgroundRequests[0].Command.Should().Be("dotnet build");
+        conversationPipeline.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task RunTurnAsync_Should_StreamBackgroundOutputChunks_When_InputStartsWithDoubleBang()
+    {
+        ReplSessionContext session = CreateSession();
+        RecordingProgressSink progressSink = new();
+        RecordingShellCommandService shellCommandService = new(
+            new ShellCommandExecutionResult(
+                "dotnet build",
+                ".",
+                0,
+                "Build succeeded.",
+                string.Empty));
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        AgentTurnService sut = new(
+            conversationPipeline.Object,
+            new BuiltInAgentProfileResolver(),
+            shellCommandService);
+
+        await sut.RunTurnAsync(
+            new AgentTurnRequest(session, "!! dotnet build", progressSink),
+            CancellationToken.None);
+
+        progressSink.Chunks.Should().Contain("Build succeeded.");
+    }
+
+    [Fact]
+    public async Task RunTurnAsync_Should_DetachWithoutStoppingTerminal_When_BackgroundStreamCancelled()
+    {
+        ReplSessionContext session = CreateSession();
+        RecordingProgressSink progressSink = new();
+        using CancellationTokenSource cancellation = new();
+        CancellingBackgroundShellCommandService shellCommandService = new(cancellation);
+        Mock<IConversationPipeline> conversationPipeline = new(MockBehavior.Strict);
+        AgentTurnService sut = new(
+            conversationPipeline.Object,
+            new BuiltInAgentProfileResolver(),
+            shellCommandService);
+
+        ConversationTurnResult result = await sut.RunTurnAsync(
+            new AgentTurnRequest(session, "!! sleep 100", progressSink),
+            cancellation.Token);
+
+        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
+        result.ResponseText.Should().Contain("Detached");
+        result.ResponseText.Should().Contain("terminal-1");
+        shellCommandService.StopCalled.Should().BeFalse();
+    }
+
     private static ReplSessionContext CreateSession(string? workspacePath = null)
     {
         return new ReplSessionContext(
@@ -305,15 +384,26 @@ public sealed class AgentTurnServiceTests
     private sealed class RecordingShellCommandService : IShellCommandService
     {
         private readonly ShellCommandExecutionResult _result;
+        private readonly ShellCommandExecutionResult _backgroundResult;
+        private int _backgroundReadCount;
 
         public RecordingShellCommandService(ShellCommandExecutionResult result)
         {
             _result = result;
+            _backgroundResult = result with
+            {
+                Background = true,
+                TerminalId = "terminal-1",
+                TerminalStatus = "exited",
+                TerminalAction = "read",
+            };
         }
 
         public bool IsPseudoTerminalSupported => false;
 
         public List<ShellCommandExecutionRequest> Requests { get; } = [];
+
+        public List<ShellCommandExecutionRequest> BackgroundRequests { get; } = [];
 
         public Task<ShellCommandExecutionResult> ExecuteAsync(
             ShellCommandExecutionRequest request,
@@ -328,7 +418,18 @@ public sealed class AgentTurnServiceTests
             ShellCommandExecutionRequest request,
             CancellationToken cancellationToken)
         {
-            throw new NotSupportedException();
+            cancellationToken.ThrowIfCancellationRequested();
+            BackgroundRequests.Add(request);
+            return Task.FromResult(new ShellCommandExecutionResult(
+                request.Command,
+                request.WorkingDirectory ?? ".",
+                0,
+                string.Empty,
+                string.Empty,
+                Background: true,
+                TerminalId: "terminal-1",
+                TerminalStatus: "running",
+                TerminalAction: "start"));
         }
 
         public Task<ShellCommandExecutionResult> ReadBackgroundAsync(
@@ -336,7 +437,9 @@ public sealed class AgentTurnServiceTests
             string? sessionId,
             CancellationToken cancellationToken)
         {
-            throw new NotSupportedException();
+            cancellationToken.ThrowIfCancellationRequested();
+            Interlocked.Increment(ref _backgroundReadCount);
+            return Task.FromResult(_backgroundResult);
         }
 
         public Task<ShellCommandExecutionResult> StopBackgroundAsync(
@@ -355,8 +458,105 @@ public sealed class AgentTurnServiceTests
         }
     }
 
+    // Returns a still-running terminal on the first read, then cancels the token so
+    // the poll loop is interrupted - simulating the user pressing Esc to detach.
+    private sealed class CancellingBackgroundShellCommandService : IShellCommandService
+    {
+        private readonly CancellationTokenSource _cancellation;
+
+        public CancellingBackgroundShellCommandService(CancellationTokenSource cancellation)
+        {
+            _cancellation = cancellation;
+        }
+
+        public bool IsPseudoTerminalSupported => false;
+
+        public bool StopCalled { get; private set; }
+
+        public Task<ShellCommandExecutionResult> ExecuteAsync(
+            ShellCommandExecutionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ShellCommandExecutionResult> StartBackgroundAsync(
+            ShellCommandExecutionRequest request,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new ShellCommandExecutionResult(
+                request.Command,
+                request.WorkingDirectory ?? ".",
+                0,
+                string.Empty,
+                string.Empty,
+                Background: true,
+                TerminalId: "terminal-1",
+                TerminalStatus: "running",
+                TerminalAction: "start"));
+        }
+
+        public Task<ShellCommandExecutionResult> ReadBackgroundAsync(
+            string terminalId,
+            string? sessionId,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Trigger cancellation so the next poll-loop delay observes it.
+            _cancellation.Cancel();
+            return Task.FromResult(new ShellCommandExecutionResult(
+                terminalId,
+                ".",
+                0,
+                "partial output",
+                string.Empty,
+                Background: true,
+                TerminalId: terminalId,
+                TerminalStatus: "running",
+                TerminalAction: "read"));
+        }
+
+        public Task<ShellCommandExecutionResult> StopBackgroundAsync(
+            string terminalId,
+            string? sessionId,
+            CancellationToken cancellationToken)
+        {
+            StopCalled = true;
+            return Task.FromResult(new ShellCommandExecutionResult(
+                terminalId,
+                ".",
+                0,
+                string.Empty,
+                string.Empty,
+                Background: true,
+                TerminalId: terminalId,
+                TerminalStatus: "stopped",
+                TerminalAction: "stop"));
+        }
+
+        public Task<IReadOnlyList<BackgroundTerminalInfo>> ListBackgroundAsync(
+            string? sessionId,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
     private sealed class RecordingProgressSink : IConversationProgressSink
     {
+        public List<string> Chunks { get; } = [];
+
+        public Task ReportAssistantMessageChunkAsync(
+            string text,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Chunks.Add(text);
+            return Task.CompletedTask;
+        }
+
         public Task ReportAssistantReasoningAsync(
             string reasoningText,
             CancellationToken cancellationToken)

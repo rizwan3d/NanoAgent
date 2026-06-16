@@ -53,7 +53,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/setting [model|profile|thinking|provider|budget|workspace|permissions|tools|summary] - Open the settings picker or jump to a settings area.\n" +
             "/share - Share the current session as a secret GitHub gist.\n" +
             "/setup-sandbox - Set up Windows sandbox support for restricted shell commands.\n" +
-            "/terminals [stop <terminal-id>|stop all] - List or stop background terminals for this session.\n" +
+            "/terminals [view [<terminal-id>]|stop <terminal-id>|stop all] - List, view (stream), or stop background terminals for this session.\n" +
             "/thinking [on|off] - Show or set simple thinking mode.\n" +
             "/tree - Navigate saved sessions and switch branches.\n" +
             "/update [now] - Check for updates. Use /update now to install without an extra prompt.\n" +
