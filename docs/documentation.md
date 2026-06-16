@@ -737,6 +737,7 @@ Invoke a subagent for one turn:
 ```
 
 Primary agents can also use `agent_delegate` for one focused handoff or `agent_orchestrate` for several coordinated subtasks. Orchestration is useful when multiple read-only investigations can run independently or when implementation tasks can be split into clear file scopes.
+Primary profiles (`build`, `plan`, and `review`) can use the `ask_question` tool to ask you a question and wait for your answer before continuing. It supports multiple-choice options, multi-select, and free-form text, and it works in the interactive terminal, one-shot CLI runs, and ACP editors that support permission or text prompts. In `plan` mode the agent uses it to clarify genuinely ambiguous requirements or choose between approaches before finalizing a plan. In a non-interactive run with no available user, the tool returns gracefully so the agent continues with its best judgment instead of failing the turn.
 
 ### Built-in Profile Prompt Overrides
 
