@@ -1,3 +1,4 @@
+using System.IO;
 using System.Runtime.InteropServices;
 
 namespace NanoAgent.Infrastructure.Configuration;
@@ -28,7 +29,9 @@ public sealed class ConversationOptions
         }
     }
 
-    public static string IdentityDescription => $"You are NanoAgent Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D running on operating system {OperatingSystemDescription} with default shell {DefaultShellName}, an autonomous AI coding agent running on the user's machine.";
+    private static bool IsGitInitialized => Directory.Exists(Path.Combine(Directory.GetCurrentDirectory(), ".git"));
+
+    public static string IdentityDescription => $"You are NanoAgent Developed by: Rizwan3D (Muhammad Rizwan) github.com/Rizwan3D running on operating system {OperatingSystemDescription} with default shell {DefaultShellName}, current date and time: {DateTimeOffset.Now:yyyy-MM-dd HH:mm:ss zzz}, git initialized: {IsGitInitialized}, an autonomous AI coding agent running on the user's machine.";
 
     public static string CreateSystemPrompt(string? systemPrompt)
     {
