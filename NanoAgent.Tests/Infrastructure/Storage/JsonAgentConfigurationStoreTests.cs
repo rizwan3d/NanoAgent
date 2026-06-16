@@ -309,6 +309,7 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             new AgentProviderProfile(ProviderKind.OpenRouter, null),
             "openai/gpt-4o",
             ReasoningEffort: null,
+            ActiveProviderName: "OpenRouter",
             ThinkingMode: "on"));
     }
 
@@ -325,7 +326,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             PreferredModelId: null,
-            ReasoningEffort: "high"));
+            ReasoningEffort: "high",
+            ActiveProviderName: "OpenAI"));
     }
 
     [Fact]
@@ -343,7 +345,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
                 ProviderKind.OpenAiCompatible,
                 "https://provider.example.com/v1"),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "OpenAI-compatible provider (provider.example.com)"));
     }
 
     [Fact]
@@ -358,7 +361,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "Anthropic Claude Pro/Max"));
     }
 
     [Fact]
@@ -373,7 +377,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.GitHubCopilot, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "GitHub Copilot"));
     }
 
     [Fact]
@@ -388,7 +393,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.KiloCode, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "Kilo Code"));
     }
 
     [Fact]
@@ -403,7 +409,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.Ollama, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "Ollama"));
     }
 
     [Fact]
@@ -419,7 +426,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "LM Studio"));
     }
 
     [Fact]
@@ -434,7 +442,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.OllamaCloud, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "Ollama Cloud"));
     }
 
     [Fact]
@@ -449,7 +458,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.Cerebras, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "Cerebras"));
     }
 
     [Fact]
@@ -464,7 +474,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.Groq, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "Groq"));
     }
 
     [Fact]
@@ -479,7 +490,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.DeepSeek, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "DeepSeek"));
     }
 
     [Fact]
@@ -494,7 +506,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
             PreferredModelId: null,
-            ReasoningEffort: null));
+            ReasoningEffort: null,
+            ActiveProviderName: "OpenCode Zen"));
     }
 
     [Fact]
