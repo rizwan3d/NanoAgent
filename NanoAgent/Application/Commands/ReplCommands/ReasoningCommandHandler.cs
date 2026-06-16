@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 
 namespace NanoAgent.Application.Commands;
@@ -6,10 +7,14 @@ namespace NanoAgent.Application.Commands;
 internal sealed class ReasoningCommandHandler : IReplCommandHandler
 {
     private readonly IAgentConfigurationStore _configurationStore;
+    private readonly ISelectionPrompt _selectionPrompt;
 
-    public ReasoningCommandHandler(IAgentConfigurationStore configurationStore)
+    public ReasoningCommandHandler(
+        IAgentConfigurationStore configurationStore,
+        ISelectionPrompt selectionPrompt)
     {
         _configurationStore = configurationStore;
+        _selectionPrompt = selectionPrompt;
     }
 
     public string CommandName => "reasoning";
@@ -25,8 +30,12 @@ internal sealed class ReasoningCommandHandler : IReplCommandHandler
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
 
-        if (string.IsNullOrWhiteSpace(context.ArgumentText) ||
-            string.Equals(context.ArgumentText.Trim(), "show", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(context.ArgumentText))
+        {
+            return await PromptForReasoningAsync(context, cancellationToken);
+        }
+
+        if (string.Equals(context.ArgumentText.Trim(), "show", StringComparison.OrdinalIgnoreCase))
         {
             return ReplCommandResult.Continue(
                 $"Reasoning effort: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}. " +
@@ -48,6 +57,74 @@ internal sealed class ReasoningCommandHandler : IReplCommandHandler
 
         bool effortChanged = context.Session.SetReasoningEffort(normalizedEffort);
         if (!string.Equals(normalizedEffort, ReasoningEffortOptions.None, StringComparison.Ordinal))
+        {
+            context.Session.SetThinkingMode(ThinkingModeOptions.On);
+        }
+
+        await SaveAsync(context.Session, cancellationToken);
+
+        return ReplCommandResult.Continue(
+            effortChanged
+                ? $"Reasoning effort set to {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}."
+                : $"Reasoning effort is already {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.");
+    }
+
+    private async Task<ReplCommandResult> PromptForReasoningAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
+        string selectedEffort;
+        try
+        {
+            var options = new List<SelectionPromptOption<string>>();
+            string? currentEffort = context.Session.ReasoningEffort;
+            int defaultIndex = 0;
+
+            foreach (string value in ReasoningEffortOptions.SupportedValues)
+            {
+                string description = string.Equals(currentEffort, value, StringComparison.Ordinal)
+                    ? "Currently active."
+                    : value switch
+                    {
+                        ReasoningEffortOptions.None => "No reasoning effort.",
+                        ReasoningEffortOptions.Minimal => "Minimal reasoning effort.",
+                        ReasoningEffortOptions.Low => "Low reasoning effort.",
+                        ReasoningEffortOptions.Medium => "Medium reasoning effort.",
+                        ReasoningEffortOptions.High => "High reasoning effort.",
+                        ReasoningEffortOptions.XHigh => "Extra high reasoning effort.",
+                        ReasoningEffortOptions.Max => "Maximum reasoning effort.",
+                        _ => ""
+                    };
+
+                options.Add(new SelectionPromptOption<string>(
+                    ReasoningEffortOptions.Format(value),
+                    value,
+                    description));
+
+                if (string.Equals(currentEffort, value, StringComparison.Ordinal))
+                {
+                    defaultIndex = options.Count - 1;
+                }
+            }
+
+            selectedEffort = await _selectionPrompt.PromptAsync(
+                new SelectionPromptRequest<string>(
+                    "Choose reasoning effort",
+                    options,
+                    "Reasoning effort applies to subsequent prompts. Esc to cancel.",
+                    DefaultIndex: defaultIndex,
+                    AllowCancellation: true),
+                cancellationToken);
+        }
+        catch (PromptCancelledException)
+        {
+            return ReplCommandResult.Continue(
+                "Reasoning selection cancelled.",
+                ReplFeedbackKind.Warning);
+        }
+
+        bool effortChanged = context.Session.SetReasoningEffort(selectedEffort);
+        if (!string.Equals(selectedEffort, ReasoningEffortOptions.None, StringComparison.Ordinal))
         {
             context.Session.SetThinkingMode(ThinkingModeOptions.On);
         }

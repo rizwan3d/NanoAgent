@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 
 namespace NanoAgent.Application.Commands;
@@ -6,10 +7,14 @@ namespace NanoAgent.Application.Commands;
 internal sealed class ThinkingCommandHandler : IReplCommandHandler
 {
     private readonly IAgentConfigurationStore _configurationStore;
+    private readonly ISelectionPrompt _selectionPrompt;
 
-    public ThinkingCommandHandler(IAgentConfigurationStore configurationStore)
+    public ThinkingCommandHandler(
+        IAgentConfigurationStore configurationStore,
+        ISelectionPrompt selectionPrompt)
     {
         _configurationStore = configurationStore;
+        _selectionPrompt = selectionPrompt;
     }
 
     public string CommandName => "thinking";
@@ -27,9 +32,7 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
 
         if (string.IsNullOrWhiteSpace(context.ArgumentText))
         {
-            return ReplCommandResult.Continue(
-                $"Thinking: {ThinkingModeOptions.Format(context.Session.ThinkingMode)}. " +
-                "Use /thinking on or /thinking off.");
+            return await PromptForThinkingAsync(context, cancellationToken);
         }
 
         string requestedMode = context.ArgumentText.Trim();
@@ -46,6 +49,53 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
         }
 
         bool modeChanged = context.Session.SetThinkingMode(normalizedMode);
+        await SaveAsync(context.Session, cancellationToken);
+
+        return ReplCommandResult.Continue(
+            modeChanged
+                ? $"Thinking turned {ThinkingModeOptions.Format(context.Session.ThinkingMode)}."
+                : $"Thinking is already {ThinkingModeOptions.Format(context.Session.ThinkingMode)}.");
+    }
+
+    private async Task<ReplCommandResult> PromptForThinkingAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
+        string selectedMode;
+        try
+        {
+            selectedMode = await _selectionPrompt.PromptAsync(
+                new SelectionPromptRequest<string>(
+                    "Choose thinking mode",
+                    [
+                        new SelectionPromptOption<string>(
+                            "On",
+                            ThinkingModeOptions.On,
+                            string.Equals(context.Session.ThinkingMode, ThinkingModeOptions.On, StringComparison.Ordinal)
+                                ? "Currently active."
+                                : "Use the model's default reasoning effort."),
+                        new SelectionPromptOption<string>(
+                            "Off",
+                            ThinkingModeOptions.Off,
+                            string.Equals(context.Session.ThinkingMode, ThinkingModeOptions.Off, StringComparison.Ordinal)
+                                ? "Currently active."
+                                : "Use lighter responses without extra thinking.")
+                    ],
+                    "Thinking mode applies to subsequent prompts. Esc to cancel.",
+                    DefaultIndex: string.Equals(context.Session.ThinkingMode, ThinkingModeOptions.On, StringComparison.Ordinal)
+                        ? 0
+                        : 1,
+                    AllowCancellation: true),
+                cancellationToken);
+        }
+        catch (PromptCancelledException)
+        {
+            return ReplCommandResult.Continue(
+                "Thinking selection cancelled.",
+                ReplFeedbackKind.Warning);
+        }
+
+        bool modeChanged = context.Session.SetThinkingMode(selectedMode);
         await SaveAsync(context.Session, cancellationToken);
 
         return ReplCommandResult.Continue(
