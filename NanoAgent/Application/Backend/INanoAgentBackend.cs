@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.UI;
 
 namespace NanoAgent.Application.Backend;
@@ -26,4 +27,13 @@ public interface INanoAgentBackend : IAsyncDisposable
         IReadOnlyList<ConversationAttachment> attachments,
         IUiBridge uiBridge,
         CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<BackgroundTerminalInfo>> ListBackgroundTerminalsAsync(
+        CancellationToken cancellationToken)
+        => Task.FromResult<IReadOnlyList<BackgroundTerminalInfo>>([]);
+
+    Task<ShellCommandExecutionResult> ReadBackgroundTerminalAsync(
+        string terminalId,
+        CancellationToken cancellationToken)
+        => throw new NotSupportedException("This backend does not support background terminals.");
 }
