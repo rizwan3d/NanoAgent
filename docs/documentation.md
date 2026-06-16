@@ -92,7 +92,7 @@ NanoAgent will guide you through provider setup:
 
 In terminal runs, `--provider-auth-key <key>` can supply the provider API key when onboarding asks for it.
 
-If you already know the provider settings you want, you can skip the interactive onboarding prompts by setting `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_THINKING`, and `NANOAGENT_API_KEY` before the first run. NanoAgent treats that as a complete headless setup and saves it as the active provider profile.
+If you already know the provider settings you want, you can skip the interactive onboarding prompts by setting `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_THINKING`, optional `NANOAGENT_REASONING`, and `NANOAGENT_API_KEY` before the first run. NanoAgent treats that as a complete headless setup and saves it as the active provider profile.
 
 PowerShell example:
 
@@ -100,6 +100,7 @@ PowerShell example:
 $env:NANOAGENT_PROVIDER="openrouter"
 $env:NANOAGENT_MODEL="poolside/laguna-m.1:free"
 $env:NANOAGENT_THINKING="on"
+$env:NANOAGENT_REASONING="high"
 $env:NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 
 nanoai -p "Say hello in one short line"
@@ -111,6 +112,7 @@ Bash example:
 export NANOAGENT_PROVIDER="openrouter"
 export NANOAGENT_MODEL="poolside/laguna-m.1:free"
 export NANOAGENT_THINKING="on"
+export NANOAGENT_REASONING="high"
 export NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 
 nanoai -p "Say hello in one short line"
