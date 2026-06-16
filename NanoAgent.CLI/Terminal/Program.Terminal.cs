@@ -8,6 +8,8 @@ public static partial class Program
     private const int RightShiftVirtualKey = 0xA1;
     private const int LeftControlVirtualKey = 0xA2;
     private const int RightControlVirtualKey = 0xA3;
+    private const string SetBlackBackgroundSequence = "\u001b]11;rgb:0000/0000/0000\u001b\\";
+    private const string ResetBackgroundSequence = "\u001b]111\u001b\\";
 
     private static void EnableTerminalWheelScrolling()
     {
@@ -23,6 +25,7 @@ public static partial class Program
 
         Console.Write(DisableMouseTrackingSequence);
         Console.Write(EnableAlternateScreenSequence);
+        Console.Write(SetBlackBackgroundSequence);
         Console.Write(EnableBracketedPasteSequence);
         Console.Write(EnableWheelScrollingSequence);
     }
@@ -31,6 +34,7 @@ public static partial class Program
     {
         if (!Console.IsOutputRedirected)
         {
+            Console.Write(ResetBackgroundSequence);
             Console.Write(DisableWheelScrollingSequence);
             Console.Write(DisableBracketedPasteSequence);
             Console.Write(DisableMouseTrackingSequence);
