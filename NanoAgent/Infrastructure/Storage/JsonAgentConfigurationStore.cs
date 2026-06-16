@@ -12,6 +12,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
     private const string ModelEnvironmentVariableName = "NANOAGENT_MODEL";
     private const string ProviderEnvironmentVariableName = "NANOAGENT_PROVIDER";
     private const string ThinkingEnvironmentVariableName = "NANOAGENT_THINKING";
+    private const string ReasoningEnvironmentVariableName = "NANOAGENT_REASONING";
 
     private readonly IUserDataPathProvider _pathProvider;
 
@@ -451,7 +452,8 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
         return new AgentConfiguration(
             profile,
             ModelIdMatcher.NormalizeOrNull(Environment.GetEnvironmentVariable(ModelEnvironmentVariableName)),
-            ReasoningEffort: null,
+            ReasoningEffort: ReasoningEffortOptions.NormalizeOrThrow(
+                Environment.GetEnvironmentVariable(ReasoningEnvironmentVariableName)),
             ThinkingMode: ThinkingModeOptions.NormalizeOrNull(
                 Environment.GetEnvironmentVariable(ThinkingEnvironmentVariableName)));
     }
