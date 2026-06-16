@@ -17,9 +17,9 @@ internal sealed class TerminalsCommandHandler : IReplCommandHandler
 
     public string CommandName => "terminals";
 
-    public string Description => "List or stop background terminals for the current session.";
+    public string Description => "List, view, or stop background terminals for the current session.";
 
-    public string Usage => "/terminals [stop <terminal-id>|stop all]";
+    public string Usage => "/terminals [view [<terminal-id>]|stop <terminal-id>|stop all]";
 
     public async Task<ReplCommandResult> ExecuteAsync(
         ReplCommandContext context,
@@ -33,6 +33,15 @@ internal sealed class TerminalsCommandHandler : IReplCommandHandler
             return ReplCommandResult.Continue(await FormatListAsync(context, cancellationToken));
         }
 
+        if (string.Equals(context.Arguments[0], "view", StringComparison.OrdinalIgnoreCase))
+        {
+            return context.Arguments.Count >= 2
+                ? await ViewOneAsync(context, context.Arguments[1], cancellationToken)
+                : ReplCommandResult.Continue(
+                    "Usage: /terminals view <terminal-id>",
+                    ReplFeedbackKind.Error);
+        }
+
         if (context.Arguments.Count >= 2 &&
             string.Equals(context.Arguments[0], "stop", StringComparison.OrdinalIgnoreCase))
         {
@@ -44,6 +53,46 @@ internal sealed class TerminalsCommandHandler : IReplCommandHandler
         return ReplCommandResult.Continue(
             $"Usage: {Usage}",
             ReplFeedbackKind.Error);
+    }
+
+    private async Task<ReplCommandResult> ViewOneAsync(
+        ReplCommandContext context,
+        string terminalId,
+        CancellationToken cancellationToken)
+    {
+        string normalizedTerminalId = terminalId.Trim();
+        ShellCommandExecutionResult result = await _shellCommandService.ReadBackgroundAsync(
+            normalizedTerminalId,
+            context.Session.SessionId,
+            cancellationToken);
+
+        if (string.Equals(result.TerminalStatus, "not_found", StringComparison.Ordinal))
+        {
+            return ReplCommandResult.Continue(result.StandardError, ReplFeedbackKind.Error);
+        }
+
+        List<string> lines =
+        [
+            $"Background terminal {normalizedTerminalId}: {result.TerminalStatus}, exit {result.ExitCode}."
+        ];
+
+        if (!string.IsNullOrEmpty(result.StandardOutput))
+        {
+            lines.Add(SuspiciousUnicodeText.RenderVisible(result.StandardOutput));
+        }
+
+        if (!string.IsNullOrEmpty(result.StandardError))
+        {
+            lines.Add("STDERR:");
+            lines.Add(SuspiciousUnicodeText.RenderVisible(result.StandardError));
+        }
+
+        if (lines.Count == 1)
+        {
+            lines.Add("(no new output since the last read)");
+        }
+
+        return ReplCommandResult.Continue(string.Join(Environment.NewLine, lines));
     }
 
     private async Task<string> FormatListAsync(

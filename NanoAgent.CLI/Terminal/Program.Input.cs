@@ -160,14 +160,18 @@ public static partial class Program
             return false;
         }
 
-        // If a backend operation is in flight (non-streaming busy), cancel the token
-        if (state.IsBusy && !state.IsStreaming)
+        // If the backend operation is still running, cancel its token. This covers
+        // both a plain in-flight turn and a !! background stream that streams output
+        // live while the backend poll loop is still active: the backend observes the
+        // cancellation and finishes gracefully (detaching from the terminal, which
+        // keeps running).
+        if (state.ActiveOperation is { IsCompleted: false })
         {
             state.CancelTurn();
             return true;
         }
 
-        // If streaming, the backend task is already done - clean up UI directly
+        // Otherwise we are only draining a finished stream - clean up UI directly.
         if (state.IsStreaming)
         {
             state.IsStreaming = false;
@@ -180,6 +184,14 @@ public static partial class Program
             state.ActivityText = state.IsReady ? "Ready" : "Idle";
             state.ResetTurnCancellation();
             state.AddSystemMessage("Turn cancelled.");
+            return true;
+        }
+
+        // Busy but the backend task already settled and the UI has not caught up
+        // yet; cancel the token defensively so Esc is never a no-op while busy.
+        if (state.IsBusy)
+        {
+            state.CancelTurn();
             return true;
         }
 
