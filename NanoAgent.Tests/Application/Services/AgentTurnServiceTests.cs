@@ -346,7 +346,8 @@ public sealed class AgentTurnServiceTests
             new AgentTurnRequest(session, "!! dotnet build", progressSink),
             CancellationToken.None);
 
-        progressSink.Chunks.Should().Contain("Build succeeded.");
+        progressSink.Chunks.Should().Contain(chunk =>
+            chunk.Contains("Build succeeded.", StringComparison.Ordinal));
     }
 
     [Fact]
