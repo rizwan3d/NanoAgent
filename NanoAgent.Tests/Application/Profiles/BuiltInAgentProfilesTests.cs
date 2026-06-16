@@ -96,4 +96,16 @@ public sealed class BuiltInAgentProfilesTests
     {
         BuiltInAgentProfiles.Explore.EnabledTools.Should().NotContain("apply_patch");
     }
+
+    [Fact]
+    public void PlanProfile_Should_Have_AskQuestion_Enabled()
+    {
+        BuiltInAgentProfiles.Plan.EnabledTools.Should().Contain("ask_question");
+    }
+
+    [Fact]
+    public void BuildProfile_Should_Have_AskQuestion_Enabled()
+    {
+        BuiltInAgentProfiles.Build.EnabledTools.Should().Contain("ask_question");
+    }
 }

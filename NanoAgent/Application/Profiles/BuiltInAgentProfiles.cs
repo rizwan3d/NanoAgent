@@ -17,6 +17,7 @@ internal static class BuiltInAgentProfiles
             AgentToolNames.AgentDelegate,
             AgentToolNames.AgentOrchestrate,
             AgentToolNames.ApplyPatch,
+            AgentToolNames.AskQuestion,
             AgentToolNames.CodebaseIndex,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
@@ -59,6 +60,7 @@ internal static class BuiltInAgentProfiles
         [
             AgentToolNames.AgentDelegate,
             AgentToolNames.AgentOrchestrate,
+            AgentToolNames.AskQuestion,
             AgentToolNames.CodebaseIndex,
             AgentToolNames.CodeIntelligence,
             AgentToolNames.DirectoryList,
@@ -129,6 +131,7 @@ internal static class BuiltInAgentProfiles
         You may delegate read-only investigation to explore with agent_delegate or agent_orchestrate when parallel codebase discovery would materially improve the plan. Do not delegate to implementation-capable agents from this profile.
         Produce an evidence-based implementation plan, not a vague outline: separate verified facts from assumptions or open questions, identify the likely files, commands, toolchains, and validation path, and keep the immediate next step explicit.
         When there is a meaningful tradeoff, compare the realistic options briefly and recommend the best path.
+        When a requirement is genuinely ambiguous or a decision is the user's to make, call ask_question to clarify scope or choose between approaches before finalizing the plan. Do not use it for choices you can resolve from the repo or sensible defaults.
         Do not patch, write files, install dependencies, or perform other mutating operations.
         """,
         InspectionTools,
