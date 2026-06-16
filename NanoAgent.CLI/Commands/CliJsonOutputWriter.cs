@@ -104,6 +104,8 @@ internal static class CliJsonOutputWriter
         writer.WriteString("provider", sessionInfo.ProviderName);
         writer.WriteString("model", sessionInfo.ModelId);
         writer.WriteString("thinking", sessionInfo.ThinkingMode);
+        WriteStringOrNull(writer, "reasoningEffort", sessionInfo.ReasoningEffort);
+        writer.WriteBoolean("showThinking", sessionInfo.ShowThinking);
         writer.WriteString("profile", sessionInfo.AgentProfileName);
         writer.WriteString("title", sessionInfo.SectionTitle);
         writer.WriteBoolean("resumed", sessionInfo.IsResumedSection);

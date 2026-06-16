@@ -175,11 +175,17 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 $"Using existing provider configuration: {existingProviderName}.",
                 cancellationToken);
 
+            (string? normalizedThinkingMode, string? normalizedReasoningEffort) =
+                ReasoningOptions.NormalizeStoredValues(
+                    existingConfiguration?.ThinkingMode,
+                    existingConfiguration?.ReasoningEffort);
+
             return new OnboardingResult(
                 existingProfile,
                 WasOnboardedDuringCurrentRun: false,
-                ReasoningEffortOptions.NormalizeOrNull(existingConfiguration?.ReasoningEffort),
-                existingConfiguration?.ActiveProviderName);
+                normalizedReasoningEffort,
+                existingConfiguration?.ActiveProviderName,
+                normalizedThinkingMode);
         }
 
         if (existingProfile is not null || !string.IsNullOrWhiteSpace(existingApiKey))

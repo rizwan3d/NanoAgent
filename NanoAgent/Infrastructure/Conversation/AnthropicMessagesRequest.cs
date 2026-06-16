@@ -11,6 +11,8 @@ internal sealed record AnthropicMessagesRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AnthropicContentBlock>? System = null,
     [property: JsonPropertyName("tools")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<AnthropicToolDefinition>? Tools = null,
+    [property: JsonPropertyName("output_config")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AnthropicOutputConfig? OutputConfig = null,
     [property: JsonPropertyName("thinking")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] AnthropicThinking? Thinking = null);
 
@@ -49,7 +51,14 @@ internal sealed record AnthropicToolDefinition(
 
 internal sealed record AnthropicThinking(
     [property: JsonPropertyName("type")] string Type,
-    [property: JsonPropertyName("budget_tokens")] int BudgetTokens);
+    [property: JsonPropertyName("budget_tokens")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? BudgetTokens = null,
+    [property: JsonPropertyName("display")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Display = null);
+
+internal sealed record AnthropicOutputConfig(
+    [property: JsonPropertyName("effort")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Effort = null);
 
 internal sealed record AnthropicMessagesResponse(
     [property: JsonPropertyName("id")] string? Id,

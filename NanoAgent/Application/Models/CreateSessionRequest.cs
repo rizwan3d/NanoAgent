@@ -8,5 +8,6 @@ public sealed record CreateSessionRequest(
     IReadOnlyList<string> AvailableModelIds,
     string? ProfileName = null,
     string? ReasoningEffort = null,
+    string? ThinkingMode = null,
     IReadOnlyDictionary<string, int>? ModelContextWindowTokens = null,
     string? ActiveProviderName = null);

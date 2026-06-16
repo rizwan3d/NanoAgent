@@ -20,11 +20,11 @@ public sealed class InteractiveModelSelectionServiceTests
             providerProfile,
             "model-a",
             ["model-a", "model-b"],
-            reasoningEffort: "on");
+            thinkingMode: "on");
 
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(providerProfile, "model-b", "on"),
+                new AgentConfiguration(providerProfile, "model-b", null, null, "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 

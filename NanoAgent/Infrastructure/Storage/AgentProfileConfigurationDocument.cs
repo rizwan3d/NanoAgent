@@ -17,6 +17,8 @@ internal sealed class AgentProfileConfigurationDocument
 
     public string? ReasoningEffort { get; set; }
 
+    public string? ThinkingMode { get; set; }
+
     public BudgetControlsSettings? BudgetControls { get; set; }
 
     public MemoryProfileDocument? Memory { get; set; }

@@ -37,6 +37,7 @@ public sealed class ReplSessionContext
     private readonly Stack<WorkspaceFileEditTransaction> _undoFileEditTransactions = new();
     private readonly List<PermissionRule> _permissionOverrides = [];
     private SessionContext _sessionContext = SessionContext.Empty;
+    private ReasoningOptions _reasoningOptions = ReasoningOptions.Create();
 
     public ReplSessionContext(
         AgentProviderProfile providerProfile,
@@ -44,6 +45,7 @@ public sealed class ReplSessionContext
         IReadOnlyList<string> availableModelIds,
         IAgentProfile? agentProfile = null,
         string? reasoningEffort = null,
+        string? thinkingMode = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
         string? activeProviderName = null,
@@ -56,6 +58,7 @@ public sealed class ReplSessionContext
             availableModelIds,
             agentProfile: agentProfile,
             reasoningEffort: reasoningEffort,
+            thinkingMode: thinkingMode,
             workspacePath: workspacePath,
             modelContextWindowTokens: modelContextWindowTokens,
             activeProviderName: activeProviderName,
@@ -79,6 +82,7 @@ public sealed class ReplSessionContext
         bool isResumedSection = false,
         IAgentProfile? agentProfile = null,
         string? reasoningEffort = null,
+        string? thinkingMode = null,
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
@@ -123,7 +127,9 @@ public sealed class ReplSessionContext
         }
 
         ActiveModelId = normalizedActiveModelId;
-        ReasoningEffort = ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
+        _reasoningOptions = ReasoningOptions.Create(
+            thinkingMode,
+            reasoningEffort);
         WorkspacePath = NormalizeWorkspacePath(workspacePath);
         ParentSessionId = NormalizeOptionalSessionId(parentSessionId);
         SectionId = NormalizeSectionId(sectionId);
@@ -176,7 +182,13 @@ public sealed class ReplSessionContext
             ? contextWindowTokens
             : null;
 
-    public string? ReasoningEffort { get; private set; }
+    public ReasoningOptions Reasoning => _reasoningOptions;
+
+    public string ThinkingMode => _reasoningOptions.ThinkingMode;
+
+    public bool ShowThinking => _reasoningOptions.ShowThinking;
+
+    public string? ReasoningEffort => _reasoningOptions.ReasoningEffort;
 
     public bool HasGeneratedSectionTitle =>
         !string.Equals(SectionTitle, DefaultSectionTitle, StringComparison.Ordinal);
@@ -446,13 +458,34 @@ public sealed class ReplSessionContext
 
     public bool SetReasoningEffort(string? reasoningEffort)
     {
+        string? legacyThinkingMode = ReasoningEffortOptions.TryNormalizeLegacyThinkingMode(reasoningEffort);
+        if (legacyThinkingMode is not null)
+        {
+            bool thinkingChanged = SetThinkingMode(legacyThinkingMode);
+            bool effortChanged = SetReasoningEffort(null);
+            return thinkingChanged || effortChanged;
+        }
+
         string? normalizedReasoningEffort = ReasoningEffortOptions.NormalizeOrThrow(reasoningEffort);
         if (string.Equals(ReasoningEffort, normalizedReasoningEffort, StringComparison.Ordinal))
         {
             return false;
         }
 
-        ReasoningEffort = normalizedReasoningEffort;
+        _reasoningOptions = _reasoningOptions.WithReasoningEffort(normalizedReasoningEffort);
+        IsPersistedStateDirty = true;
+        return true;
+    }
+
+    public bool SetThinkingMode(string? thinkingMode)
+    {
+        string normalizedThinkingMode = ThinkingModeOptions.Format(thinkingMode);
+        if (string.Equals(ThinkingMode, normalizedThinkingMode, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _reasoningOptions = _reasoningOptions.WithThinkingMode(normalizedThinkingMode);
         IsPersistedStateDirty = true;
         return true;
     }
@@ -472,7 +505,7 @@ public sealed class ReplSessionContext
 
     public bool ClearReasoningEffort()
     {
-        return SetReasoningEffort(ReasoningEffortOptions.Off);
+        return SetReasoningEffort(null);
     }
 
     public string ResolvePathFromWorkingDirectory(string? requestedPath)
@@ -818,6 +851,7 @@ public sealed class ReplSessionContext
             PendingExecutionPlan,
             AgentProfile.Name,
             ReasoningEffort,
+            ThinkingMode,
             SessionState,
             WorkspacePath,
             _modelContextWindowTokens,

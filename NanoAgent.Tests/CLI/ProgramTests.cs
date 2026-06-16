@@ -53,6 +53,8 @@ public sealed class ProgramTests
             ActiveModelContextWindowTokens: 1234,
             AvailableModelIds: [],
             ThinkingMode: "default",
+            ReasoningEffort: null,
+            ShowThinking: false,
             AgentProfileName: "agent",
             SectionTitle: "title",
             IsResumedSection: false,

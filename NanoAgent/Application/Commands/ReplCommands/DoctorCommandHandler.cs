@@ -175,7 +175,8 @@ internal sealed class DoctorCommandHandler : IReplCommandHandler
         report.AppendLine($"  Active Profile:     {context.Session.AgentProfile.Name}");
         report.AppendLine($"  Profile Mode:       {context.Session.AgentProfile.Mode}");
         report.AppendLine($"  Profile Description: {context.Session.AgentProfile.Description}");
-        report.AppendLine($"  Thinking:           {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}");
+        report.AppendLine($"  Thinking:           {ThinkingModeOptions.Format(context.Session.ThinkingMode)}");
+        report.AppendLine($"  Reasoning effort:   {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}");
         report.AppendLine();
     }
 

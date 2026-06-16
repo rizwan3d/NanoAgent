@@ -36,7 +36,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.GoogleAiStudio, null),
             "gemini-2.5-flash",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -52,7 +53,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.Anthropic, null),
             "claude-sonnet-4-6",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -68,7 +70,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, null),
             "claude-sonnet-4-6",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -84,7 +87,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.GitHubCopilot, null),
             "gpt-5",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -100,7 +104,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.OpenRouter, null),
             "openai/gpt-4o",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -116,7 +121,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.KiloCode, null),
             "kilo-auto/free",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -132,7 +138,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.Ollama, null),
             "llama3.2",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -148,7 +155,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.LmStudio, "http://127.0.0.1:4321/v1"),
             "qwen3-8b",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -164,7 +172,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.OllamaCloud, null),
             "gpt-oss:20b",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -180,7 +189,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.Cerebras, null),
             "llama3.1-8b",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -196,7 +206,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.Groq, null),
             "llama-3.3-70b-versatile",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -212,7 +223,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
             "qwen3.6-plus",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
@@ -230,15 +242,17 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             new AgentConfiguration(
                 new AgentProviderProfile(ProviderKind.OpenAi, null),
                 "gpt-5.4",
-                "on",
-                "OpenAI"),
+                ReasoningEffort: null,
+                ActiveProviderName: "OpenAI",
+                ThinkingMode: "on"),
             CancellationToken.None);
         await sut.SaveAsync(
             new AgentConfiguration(
                 new AgentProviderProfile(ProviderKind.Anthropic, null),
                 "claude-sonnet-4-6",
-                "off",
-                "Anthropic"),
+                ReasoningEffort: null,
+                ActiveProviderName: "Anthropic",
+                ThinkingMode: "off"),
             CancellationToken.None);
 
         IReadOnlyList<SavedProviderConfiguration> providers =
@@ -253,8 +267,9 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.Anthropic, null),
             "claude-sonnet-4-6",
-            "off",
-            "Anthropic"));
+            ReasoningEffort: null,
+            ActiveProviderName: "Anthropic",
+            ThinkingMode: "off"));
 
         await sut.SetActiveProviderAsync("OpenAI", CancellationToken.None);
 
@@ -262,8 +277,9 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5.4",
-            "off",
-            "OpenAI"));
+            ReasoningEffort: null,
+            ActiveProviderName: "OpenAI",
+            ThinkingMode: "off"));
     }
 
     [Fact]
@@ -291,7 +307,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         loadedConfiguration.Should().Be(new AgentConfiguration(
             new AgentProviderProfile(ProviderKind.OpenRouter, null),
             "openai/gpt-4o",
-            "on"));
+            ReasoningEffort: null,
+            ThinkingMode: "on"));
     }
 
     [Fact]
@@ -493,7 +510,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5.4",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
 
@@ -531,7 +549,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration configuration = new(
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5.4",
-            "on");
+            ReasoningEffort: null,
+            ThinkingMode: "on");
 
         await sut.SaveAsync(configuration, CancellationToken.None);
 
@@ -618,7 +637,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
         AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
 
         loadedConfiguration.Should().NotBeNull();
-        loadedConfiguration!.ReasoningEffort.Should().BeNull();
+        loadedConfiguration!.ReasoningEffort.Should().Be("high");
+        loadedConfiguration.ThinkingMode.Should().BeNull();
     }
 
     [Fact]

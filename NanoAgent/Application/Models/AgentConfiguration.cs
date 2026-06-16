@@ -6,4 +6,5 @@ public sealed record AgentConfiguration(
     AgentProviderProfile ProviderProfile,
     string? PreferredModelId,
     string? ReasoningEffort = null,
-    string? ActiveProviderName = null);
+    string? ActiveProviderName = null,
+    string? ThinkingMode = null);

@@ -39,6 +39,7 @@ internal sealed class NewSessionCommandHandler : IReplCommandHandler
                 current.AvailableModelIds,
                 current.AgentProfileName,
                 current.ReasoningEffort,
+                current.ThinkingMode,
                 current.ModelContextWindowTokens,
                 current.ActiveProviderName),
             cancellationToken);
