@@ -144,6 +144,7 @@ Use sections for separate tasks:
 Type a prompt and let NanoAgent inspect, plan, edit, run commands, or ask for approval depending on the active profile and permissions.
 Type `/` in the desktop prompt to open command suggestions. Use Up/Down and Enter to choose a command, or Shift+Enter for multiline input.
 Start input with `!` to run the rest as a local shell command directly, for example `!dotnet test`. Direct shell input is treated as user-entered terminal work and does not ask the agent for a tool approval.
+Start input with `!!` to run the rest as a background terminal whose output streams live, for example `!!dotnet watch`. Manage these background terminals with `/terminals`.
 
 ### Controls
 
