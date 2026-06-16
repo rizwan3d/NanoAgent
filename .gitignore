@@ -368,6 +368,7 @@ FodyWeavers.xsd
 .nanoagent/sessions/
 .nanoagent/tmp/
 .nanoagent/temp/
+scripts/docker/*.env
 
 # JetBrains plugin build output
 NanoAgent.JetBrains/build/

@@ -1,0 +1,38 @@
+FROM mcr.microsoft.com/dotnet/sdk:10.0.103
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DOTNET_NOLOGO=1 \
+    NANOAGENT_CONTAINER_WORKSPACE=/workspace \
+    NANOAGENT_CONTAINER_HOME=/var/nanoagent-home \
+    HOME=/var/nanoagent-home \
+    DOTNET_CLI_HOME=/var/nanoagent-home \
+    NUGET_PACKAGES=/var/nanoagent-home/.nuget/packages \
+    NUGET_HTTP_CACHE_PATH=/var/nanoagent-home/.local/share/NuGet/http-cache
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        bash \
+        ca-certificates \
+        curl \
+        dbus \
+        dbus-x11 \
+        git \
+        gnome-keyring \
+        libsecret-1-0 \
+        libsecret-tools \
+        procps \
+        ripgrep \
+    && dbus-uuidgen > /etc/machine-id \
+    && mkdir -p /var/lib/dbus \
+    && mkdir -p /var/nanoagent-home/.nuget/packages /var/nanoagent-home/.local/share/NuGet/http-cache \
+    && cp /etc/machine-id /var/lib/dbus/machine-id \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY . .
+
+RUN chmod +x /workspace/scripts/docker/nanoai-ubuntu-debug.sh \
+    && dotnet restore NanoAgent.CrossPlatform.slnx
+
+ENTRYPOINT ["/workspace/scripts/docker/nanoai-ubuntu-debug.sh"]

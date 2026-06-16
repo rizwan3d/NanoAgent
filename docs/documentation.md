@@ -69,7 +69,7 @@ The installers show step status and download progress when run in an interactive
 
 Restart your terminal if `nanoai` is not found immediately after installation.
 
-The release workflows also pack the `NanoAgent` library and publish it to NuGet.org for every `v*` tag release. The CLI is distributed only as a release installer, not as a NuGet package.
+The release workflows also pack the `NanoAgent` library and publish it to NuGet.org for every `v*` tag release. For pre-release verification, `scripts/install-test.ps1` and `scripts/install-test.sh` install the latest successful CI test-build artifact with a GitHub token that has Actions read access. The CLI is not distributed as a NuGet package.
 
 The CLI install scripts verify the archive checksum against `SHA256SUMS`, or the SHA256 digest from GitHub release metadata, before extraction. Checksum verification is mandatory â€” installation fails if the checksum cannot be validated.
 

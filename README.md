@@ -1,3 +1,12 @@
+add templets system 
+Add Thems
+Syntex color higlihgt 
+add ``` formater for MD
+
+[Error] Provider setup could not be completed: Unable to clear the secret in Linux Secret Service. secret-tool: Cannot autolaunch D-Bus without X11 $DISPLAY
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/docker/run-nanoai-ubuntu-debug.ps1
+
 <p align="center">
   <img src=".github/nano.gif" alt="NanoAgent" width="800">
 </p>
@@ -146,6 +155,22 @@ nanoai
 ```
 
 The CLI is distributed only through the release installers above; the tag-based release workflows publish just the `NanoAgent` library to NuGet.org.
+
+For the latest CI test build instead of the latest release:
+
+Linux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install-test.sh | bash
+```
+
+Windows PowerShell:
+
+```powershell
+irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install-test.ps1 | iex
+```
+
+The test-build installers download the newest successful `ci.yml` push build from `master`. Because GitHub Actions artifacts are access-controlled, set `NANOAGENT_GITHUB_TOKEN`, `GITHUB_TOKEN`, or `GH_TOKEN` first, or sign in with `gh auth login`.
 
 ## Quick Start
 

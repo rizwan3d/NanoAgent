@@ -1,7 +1,12 @@
 {
   "profiles": {
     "NanoAgent.CLI": {
-      "commandName": "Project"
+      "commandName": "Project",
+      "workingDirectory": "H:\\Download\\Zes"
+    },
+    "WSL": {
+      "commandName": "WSL2",
+      "distributionName": ""
     }
   }
 }
