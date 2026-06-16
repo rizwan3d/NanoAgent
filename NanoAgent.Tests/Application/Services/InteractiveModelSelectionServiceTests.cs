@@ -4,6 +4,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Services;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Tests.Application.Services;
@@ -36,12 +37,15 @@ public sealed class InteractiveModelSelectionServiceTests
         ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
-        result.Message.Should().Contain("model-b");
+        result.Message.Should().Be($"Active model switched to '{"model-b".ToDisplayName()}'.");
         session.ActiveModelId.Should().Be("model-b");
 
         SelectionPromptRequest<string> request = selectionPrompt.LastRequest!;
         request.Title.Should().Be("Choose active model");
         request.DefaultIndex.Should().Be(0);
+        request.Options.Select(option => option.Label).Should().Equal(
+            "model-a".ToDisplayName(),
+            "model-b".ToDisplayName());
         request.Options.Select(option => option.Value).Should().Equal("model-a", "model-b");
         request.Options[0].Description.Should().Be("Currently active.");
         configurationStore.VerifyAll();
@@ -64,7 +68,7 @@ public sealed class InteractiveModelSelectionServiceTests
 
         ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
 
-        result.Message.Should().Contain("Already using 'model-a'");
+        result.Message.Should().Be($"Already using '{"model-a".ToDisplayName()}'.");
         session.ActiveModelId.Should().Be("model-a");
         configurationStore.VerifyNoOtherCalls();
     }

@@ -311,7 +311,9 @@ public sealed class SettingCommandHandlerTests
             }
 
             SelectionPromptOption<T> option = request.Options.Single(candidate =>
-                string.Equals(candidate.Label, label, StringComparison.Ordinal));
+                string.Equals(candidate.Label, label, StringComparison.Ordinal) ||
+                candidate.Value is string stringValue &&
+                string.Equals(stringValue, label, StringComparison.Ordinal));
             return Task.FromResult(option.Value);
         }
     }
