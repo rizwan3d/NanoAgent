@@ -130,6 +130,21 @@ public sealed class AgentRunner : IAsyncDisposable
             cancellationToken);
     }
 
+    public Task<AgentRunResult> SetReasoningAsync(
+        string workingDirectory,
+        string reasoningEffort,
+        string? sectionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(reasoningEffort);
+        return RunWorkspaceCommandAsync(
+            workingDirectory,
+            $"/reasoning {reasoningEffort.Trim()}",
+            $"Reasoning effort: {reasoningEffort.Trim()}",
+            sectionId,
+            cancellationToken);
+    }
+
     public Task<AgentRunResult> SetProfileAsync(
         string workingDirectory,
         string profileName,

@@ -70,11 +70,11 @@ public sealed class SettingCommandHandlerTests
             providerProfile,
             "model-a",
             ["model-a"],
-            reasoningEffort: "off");
+            thinkingMode: "off");
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(providerProfile, "model-a", "on"),
+                new AgentConfiguration(providerProfile, "model-a", null, null, "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -96,7 +96,8 @@ public sealed class SettingCommandHandlerTests
             CancellationToken.None);
 
         result.Message.Should().BeNull();
-        session.ReasoningEffort.Should().Be("on");
+        session.ThinkingMode.Should().Be("on");
+        session.ReasoningEffort.Should().BeNull();
         selectionPrompt.RequestTitles.Should().Equal(
             "NanoAgent settings",
             "Choose thinking mode",

@@ -395,7 +395,8 @@ internal sealed class SessionInfoCommandHandler : IReplCommandHandler
             $"Provider: {session.ProviderName}\n" +
             $"Model: {session.ActiveModelId}\n" +
             $"Profile: {session.AgentProfile.Name}\n" +
-            $"Thinking: {ReasoningEffortOptions.Format(session.ReasoningEffort)}\n" +
+            $"Thinking: {ThinkingModeOptions.Format(session.ThinkingMode)}\n" +
+            $"Reasoning effort: {ReasoningEffortOptions.Format(session.ReasoningEffort)}\n" +
             $"Turns: {turnCount.ToString(CultureInfo.InvariantCulture)}\n" +
             $"Messages: {messageCount.ToString(CultureInfo.InvariantCulture)}\n" +
             $"Tool calls: {toolCallCount.ToString(CultureInfo.InvariantCulture)}\n" +

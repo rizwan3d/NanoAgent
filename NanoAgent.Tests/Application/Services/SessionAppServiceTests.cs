@@ -134,10 +134,11 @@ public sealed class SessionAppServiceTests
                 providerProfile,
                 "gpt-5.4",
                 ["gpt-5.4"],
-                ReasoningEffort: "on"),
+                ThinkingMode: "on"),
             CancellationToken.None);
 
-        result.ReasoningEffort.Should().Be("on");
+        result.ThinkingMode.Should().Be("on");
+        result.ReasoningEffort.Should().BeNull();
         result.IsPersistedStateDirty.Should().BeTrue();
         sectionService.VerifyAll();
     }

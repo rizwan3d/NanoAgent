@@ -320,7 +320,7 @@ public sealed class AgentConversationPipelineTests
     public async Task ProcessAsync_Should_PassThinkingEffortToProviderRequest()
     {
         ReplSessionContext session = CreateSession();
-        session.SetReasoningEffort("on");
+        session.SetThinkingMode("on");
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore
             .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
@@ -375,7 +375,8 @@ public sealed class AgentConversationPipelineTests
             session);
 
         requests.Should().ContainSingle();
-        requests[0].ReasoningEffort.Should().Be("on");
+        requests[0].ThinkingMode.Should().Be("on");
+        requests[0].ReasoningEffort.Should().BeNull();
     }
 
     [Fact]
@@ -1902,6 +1903,7 @@ public sealed class AgentConversationPipelineTests
     public async Task ProcessAsync_Should_ReportAssistantReasoningProgress()
     {
         ReplSessionContext session = CreateSession();
+        session.SetThinkingMode("on");
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore
             .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
@@ -1965,6 +1967,7 @@ public sealed class AgentConversationPipelineTests
     public async Task ProcessAsync_Should_ReportReasoningDetailsText_When_ReasoningContentIsMissing()
     {
         ReplSessionContext session = CreateSession();
+        session.SetThinkingMode("on");
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
         secretStore
             .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))

@@ -28,7 +28,7 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
         if (string.IsNullOrWhiteSpace(context.ArgumentText))
         {
             return ReplCommandResult.Continue(
-                $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}. " +
+                $"Thinking: {ThinkingModeOptions.Format(context.Session.ThinkingMode)}. " +
                 "Use /thinking on or /thinking off.");
         }
 
@@ -36,22 +36,22 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
         string? normalizedMode;
         try
         {
-            normalizedMode = ReasoningEffortOptions.NormalizeOrThrow(requestedMode);
+            normalizedMode = ThinkingModeOptions.NormalizeOrThrow(requestedMode);
         }
         catch (ArgumentException)
         {
             return ReplCommandResult.Continue(
-                $"Unsupported thinking mode '{requestedMode}'. Supported values: {ReasoningEffortOptions.SupportedValuesText}.",
+                $"Unsupported thinking mode '{requestedMode}'. Supported values: {ThinkingModeOptions.SupportedValuesText}.",
                 ReplFeedbackKind.Error);
         }
 
-        bool modeChanged = context.Session.SetReasoningEffort(normalizedMode);
+        bool modeChanged = context.Session.SetThinkingMode(normalizedMode);
         await SaveAsync(context.Session, cancellationToken);
 
         return ReplCommandResult.Continue(
             modeChanged
-                ? $"Thinking turned {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}."
-                : $"Thinking is already {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.");
+                ? $"Thinking turned {ThinkingModeOptions.Format(context.Session.ThinkingMode)}."
+                : $"Thinking is already {ThinkingModeOptions.Format(context.Session.ThinkingMode)}.");
     }
 
     private Task SaveAsync(
@@ -63,7 +63,8 @@ internal sealed class ThinkingCommandHandler : IReplCommandHandler
                 session.ProviderProfile,
                 session.ActiveModelId,
                 session.ReasoningEffort,
-                session.ActiveProviderName),
+                session.ActiveProviderName,
+                session.ThinkingMode),
             cancellationToken);
     }
 }

@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using NanoAgent.Domain.Models;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -21,7 +22,7 @@ internal sealed class ConversationProviderRequestPayloadFactory
 
         foreach (ConversationRequestMessage message in request.Messages)
         {
-            messages.Add(MapChatCompletionMessage(message));
+            messages.Add(MapChatCompletionMessage(request.ProviderProfile.ProviderKind, message));
         }
 
         OpenAiChatCompletionToolDefinition[] tools = request.AvailableTools
@@ -33,11 +34,17 @@ internal sealed class ConversationProviderRequestPayloadFactory
                     definition.Schema)))
             .ToArray();
 
+        string? mappedChatCompletionReasoningEffort = MapChatCompletionReasoningEffort(request);
+        ProviderReasoningConfig? reasoning = MapChatCompletionReasoning(request);
+        GeminiThinkingConfig? thinkingConfig = MapGeminiThinkingConfig(request);
+
         return new OpenAiChatCompletionRequest(
             request.ModelId,
             messages,
             tools,
-            ReasoningEffortOptions.ToProviderValue(request.ReasoningEffort));
+            mappedChatCompletionReasoningEffort,
+            reasoning,
+            thinkingConfig);
     }
 
     public OpenAiResponsesRequest BuildResponsesRequest(ConversationProviderRequest request)
@@ -58,7 +65,10 @@ internal sealed class ConversationProviderRequestPayloadFactory
                 Strict: true))
             .ToArray();
 
-        string? reasoningEffort = ReasoningEffortOptions.ToProviderValue(request.ReasoningEffort);
+        ProviderReasoningConfig? reasoning = MapResponsesReasoning(request);
+        IReadOnlyList<string>? include = reasoning is null || !request.ShowThinking
+            ? null
+            : ["reasoning.encrypted_content"];
 
         return new OpenAiResponsesRequest(
             request.ModelId,
@@ -67,8 +77,8 @@ internal sealed class ConversationProviderRequestPayloadFactory
             Store: false,
             string.IsNullOrWhiteSpace(request.SystemPrompt) ? null : request.SystemPrompt.Trim(),
             tools.Length == 0 ? null : tools,
-            reasoningEffort is null ? null : new OpenAiResponsesReasoning(reasoningEffort, "auto"),
-            reasoningEffort is null ? null : ["reasoning.encrypted_content"],
+            reasoning,
+            include,
             ParallelToolCalls: true);
     }
 
@@ -127,9 +137,8 @@ internal sealed class ConversationProviderRequestPayloadFactory
                 definition.Schema))
             .ToArray();
 
-        AnthropicThinking? thinking = ReasoningEffortOptions.ToProviderValue(request.ReasoningEffort) is null
-            ? null
-            : new AnthropicThinking("enabled", BudgetTokens: 1024);
+        AnthropicThinking? thinking = MapAnthropicThinking(request);
+        AnthropicOutputConfig? outputConfig = MapAnthropicOutputConfig(request);
 
         return new AnthropicMessagesRequest(
             request.ModelId,
@@ -137,7 +146,161 @@ internal sealed class ConversationProviderRequestPayloadFactory
             AnthropicClaudeAccountMaxTokens,
             system,
             tools.Length == 0 ? null : tools,
+            outputConfig,
             thinking);
+    }
+
+    private static string? MapChatCompletionReasoningEffort(ConversationProviderRequest request)
+    {
+        if (!ShouldEnableReasoning(request))
+        {
+            return SupportsChatCompletionReasoningEffort(request.ProviderProfile.ProviderKind)
+                ? ReasoningEffortOptions.None
+                : null;
+        }
+
+        if (!SupportsChatCompletionReasoningEffort(request.ProviderProfile.ProviderKind) ||
+            request.ProviderProfile.ProviderKind is ProviderKind.OpenRouter or ProviderKind.GoogleAiStudio)
+        {
+            return null;
+        }
+
+        string effectiveEffort = ResolveEffectiveEffort(request);
+        return request.ProviderProfile.ProviderKind == ProviderKind.DeepSeek
+            ? MapDeepSeekEffort(effectiveEffort)
+            : MapOpenAiCompatibleEffort(effectiveEffort);
+    }
+
+    private static ProviderReasoningConfig? MapChatCompletionReasoning(ConversationProviderRequest request)
+    {
+        if (request.ProviderProfile.ProviderKind != ProviderKind.OpenRouter)
+        {
+            return null;
+        }
+
+        if (!ShouldEnableReasoning(request))
+        {
+            return new ProviderReasoningConfig(Effort: ReasoningEffortOptions.None, Exclude: true);
+        }
+
+        return new ProviderReasoningConfig(
+            Effort: MapOpenAiCompatibleEffort(ResolveEffectiveEffort(request)),
+            Exclude: false);
+    }
+
+    private static ProviderReasoningConfig? MapResponsesReasoning(ConversationProviderRequest request)
+    {
+        if (!ShouldEnableReasoning(request))
+        {
+            return SupportsResponsesReasoning(request.ProviderProfile.ProviderKind)
+                ? new ProviderReasoningConfig(
+                    Effort: ReasoningEffortOptions.None,
+                    Summary: request.ShowThinking ? "auto" : null,
+                    Exclude: request.ProviderProfile.ProviderKind == ProviderKind.OpenRouter ? true : null)
+                : null;
+        }
+
+        if (!SupportsResponsesReasoning(request.ProviderProfile.ProviderKind))
+        {
+            return null;
+        }
+
+        string mappedEffort = request.ProviderProfile.ProviderKind switch
+        {
+            ProviderKind.OpenRouter => ResolveEffectiveEffort(request) == ReasoningEffortOptions.Max
+                ? ReasoningEffortOptions.XHigh
+                : MapOpenAiCompatibleEffort(ResolveEffectiveEffort(request)),
+            _ => MapOpenAiCompatibleEffort(ResolveEffectiveEffort(request))
+        };
+
+        return new ProviderReasoningConfig(
+            Effort: mappedEffort,
+            Summary: request.ShowThinking ? "auto" : null,
+            Exclude: request.ProviderProfile.ProviderKind == ProviderKind.OpenRouter ? false : null);
+    }
+
+    private static GeminiThinkingConfig? MapGeminiThinkingConfig(ConversationProviderRequest request)
+    {
+        if (request.ProviderProfile.ProviderKind != ProviderKind.GoogleAiStudio)
+        {
+            return null;
+        }
+
+        if (!ShouldEnableReasoning(request))
+        {
+            return request.ModelId.Contains("gemini-2.5", StringComparison.OrdinalIgnoreCase)
+                ? new GeminiThinkingConfig(ThinkingBudget: 0)
+                : new GeminiThinkingConfig(ThinkingLevel: "low", IncludeThoughts: false);
+        }
+
+        string effort = ResolveEffectiveEffort(request);
+        if (request.ModelId.Contains("gemini-2.5", StringComparison.OrdinalIgnoreCase))
+        {
+            return new GeminiThinkingConfig(
+                ThinkingBudget: effort switch
+                {
+                    ReasoningEffortOptions.None => 0,
+                    ReasoningEffortOptions.Minimal => 512,
+                    ReasoningEffortOptions.Low => 1024,
+                    ReasoningEffortOptions.Medium => 4096,
+                    ReasoningEffortOptions.High => 8192,
+                    ReasoningEffortOptions.XHigh => 16384,
+                    ReasoningEffortOptions.Max => 16384,
+                    _ => 4096
+                });
+        }
+
+        return new GeminiThinkingConfig(
+            ThinkingLevel: effort switch
+            {
+                ReasoningEffortOptions.None => "low",
+                ReasoningEffortOptions.Minimal => "low",
+                ReasoningEffortOptions.Low => "low",
+                ReasoningEffortOptions.Medium => "medium",
+                _ => "high"
+            },
+            IncludeThoughts: request.ShowThinking);
+    }
+
+    private static AnthropicThinking? MapAnthropicThinking(ConversationProviderRequest request)
+    {
+        if (!ShouldEnableReasoning(request))
+        {
+            return SupportsAnthropicManualThinking(request.ModelId)
+                ? new AnthropicThinking("disabled")
+                : null;
+        }
+
+        if (SupportsAnthropicAdaptiveThinking(request.ModelId))
+        {
+            return new AnthropicThinking("adaptive", Display: request.ShowThinking ? "summarized" : null);
+        }
+
+        if (SupportsAnthropicManualThinking(request.ModelId))
+        {
+            return new AnthropicThinking(
+                "enabled",
+                BudgetTokens: MapAnthropicBudgetTokens(ResolveEffectiveEffort(request)),
+                Display: request.ShowThinking ? "summarized" : null);
+        }
+
+        return null;
+    }
+
+    private static AnthropicOutputConfig? MapAnthropicOutputConfig(ConversationProviderRequest request)
+    {
+        if (!ShouldEnableReasoning(request) || !SupportsAnthropicAdaptiveThinking(request.ModelId))
+        {
+            return null;
+        }
+
+        return new AnthropicOutputConfig(
+            Effort: ResolveEffectiveEffort(request) switch
+            {
+                ReasoningEffortOptions.Minimal => ReasoningEffortOptions.Low,
+                ReasoningEffortOptions.Max => ReasoningEffortOptions.XHigh,
+                _ => ResolveEffectiveEffort(request)
+            });
     }
 
     private static IReadOnlyList<AnthropicContentBlock> CreateAnthropicUserContent(
@@ -328,12 +491,15 @@ internal sealed class ConversationProviderRequestPayloadFactory
         }
     }
 
-    private static OpenAiChatCompletionRequestMessage MapChatCompletionMessage(ConversationRequestMessage message)
+    private static OpenAiChatCompletionRequestMessage MapChatCompletionMessage(
+        ProviderKind providerKind,
+        ConversationRequestMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
 
         JsonElement? reasoningDetails = CreateReasoningDetailsElement(message.ReasoningDetailsJson);
-        string? reasoningContent = reasoningDetails is null
+        string? reasoningContent = reasoningDetails is null &&
+            providerKind != ProviderKind.DeepSeek
             ? message.ReasoningContent
             : null;
 
@@ -363,6 +529,89 @@ internal sealed class ConversationProviderRequestPayloadFactory
             message.ToolCallId,
             ReasoningContent: reasoningContent,
             ReasoningDetails: reasoningDetails);
+    }
+
+    private static bool ShouldEnableReasoning(ConversationProviderRequest request)
+    {
+        ReasoningOptions reasoning = ReasoningOptions.Create(
+            request.ThinkingMode,
+            request.ReasoningEffort);
+
+        return string.Equals(
+            reasoning.ThinkingMode,
+            ThinkingModeOptions.On,
+            StringComparison.Ordinal);
+    }
+
+    private static string ResolveEffectiveEffort(ConversationProviderRequest request)
+    {
+        ReasoningOptions reasoning = ReasoningOptions.Create(
+            request.ThinkingMode,
+            request.ReasoningEffort);
+
+        return reasoning.ReasoningEffort ??
+            ReasoningEffortOptions.Medium;
+    }
+
+    private static bool SupportsChatCompletionReasoningEffort(ProviderKind providerKind)
+    {
+        return providerKind is not ProviderKind.OpenAiChatGptAccount and
+            not ProviderKind.Anthropic and
+            not ProviderKind.AnthropicClaudeAccount and
+            not ProviderKind.OpenCodeZen;
+    }
+
+    private static bool SupportsResponsesReasoning(ProviderKind providerKind)
+    {
+        return providerKind is ProviderKind.OpenAiChatGptAccount or
+            ProviderKind.OpenCodeZen or
+            ProviderKind.OpenRouter;
+    }
+
+    private static bool SupportsAnthropicAdaptiveThinking(string modelId)
+    {
+        return modelId.Contains("sonnet-4", StringComparison.OrdinalIgnoreCase) ||
+            modelId.Contains("opus-4", StringComparison.OrdinalIgnoreCase) ||
+            modelId.Contains("claude-4", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool SupportsAnthropicManualThinking(string modelId)
+    {
+        return modelId.Contains("claude", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string MapOpenAiCompatibleEffort(string reasoningEffort)
+    {
+        return reasoningEffort switch
+        {
+            ReasoningEffortOptions.Max => ReasoningEffortOptions.XHigh,
+            _ => reasoningEffort
+        };
+    }
+
+    private static string MapDeepSeekEffort(string reasoningEffort)
+    {
+        return reasoningEffort switch
+        {
+            ReasoningEffortOptions.None => ReasoningEffortOptions.None,
+            ReasoningEffortOptions.XHigh => ReasoningEffortOptions.Max,
+            ReasoningEffortOptions.Max => ReasoningEffortOptions.Max,
+            _ => ReasoningEffortOptions.High
+        };
+    }
+
+    private static int MapAnthropicBudgetTokens(string reasoningEffort)
+    {
+        return reasoningEffort switch
+        {
+            ReasoningEffortOptions.Minimal => 2_048,
+            ReasoningEffortOptions.Low => 4_096,
+            ReasoningEffortOptions.Medium => 8_192,
+            ReasoningEffortOptions.High => 12_288,
+            ReasoningEffortOptions.XHigh => 16_384,
+            ReasoningEffortOptions.Max => 20_000,
+            _ => 8_192
+        };
     }
 
     private static JsonElement? CreateReasoningDetailsElement(string? reasoningDetailsJson)

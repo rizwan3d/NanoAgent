@@ -39,7 +39,10 @@ internal sealed class SessionAppService : ISessionAppService
             request.ActiveProviderName,
             cancellationToken);
 
-        ApplyReasoningEffort(session, request.ReasoningEffort);
+        ApplyReasoningOptions(
+            session,
+            request.ThinkingMode,
+            request.ReasoningEffort);
         return session;
     }
 
@@ -105,7 +108,10 @@ internal sealed class SessionAppService : ISessionAppService
             profileOverride,
             cancellationToken);
 
-        ApplyReasoningEffort(session, request.ReasoningEffortOverride);
+        ApplyReasoningOptions(
+            session,
+            request.ThinkingModeOverride,
+            request.ReasoningEffortOverride);
         return session;
     }
 
@@ -123,15 +129,19 @@ internal sealed class SessionAppService : ISessionAppService
         return _sectionService.StopAsync(session, cancellationToken);
     }
 
-    private static void ApplyReasoningEffort(
+    private static void ApplyReasoningOptions(
         ReplSessionContext session,
+        string? thinkingMode,
         string? reasoningEffort)
     {
-        if (string.IsNullOrWhiteSpace(reasoningEffort))
+        if (string.IsNullOrWhiteSpace(thinkingMode) &&
+            string.IsNullOrWhiteSpace(reasoningEffort))
         {
             return;
         }
 
-        session.SetReasoningEffort(reasoningEffort);
+        ReasoningOptions normalized = ReasoningOptions.Create(thinkingMode, reasoningEffort);
+        session.SetThinkingMode(normalized.ThinkingMode);
+        session.SetReasoningEffort(normalized.ReasoningEffort);
     }
 }

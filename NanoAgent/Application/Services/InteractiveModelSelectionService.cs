@@ -66,7 +66,8 @@ internal sealed class InteractiveModelSelectionService : IInteractiveModelSelect
                     session.ProviderProfile,
                     result.ResolvedModelId,
                     session.ReasoningEffort,
-                    session.ActiveProviderName),
+                    session.ActiveProviderName,
+                    session.ThinkingMode),
                 cancellationToken);
         }
 

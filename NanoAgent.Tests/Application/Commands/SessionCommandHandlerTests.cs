@@ -129,7 +129,7 @@ public sealed class SessionCommandHandlerTests : IDisposable
     public async Task NewAsync_Should_StartFreshSectionWithoutAccumulatingPreviousContext()
     {
         ReplSessionContext currentSession = CreateSession();
-        currentSession.SetReasoningEffort("on");
+        currentSession.SetThinkingMode("on");
 
         ReplSessionContext nextSession = new(
             currentSession.ProviderProfile,

@@ -286,12 +286,13 @@ nanoai --session <session-guid>
 | --- | --- |
 | `/help` | List commands and usage. |
 | `/budget [status\|local\|cloud]` | Show or configure budget controls. |
-| `/config` | Show provider, session, config path, profile, thinking mode, and model. |
+| `/config` | Show provider, model, profile, thinking mode, reasoning effort, and reasoning-output behavior. |
 | `/models` | Choose the active model with the arrow-key picker. |
 | `/use <model>` | Switch directly to a model id. |
 | `/onboard` | Re-run provider onboarding through setup-type and provider submenus, then switch the active session. |
 | `/profile <name>` | Switch the active profile. |
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
+| `/reasoning [show\|<none\|minimal\|low\|medium\|high\|xhigh\|max>]` | Show or set provider reasoning effort. |
 | `/permissions` | Show permission summary and override guidance. |
 | `/rules` | Show effective permission rules in evaluation order. |
 | `/setting [model\|profile\|thinking\|provider\|budget\|workspace\|permissions\|tools\|summary]` | Open the settings picker or jump directly to a settings area. |
@@ -623,7 +624,62 @@ NanoAgent supports simple thinking mode:
 /thinking off
 ```
 
-When enabled, provider requests include the supported provider reasoning setting where applicable.
+### Reasoning Effort vs Thinking Mode
+
+`thinking` controls whether NanoAgent enables provider reasoning behavior where supported and whether provider-approved reasoning summaries are shown in the UI.
+
+`reasoningEffort` controls how much reasoning work NanoAgent asks the model to spend.
+
+Examples:
+
+- `/thinking on` shows supported reasoning output.
+- `/thinking off` hides reasoning output.
+- `/reasoning high` asks the provider for deeper reasoning.
+- `/reasoning none` disables reasoning where the provider supports disabling it.
+
+Supported normalized reasoning effort values:
+
+```text
+none
+minimal
+low
+medium
+high
+xhigh
+max
+```
+
+If thinking is on and no explicit reasoning effort is set, NanoAgent asks supported providers for their default reasoning depth, which is usually mapped to `medium`.
+
+### Reasoning Controls
+
+Use these commands from the terminal:
+
+```text
+/thinking on
+/thinking off
+/reasoning
+/reasoning show
+/reasoning low
+/reasoning high
+/reasoning none
+```
+
+The desktop app keeps the existing thinking toggle and also exposes a reasoning effort picker. Providers that do not honor explicit effort settings may continue with provider defaults.
+
+### Provider Reasoning Mapping
+
+| Provider | Request shape | Notes |
+| --- | --- | --- |
+| OpenCode Zen | `reasoning.effort` for Responses, `reasoningEffort` in OpenCode config | CamelCase in OpenCode config files; NanoAgent uses Responses-style payloads for Zen Responses models. |
+| OpenAI | `reasoning_effort` for chat-completions style, `reasoning: { effort, summary }` for Responses-style | Raw reasoning stays hidden; NanoAgent only shows provider-approved summaries. |
+| Anthropic Claude | `thinking` plus `output_config.effort`, or manual `budget_tokens` fallback | Adaptive thinking for Claude 4 families, manual budget fallback for older Claude models. |
+| DeepSeek | `reasoning_content` in responses; optional `reasoning_effort` where supported | NanoAgent never replays prior `reasoning_content` back to DeepSeek. |
+| Gemini | `thinkingConfig.thinkingLevel` or `thinkingConfig.thinkingBudget` | Gemini 3-style and Gemini 2.5-style models differ. |
+| xAI Grok and other OpenAI-compatible providers | `reasoning_effort` or Responses-compatible `reasoning.effort` when supported | Capability depends on the upstream provider and model. |
+| OpenRouter | Unified `reasoning` object | Supports effort mapping and safe replay of provider-approved reasoning metadata. |
+
+NanoAgent keeps final answers separate from reasoning output. When thinking output is disabled, NanoAgent still shows the final answer and suppresses reasoning blocks.
 
 ## Profiles and Subagents
 

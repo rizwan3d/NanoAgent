@@ -88,7 +88,8 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
                     providerProfile,
                     selection.SelectedModelId,
                     configuration.ReasoningEffort,
-                    configuration.ActiveProviderName),
+                    configuration.ActiveProviderName,
+                    configuration.ThinkingMode),
                 cancellationToken);
         }
 

@@ -13,7 +13,7 @@ internal sealed record OpenAiResponsesRequest(
     [property: JsonPropertyName("tools")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<OpenAiResponsesToolDefinition>? Tools,
     [property: JsonPropertyName("reasoning")]
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] OpenAiResponsesReasoning? Reasoning,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] ProviderReasoningConfig? Reasoning,
     [property: JsonPropertyName("include")]
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] IReadOnlyList<string>? Include,
     [property: JsonPropertyName("parallel_tool_calls")] bool ParallelToolCalls);
@@ -48,7 +48,21 @@ internal sealed record OpenAiResponsesToolDefinition(
     [property: JsonPropertyName("parameters")] JsonElement Parameters,
     [property: JsonPropertyName("strict")] bool Strict);
 
-internal sealed record OpenAiResponsesReasoning(
-    [property: JsonPropertyName("effort")] string Effort,
-    [property: JsonPropertyName("summary")] string Summary);
+internal sealed record ProviderReasoningConfig(
+    [property: JsonPropertyName("effort")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Effort = null,
+    [property: JsonPropertyName("summary")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? Summary = null,
+    [property: JsonPropertyName("max_tokens")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? MaxTokens = null,
+    [property: JsonPropertyName("exclude")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? Exclude = null);
+
+internal sealed record GeminiThinkingConfig(
+    [property: JsonPropertyName("thinkingLevel")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? ThinkingLevel = null,
+    [property: JsonPropertyName("includeThoughts")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] bool? IncludeThoughts = null,
+    [property: JsonPropertyName("thinkingBudget")]
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] int? ThinkingBudget = null);
 

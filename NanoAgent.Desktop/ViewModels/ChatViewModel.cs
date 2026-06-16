@@ -31,6 +31,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
         new("/profile", "/profile <name>", "Switch the active agent profile.", true),
         new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
+        new("/reasoning", "/reasoning [show|<none|minimal|low|medium|high|xhigh|max>]", "Show or set provider reasoning effort.", false),
         new("/rules", "/rules", "List effective permission rules.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
@@ -76,6 +77,9 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
 
     [ObservableProperty]
     private bool _isThinkingEnabled;
+
+    [ObservableProperty]
+    private string? _selectedReasoningEffort;
 
     [ObservableProperty]
     private string? _selectedProfileName = "build";
@@ -127,6 +131,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         LoadSessionCommand = new AsyncRelayCommand<ProjectInfo?>(LoadSessionAsync, CanRunWorkspaceCommand);
         ApplyModelCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyModelAsync, CanApplyModel);
         ApplyThinkingCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyThinkingAsync, CanApplyThinking);
+        ApplyReasoningCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyReasoningAsync, CanApplyReasoning);
         ApplyProfileCommand = new AsyncRelayCommand<ProjectInfo?>(ApplyProfileAsync, CanApplyProfile);
         ConfigureProviderCommand = new AsyncRelayCommand<ProjectInfo?>(ConfigureProviderAsync, CanConfigureProvider);
         ShowHelpCommand = new AsyncRelayCommand<ProjectInfo?>(ShowHelpAsync, CanRunWorkspaceCommand);
@@ -190,6 +195,8 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
 
     public ObservableCollection<string> ThinkingModes { get; } = new(["off", "on"]);
 
+    public ObservableCollection<string> ReasoningEfforts { get; } = new(ReasoningEffortOptions.SupportedValues);
+
     public ObservableCollection<string> ProfileOptions { get; } = new(["build", "plan", "review"]);
 
     public ObservableCollection<string> BudgetControlSources { get; } = new(
@@ -205,6 +212,8 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
     public IAsyncRelayCommand<ProjectInfo?> ApplyModelCommand { get; }
 
     public IAsyncRelayCommand<ProjectInfo?> ApplyThinkingCommand { get; }
+
+    public IAsyncRelayCommand<ProjectInfo?> ApplyReasoningCommand { get; }
 
     public IAsyncRelayCommand<ProjectInfo?> ApplyProfileCommand { get; }
 
@@ -303,6 +312,12 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
 
     public string ThinkingToggleText => IsThinkingEnabled ? "Thinking On" : "Thinking Off";
 
+    public string ReasoningStatusText => string.IsNullOrWhiteSpace(SelectedReasoningEffort)
+        ? IsThinkingEnabled
+            ? "Provider default reasoning effort. Explicit effort support depends on the provider and model."
+            : "Thinking is off. NanoAgent will hide reasoning output even if the provider still reasons internally."
+        : $"Reasoning effort: {SelectedReasoningEffort}. Explicit effort support depends on the provider and model.";
+
     partial void OnPromptChanged(string value)
     {
         RunPromptCommand.NotifyCanExecuteChanged();
@@ -360,6 +375,13 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         ApplyThinkingCommand.NotifyCanExecuteChanged();
     }
 
+    partial void OnSelectedReasoningEffortChanged(string? value)
+    {
+        ApplyReasoningCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(ReasoningStatusText));
+        _ = AutoApplyReasoningAsync();
+    }
+
     partial void OnIsThinkingEnabledChanged(bool value)
     {
         string mode = value ? "on" : "off";
@@ -371,6 +393,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         OnPropertyChanged(nameof(ThinkingToggleText));
         ApplyThinkingCommand.NotifyCanExecuteChanged();
         _ = AutoApplyThinkingAsync();
+        OnPropertyChanged(nameof(ReasoningStatusText));
     }
 
     partial void OnSelectedProfileNameChanged(string? value)
@@ -451,6 +474,11 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
     private bool CanApplyThinking(ProjectInfo? project)
     {
         return CanRunWorkspaceCommand(project) && !string.IsNullOrWhiteSpace(SelectedThinkingMode);
+    }
+
+    private bool CanApplyReasoning(ProjectInfo? project)
+    {
+        return CanRunWorkspaceCommand(project) && !string.IsNullOrWhiteSpace(SelectedReasoningEffort);
     }
 
     private bool CanApplyProfile(ProjectInfo? project)
@@ -576,6 +604,17 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         return ApplyThinkingAsync(ActiveProject);
     }
 
+    private Task AutoApplyReasoningAsync()
+    {
+        if (_isApplyingSessionInfo ||
+            !CanApplyReasoning(ActiveProject))
+        {
+            return Task.CompletedTask;
+        }
+
+        return ApplyReasoningAsync(ActiveProject);
+    }
+
     private Task AutoApplyProfileAsync()
     {
         if (_isApplyingSessionInfo ||
@@ -693,6 +732,26 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
                 AgentRunResult result = await _agentRunner.SetThinkingAsync(
                     project.Path,
                     SelectedThinkingMode,
+                    SelectedSection?.SectionId);
+                ApplyRunResult(result, project.Path);
+            });
+    }
+
+    private async Task ApplyReasoningAsync(ProjectInfo? project)
+    {
+        if (project is null || string.IsNullOrWhiteSpace(SelectedReasoningEffort))
+        {
+            return;
+        }
+
+        await RunControlOperationAsync(
+            "Changing reasoning effort",
+            project.Path,
+            async () =>
+            {
+                AgentRunResult result = await _agentRunner.SetReasoningAsync(
+                    project.Path,
+                    SelectedReasoningEffort,
                     SelectedSection?.SectionId);
                 ApplyRunResult(result, project.Path);
             });
@@ -1225,6 +1284,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
             SelectedModelId = sessionInfo.ModelId;
             _activeModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;
             SelectedThinkingMode = sessionInfo.ThinkingMode;
+            SelectedReasoningEffort = sessionInfo.ReasoningEffort;
             SelectedProfileName = sessionInfo.AgentProfileName;
             HasSessionOptions = true;
             UpdateProgressText();
@@ -1248,6 +1308,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         LoadSessionCommand.NotifyCanExecuteChanged();
         ApplyModelCommand.NotifyCanExecuteChanged();
         ApplyThinkingCommand.NotifyCanExecuteChanged();
+        ApplyReasoningCommand.NotifyCanExecuteChanged();
         ApplyProfileCommand.NotifyCanExecuteChanged();
         ConfigureProviderCommand.NotifyCanExecuteChanged();
         ShowHelpCommand.NotifyCanExecuteChanged();

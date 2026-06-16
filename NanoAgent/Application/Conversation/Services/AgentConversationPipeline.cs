@@ -214,7 +214,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CompletedAssistantTurn completedTurn = CreateCompletedAssistantTurn(
                 normalizedInput,
                 result,
-                startedAt);
+                startedAt,
+                session.ShowThinking);
 
             await RunAfterTaskCompleteHookAsync(normalizedInput, session, completedTurn.Result, cancellationToken);
             CommitCompletedTurn(session, completedTurn);
@@ -297,13 +298,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return CreateCompletedAssistantTurn(
             normalizedInput,
             executionResult,
-            startedAt);
+            startedAt,
+            session.ShowThinking);
     }
 
     private CompletedAssistantTurn CreateCompletedAssistantTurn(
         string userInput,
         PhaseExecutionResult phaseResult,
-        DateTimeOffset startedAt)
+        DateTimeOffset startedAt,
+        bool showThinking)
     {
         ToolExecutionBatchResult? batchResult = CreateBatchResult(phaseResult.ExecutedToolResults);
         ConversationTurnResult result = ConversationTurnResult.AssistantMessage(
@@ -312,8 +315,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             CreateMetrics(
                 startedAt,
                 phaseResult),
-            phaseResult.AssistantReasoningContent ??
-                ExtractReasoningDetailsText(phaseResult.AssistantReasoningDetailsJson));
+            showThinking
+                ? phaseResult.AssistantReasoningContent ??
+                    ExtractReasoningDetailsText(phaseResult.AssistantReasoningDetailsJson)
+                : null);
 
         return new CompletedAssistantTurn(
             userInput,
@@ -690,6 +695,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 cancellationToken);
 
             await ReportAssistantReasoningAsync(
+                session,
                 response,
                 progressSink,
                 cancellationToken);
@@ -839,10 +845,16 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     }
 
     private static async Task ReportAssistantReasoningAsync(
+        ReplSessionContext session,
         ConversationResponse response,
         IConversationProgressSink progressSink,
         CancellationToken cancellationToken)
     {
+        if (!session.ShowThinking)
+        {
+            return;
+        }
+
         string? reasoningText = ExtractReasoningTextForDisplay(response);
         if (string.IsNullOrWhiteSpace(reasoningText))
         {
@@ -1269,11 +1281,13 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 messages.ToArray(),
                 systemPrompt,
                 availableTools,
-                session.ReasoningEffort,
-                (text, textCancellationToken) =>
+                ReasoningEffort: session.ReasoningEffort,
+                OnAssistantMessageChunkAsync: (text, textCancellationToken) =>
                     progressSink.ReportAssistantMessageChunkAsync(text, textCancellationToken),
-                (retryProgress, retryCancellationToken) =>
-                    progressSink.ReportProviderRetryAsync(retryProgress, retryCancellationToken));
+                OnProviderRetryAsync: (retryProgress, retryCancellationToken) =>
+                    progressSink.ReportProviderRetryAsync(retryProgress, retryCancellationToken),
+                ThinkingMode: session.ThinkingMode,
+                ShowThinking: session.ShowThinking);
 
             telemetry.AddEstimatedInputTokens(EstimateInputTokens(request));
 

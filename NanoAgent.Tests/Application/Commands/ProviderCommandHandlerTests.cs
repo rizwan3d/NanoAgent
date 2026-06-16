@@ -24,7 +24,12 @@ public sealed class ProviderCommandHandlerTests
             .Returns(Task.CompletedTask);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(openAiProfile, "gpt-5.4", "on", "OpenAI"),
+                new AgentConfiguration(
+                    openAiProfile,
+                    "gpt-5.4",
+                    ReasoningEffort: null,
+                    ActiveProviderName: "OpenAI",
+                    ThinkingMode: "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -56,7 +61,7 @@ public sealed class ProviderCommandHandlerTests
             new AgentProviderProfile(ProviderKind.Anthropic, null),
             "claude-sonnet-4-6",
             ["claude-sonnet-4-6"],
-            reasoningEffort: "on",
+            thinkingMode: "on",
             activeProviderName: "Anthropic");
 
         ReplCommandResult result = await sut.ExecuteAsync(
