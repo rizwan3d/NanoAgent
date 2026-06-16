@@ -20,6 +20,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
   SOLUTION_FILE: NanoAgent.CrossPlatform.slnx
   TEST_PROJECT: NanoAgent.Tests/NanoAgent.Tests.csproj
+  CLI_PROJECT: NanoAgent.CLI/NanoAgent.CLI.csproj
   COVERAGE_THRESHOLD: 60
 
 jobs:
@@ -120,4 +121,52 @@ jobs:
           name: nuget-packages
           path: artifacts/packages/nuget
           if-no-files-found: warn
+          retention-days: 14
+
+  publish-cli-test-builds:
+    name: Publish CLI test build (${{ matrix.rid }})
+    needs: build-and-test
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            rid: win-x64
+          - runner: ubuntu-24.04
+            rid: linux-x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+          cache: true
+          cache-dependency-path: |
+            NanoAgent/packages.lock.json
+            NanoAgent.CLI/packages.lock.json
+            NanoAgent.Desktop/packages.lock.json
+            NanoAgent.Tests/packages.lock.json
+
+      - name: Restore
+        run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
+
+      - name: Publish CLI test build
+        run: >
+          dotnet publish ${{ env.CLI_PROJECT }}
+          --configuration ${{ env.CONFIGURATION }}
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          --no-restore
+          --output ./artifacts/publish/cli/${{ matrix.rid }}
+
+      - name: Upload CLI test artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: cli-${{ matrix.rid }}-test-build
+          path: artifacts/publish/cli/${{ matrix.rid }}
+          if-no-files-found: error
           retention-days: 14
