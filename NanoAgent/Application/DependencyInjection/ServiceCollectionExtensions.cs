@@ -34,6 +34,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ITool, AgentDelegateTool>();
         services.AddSingleton<ITool, AgentOrchestrateTool>();
         services.AddSingleton<ITool, ApplyPatchTool>();
+        services.AddSingleton<ITool, AskQuestionTool>();
         services.AddSingleton<ITool, CodebaseIndexTool>();
         services.AddSingleton<ITool, CodeIntelligenceTool>();
         services.AddSingleton<ITool, FileDeleteTool>();
