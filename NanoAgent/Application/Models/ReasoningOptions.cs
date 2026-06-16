@@ -13,7 +13,7 @@ public sealed record ReasoningOptions(
 
     public static ReasoningOptions Create(
         string? thinkingMode = null,
-        string? reasoningEffort = null,
+        string? reasoningEffort = ReasoningEffortOptions.High,
         bool? showThinking = null,
         int? reasoningMaxTokens = null,
         string? reasoningSummary = null)
