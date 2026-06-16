@@ -44,7 +44,7 @@ public sealed class ProviderKindExtensionsTests
     [InlineData(ProviderKind.Cerebras, "https://api.cerebras.ai/v1")]
     [InlineData(ProviderKind.Groq, "https://api.groq.com/openai/v1")]
     [InlineData(ProviderKind.OpenCodeZen, "https://opencode.ai/zen/v1")]
-    [InlineData(ProviderKind.DeepSeek, "https://api.deepseek.com/v1")]
+    [InlineData(ProviderKind.DeepSeek, "https://api.deepseek.com/")]
     public void GetManagedBaseUrl_Should_ReturnBaseUrl_For_ManagedProviders(ProviderKind kind, string expected)
     {
         string? result = kind.GetManagedBaseUrl();

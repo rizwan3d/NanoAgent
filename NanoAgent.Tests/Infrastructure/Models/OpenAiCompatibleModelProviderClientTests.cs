@@ -66,6 +66,31 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_ApplyDeepSeekContextWindowFallback_When_MetadataIsMissing()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "deepseek-v4-pro" },
+                { "id": "deepseek-v4-flash" },
+                { "id": "deepseek-chat" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.DeepSeek, null),
+            "test-key",
+            CancellationToken.None);
+
+        models.Select(model => model.ContextWindowTokens)
+            .Should()
+            .Equal(new int?[] { 1_000_000, 1_000_000, null });
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestModelsRelativeToExplicitV1BaseUrl_When_CompatibleProviderBaseUrlAlreadyIncludesV1()
     {
         RecordingHandler handler = new("""

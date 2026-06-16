@@ -99,7 +99,8 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
             response?.Usage?.CompletionTokens,
             response?.Usage?.PromptTokens,
             response?.Usage?.TotalTokens,
-            response?.Usage?.PromptTokensDetails?.CachedTokens,
+            response?.Usage?.PromptTokensDetails?.CachedTokens ??
+                response?.Usage?.PromptCacheHitTokens,
             ExtractReasoningContent(message),
             ExtractReasoningDetailsJson(message));
     }
@@ -361,6 +362,7 @@ internal sealed class OpenAiConversationResponseMapper : IConversationResponseMa
         cachedPromptTokens =
             TryGetNestedInt32(usage, "input_tokens_details", "cached_tokens") ??
             TryGetNestedInt32(usage, "prompt_tokens_details", "cached_tokens") ??
+            TryGetInt32(usage, "prompt_cache_hit_tokens") ??
             TryGetInt32(usage, "cached_tokens") ??
             TryGetInt32(usage, "cache_read_input_tokens");
     }
