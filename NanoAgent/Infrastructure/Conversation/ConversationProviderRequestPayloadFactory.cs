@@ -114,11 +114,7 @@ internal sealed class ConversationProviderRequestPayloadFactory
             messages.Add(new AnthropicMessage("user", CreateAnthropicUserContent(message)));
         }
 
-        List<AnthropicContentBlock> system = [
-            new AnthropicContentBlock(
-                "text",
-                Text: "You are Claude Code, Anthropic's official CLI for Claude.")
-        ];
+        List<AnthropicContentBlock> system = [];
         if (!string.IsNullOrWhiteSpace(request.SystemPrompt))
         {
             system.Add(new AnthropicContentBlock("text", Text: request.SystemPrompt.Trim()));
