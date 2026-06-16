@@ -18,7 +18,8 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             new("NANOAGENT_BASE_URL", null),
             new("NANOAGENT_MODEL", null),
             new("NANOAGENT_PROVIDER", null),
-            new("NANOAGENT_THINKING", null)
+            new("NANOAGENT_THINKING", null),
+            new("NANOAGENT_REASONING", null)
         ];
 
         _tempRoot = Path.Combine(
@@ -309,6 +310,22 @@ public sealed class JsonAgentConfigurationStoreTests : IDisposable
             "openai/gpt-4o",
             ReasoningEffort: null,
             ThinkingMode: "on"));
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_ReadReasoningEffort_From_Environment()
+    {
+        using EnvironmentVariableScope provider = new("NANOAGENT_PROVIDER", "openai");
+        using EnvironmentVariableScope reasoning = new("NANOAGENT_REASONING", " High ");
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonAgentConfigurationStore sut = new(pathProvider);
+
+        AgentConfiguration? loadedConfiguration = await sut.LoadAsync(CancellationToken.None);
+
+        loadedConfiguration.Should().Be(new AgentConfiguration(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            PreferredModelId: null,
+            ReasoningEffort: "high"));
     }
 
     [Fact]
