@@ -24,7 +24,7 @@ public sealed class ReasoningCommandHandlerTests
                 new AgentConfiguration(providerProfile, "gpt-5.4", "high", null, "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
-        ReasoningCommandHandler sut = new(configurationStore.Object);
+        ReasoningCommandHandler sut = new(configurationStore.Object, Mock.Of<ISelectionPrompt>());
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext(
@@ -51,7 +51,9 @@ public sealed class ReasoningCommandHandlerTests
             ["gpt-5.4"],
             thinkingMode: "on",
             reasoningEffort: "medium");
-        ReasoningCommandHandler sut = new(Mock.Of<IAgentConfigurationStore>(MockBehavior.Strict));
+        ReasoningCommandHandler sut = new(
+            Mock.Of<IAgentConfigurationStore>(MockBehavior.Strict),
+            Mock.Of<ISelectionPrompt>());
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext(
