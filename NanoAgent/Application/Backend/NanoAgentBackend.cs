@@ -116,7 +116,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                 new ResumeSessionRequest(
                     options.SectionId,
                     options.ProfileName,
-                    options.ThinkingMode),
+                    ReasoningEffortOverride: null,
+                    ThinkingModeOverride: options.ThinkingMode),
                 cancellationToken);
 
             await _providerSetupService.EnsureOnboardedAsync(cancellationToken);
@@ -126,7 +127,6 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             ProviderSetupResult startupResult = await _providerSetupService.EnsureConfiguredAsync(cancellationToken);
             OnboardingResult onboardingResult = startupResult.OnboardingResult;
             ModelDiscoveryResult modelResult = startupResult.ModelDiscoveryResult;
-            string? reasoningEffort = options.ThinkingMode ?? onboardingResult.ReasoningEffort;
 
             _session = await _sessionAppService.CreateAsync(
                 new CreateSessionRequest(
@@ -134,7 +134,8 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     modelResult.SelectedModelId,
                     modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
                     options.ProfileName,
-                    reasoningEffort,
+                    onboardingResult.ReasoningEffort,
+                    options.ThinkingMode ?? onboardingResult.ThinkingMode,
                     CreateModelContextWindowMap(modelResult.AvailableModels),
                     onboardingResult.ActiveProviderName),
                 cancellationToken);
@@ -352,7 +353,9 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             session.ActiveModelId,
             session.ActiveModelContextWindowTokens,
             session.AvailableModelIds,
-            ReasoningEffortOptions.Format(session.ReasoningEffort),
+            session.ThinkingMode,
+            session.ReasoningEffort,
+            session.ShowThinking,
             session.AgentProfileName,
             session.SectionTitle,
             session.IsResumedSection,

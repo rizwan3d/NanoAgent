@@ -63,15 +63,17 @@ public sealed class CliJsonOutputWriterTests
     private static BackendSessionInfo CreateSessionInfo()
     {
         return new BackendSessionInfo(
-            "sess-test",
-            "nanoai --session sess-test",
-            "OpenAI",
-            "gpt-test",
+            SessionId: "sess-test",
+            SectionResumeCommand: "nanoai --session sess-test",
+            ProviderName: "OpenAI",
+            ModelId: "gpt-test",
             ActiveModelContextWindowTokens: 128000,
-            ["gpt-test"],
-            "off",
-            "build",
-            "Untitled section",
+            AvailableModelIds: ["gpt-test"],
+            ThinkingMode: "off",
+            ReasoningEffort: null,
+            ShowThinking: false,
+            AgentProfileName: "build",
+            SectionTitle: "Untitled section",
             IsResumedSection: false,
             ConversationHistory: []);
     }

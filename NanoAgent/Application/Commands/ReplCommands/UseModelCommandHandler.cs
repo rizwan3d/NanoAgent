@@ -49,7 +49,8 @@ internal sealed class UseModelCommandHandler : IReplCommandHandler
                     context.Session.ProviderProfile,
                     result.ResolvedModelId,
                     context.Session.ReasoningEffort,
-                    context.Session.ActiveProviderName),
+                    context.Session.ActiveProviderName,
+                    context.Session.ThinkingMode),
                 cancellationToken);
         }
 

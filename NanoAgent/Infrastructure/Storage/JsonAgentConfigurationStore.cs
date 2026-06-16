@@ -75,6 +75,7 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
         document.ProviderProfile = configuration.ProviderProfile;
         document.PreferredModelId = configuration.PreferredModelId;
         document.ReasoningEffort = configuration.ReasoningEffort;
+        document.ThinkingMode = configuration.ThinkingMode;
 
         await AgentProfileConfigurationReader.SaveUserDocumentAsync(
             _pathProvider,
@@ -202,11 +203,17 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                 return null;
             }
 
+            (string? normalizedThinkingMode, string? normalizedReasoningEffort) =
+                ReasoningOptions.NormalizeStoredValues(
+                    document.ThinkingMode,
+                    document.ReasoningEffort);
+
             return new AgentConfiguration(
                 normalizedProfile,
                 ModelIdMatcher.NormalizeOrNull(document.PreferredModelId),
-                ReasoningEffortOptions.NormalizeOrNull(document.ReasoningEffort),
-                ActiveProviderName: null);
+                normalizedReasoningEffort,
+                ActiveProviderName: null,
+                ThinkingMode: normalizedThinkingMode);
         }
         catch (JsonException)
         {
@@ -227,11 +234,17 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
                     return null;
                 }
 
+                (string? normalizedThinkingMode, string? normalizedReasoningEffort) =
+                    ReasoningOptions.NormalizeStoredValues(
+                        configuration.ThinkingMode,
+                        configuration.ReasoningEffort);
+
                 return new AgentConfiguration(
                     normalizedProfile,
                     ModelIdMatcher.NormalizeOrNull(configuration.PreferredModelId),
-                    ReasoningEffortOptions.NormalizeOrNull(configuration.ReasoningEffort),
-                    NormalizeProviderName(configuration.ActiveProviderName));
+                    normalizedReasoningEffort,
+                    NormalizeProviderName(configuration.ActiveProviderName),
+                    normalizedThinkingMode);
             }
             catch (JsonException)
             {
@@ -299,11 +312,17 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
             return null;
         }
 
+        (string? normalizedThinkingMode, string? normalizedReasoningEffort) =
+            ReasoningOptions.NormalizeStoredValues(
+                document.ThinkingMode,
+                document.ReasoningEffort);
+
         return new AgentConfiguration(
             normalizedProfile,
             ModelIdMatcher.NormalizeOrNull(activeProvider.Value.Provider.PreferredModelId),
-            ReasoningEffortOptions.NormalizeOrNull(document.ReasoningEffort),
-            activeProvider.Value.Name);
+            normalizedReasoningEffort,
+            activeProvider.Value.Name,
+            normalizedThinkingMode);
     }
 
     private static (string Name, ProviderProfileConfigurationDocument Provider)? FindProvider(
@@ -432,7 +451,9 @@ internal sealed class JsonAgentConfigurationStore : IAgentConfigurationStore
         return new AgentConfiguration(
             profile,
             ModelIdMatcher.NormalizeOrNull(Environment.GetEnvironmentVariable(ModelEnvironmentVariableName)),
-            ReasoningEffortOptions.NormalizeOrNull(Environment.GetEnvironmentVariable(ThinkingEnvironmentVariableName)));
+            ReasoningEffort: null,
+            ThinkingMode: ThinkingModeOptions.NormalizeOrNull(
+                Environment.GetEnvironmentVariable(ThinkingEnvironmentVariableName)));
     }
 
     private static ProviderKind ParseProviderKind(string providerName)

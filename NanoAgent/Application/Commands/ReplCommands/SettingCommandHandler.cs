@@ -148,7 +148,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     new SelectionPromptOption<SettingCommandArea>(
                         "Thinking",
                         SettingCommandArea.Thinking,
-                        $"Set thinking mode. Current: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}."),
+                        $"Set thinking mode. Current: {ThinkingModeOptions.Format(context.Session.ThinkingMode)}."),
                     new SelectionPromptOption<SettingCommandArea>(
                         "Provider",
                         SettingCommandArea.Provider,
@@ -172,7 +172,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     new SelectionPromptOption<SettingCommandArea>(
                         "Summary",
                         SettingCommandArea.Summary,
-                        "Review provider, session, profile, thinking, and model details.")
+                        "Review provider, session, profile, thinking, reasoning effort, and model details.")
                 ],
                 CreateCurrentSettingsSummary(context),
                 DefaultIndex: 0,
@@ -248,7 +248,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     context.Session.ProviderProfile,
                     result.ResolvedModelId,
                     context.Session.ReasoningEffort,
-                    context.Session.ActiveProviderName),
+                    context.Session.ActiveProviderName,
+                    context.Session.ThinkingMode),
                 cancellationToken);
         }
 
@@ -364,19 +365,19 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                     [
                         new SelectionPromptOption<string>(
                             "On",
-                            ReasoningEffortOptions.On,
-                            string.Equals(context.Session.ReasoningEffort, ReasoningEffortOptions.On, StringComparison.Ordinal)
+                            ThinkingModeOptions.On,
+                            string.Equals(context.Session.ThinkingMode, ThinkingModeOptions.On, StringComparison.Ordinal)
                                 ? "Currently active."
                                 : "Use the model's default reasoning effort."),
                         new SelectionPromptOption<string>(
                             "Off",
-                            ReasoningEffortOptions.Off,
-                            string.Equals(context.Session.ReasoningEffort, ReasoningEffortOptions.Off, StringComparison.Ordinal)
+                            ThinkingModeOptions.Off,
+                            string.Equals(context.Session.ThinkingMode, ThinkingModeOptions.Off, StringComparison.Ordinal)
                                 ? "Currently active."
                                 : "Use lighter responses without extra thinking.")
                     ],
                     "Thinking mode applies to subsequent prompts. Esc returns to settings.",
-                    DefaultIndex: string.Equals(context.Session.ReasoningEffort, ReasoningEffortOptions.On, StringComparison.Ordinal)
+                    DefaultIndex: string.Equals(context.Session.ThinkingMode, ThinkingModeOptions.On, StringComparison.Ordinal)
                         ? 0
                         : 1,
                     AllowCancellation: true),
@@ -394,7 +395,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                 ReplFeedbackKind.Warning);
         }
 
-        bool modeChanged = context.Session.SetReasoningEffort(selectedMode);
+        bool modeChanged = context.Session.SetThinkingMode(selectedMode);
         await SaveConfigurationAsync(context.Session, cancellationToken);
 
         if (silent)
@@ -404,8 +405,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
 
         return ReplCommandResult.Continue(
             modeChanged
-                ? $"Thinking turned {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}."
-                : $"Thinking is already {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.");
+                ? $"Thinking turned {ThinkingModeOptions.Format(context.Session.ThinkingMode)}."
+                : $"Thinking is already {ThinkingModeOptions.Format(context.Session.ThinkingMode)}.");
     }
 
     private async Task<ReplCommandResult?> RunPermissionsMenuAsync(
@@ -907,9 +908,13 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                             SettingSummaryAction.Back,
                             "Choose Profile in settings to change it."),
                         new SelectionPromptOption<SettingSummaryAction>(
-                            $"Thinking: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}",
+                            $"Thinking: {ThinkingModeOptions.Format(context.Session.ThinkingMode)}",
                             SettingSummaryAction.Back,
                             "Choose Thinking in settings to change it."),
+                        new SelectionPromptOption<SettingSummaryAction>(
+                            $"Reasoning effort: {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}",
+                            SettingSummaryAction.Back,
+                            "Use /reasoning to change the provider reasoning effort."),
                         new SelectionPromptOption<SettingSummaryAction>(
                             $"Permissions: {FormatPermissionMode(_permissionSettings.DefaultMode)}, sandbox {FormatSandboxMode(_permissionSettings.SandboxMode)}",
                             SettingSummaryAction.Back,
@@ -1144,7 +1149,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
                 session.ProviderProfile,
                 session.ActiveModelId,
                 session.ReasoningEffort,
-                session.ActiveProviderName),
+                session.ActiveProviderName,
+                session.ThinkingMode),
             cancellationToken);
     }
 
@@ -1192,7 +1198,8 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             $"provider {context.Session.ProviderName}, " +
             $"model {context.Session.ActiveModelId}, " +
             $"profile {context.Session.AgentProfile.Name}, " +
-            $"thinking {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.";
+            $"thinking {ThinkingModeOptions.Format(context.Session.ThinkingMode)}, " +
+            $"reasoning {ReasoningEffortOptions.Format(context.Session.ReasoningEffort)}.";
     }
 
     private static string FormatHelp()
@@ -1202,6 +1209,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             "/setting model [id] - Pick the active model, or switch directly when an id is supplied.\n" +
             "/setting profile [name] - Pick the active profile, or switch directly when a name is supplied.\n" +
             "/setting thinking [on|off] - Pick or set thinking mode.\n" +
+            "/reasoning [show|<none|minimal|low|medium|high|xhigh|max>] - Show or set reasoning effort.\n" +
             "/setting provider [list|name] - List or switch saved providers.\n" +
             "/setting onboarding - Re-run provider onboarding and add a saved provider.\n" +
             "/setting budget [status|local|cloud] - Show or configure budget controls.\n" +
@@ -1209,7 +1217,7 @@ internal sealed class SettingCommandHandler : IReplCommandHandler
             "/setting permissions - Open permission settings for modes, sandbox, and session overrides.\n" +
             "/setting rules - Inspect effective permission rules in a picker.\n" +
             "/setting tools - Show MCP servers, custom tools, and dynamic tool status.\n" +
-            "/setting summary - Review provider, session, profile, thinking, and model details.";
+            "/setting summary - Review provider, session, profile, thinking, reasoning effort, and model details.";
     }
 
     private static string FormatPermissionMode(PermissionMode mode)

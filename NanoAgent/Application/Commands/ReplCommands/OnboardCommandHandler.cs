@@ -81,7 +81,8 @@ internal sealed class OnboardCommandHandler : IReplCommandHandler
                 context.Session.ProviderProfile,
                 context.Session.ActiveModelId,
                 context.Session.ReasoningEffort,
-                onboardingResult.ActiveProviderName),
+                onboardingResult.ActiveProviderName,
+                context.Session.ThinkingMode),
             cancellationToken);
 
         return ReplCommandResult.Continue(

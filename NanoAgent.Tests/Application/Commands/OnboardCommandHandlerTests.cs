@@ -39,7 +39,12 @@ public sealed class OnboardCommandHandlerTests
         Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
         configurationStore
             .Setup(store => store.SaveAsync(
-                new AgentConfiguration(providerProfile, "openai/gpt-5.4", "on", "OpenRouter"),
+                new AgentConfiguration(
+                    providerProfile,
+                    "openai/gpt-5.4",
+                    ReasoningEffort: null,
+                    ActiveProviderName: "OpenRouter",
+                    ThinkingMode: "on"),
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
@@ -51,7 +56,7 @@ public sealed class OnboardCommandHandlerTests
             new AgentProviderProfile(ProviderKind.OpenAi, null),
             "gpt-5.4",
             ["gpt-5.4"],
-            reasoningEffort: "on");
+            thinkingMode: "on");
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext(

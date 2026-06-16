@@ -18,6 +18,7 @@ public sealed class ConversationSectionSnapshot
         PendingExecutionPlan? pendingExecutionPlan = null,
         string? agentProfileName = null,
         string? reasoningEffort = null,
+        string? thinkingMode = null,
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
@@ -64,7 +65,11 @@ public sealed class ConversationSectionSnapshot
             AvailableModelIds);
         CreatedAtUtc = createdAtUtc;
         ProviderProfile = providerProfile;
-        ReasoningEffort = ReasoningEffortOptions.NormalizeOrNull(reasoningEffort);
+        ReasoningOptions normalizedReasoning = ReasoningOptions.Create(
+            thinkingMode,
+            reasoningEffort);
+        ReasoningEffort = normalizedReasoning.ReasoningEffort;
+        ThinkingMode = normalizedReasoning.ThinkingMode;
         SectionId = sectionId.Trim();
         Title = title.Trim();
         TotalEstimatedOutputTokens = totalEstimatedOutputTokens;
@@ -97,6 +102,8 @@ public sealed class ConversationSectionSnapshot
     public PendingExecutionPlan? PendingExecutionPlan { get; }
 
     public string? ReasoningEffort { get; }
+
+    public string ThinkingMode { get; }
 
     public string SectionId { get; }
 

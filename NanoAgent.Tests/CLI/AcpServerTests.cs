@@ -917,15 +917,17 @@ public sealed class AcpServerTests
         private BackendSessionInfo CreateSessionInfo()
         {
             return new BackendSessionInfo(
-                _sessionId,
-                $"nanoai --session {_sessionId}",
-                "OpenAI",
-                "gpt-test",
+                SessionId: _sessionId,
+                SectionResumeCommand: $"nanoai --session {_sessionId}",
+                ProviderName: "OpenAI",
+                ModelId: "gpt-test",
                 ActiveModelContextWindowTokens: null,
-                ["gpt-test"],
-                "off",
-                "build",
-                "Untitled section",
+                AvailableModelIds: ["gpt-test"],
+                ThinkingMode: "off",
+                ReasoningEffort: null,
+                ShowThinking: false,
+                AgentProfileName: "build",
+                SectionTitle: "Untitled section",
                 IsResumedSection: false,
                 ConversationHistory: [])
             {
@@ -950,15 +952,17 @@ public sealed class AcpServerTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(new BackendSessionInfo(
-                "sess-history",
-                "nanoai --session sess-history",
-                "OpenAI",
-                "gpt-test",
+                SessionId: "sess-history",
+                SectionResumeCommand: "nanoai --session sess-history",
+                ProviderName: "OpenAI",
+                ModelId: "gpt-test",
                 ActiveModelContextWindowTokens: null,
-                ["gpt-test"],
-                "on",
-                "build",
-                "History session",
+                AvailableModelIds: ["gpt-test"],
+                ThinkingMode: "on",
+                ReasoningEffort: null,
+                ShowThinking: true,
+                AgentProfileName: "build",
+                SectionTitle: "History session",
                 IsResumedSection: true,
                 ConversationHistory:
                 [
@@ -1030,15 +1034,17 @@ public sealed class AcpServerTests
                 cancellationToken);
 
             return new BackendSessionInfo(
-                "sess-prompt",
-                "nanoai --session sess-prompt",
-                SelectedProvider,
-                "gpt-test",
+                SessionId: "sess-prompt",
+                SectionResumeCommand: "nanoai --session sess-prompt",
+                ProviderName: SelectedProvider,
+                ModelId: "gpt-test",
                 ActiveModelContextWindowTokens: null,
-                ["gpt-test"],
-                "off",
-                "build",
-                "Prompted session",
+                AvailableModelIds: ["gpt-test"],
+                ThinkingMode: "off",
+                ReasoningEffort: null,
+                ShowThinking: false,
+                AgentProfileName: "build",
+                SectionTitle: "Prompted session",
                 IsResumedSection: false,
                 ConversationHistory: []);
         }
@@ -1100,15 +1106,17 @@ public sealed class AcpServerTests
                 cancellationToken);
 
             return new BackendSessionInfo(
-                "sess-permission",
-                "nanoai --session sess-permission",
-                "OpenAI",
-                "gpt-test",
+                SessionId: "sess-permission",
+                SectionResumeCommand: "nanoai --session sess-permission",
+                ProviderName: "OpenAI",
+                ModelId: "gpt-test",
                 ActiveModelContextWindowTokens: null,
-                ["gpt-test"],
-                "off",
-                "build",
-                "Permission session",
+                AvailableModelIds: ["gpt-test"],
+                ThinkingMode: "off",
+                ReasoningEffort: null,
+                ShowThinking: false,
+                AgentProfileName: "build",
+                SectionTitle: "Permission session",
                 IsResumedSection: false,
                 ConversationHistory: []);
         }
@@ -1182,15 +1190,17 @@ public sealed class AcpServerTests
                 cancellationToken);
 
             return new BackendSessionInfo(
-                "sess-compatible",
-                "nanoai --session sess-compatible",
-                SelectedProvider,
-                "gpt-test",
+                SessionId: "sess-compatible",
+                SectionResumeCommand: "nanoai --session sess-compatible",
+                ProviderName: SelectedProvider,
+                ModelId: "gpt-test",
                 ActiveModelContextWindowTokens: null,
-                ["gpt-test"],
-                "off",
-                "build",
-                "Compatible session",
+                AvailableModelIds: ["gpt-test"],
+                ThinkingMode: "off",
+                ReasoningEffort: null,
+                ShowThinking: false,
+                AgentProfileName: "build",
+                SectionTitle: "Compatible session",
                 IsResumedSection: false,
                 ConversationHistory: []);
         }
