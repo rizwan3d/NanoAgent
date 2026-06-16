@@ -143,19 +143,58 @@ public static partial class Program
         int leftBudget = Math.Max(0, headerWidth - MessagesPanelScrollHint.Length - 1);
         string rootDirectory = state.RootDirectory ?? string.Empty;
         string displayRootDirectory = rootDirectory;
+        string? gitBranch = GetGitBranchName(rootDirectory);
+        string gitSuffix = gitBranch is not null ? $" [yellow]({Markup.Escape(gitBranch)})[/]" : string.Empty;
 
-        if (leftPrefix.Length + displayRootDirectory.Length > leftBudget)
+        if (leftPrefix.Length + displayRootDirectory.Length + gitSuffix.Length > leftBudget)
         {
-            int rootBudget = Math.Max(0, leftBudget - leftPrefix.Length);
+            int rootBudget = Math.Max(0, leftBudget - leftPrefix.Length - gitSuffix.Length);
             displayRootDirectory = TruncateFromLeft(rootDirectory, rootBudget);
         }
 
-        string leftPlain = leftPrefix + displayRootDirectory;
+        string leftPlain = leftPrefix + displayRootDirectory + gitSuffix;
         int spacerLength = Math.Max(1, headerWidth - leftPlain.Length - MessagesPanelScrollHint.Length);
 
-        return $"[bold]Session[/] ──[grey] Working: {Markup.Escape(displayRootDirectory)}[/]" +
+        return $"[bold]Session[/] ──[grey] Working: {Markup.Escape(displayRootDirectory)}[/]{gitSuffix}" +
             $"{new string('─', spacerLength)}" +
             $"[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]";
+    }
+
+    private static string? GetGitBranchName(string directory)
+    {
+        try
+        {
+            string? gitDir = FindGitDirectory(directory);
+            if (gitDir is null) return null;
+
+            string headFile = Path.Combine(gitDir, "HEAD");
+            if (!File.Exists(headFile)) return null;
+
+            string head = File.ReadAllText(headFile).Trim();
+            const string refPrefix = "ref: refs/heads/";
+            if (head.StartsWith(refPrefix, StringComparison.Ordinal))
+            {
+                return head[refPrefix.Length..];
+            }
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? FindGitDirectory(string directory)
+    {
+        var dir = new DirectoryInfo(directory);
+        while (dir is not null)
+        {
+            string gitDir = Path.Combine(dir.FullName, ".git");
+            if (Directory.Exists(gitDir) || File.Exists(gitDir))
+                return gitDir;
+            dir = dir.Parent;
+        }
+        return null;
     }
 
     private static IRenderable BuildBodyPanel(AppState state)
