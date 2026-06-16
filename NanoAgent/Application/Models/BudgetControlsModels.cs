@@ -25,4 +25,20 @@ public sealed record BudgetControlsStatus(
     int AlertThresholdPercent,
     string? LocalPath,
     string? CloudApiUrl,
-    bool HasCloudAuthKey);
+    bool HasCloudAuthKey,
+    bool Enabled = true)
+{
+    /// <summary>
+    /// Status reported when budget controls are disabled (the default): no configuration was
+    /// saved and no workspace <c>budget-controls.*.json</c> file exists.
+    /// </summary>
+    public static BudgetControlsStatus Disabled { get; } = new(
+        BudgetControlsSettings.DisabledSource,
+        MonthlyBudgetUsd: null,
+        SpentUsd: 0m,
+        AlertThresholdPercent: 80,
+        LocalPath: null,
+        CloudApiUrl: null,
+        HasCloudAuthKey: false,
+        Enabled: false);
+}
