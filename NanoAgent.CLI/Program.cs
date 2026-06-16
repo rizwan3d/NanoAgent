@@ -12,7 +12,6 @@ namespace NanoAgent.CLI;
 public static partial class Program
 {
     private const double EstimatedLiveTokensPerSecond = 4d;
-    private const int HeaderPanelSize = 9;
     private const int InputCursorBlinkIntervalMilliseconds = 500;
     private const int InputCursorColumnWidth = 1;
     private const int MessageScrollbarColumnWidth = 2;
@@ -586,6 +585,11 @@ public static partial class Program
         Console.WriteLine($"Resume this section: {state.SectionResumeCommand}");
     }
 
+    private static int GetHeaderPanelSize(AppState state)
+    {
+        return state.HasMadeFirstLlmCall ? 3 : 9;
+    }
+
     private static void StartInitialization(AppState state)
     {
         state.IsBusy = true;
@@ -678,6 +682,7 @@ public static partial class Program
         state.ClearPlanState();
         state.Messages.Clear();
         state.ConversationScrollOffset = 0;
+        state.HasMadeFirstLlmCall = false;
 
         if (!string.IsNullOrWhiteSpace(statusMessage))
         {

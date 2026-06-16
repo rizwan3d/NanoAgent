@@ -31,6 +31,8 @@ public sealed class AppState
 
     public bool HasFatalError { get; set; }
 
+    public bool HasMadeFirstLlmCall { get; set; }
+
     public string? FatalExitMessage { get; set; }
 
     public StringBuilder Input { get; } = new();
