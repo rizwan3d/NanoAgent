@@ -26,15 +26,12 @@ public static partial class Program
             return;
         }
 
-        if (attachments.Length == 0 && text.StartsWith('/'))
+        bool isSlashCommand = attachments.Length == 0 && text.StartsWith('/');
+        if (isSlashCommand)
         {
             HandleCommand(state, text);
             return;
         }
-
-        string prompt = string.IsNullOrWhiteSpace(text)
-            ? $"Please inspect the {FormatAttachmentCount(attachments.Length)} I attached."
-            : text;
 
         if (!state.IsReady)
         {
@@ -45,15 +42,20 @@ public static partial class Program
             return;
         }
 
+        PendingSubmission submission = new(
+            PendingSubmissionKind.Prompt,
+            string.IsNullOrWhiteSpace(text)
+                ? $"Please inspect the {FormatAttachmentCount(attachments.Length)} I attached."
+                : text,
+            attachments);
+
         if (state.IsBusy || state.IsStreaming)
         {
-            state.AddSystemMessage("NanoAgent is still working on the current request.");
+            QueuePendingSubmission(state, submission);
             return;
         }
 
-        state.ConversationScrollOffset = 0;
-        state.AddMessage(Role.User, FormatUserInputForDisplay(prompt, attachments));
-        StartConversation(state, prompt, attachments);
+        ExecutePendingSubmission(state, submission);
     }
 
     private static void StartConversation(
@@ -113,6 +115,7 @@ public static partial class Program
 
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
@@ -129,6 +132,7 @@ public static partial class Program
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
                     appState.AddSystemMessage("Turn cancelled.");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (Exception exception)
@@ -141,6 +145,7 @@ public static partial class Program
                     appState.PendingCompletionNote = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.AddSystemMessage($"NanoAgent error: {exception.Message}");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
         });
@@ -186,12 +191,6 @@ public static partial class Program
             return;
         }
 
-        if (state.IsBusy || state.IsStreaming)
-        {
-            state.AddSystemMessage("That command is unavailable while NanoAgent is working.");
-            return;
-        }
-
         if (command == "/clear")
         {
             state.Messages.Clear();
@@ -219,6 +218,12 @@ public static partial class Program
             }
 
             RequestReadPermission(state, path);
+            return;
+        }
+
+        if (state.IsBusy || state.IsStreaming)
+        {
+            state.AddSystemMessage("That command is unavailable while NanoAgent is working.");
             return;
         }
 
@@ -434,6 +439,8 @@ public static partial class Program
                     {
                         appState.Running = false;
                     }
+
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
@@ -447,6 +454,7 @@ public static partial class Program
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
                     appState.AddSystemMessage("Turn cancelled.");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (Exception exception)
@@ -456,6 +464,7 @@ public static partial class Program
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.AddSystemMessage($"Command failed: {exception.Message}");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
         });
@@ -506,6 +515,7 @@ public static partial class Program
                     ApplySessionInfo(appState, result.SessionInfo);
 
                     AddCommandFeedbackMessage(appState, result.CommandResult);
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
@@ -519,6 +529,7 @@ public static partial class Program
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
                     appState.AddSystemMessage("Turn cancelled.");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (Exception exception)
@@ -528,6 +539,7 @@ public static partial class Program
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.AddSystemMessage($"Model selection failed: {exception.Message}");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
         });
@@ -589,6 +601,7 @@ public static partial class Program
                 state.IsBusy = false;
                 state.ClearBusyWhenStreamCompletes = false;
                 state.ActivityText = state.IsReady ? "Ready" : "Idle";
+                TryStartNextPendingSubmission(state);
             }
 
             return;
@@ -598,5 +611,87 @@ public static partial class Program
         {
             message.Text += state.StreamQueue.Dequeue();
         }
+    }
+
+    internal static void TryStartNextPendingSubmission(AppState state)
+    {
+        if (!state.Running ||
+            state.ActiveModal is not null ||
+            state.IsBusy ||
+            state.IsStreaming ||
+            state.PendingSubmissions.Count == 0)
+        {
+            return;
+        }
+
+        PendingSubmission submission = state.PendingSubmissions.Dequeue();
+        ExecutePendingSubmission(state, submission);
+    }
+
+    private static void ExecutePendingSubmission(
+        AppState state,
+        PendingSubmission submission)
+    {
+        switch (submission.Kind)
+        {
+            case PendingSubmissionKind.Command:
+                HandleCommand(state, submission.Text);
+                if (state.Running &&
+                    state.ActiveModal is null &&
+                    !state.IsBusy &&
+                    !state.IsStreaming)
+                {
+                    TryStartNextPendingSubmission(state);
+                }
+                return;
+
+            case PendingSubmissionKind.Prompt:
+                IReadOnlyList<ConversationAttachment> attachments = submission.Attachments ?? [];
+                state.ConversationScrollOffset = 0;
+                state.AddMessage(Role.User, FormatUserInputForDisplay(submission.Text, attachments));
+                StartConversation(state, submission.Text, attachments);
+                return;
+
+            default:
+                throw new InvalidOperationException($"Unsupported pending submission kind: {submission.Kind}");
+        }
+    }
+
+    private static void QueuePendingSubmission(
+        AppState state,
+        PendingSubmission submission)
+    {
+        state.PendingSubmissions.Enqueue(submission);
+        state.AddSystemMessage($"Queued {DescribePendingSubmission(submission)}.");
+    }
+
+    private static string DescribePendingSubmission(PendingSubmission submission)
+    {
+        string preview = TruncateSubmissionPreview(submission.Text, 48);
+
+        return submission.Kind switch
+        {
+            PendingSubmissionKind.Command => $"command: {preview}",
+            PendingSubmissionKind.Prompt when submission.Attachments is { Count: > 0 } attachments =>
+                $"prompt with {FormatAttachmentCount(attachments.Count)}: {preview}",
+            PendingSubmissionKind.Prompt => $"prompt: {preview}",
+            _ => "request"
+        };
+    }
+
+    private static string TruncateSubmissionPreview(string text, int maxLength)
+    {
+        string singleLine = text
+            .Replace("\r\n", " ", StringComparison.Ordinal)
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        if (singleLine.Length <= maxLength)
+        {
+            return singleLine;
+        }
+
+        return singleLine[..Math.Max(0, maxLength - 1)] + "…";
     }
 }

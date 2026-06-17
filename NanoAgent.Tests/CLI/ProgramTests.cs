@@ -161,6 +161,118 @@ public sealed class ProgramTests
         renderable.Should().BeOfType<Panel>();
     }
 
+    [Fact]
+    public void SubmitInput_Should_QueuePrompt_When_Busy()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            IsReady = true,
+            IsBusy = true,
+            InputCursorIndex = "Queued prompt".Length
+        };
+        state.Input.Append("Queued prompt");
+
+        MethodInfo submitInput = typeof(Program).GetMethod(
+            "SubmitInput",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        submitInput.Invoke(null, [state]);
+
+        state.PendingSubmissions.Should().ContainSingle();
+        state.PendingSubmissions.Peek().Kind.Should().Be(PendingSubmissionKind.Prompt);
+        state.PendingSubmissions.Peek().Text.Should().Be("Queued prompt");
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text.Contains("Queued prompt: Queued prompt"));
+        state.Input.ToString().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SubmitInput_Should_NotQueueCommand_When_Busy()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            IsReady = true,
+            IsBusy = true,
+            InputCursorIndex = "/help".Length
+        };
+        state.Input.Append("/help");
+
+        MethodInfo submitInput = typeof(Program).GetMethod(
+            "SubmitInput",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        submitInput.Invoke(null, [state]);
+
+        state.PendingSubmissions.Should().BeEmpty();
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text.Contains("That command is unavailable while NanoAgent is working."));
+    }
+
+    [Fact]
+    public void TryStartNextPendingSubmission_Should_RunQueuedPrompt_When_Idle()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            IsReady = true
+        };
+        state.PendingSubmissions.Enqueue(new PendingSubmission(
+            PendingSubmissionKind.Prompt,
+            "Continue with queued work"));
+
+        MethodInfo tryStartNextPendingSubmission = typeof(Program).GetMethod(
+            "TryStartNextPendingSubmission",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        tryStartNextPendingSubmission.Invoke(null, [state]);
+
+        state.PendingSubmissions.Should().BeEmpty();
+        state.IsBusy.Should().BeTrue();
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.User &&
+            message.Text == "Continue with queued work");
+    }
+
+    [Fact]
+    public void HandleCommand_Should_AllowClearWhileBusy()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            IsBusy = true
+        };
+        state.AddMessage(Role.User, "Earlier message");
+
+        MethodInfo handleCommand = typeof(Program).GetMethod(
+            "HandleCommand",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        handleCommand.Invoke(null, [state, "/clear"]);
+
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text == "Screen cleared.");
+    }
+
+    [Fact]
+    public void HandleCommand_Should_BlockBackendCommandWhileBusy()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            IsBusy = true
+        };
+
+        MethodInfo handleCommand = typeof(Program).GetMethod(
+            "HandleCommand",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        handleCommand.Invoke(null, [state, "/help"]);
+
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text == "That command is unavailable while NanoAgent is working.");
+    }
+
     private static Mock<INanoAgentBackend> CreateConversationBackend()
     {
         Mock<INanoAgentBackend> backend = new(MockBehavior.Strict);

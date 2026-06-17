@@ -205,6 +205,7 @@ public sealed class SelectionModalState<T> : UiModalState
     {
         state.ActiveModal = null;
         _onCancelled?.Invoke(new PromptCancelledException());
+        Program.TryStartNextPendingSubmission(state);
     }
 
     private void MoveSelection(int delta)
@@ -232,6 +233,7 @@ public sealed class SelectionModalState<T> : UiModalState
     {
         state.ActiveModal = null;
         _onSelected(value);
+        Program.TryStartNextPendingSubmission(state);
     }
 
     private List<string> BuildHeadingLines(int contentWidth)
