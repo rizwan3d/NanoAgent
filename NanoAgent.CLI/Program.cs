@@ -18,6 +18,7 @@ public static partial class Program
     private const int MouseWheelScrollLineCount = 3;
     private const int MultilinePastePreviewLineThreshold = 3;
     private const int PasteContinuationReadTimeoutMilliseconds = 40;
+    private const int ClipboardReadTimeoutMilliseconds = 2000;
     private const int MaxSlashCommandSuggestionCount = 8;
     private const int TerminalSequenceReadTimeoutMilliseconds = 25;
     private const string EnableAlternateScreenSequence = "\u001b[?1049h";
