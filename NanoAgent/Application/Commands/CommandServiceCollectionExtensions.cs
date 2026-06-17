@@ -23,6 +23,7 @@ public static class CommandServiceCollectionExtensions
         services.AddSingleton<IReplCommandHandler, DoctorCommandHandler>();
         services.AddSingleton<IReplCommandHandler, DenyCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ExportCommandHandler>();
+        services.AddSingleton<IReplCommandHandler, ToolOutputCommandHandler>();
         services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
         services.AddSingleton<IReplCommandHandler, InitCommandHandler>();
         services.AddSingleton<IReplCommandHandler, ImportCommandHandler>();

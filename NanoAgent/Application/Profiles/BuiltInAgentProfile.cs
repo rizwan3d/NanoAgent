@@ -11,7 +11,8 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
         string description,
         string? systemPrompt,
         IReadOnlySet<string> enabledTools,
-        AgentProfilePermissionOverlay permissionIntent)
+        AgentProfilePermissionOverlay permissionIntent,
+        bool? fullToolOutput = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
         ArgumentException.ThrowIfNullOrWhiteSpace(description);
@@ -26,6 +27,7 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
             : systemPrompt.Trim();
         EnabledTools = enabledTools;
         PermissionIntent = permissionIntent;
+        FullToolOutput = fullToolOutput;
     }
 
     public string Name { get; }
@@ -39,4 +41,6 @@ internal sealed class BuiltInAgentProfile : IAgentProfile
     public IReadOnlySet<string> EnabledTools { get; }
 
     public AgentProfilePermissionOverlay PermissionIntent { get; }
+
+    public bool? FullToolOutput { get; }
 }

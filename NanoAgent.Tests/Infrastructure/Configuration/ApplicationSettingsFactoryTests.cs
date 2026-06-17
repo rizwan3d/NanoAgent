@@ -215,4 +215,18 @@ public sealed class ApplicationSettingsFactoryTests
         settings.AcpRequestTimeoutSeconds.Should().Be(55);
         settings.AgentOrchestrationTimeoutSeconds.Should().Be(89);
     }
+
+    [Fact]
+    public void CreateToolExecutionSettings_Should_CarryToolOutputPreference()
+    {
+        ToolExecutionSettings settings = ApplicationSettingsFactory.CreateToolExecutionSettings(new ApplicationOptions
+        {
+            Tools = new ToolExecutionSettings
+            {
+                ToolOutput = "full"
+            }
+        });
+
+        settings.ToolOutput.Should().Be("full");
+    }
 }
