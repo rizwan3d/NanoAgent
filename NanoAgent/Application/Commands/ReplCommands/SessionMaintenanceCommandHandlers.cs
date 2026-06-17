@@ -47,6 +47,7 @@ internal sealed class CompactCommandHandler : IReplCommandHandler
 internal sealed class ReloadCommandHandler : IReplCommandHandler
 {
     private readonly IEnumerable<IDynamicToolProvider> _dynamicToolProviders;
+    private readonly IConversationConfigurationAccessor _configurationAccessor;
     private readonly IAgentProfileResolver _profileResolver;
     private readonly ISkillService _skillService;
     private readonly IToolRegistry _toolRegistry;
@@ -54,6 +55,7 @@ internal sealed class ReloadCommandHandler : IReplCommandHandler
     private readonly IWorkspaceSystemPromptProvider _workspaceSystemPromptProvider;
 
     public ReloadCommandHandler(
+        IConversationConfigurationAccessor configurationAccessor,
         IEnumerable<IDynamicToolProvider> dynamicToolProviders,
         IAgentProfileResolver profileResolver,
         ISkillService skillService,
@@ -61,6 +63,7 @@ internal sealed class ReloadCommandHandler : IReplCommandHandler
         IWorkspaceAgentProfilePromptProvider workspaceAgentProfilePromptProvider,
         IWorkspaceSystemPromptProvider workspaceSystemPromptProvider)
     {
+        _configurationAccessor = configurationAccessor;
         _dynamicToolProviders = dynamicToolProviders;
         _profileResolver = profileResolver;
         _skillService = skillService;
@@ -81,10 +84,14 @@ internal sealed class ReloadCommandHandler : IReplCommandHandler
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        ConversationSettings settings = _configurationAccessor.GetSettings();
         int profileCount = _profileResolver.List().Count;
         int skillCount = (await _skillService.ListAsync(context.Session, cancellationToken)).Count;
         bool hasWorkspaceSystemPrompt = !string.IsNullOrWhiteSpace(
-            await _workspaceSystemPromptProvider.LoadAsync(context.Session, cancellationToken));
+            await _workspaceSystemPromptProvider.LoadAsync(
+                context.Session,
+                settings.SystemPrompt,
+                cancellationToken));
         bool hasWorkspaceAgentPrompt = !string.IsNullOrWhiteSpace(
             await _workspaceAgentProfilePromptProvider.LoadAsync(context.Session, cancellationToken));
         DynamicToolProviderStatus[] dynamicStatuses = _dynamicToolProviders
