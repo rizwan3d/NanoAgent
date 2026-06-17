@@ -2,9 +2,14 @@
 
 public static partial class Program
 {
+    // Markup: Spectre markup for on-screen rendering (includes role prefix + styling).
+    // Plain: the markup-stripped on-screen text (still includes role prefix / gutters).
+    // Copy: the clean underlying text for copy mode / clipboard, with no role prefix,
+    //       code-block gutter, or scrollbar chrome. Defaults to empty for spacer lines.
     private readonly record struct ConversationLine(
         string Markup,
-        string Plain);
+        string Plain,
+        string Copy = "");
 
     private readonly record struct InlineRenderResult(
         string Markup,

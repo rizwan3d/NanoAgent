@@ -223,7 +223,8 @@ public static partial class Program
                 (isFirstWrappedLine ? firstPrefixPlain : continuationPrefixPlain) + renderResult.Plain,
                 ref firstLine,
                 roleName,
-                roleColor);
+                roleColor,
+                copyPlain: renderResult.Plain);
         }
     }
 

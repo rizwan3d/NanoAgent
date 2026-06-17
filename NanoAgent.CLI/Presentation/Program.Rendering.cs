@@ -25,6 +25,11 @@ public static partial class Program
         int windowWidth,
         int windowHeight)
     {
+        if (state.IsReaderViewActive)
+        {
+            return BuildReaderView(state);
+        }
+
         if (windowWidth < 20 || windowHeight < MinimumStandardLayoutHeight)
         {
             return BuildCompactUi(state, windowWidth, windowHeight);
@@ -341,6 +346,12 @@ public static partial class Program
             lines.Add(new ConversationLine("[grey]No messages yet.[/]", "No messages yet."));
         }
 
+        if (state.IsCopyModeActive)
+        {
+            state.CopyCursorLine = Math.Clamp(state.CopyCursorLine, 0, lines.Count - 1);
+            EnsureCopyCursorVisible(state, lines.Count, viewportLineCount);
+        }
+
         int maxScrollOffset = Math.Max(0, lines.Count - viewportLineCount);
         state.ConversationScrollOffset = Math.Clamp(
             state.ConversationScrollOffset,
@@ -354,6 +365,11 @@ public static partial class Program
             .Skip(startIndex)
             .Take(viewportLineCount)
             .ToList();
+
+        if (state.IsCopyModeActive)
+        {
+            visibleLines = ApplyCopyModeHighlight(state, visibleLines, startIndex);
+        }
 
         while (visibleLines.Count < viewportLineCount)
         {
@@ -846,6 +862,18 @@ public static partial class Program
                 "[grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
         }
 
+        if (state.IsReaderViewActive)
+        {
+            return BuildFooterLineMarkup(
+                "[grey]Reader view: drag-select with the mouse to copy[/]  [grey]|[/]  [grey]↑/↓ PgUp/PgDn: scroll[/]  [grey]|[/]  [grey]Esc/F5: exit[/]");
+        }
+
+        if (state.IsCopyModeActive)
+        {
+            return BuildFooterLineMarkup(
+                "[grey]Copy mode: ↑/↓ move[/]  [grey]|[/]  [grey]V/Space: start selection[/]  [grey]|[/]  [grey]Shift+↑/↓: extend[/]  [grey]|[/]  [grey]A: all[/]  [grey]|[/]  [grey]Y: copy[/]  [grey]|[/]  [grey]Esc: exit[/]");
+        }
+
         if (TryGetSlashCommandSuggestions(state, out _))
         {
             return BuildFooterLineMarkup(
@@ -853,7 +881,7 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]Drop files to attach[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
 
     private static string BuildInputLineMarkup(
