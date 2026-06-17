@@ -15,12 +15,14 @@ namespace NanoAgent.Infrastructure.Storage;
 [JsonSerializable(typeof(ProviderProfileConfigurationDocument))]
 [JsonSerializable(typeof(BudgetControlsSettings))]
 [JsonSerializable(typeof(MemoryProfileDocument))]
+[JsonSerializable(typeof(CodebaseIndexProfileDocument))]
 [JsonSerializable(typeof(ToolAuditProfileDocument))]
 [JsonSerializable(typeof(CustomToolProfileDocument))]
 [JsonSerializable(typeof(McpServerProfileDocument))]
 [JsonSerializable(typeof(McpToolProfileDocument))]
 [JsonSerializable(typeof(LanguageServerProfileDocument))]
 [JsonSerializable(typeof(MemorySettings))]
+[JsonSerializable(typeof(CodebaseIndexSettings))]
 [JsonSerializable(typeof(ToolAuditSettings))]
 internal sealed partial class OnboardingStorageJsonContext : JsonSerializerContext
 {

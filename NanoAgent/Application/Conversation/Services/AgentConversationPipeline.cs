@@ -66,6 +66,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ISkillService _skillService;
     private readonly IToolOutputFormatter _toolOutputFormatter;
+    private readonly ICodebaseIndexService? _codebaseIndexService;
+    private readonly CodebaseIndexSettings _codebaseIndexSettings;
     private readonly ILogger<AgentConversationPipeline> _logger;
 
     public AgentConversationPipeline(
@@ -85,7 +87,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ISkillService? skillService = null,
         IToolOutputFormatter? toolOutputFormatter = null,
         IBudgetControlsUsageService? budgetControlsUsageService = null,
-        IWorkspaceAgentProfilePromptProvider? workspaceAgentProfilePromptProvider = null)
+        IWorkspaceAgentProfilePromptProvider? workspaceAgentProfilePromptProvider = null,
+        ICodebaseIndexService? codebaseIndexService = null,
+        CodebaseIndexSettings? codebaseIndexSettings = null)
     {
         _timeProvider = timeProvider;
         _tokenEstimator = tokenEstimator;
@@ -104,6 +108,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _lessonMemoryService = lessonMemoryService;
         _skillService = skillService ?? DisabledSkillService.Instance;
         _toolOutputFormatter = toolOutputFormatter ?? new ToolOutputFormatter();
+        _codebaseIndexService = codebaseIndexService;
+        _codebaseIndexSettings = codebaseIndexSettings ?? new CodebaseIndexSettings();
         _logger = logger;
     }
 
@@ -183,6 +189,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
                 await RunAfterTaskCompleteHookAsync(normalizedInput, session, approvedTurn.Result, cancellationToken);
                 CommitCompletedTurn(session, approvedTurn);
+                await MaybeUpdateCodebaseIndexAsync(cancellationToken);
                 return approvedTurn.Result;
             }
 
@@ -219,6 +226,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             await RunAfterTaskCompleteHookAsync(normalizedInput, session, completedTurn.Result, cancellationToken);
             CommitCompletedTurn(session, completedTurn);
+            await MaybeUpdateCodebaseIndexAsync(cancellationToken);
             return completedTurn.Result;
         }
         catch (OperationCanceledException)
@@ -437,6 +445,24 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         catch
         {
             // The original task failure is more important than a follow-up hook issue.
+        }
+    }
+
+    private async Task MaybeUpdateCodebaseIndexAsync(CancellationToken cancellationToken)
+    {
+        if (!_codebaseIndexSettings.AutoUpdateAfterTask || _codebaseIndexService is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _codebaseIndexService.BuildAsync(force: false, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            // A best-effort post-turn index refresh must never turn a completed assistant turn into a failed turn.
+            ApplicationLogMessages.CodebaseIndexAutoUpdateFailed(_logger, exception);
         }
     }
 

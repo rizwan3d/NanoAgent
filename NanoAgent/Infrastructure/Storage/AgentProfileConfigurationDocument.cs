@@ -23,6 +23,8 @@ internal sealed class AgentProfileConfigurationDocument
 
     public MemoryProfileDocument? Memory { get; set; }
 
+    public CodebaseIndexProfileDocument? CodebaseIndex { get; set; }
+
     public ToolAuditProfileDocument? ToolAudit { get; set; }
 
     public ToolAuditProfileDocument? ToolAuditLog { get; set; }
@@ -61,6 +63,11 @@ internal sealed class MemoryProfileDocument
     public bool? RedactSecrets { get; set; }
 
     public bool? RequireApprovalForWrites { get; set; }
+}
+
+internal sealed class CodebaseIndexProfileDocument
+{
+    public bool? AutoUpdateAfterTask { get; set; }
 }
 
 internal sealed class McpServerProfileDocument
