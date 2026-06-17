@@ -15,4 +15,12 @@ public sealed class ToolExecutionSettings
     public int CompletedBackgroundTerminalTtlSeconds { get; set; } = 300;
 
     public int AgentOrchestrationTimeoutSeconds { get; set; }
+
+    /// <summary>
+    /// Default rendering for tool results in session output. Accepts
+    /// <c>full</c>/<c>complete</c> (print the complete output) or
+    /// <c>compact</c>/<c>preview</c> (print the capped preview).
+    /// <see langword="null"/> or unrecognized values keep the compact default.
+    /// </summary>
+    public string? ToolOutput { get; set; }
 }

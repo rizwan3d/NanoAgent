@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
+using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
 using NanoAgent.Domain.Models;
 using System.Collections.Concurrent;
@@ -43,9 +44,12 @@ internal sealed class ReplSectionService : IReplSectionService
         IConversationProviderClient providerClient,
         IConversationResponseMapper responseMapper,
         IAgentProfileResolver profileResolver,
+        ToolExecutionSettings toolExecutionSettings,
         TimeProvider timeProvider,
         ILogger<ReplSectionService> logger)
     {
+        ArgumentNullException.ThrowIfNull(toolExecutionSettings);
+
         _sectionStore = sectionStore;
         _sessionStore = sessionStore;
         _secretStore = secretStore;
@@ -54,6 +58,12 @@ internal sealed class ReplSectionService : IReplSectionService
         _profileResolver = profileResolver;
         _timeProvider = timeProvider;
         _logger = logger;
+
+        // Establish the configured tool-output default from agent-profile.json
+        // (Application.Tools.toolOutput). The /tooloutput command and per-agent
+        // profile preference still take precedence over this default.
+        ToolOutputDisplay.ConfiguredDefaultFullToolOutput =
+            ToolOutputDisplay.ParsePreference(toolExecutionSettings.ToolOutput);
     }
 
     public async Task<ReplSessionContext> CreateNewAsync(

@@ -76,6 +76,7 @@ public static partial class Program
         new("/setup-sandbox", "/setup-sandbox", "Set up Windows sandbox support for restricted shell commands.", false),
         new("/terminals", "/terminals [stop <id>|stop all]", "List or stop background terminals.", false),
         new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
+        new("/tooloutput", "/tooloutput [compact|full|auto]", "Show or toggle full vs compact tool output.", false),
         new("/tree", "/tree", "Navigate saved sessions.", false),
         new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
         new("/update", "/update [now]", "Check for updates.", false),

@@ -497,7 +497,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
         }
 
         string[] lines = NormalizePreviewLines(output);
-        int displayedLineCount = Math.Min(MaxShellPreviewLines, lines.Length);
+        int displayedLineCount = GetDisplayedCount(lines.Length, MaxShellPreviewLines);
 
         builder.AppendLine();
         builder.Append("  - ").Append(outputLabel).Append(':');
@@ -558,7 +558,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             TryGetJsonInt32(root, "CharacterCount", out int characterCount);
 
             string[] lines = SplitPreviewLines(content);
-            int displayedLineCount = Math.Min(MaxToolPreviewLines, lines.Length);
+            bool showFullContent = ToolOutputDisplay.ShowFullToolOutput;
+            int displayedLineCount = GetDisplayedCount(lines.Length, MaxToolPreviewLines);
             StringBuilder builder = new();
             builder
                 .Append(Bullet)
@@ -575,7 +576,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 return true;
             }
 
-            builder.AppendLine().Append("  - preview:");
+            builder.AppendLine().Append(showFullContent ? "  - content:" : "  - preview:");
             for (int index = 0; index < displayedLineCount; index++)
             {
                 builder
@@ -656,7 +657,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 return true;
             }
 
-            int displayedEntryCount = Math.Min(MaxToolPreviewLines, entries.Count);
+            int displayedEntryCount = GetDisplayedCount(entries.Count, MaxToolPreviewLines);
             for (int index = 0; index < displayedEntryCount; index++)
             {
                 DirectoryEntryDisplayResult entry = entries[index];
@@ -740,7 +741,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 return true;
             }
 
-            int displayedMatchCount = Math.Min(MaxToolPreviewLines, matches.Count);
+            int displayedMatchCount = GetDisplayedCount(matches.Count, MaxToolPreviewLines);
             for (int index = 0; index < displayedMatchCount; index++)
             {
                 TextSearchMatchDisplayResult match = matches[index];
@@ -896,7 +897,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 return true;
             }
 
-            int displayedMatchCount = Math.Min(MaxToolPreviewLines, matches.Count);
+            int displayedMatchCount = GetDisplayedCount(matches.Count, MaxToolPreviewLines);
             for (int index = 0; index < displayedMatchCount; index++)
             {
                 SearchFileMatchDisplayResult match = matches[index];
@@ -997,7 +998,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 return true;
             }
 
-            int displayedLineCount = Math.Min(MaxWebPreviewLines, lines.Count);
+            int displayedLineCount = GetDisplayedCount(lines.Count, MaxWebPreviewLines);
             for (int index = 0; index < displayedLineCount; index++)
             {
                 builder.AppendLine().Append(lines[index]);
@@ -1139,7 +1140,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 .Append(edit.RemovedLineCount)
                 .Append(')');
 
-            int displayedLineCount = Math.Min(MaxToolPreviewLines, edit.PreviewLines.Count);
+            int displayedLineCount = GetDisplayedCount(edit.PreviewLines.Count, MaxToolPreviewLines);
             for (int index = 0; index < displayedLineCount; index++)
             {
                 FilePreviewDisplayLine previewLine = edit.PreviewLines[index];
@@ -1342,6 +1343,13 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             .Split('\n', StringSplitOptions.None)
             .Select(static line => line.TrimEnd())
             .ToArray();
+    }
+
+    private static int GetDisplayedCount(int totalCount, int compactMaxCount)
+    {
+        return ToolOutputDisplay.ShowFullToolOutput
+            ? totalCount
+            : Math.Min(compactMaxCount, totalCount);
     }
 
     private static char GetPreviewLineIndicator(string kind)
