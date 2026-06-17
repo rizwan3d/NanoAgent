@@ -351,8 +351,15 @@ public static partial class Program
                         UpdateModal(state);
                         UpdateStreaming(state);
 
-                        context.UpdateTarget(BuildUi(state));
-                        context.Refresh();
+                        // While the reader view is open we leave the screen untouched
+                        // unless it has been marked dirty (entered or scrolled), so a
+                        // native terminal text selection is not wiped by the next frame.
+                        if (!state.IsReaderViewActive || state.ReaderViewDirty)
+                        {
+                            context.UpdateTarget(BuildUi(state));
+                            context.Refresh();
+                            state.ReaderViewDirty = false;
+                        }
 
                         await Task.Delay(16);
                     }

@@ -1,0 +1,216 @@
+using Spectre.Console;
+using Spectre.Console.Rendering;
+
+namespace NanoAgent.CLI;
+
+public static partial class Program
+{
+    private const string CopySelectionBackground = "grey30";
+    private const string CopyCursorBackground = "grey42";
+
+    // ---- Reader view (chrome-free, natively selectable transcript) ----
+
+    // Renders the whole screen as a plain, border-free transcript so the terminal's
+    // own mouse selection grabs clean text (no panels, padding, gutters or scrollbar).
+    private static IRenderable BuildReaderView(AppState state)
+    {
+        int width = Math.Max(20, GetWindowWidth() - 1);
+        List<string> readerLines = BuildReaderLines(state, width);
+        int viewportLineCount = GetReaderViewportLineCount();
+        int maxScrollOffset = Math.Max(0, readerLines.Count - viewportLineCount);
+        state.ReaderScrollOffset = Math.Clamp(state.ReaderScrollOffset, 0, maxScrollOffset);
+
+        int startLine = state.ReaderScrollOffset;
+        int endLine = Math.Min(readerLines.Count, startLine + viewportLineCount);
+
+        List<string> rendered =
+        [
+            BuildReaderHeaderMarkup(startLine, endLine, readerLines.Count),
+            string.Empty
+        ];
+
+        for (int index = startLine; index < endLine; index++)
+        {
+            rendered.Add(Markup.Escape(readerLines[index]));
+        }
+
+        return new Markup(string.Join('\n', rendered));
+    }
+
+    private static string BuildReaderHeaderMarkup(int startLine, int endLine, int totalLines)
+    {
+        string range = totalLines == 0
+            ? "0/0"
+            : $"{startLine + 1}-{endLine}/{totalLines}";
+
+        return "[grey]── READER VIEW ── select with the mouse to copy · " +
+            $"↑/↓ PgUp/PgDn Home/End scroll · Esc/F5 exit · {range} ──[/]";
+    }
+
+    // Flattens the conversation into clean, wrapped plain-text lines with a role label
+    // before each message. Uses ChatMessage.Text verbatim (no markup, glyphs or boxes).
+    private static List<string> BuildReaderLines(AppState state, int width)
+    {
+        List<string> lines = [];
+
+        foreach (ChatMessage message in state.Messages)
+        {
+            string label = message.Role switch
+            {
+                Role.User => "user",
+                Role.Assistant => "assistant",
+                Role.Thinking => "thinking",
+                Role.System => "system",
+                _ => "message"
+            };
+
+            lines.Add($"{label}:");
+
+            string[] rawLines = message.Text
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n');
+
+            foreach (string rawLine in rawLines)
+            {
+                if (rawLine.Length == 0)
+                {
+                    lines.Add(string.Empty);
+                    continue;
+                }
+
+                foreach (string wrapped in WrapText(rawLine, width))
+                {
+                    lines.Add(wrapped);
+                }
+            }
+
+            lines.Add(string.Empty);
+        }
+
+        if (lines.Count == 0)
+        {
+            lines.Add("No messages yet.");
+        }
+
+        return lines;
+    }
+
+    private static int GetReaderViewportLineCount()
+    {
+        // Two lines are reserved for the reader header and the blank line below it.
+        return Math.Max(1, GetWindowHeight() - 2);
+    }
+
+    private static int GetMaxReaderScrollOffset(AppState state)
+    {
+        int width = Math.Max(20, GetWindowWidth() - 1);
+        int lineCount = BuildReaderLines(state, width).Count;
+        return Math.Max(0, lineCount - GetReaderViewportLineCount());
+    }
+
+    // ---- Copy mode (in-app keyboard selection) ----
+
+    // Wraps each visible line whose global index falls in the current selection with a
+    // background highlight, and gives the cursor line a brighter one. startIndex is the
+    // global index of the first visible line.
+    private static List<ConversationLine> ApplyCopyModeHighlight(
+        AppState state,
+        IReadOnlyList<ConversationLine> visibleLines,
+        int startIndex)
+    {
+        int cursor = state.CopyCursorLine;
+        int anchor = state.CopyAnchorLine ?? cursor;
+        int selectionStart = Math.Min(anchor, cursor);
+        int selectionEnd = Math.Max(anchor, cursor);
+
+        List<ConversationLine> highlighted = new(visibleLines.Count);
+
+        for (int index = 0; index < visibleLines.Count; index++)
+        {
+            ConversationLine line = visibleLines[index];
+            int globalIndex = startIndex + index;
+
+            string markup = line.Markup;
+            if (globalIndex == cursor)
+            {
+                markup = $"[on {CopyCursorBackground}]{markup}[/]";
+            }
+            else if (globalIndex >= selectionStart && globalIndex <= selectionEnd)
+            {
+                markup = $"[on {CopySelectionBackground}]{markup}[/]";
+            }
+
+            highlighted.Add(line with { Markup = markup });
+        }
+
+        return highlighted;
+    }
+
+    // Adjusts the conversation scroll so the copy cursor line stays within the viewport.
+    private static void EnsureCopyCursorVisible(
+        AppState state,
+        int totalLineCount,
+        int viewportLineCount)
+    {
+        if (totalLineCount <= viewportLineCount)
+        {
+            state.ConversationScrollOffset = 0;
+            return;
+        }
+
+        int start = Math.Max(
+            0,
+            totalLineCount - viewportLineCount - state.ConversationScrollOffset);
+
+        if (state.CopyCursorLine < start)
+        {
+            start = state.CopyCursorLine;
+        }
+        else if (state.CopyCursorLine > start + viewportLineCount - 1)
+        {
+            start = state.CopyCursorLine - viewportLineCount + 1;
+        }
+
+        int maxScrollOffset = Math.Max(0, totalLineCount - viewportLineCount);
+        state.ConversationScrollOffset = Math.Clamp(
+            totalLineCount - viewportLineCount - start,
+            0,
+            maxScrollOffset);
+    }
+
+    // The clean text for the current copy selection (or the cursor line when nothing is
+    // anchored), joined by newlines with trailing blank lines trimmed.
+    private static string BuildCopySelectionText(
+        AppState state,
+        IReadOnlyList<ConversationLine> lines)
+    {
+        if (lines.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        int cursor = Math.Clamp(state.CopyCursorLine, 0, lines.Count - 1);
+        int anchor = Math.Clamp(state.CopyAnchorLine ?? cursor, 0, lines.Count - 1);
+        int selectionStart = Math.Min(anchor, cursor);
+        int selectionEnd = Math.Max(anchor, cursor);
+
+        List<string> selected = [];
+        for (int index = selectionStart; index <= selectionEnd; index++)
+        {
+            selected.Add(lines[index].Copy);
+        }
+
+        while (selected.Count > 0 && selected[^1].Length == 0)
+        {
+            selected.RemoveAt(selected.Count - 1);
+        }
+
+        while (selected.Count > 0 && selected[0].Length == 0)
+        {
+            selected.RemoveAt(0);
+        }
+
+        return string.Join(Environment.NewLine, selected);
+    }
+}
