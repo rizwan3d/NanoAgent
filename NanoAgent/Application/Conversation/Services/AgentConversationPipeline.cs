@@ -587,13 +587,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ReplSessionContext session,
         CancellationToken cancellationToken)
     {
-        string? workspaceSystemPrompt = await _workspaceSystemPromptProvider.LoadAsync(
+        return await _workspaceSystemPromptProvider.LoadAsync(
             session,
+            configuredSystemPrompt,
             cancellationToken);
-
-        return string.IsNullOrWhiteSpace(workspaceSystemPrompt)
-            ? configuredSystemPrompt
-            : workspaceSystemPrompt;
     }
 
     private static int? GetCompletionTokens(PhaseExecutionResult phaseResult)
