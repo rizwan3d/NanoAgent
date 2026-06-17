@@ -621,6 +621,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
         - `agent-profile.json`: workspace memory, audit, custom tools, and MCP server settings.
         - `SystemPrompt.md`: optional custom base system prompt. NanoAgent prepends its identity header automatically when this file has content.
+        - `SystemPrompt-Append.md`: optional workspace rules appended to the configured base system prompt without replacing it.
         - `SystemPrompt.md.template`: inactive starter for the advanced SystemPrompt override, when selected during `/init custom`.
         - `.nanoignore`: workspace paths excluded from NanoAgent file tools.
         - `agents/*.md`: custom agents and built-in profile prompt overrides. Files ending in `.template` are inactive until renamed to `.md`.
@@ -632,7 +633,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
 
         Memory writes require approval by default. Keep team memory focused on durable architecture, convention, decision, known-issue, and test-strategy notes.
 
-        Root-level `AGENTS.md` files are loaded as persistent workspace instructions. Use `.nanoagent/SystemPrompt.md` only when you want to replace NanoAgent's base system prompt for this workspace. Use `.nanoagent/agents/build.md`, `plan.md`, `review.md`, `general.md`, or `explore.md` when you only want to replace a built-in profile prompt; NanoAgent keeps the built-in profile's tools and permissions.
+        Root-level `AGENTS.md` files are loaded as persistent workspace instructions. Use `.nanoagent/SystemPrompt-Append.md` when you want to add workspace-specific base rules without replacing NanoAgent's default base prompt. Use `.nanoagent/SystemPrompt.md` only when you want to replace NanoAgent's base system prompt for this workspace. Use `.nanoagent/agents/build.md`, `plan.md`, `review.md`, `general.md`, or `explore.md` when you only want to replace a built-in profile prompt; NanoAgent keeps the built-in profile's tools and permissions.
         """;
 
     private const string SystemPromptTemplate =
