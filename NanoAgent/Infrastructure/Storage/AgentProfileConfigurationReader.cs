@@ -34,6 +34,27 @@ internal static class AgentProfileConfigurationReader
         return NormalizeMemorySettings(settings);
     }
 
+    public static CodebaseIndexSettings LoadCodebaseIndexSettings(
+        IUserDataPathProvider userDataPathProvider,
+        IWorkspaceRootProvider workspaceRootProvider)
+    {
+        ArgumentNullException.ThrowIfNull(userDataPathProvider);
+        ArgumentNullException.ThrowIfNull(workspaceRootProvider);
+
+        CodebaseIndexSettings settings = new();
+        foreach (AgentProfileConfigurationDocument document in LoadDocuments(
+                     userDataPathProvider,
+                     workspaceRootProvider))
+        {
+            if (document.CodebaseIndex is not null)
+            {
+                MergeCodebaseIndexSettings(settings, document.CodebaseIndex);
+            }
+        }
+
+        return settings;
+    }
+
     public static ToolAuditSettings LoadToolAuditSettings(
         IUserDataPathProvider userDataPathProvider,
         IWorkspaceRootProvider workspaceRootProvider)
@@ -630,6 +651,16 @@ internal static class AgentProfileConfigurationReader
         if (source.RequireApprovalForWrites is not null)
         {
             target.RequireApprovalForWrites = source.RequireApprovalForWrites.Value;
+        }
+    }
+
+    private static void MergeCodebaseIndexSettings(
+        CodebaseIndexSettings target,
+        CodebaseIndexProfileDocument source)
+    {
+        if (source.AutoUpdateAfterTask is not null)
+        {
+            target.AutoUpdateAfterTask = source.AutoUpdateAfterTask.Value;
         }
     }
 
