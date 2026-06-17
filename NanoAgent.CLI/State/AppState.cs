@@ -119,6 +119,8 @@ public sealed class AppState
 
     public string? PendingCompletionNote { get; set; }
 
+    public Queue<PendingSubmission> PendingSubmissions { get; } = new();
+
     public string? ProviderName { get; set; }
 
     public string? ReasoningEffort { get; set; }
@@ -199,4 +201,15 @@ public sealed class AppState
             ? null
             : Messages.FirstOrDefault(message => message.Id == StreamingMessageId.Value);
     }
+}
+
+public sealed record PendingSubmission(
+    PendingSubmissionKind Kind,
+    string Text,
+    IReadOnlyList<ConversationAttachment>? Attachments = null);
+
+public enum PendingSubmissionKind
+{
+    Prompt,
+    Command
 }

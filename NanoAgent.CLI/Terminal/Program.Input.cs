@@ -953,6 +953,12 @@ public static partial class Program
             TryClearLargePastedInput(state))
         {
             state.SkipNextInputLineFeed = false;
+            return;
+        }
+
+        if (TryRemoveLastPendingSubmission(state))
+        {
+            state.SkipNextInputLineFeed = false;
         }
     }
 
@@ -1088,6 +1094,26 @@ public static partial class Program
         state.InputAttachments.RemoveAt(state.InputAttachments.Count - 1);
         state.SkipNextInputLineFeed = false;
         ResetSlashCommandSuggestions(state);
+        return true;
+    }
+
+    private static bool TryRemoveLastPendingSubmission(AppState state)
+    {
+        if (state.PendingSubmissions.Count == 0)
+        {
+            return false;
+        }
+
+        PendingSubmission[] submissions = state.PendingSubmissions.ToArray();
+        PendingSubmission removed = submissions[^1];
+        state.PendingSubmissions.Clear();
+
+        for (int index = 0; index < submissions.Length - 1; index++)
+        {
+            state.PendingSubmissions.Enqueue(submissions[index]);
+        }
+
+        state.AddSystemMessage($"Removed queued {DescribePendingSubmission(removed)}.");
         return true;
     }
 
