@@ -43,6 +43,30 @@ public static partial class Program
                 return;
             }
 
+            if (state.IsReaderViewActive)
+            {
+                HandleReaderViewKey(state, key);
+                continue;
+            }
+
+            if (state.IsCopyModeActive)
+            {
+                HandleCopyModeKey(state, key);
+                continue;
+            }
+
+            if (key.Key == ConsoleKey.F5)
+            {
+                EnterReaderView(state);
+                return;
+            }
+
+            if (key.Key == ConsoleKey.F6)
+            {
+                EnterCopyMode(state);
+                return;
+            }
+
             if (key.Key == ConsoleKey.V &&
                 key.Modifiers.HasFlag(ConsoleModifiers.Control))
             {
@@ -513,6 +537,11 @@ public static partial class Program
 
     private static void HandleTerminalKeySequence(AppState state, string sequence)
     {
+        if (HandleSelectionTerminalSequence(state, sequence))
+        {
+            return;
+        }
+
         if (IsMultilineEnterTerminalSequence(sequence))
         {
             AppendInputLineBreak(state);
@@ -1216,6 +1245,85 @@ public static partial class Program
         string FileName,
         IReadOnlyList<string> Arguments,
         bool TrimTrailingNewline);
+
+    // Writes text to the system clipboard using the platform's clipboard CLI, mirroring
+    // TryReadClipboardText. Returns true once a command succeeds.
+    private static bool TryWriteClipboardText(string text)
+    {
+        ClipboardWriteCommand[] commands = OperatingSystem.IsWindows()
+            ? [new ClipboardWriteCommand("powershell.exe", ["-NoProfile", "-Command", "$input | Set-Clipboard"])]
+            : OperatingSystem.IsMacOS()
+                ? [new ClipboardWriteCommand("pbcopy", [])]
+                : [
+                    new ClipboardWriteCommand("wl-copy", []),
+                    new ClipboardWriteCommand("xclip", ["-selection", "clipboard"]),
+                    new ClipboardWriteCommand("xsel", ["--clipboard", "--input"])
+                ];
+
+        foreach (ClipboardWriteCommand command in commands)
+        {
+            try
+            {
+                ProcessStartInfo startInfo = new()
+                {
+                    FileName = command.FileName,
+                    RedirectStandardInput = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    StandardInputEncoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+                };
+
+                foreach (string argument in command.Arguments)
+                {
+                    startInfo.ArgumentList.Add(argument);
+                }
+
+                using Process? process = Process.Start(startInfo);
+                if (process is null)
+                {
+                    continue;
+                }
+
+                process.StandardInput.Write(text);
+                process.StandardInput.Close();
+
+                if (!process.WaitForExit(ClipboardReadTimeoutMilliseconds))
+                {
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                    }
+
+                    continue;
+                }
+
+                if (process.ExitCode == 0)
+                {
+                    return true;
+                }
+            }
+            catch (Win32Exception)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (IOException)
+            {
+            }
+        }
+
+        return false;
+    }
+
+    private sealed record ClipboardWriteCommand(
+        string FileName,
+        IReadOnlyList<string> Arguments);
 
     private static void ConsumeBracketedPasteInput(AppState state)
     {
