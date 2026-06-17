@@ -14,6 +14,9 @@ public static partial class Program
     private const int FallbackWindowHeight = 24;
     private const int MinimumPanelHeight = 3;
     private const int MinimumStandardLayoutHeight = 10;
+    private const int PanelChromeLineCount = 2;
+    private const int FooterPanelSize = 1;
+    private const string BusyStatusText = "NanoAgent is working";
 
     private static IRenderable BuildUi(AppState state)
     {
@@ -35,8 +38,8 @@ public static partial class Program
             return BuildCompactUi(state, windowWidth, windowHeight);
         }
 
-        int footerSize = 1;
-        int inputSize = Math.Max(MinimumPanelHeight, GetInputPanelSize(state));
+        int footerSize = FooterPanelSize;
+        int inputSize =Math.Max(MinimumPanelHeight, GetInputPanelSize(state));
         int headerSize = GetHeaderPanelSize(state);
         int bodyMinimumSize = HasPinnedPlan(state) ? 8 : MinimumPanelHeight;
         int totalFixedSize = headerSize + inputSize + footerSize;
@@ -62,8 +65,8 @@ public static partial class Program
             }
         }
 
-        Layout root = new Layout("root")
-            .SplitRows(
+        Layout root = new Layout("root");
+            root.SplitRows(
                 new Layout("header").Size(headerSize),
                 new Layout("body").Ratio(1),
                 new Layout("input").Size(inputSize),
@@ -80,7 +83,8 @@ public static partial class Program
             root["body"].Update(BuildBodyPanel(state));
         }
 
-        root["input"].Update(BuildInputPanel(state));
+            root["input"].Update(BuildInputPanel(state));
+
         root["footer"].Update(new Markup(BuildFooterMarkup(state)));
 
         return root;
@@ -135,10 +139,26 @@ public static partial class Program
 
     private static IRenderable BuildMessagesPanel(AppState state)
     {
-        return new Panel(new Markup(BuildMessagesMarkup(state)))
+        return new Panel(BuildMessagesPanelContent(state))
             .Header(BuildMessagesPanelHeaderMarkup(state))
             .Border(BoxBorder.Square)
             .Expand();
+    }
+
+    private static IRenderable BuildMessagesPanelContent(AppState state)
+    {
+        if (!ShouldShowBusyStatus(state))
+        {
+            return new Markup(BuildMessagesMarkup(state));
+        }
+
+        Layout content = new Layout("messages-panel-content");
+        content.SplitRows(
+            new Layout("messages").Ratio(1),
+            new Layout("busy").Size(GetBusyStatusReservedLineCount(state)));
+        content["messages"].Update(new Markup(BuildMessagesMarkup(state)));
+        content["busy"].Update(BuildBusyStatusRenderable(state));
+        return content;
     }
 
     private static string BuildMessagesPanelHeaderMarkup(AppState state)
@@ -542,17 +562,14 @@ public static partial class Program
 
     private static int GetMessageViewportLineCount(AppState state)
     {
-        int reservedLines = GetHeaderPanelSize(state) +
-            (state.ActiveModal is null
-                ? GetInputPanelSize(state) + 6
-                : state.ActiveModal.PanelSize + GetInputPanelSize(state) + 7);
-
-        if (state.ActiveModal is null && HasPinnedPlan(state))
+        if (state.ActiveModal is not null)
         {
-            reservedLines += GetPinnedPlanPanelSize(state);
+            return 0;
         }
 
-        return Math.Max(5, GetWindowHeight() - reservedLines);
+        int messagesPanelSize = GetMessagesPanelSize(state);
+        int reservedLines = PanelChromeLineCount + GetBusyStatusReservedLineCount(state);
+        return Math.Max(1, messagesPanelSize - reservedLines);
     }
 
     private static int GetMaxConversationScrollOffset(AppState state)
@@ -580,12 +597,67 @@ public static partial class Program
         int contentWidth = GetPinnedPlanContentWidth();
         int bodyLineCount = GetPinnedPlanLines(state)
             .Sum(line => WrapText(line, contentWidth).Count);
+        int inputSize = GetInputPanelSize(state);
         int availableBodySize = Math.Max(
             5,
-            GetWindowHeight() - GetHeaderPanelSize(state) - GetInputPanelSize(state) - 1);
+            GetWindowHeight() - GetHeaderPanelSize(state) - inputSize - FooterPanelSize);
         int maxPanelSize = Math.Min(12, Math.Max(5, availableBodySize - 5));
 
         return Math.Clamp(bodyLineCount + 2, 5, maxPanelSize);
+    }
+
+    private static int GetMessagesPanelSize(AppState state)
+    {
+        int bodySize = Math.Max(
+            MinimumPanelHeight,
+            GetWindowHeight() - GetHeaderPanelSize(state) - GetInputPanelSize(state) - FooterPanelSize);
+
+        if (HasPinnedPlan(state))
+        {
+            bodySize = Math.Max(MinimumPanelHeight, bodySize - GetPinnedPlanPanelSize(state));
+        }
+
+        return bodySize;
+    }
+
+    private static int GetBusyStatusReservedLineCount(AppState state)
+    {
+        return ShouldShowBusyStatus(state) ? 1 : 0;
+    }
+
+    private static bool ShouldShowBusyStatus(AppState state)
+    {
+        return state.ActiveModal is null && (state.IsBusy || state.IsStreaming);
+    }
+
+    private static IRenderable BuildBusyStatusRenderable(AppState state)
+    {
+        string spinner = Spinner[state.SpinnerFrame / 4 % Spinner.Length];
+        StringBuilder markup = new();
+        markup.Append("[bold aqua]")
+            .Append(Markup.Escape($"{spinner} "))
+            .Append("[/]");
+
+        double animationTime = state.SpinnerFrame / 8d;
+        for (int index = 0; index < BusyStatusText.Length; index++)
+        {
+            char character = BusyStatusText[index];
+            int red = 0;
+            int green = Math.Clamp(
+                (int)Math.Round(120 + 100 * Math.Sin(animationTime * 0.6d + index * 0.6d)),
+                80,
+                255);
+            int blue = Math.Clamp(
+                (int)Math.Round(200 + 55 * Math.Sin(animationTime * 0.6d + index * 0.6d + 1d)),
+                160,
+                255);
+
+            markup.Append($"[bold #{red:X2}{green:X2}{blue:X2}]")
+                .Append(Markup.Escape(character.ToString()))
+                .Append("[/]");
+        }
+
+        return new Markup(markup.ToString());
     }
 
     private static int GetPinnedPlanContentWidth()
@@ -751,9 +823,7 @@ public static partial class Program
     {
         string inputMarkup = BuildInputLineMarkup(
             input,
-            cursorIndex,
-            isBusy,
-            state);
+            cursorIndex);
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -874,6 +944,12 @@ public static partial class Program
                 "[grey]Copy mode: ↑/↓ move[/]  [grey]|[/]  [grey]V/Space: start selection[/]  [grey]|[/]  [grey]Shift+↑/↓: extend[/]  [grey]|[/]  [grey]A: all[/]  [grey]|[/]  [grey]Y: copy[/]  [grey]|[/]  [grey]Esc: exit[/]");
         }
 
+        if (state.IsBusy || state.IsStreaming)
+        {
+            return BuildFooterLineMarkup(
+                "[grey]Esc: interrupt[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+        }
+
         if (TryGetSlashCommandSuggestions(state, out _))
         {
             return BuildFooterLineMarkup(
@@ -886,22 +962,16 @@ public static partial class Program
 
     private static string BuildInputLineMarkup(
         string input,
-        int cursorIndex,
-        bool isBusy, AppState state)
+        int cursorIndex)
     {
-        string spinner = state.IsBusy || state.IsStreaming
-            ? Spinner[state.SpinnerFrame / 4 % Spinner.Length]
-            : " ";
         string normalizedInput = input ?? string.Empty;
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
-        string busySuffixPlain = isBusy ? $"[yellow]{spinner}[/]" + " Press Esc to interrupt the current request." : string.Empty;
-        string busySuffixMarkup = isBusy ? $"[yellow]{spinner}[/]" + " [grey]Press Esc to interrupt the current request.[/]" : string.Empty;
         const string promptPlain = "> ";
         const string promptMarkup = "[bold green]❯[/] ";
         int contentWidth = Math.Max(20, GetWindowWidth() - 10);
         int maxInputLength = Math.Max(
             1,
-            contentWidth - promptPlain.Length - busySuffixPlain.Length - InputCursorColumnWidth);
+            contentWidth - promptPlain.Length - InputCursorColumnWidth);
         IReadOnlyList<InputRenderLine> inputLines = WrapInputTextForCursor(
             normalizedInput,
             normalizedCursorIndex,
@@ -914,10 +984,9 @@ public static partial class Program
             InputRenderLine inputLine = inputLines[index];
             bool showPrompt = index == 0;
             string prefixMarkup = showPrompt ? promptMarkup : "  ";
-            string suffixMarkup = showPrompt ? busySuffixMarkup : string.Empty;
             string lineMarkup = BuildInputRenderLineMarkup(inputLine);
 
-            renderedLines.Add($"{prefixMarkup}{lineMarkup}{suffixMarkup}");
+            renderedLines.Add($"{prefixMarkup}{lineMarkup}");
         }
 
         return string.Join('\n', renderedLines);
@@ -957,7 +1026,7 @@ public static partial class Program
                 ? 1
                 : WrapInputText(
                         visibleInput,
-                        GetInputFirstLineTextWidth(isBusy),
+                        GetInputFirstLineTextWidth(),
                         GetInputContinuationLineTextWidth()).Count;
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
@@ -1165,15 +1234,14 @@ public static partial class Program
         return countableInput.Count(static character => character == '\n') + 1;
     }
 
-    private static int GetInputFirstLineTextWidth(bool isBusy)
+    private static int GetInputFirstLineTextWidth()
     {
         const string promptPlain = "❯ ";
-        string busySuffixPlain = isBusy ? " Press Esc to interrupt the current request." : string.Empty;
         int contentWidth = Math.Max(20, GetWindowWidth() - 10);
 
         return Math.Max(
             1,
-            contentWidth - promptPlain.Length - busySuffixPlain.Length - InputCursorColumnWidth);
+            contentWidth - promptPlain.Length - InputCursorColumnWidth);
     }
 
     private static int GetInputContinuationLineTextWidth()
