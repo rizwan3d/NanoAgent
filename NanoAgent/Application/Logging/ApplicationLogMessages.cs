@@ -130,4 +130,10 @@ internal static partial class ApplicationLogMessages
         int totalTokens,
         int providerRetryCount,
         int toolRoundCount);
+
+    [LoggerMessage(
+        EventId = 1020,
+        Level = LogLevel.Warning,
+        Message = "The post-turn codebase index auto-update failed. The completed turn was not affected.")]
+    public static partial void CodebaseIndexAutoUpdateFailed(ILogger logger, Exception exception);
 }
