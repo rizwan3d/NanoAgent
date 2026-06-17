@@ -633,15 +633,16 @@ public static partial class Program
     private static IRenderable BuildBusyStatusRenderable(AppState state)
     {
         string spinner = Spinner[state.SpinnerFrame / 4 % Spinner.Length];
+        string busyStatusText = BuildBusyStatusText(state);
         StringBuilder markup = new();
         markup.Append("[bold aqua]")
             .Append(Markup.Escape($"{spinner} "))
             .Append("[/]");
 
         double animationTime = state.SpinnerFrame / 8d;
-        for (int index = 0; index < BusyStatusText.Length; index++)
+        for (int index = 0; index < busyStatusText.Length; index++)
         {
-            char character = BusyStatusText[index];
+            char character = busyStatusText[index];
             int red = 0;
             int green = Math.Clamp(
                 (int)Math.Round(120 + 100 * Math.Sin(animationTime * 0.6d + index * 0.6d)),
@@ -658,6 +659,13 @@ public static partial class Program
         }
 
         return new Markup(markup.ToString());
+    }
+
+    private static string BuildBusyStatusText(AppState state)
+    {
+        return state.PendingSubmissions.Count == 0
+            ? BusyStatusText
+            : $"{BusyStatusText} - {state.PendingSubmissions.Count} queued";
     }
 
     private static int GetPinnedPlanContentWidth()
@@ -851,6 +859,11 @@ public static partial class Program
             lines.Add($"[grey]{Markup.Escape(attachmentSummary)}[/]");
         }
 
+        if (TryBuildPendingSubmissionSummary(state, out string pendingSubmissionSummary))
+        {
+            lines.Add($"[grey]{Markup.Escape(pendingSubmissionSummary)}[/]");
+        }
+
         return string.Join('\n', lines);
     }
 
@@ -918,6 +931,23 @@ public static partial class Program
         return true;
     }
 
+    private static bool TryBuildPendingSubmissionSummary(
+        AppState state,
+        out string summary)
+    {
+        if (state.PendingSubmissions.Count == 0)
+        {
+            summary = string.Empty;
+            return false;
+        }
+
+        int queuedCount = state.PendingSubmissions.Count;
+        summary = queuedCount == 1
+            ? "1 queued prompt - F4 removes newest"
+            : $"{queuedCount} queued prompts - F4 removes newest";
+        return true;
+    }
+
     private static string BuildFooterMarkup(AppState state)
     {
         if (state.ActiveModal is not null)
@@ -947,7 +977,7 @@ public static partial class Program
         if (state.IsBusy || state.IsStreaming)
         {
             return BuildFooterLineMarkup(
-                "[grey]Esc: interrupt[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+                "[grey]Enter: queue prompt[/]  [grey]|[/]  [grey]F4: remove queued[/]  [grey]|[/]  [grey]Esc: interrupt[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
         }
 
         if (TryGetSlashCommandSuggestions(state, out _))
@@ -1049,6 +1079,11 @@ public static partial class Program
         }
 
         if (state.InputAttachments.Count > 0)
+        {
+            lineCount++;
+        }
+
+        if (state.PendingSubmissions.Count > 0)
         {
             lineCount++;
         }
