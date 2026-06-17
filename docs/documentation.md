@@ -322,6 +322,7 @@ nanoai --session <session-guid>
 | `/profile <name>` | Switch the active profile. |
 | `/thinking [on\|off]` | Show or set simple thinking mode. |
 | `/reasoning [show\|<none\|minimal\|low\|medium\|high\|xhigh\|max>]` | Show or set provider reasoning effort. |
+| `/tooloutput [compact\|full\|auto]` | Show or toggle whether tool results print their complete output or a compact preview. `auto` follows the active agent profile. |
 | `/permissions` | Show permission summary and override guidance. |
 | `/rules` | Show effective permission rules in evaluation order. |
 | `/setting [model\|profile\|thinking\|provider\|budget\|workspace\|permissions\|tools\|summary]` | Open the settings picker or jump directly to a settings area. |
@@ -384,13 +385,16 @@ Workspace `agent-profile.json` can tune tool timeouts and background terminal re
       "agentOrchestrationTimeoutSeconds": 0,
       "defaultTimeoutSeconds": 180,
       "maxConcurrentBackgroundTerminalsPerSession": 4,
-      "completedBackgroundTerminalTtlSeconds": 300
+      "completedBackgroundTerminalTtlSeconds": 300,
+      "toolOutput": "compact"
     }
   }
 }
 ```
 
 Set `httpClientTimeoutSeconds` to override the default timeout used by NanoAgent-managed `HttpClient` instances. Set `mcpRequestTimeoutSeconds` to cap individual MCP request/response cycles for both stdio and HTTP MCP servers. Set `acpRequestTimeoutSeconds` to cap ACP editor prompt requests such as permission or text-entry requests. Set `agentOrchestrationTimeoutSeconds` to add an orchestration-wide timeout for `agent_orchestrate`. A value of `0` keeps the existing default behavior for each setting.
+
+Set `toolOutput` to choose how tool results render in session output: `full` (or `complete`) prints the complete output and `compact` (or `preview`) prints the capped preview. Omit it or leave it unrecognized to keep the compact default. This is the lowest-priority source — a per-agent markdown profile's `toolOutput` front-matter key overrides it for that profile, and the `/tooloutput` command overrides both for the current session (`/tooloutput auto` reverts to the profile/configured default).
 
 Completed background terminals remain readable until `completedBackgroundTerminalTtlSeconds` expires. Running background terminals are stopped when the NanoAgent process exits.
 
@@ -983,6 +987,7 @@ mode: subagent
 description: Read-only reviewer for bugs, regressions, edge cases, and missing tests.
 editMode: readOnly
 shellMode: safeInspectionOnly
+toolOutput: full
 tools:
   - code_intelligence
   - directory_list
@@ -993,6 +998,8 @@ tools:
 ---
 Review the requested code or change set with a findings-first posture.
 ```
+
+The optional `toolOutput` key sets the default rendering for tool results while the profile is active: `full`/`complete` prints the complete output and `compact`/`preview` prints the capped preview. Omit it to fall back to the `Application.Tools.toolOutput` default in `agent-profile.json` (or the compact default if that is also unset). `/tooloutput` overrides this for the current session, and `/tooloutput auto` reverts to the profile or configured default. (The legacy `fileOutput` key is still accepted as an alias.)
 
 If front matter is omitted, NanoAgent derives the name from the file name and uses conservative defaults.
 

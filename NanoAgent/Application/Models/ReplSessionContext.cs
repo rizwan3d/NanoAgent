@@ -1,4 +1,5 @@
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Profiles;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Domain.Models;
@@ -102,6 +103,7 @@ public sealed class ReplSessionContext
 
         ApplicationName = applicationName.Trim();
         AgentProfile = agentProfile ?? BuiltInAgentProfiles.Build;
+        ToolOutputDisplay.ProfileFullToolOutput = AgentProfile.FullToolOutput;
         ActiveProviderName = NormalizeProviderName(activeProviderName);
         ProviderProfile = providerProfile;
         AvailableModelIds = NormalizeAvailableModelIds(availableModelIds);
@@ -591,6 +593,8 @@ public sealed class ReplSessionContext
     public void SetAgentProfile(IAgentProfile agentProfile)
     {
         ArgumentNullException.ThrowIfNull(agentProfile);
+
+        ToolOutputDisplay.ProfileFullToolOutput = agentProfile.FullToolOutput;
 
         if (string.Equals(AgentProfile.Name, agentProfile.Name, StringComparison.OrdinalIgnoreCase))
         {

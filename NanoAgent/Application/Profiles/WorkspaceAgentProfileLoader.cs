@@ -173,6 +173,7 @@ internal static class WorkspaceAgentProfileLoader
             ?? GetFirstValue(document.Metadata, "behaviorIntent")
             ?? CreateDefaultBehaviorIntent(editMode, shellMode);
         IReadOnlySet<string> enabledTools = ParseEnabledTools(document.Metadata, mode, editMode);
+        bool? fullToolOutput = ParseFullToolOutput(document.Metadata);
 
         profile = new BuiltInAgentProfile(
             profileName,
@@ -183,7 +184,8 @@ internal static class WorkspaceAgentProfileLoader
             new AgentProfilePermissionOverlay(
                 editMode,
                 shellMode,
-                behaviorIntent));
+                behaviorIntent),
+            fullToolOutput);
         return true;
     }
 
@@ -329,6 +331,24 @@ internal static class WorkspaceAgentProfileLoader
             _ => editMode == AgentProfileEditMode.AllowEdits
                 ? AgentProfileShellMode.Default
                 : AgentProfileShellMode.SafeInspectionOnly
+        };
+    }
+
+    private static bool? ParseFullToolOutput(Dictionary<string, List<string>> metadata)
+    {
+        string normalized = NormalizeOption(
+            GetFirstValue(metadata, "toolOutput") ??
+            GetFirstValue(metadata, "tool_output") ??
+            GetFirstValue(metadata, "tooloutput") ??
+            GetFirstValue(metadata, "fileOutput") ??
+            GetFirstValue(metadata, "file_output") ??
+            GetFirstValue(metadata, "fileoutput"));
+
+        return normalized switch
+        {
+            "full" or "complete" or "all" or "on" or "true" => true,
+            "compact" or "preview" or "short" or "off" or "false" => false,
+            _ => null
         };
     }
 
