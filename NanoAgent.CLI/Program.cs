@@ -33,10 +33,16 @@ public static partial class Program
     private static uint? s_originalInputMode;
     private static readonly string[] Spinner =
     [
-        "-",
-        "\\",
-        "|",
-        "/"
+        "⠋",
+        "⠙",
+        "⠹",
+        "⠸",
+        "⠼",
+        "⠴",
+        "⠦",
+        "⠧",
+        "⠇",
+        "⠏"
     ];
     private static readonly SlashCommandSuggestion[] SlashCommandSuggestions =
     [
