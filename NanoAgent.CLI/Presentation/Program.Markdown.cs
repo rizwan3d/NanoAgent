@@ -315,20 +315,25 @@ public static partial class Program
             roleColor);
     }
 
+    // copyPlain lets callers supply clean copy text that differs from the on-screen
+    // content (e.g. code blocks omit their gutter). When null, the on-screen content
+    // text is used verbatim. The role prefix is never part of the copy text.
     private static void AddConversationContentLine(
         List<ConversationLine> lines,
         string contentMarkup,
         string contentPlain,
         ref bool firstLine,
         string roleName,
-        string roleColor)
+        string roleColor,
+        string? copyPlain = null)
     {
         string prefixPlain = firstLine ? $"{roleName} " : "     ";
         string prefixMarkup = firstLine ? $"[{roleColor}]{roleName}[/] " : "     ";
 
         lines.Add(new ConversationLine(
             prefixMarkup + contentMarkup,
-            prefixPlain + contentPlain));
+            prefixPlain + contentPlain,
+            copyPlain ?? contentPlain));
 
         firstLine = false;
     }

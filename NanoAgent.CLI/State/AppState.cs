@@ -94,6 +94,27 @@ public sealed class AppState
 
     public int ConversationScrollOffset { get; set; }
 
+    // Reader view: a full-screen, chrome-free plain-text transcript that pauses the
+    // live redraw so the terminal's own mouse selection can grab clean text.
+    public bool IsReaderViewActive { get; set; }
+
+    public int ReaderScrollOffset { get; set; }
+
+    // Set whenever the reader view must be repainted (on enter / scroll). While it is
+    // false and the reader view is active, the render loop leaves the screen untouched
+    // so a native selection is not wiped by the next frame.
+    public bool ReaderViewDirty { get; set; }
+
+    // Copy mode: an in-app, keyboard-driven line selection over the conversation that
+    // copies the clean underlying text to the system clipboard.
+    public bool IsCopyModeActive { get; set; }
+
+    // Cursor position as an index into the full conversation line list.
+    public int CopyCursorLine { get; set; }
+
+    // Selection anchor; null until the user starts a selection.
+    public int? CopyAnchorLine { get; set; }
+
     public DateTimeOffset? CurrentTurnStartedAt { get; set; }
 
     public string? PendingCompletionNote { get; set; }
