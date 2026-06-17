@@ -29,15 +29,21 @@ public sealed class InteractiveModelSelectionServiceTests
                 It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
 
+        StubReasoningSelectionService reasoningSelectionService = new(
+            ReplCommandResult.Continue("Reasoning effort set to high."));
+
         InteractiveModelSelectionService sut = new(
             selectionPrompt,
             new ModelActivationService(),
-            configurationStore.Object);
+            configurationStore.Object,
+            reasoningSelectionService);
 
         ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
-        result.Message.Should().Be($"Active model switched to '{"model-b".ToDisplayName()}'.");
+        result.Message.Should().Be(
+            $"Active model switched to '{"model-b".ToDisplayName()}'. Reasoning effort set to high.");
+        reasoningSelectionService.CallCount.Should().Be(1);
         session.ActiveModelId.Should().Be("model-b");
 
         SelectionPromptRequest<string> request = selectionPrompt.LastRequest!;
@@ -61,14 +67,20 @@ public sealed class InteractiveModelSelectionServiceTests
             "model-a",
             ["model-a", "model-b"]);
 
+        StubReasoningSelectionService reasoningSelectionService = new(
+            ReplCommandResult.Continue("Reasoning effort is already (provider default)."));
+
         InteractiveModelSelectionService sut = new(
             selectionPrompt,
             new ModelActivationService(),
-            configurationStore.Object);
+            configurationStore.Object,
+            reasoningSelectionService);
 
         ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
 
-        result.Message.Should().Be($"Already using '{"model-a".ToDisplayName()}'.");
+        result.Message.Should().Be(
+            $"Already using '{"model-a".ToDisplayName()}'. Reasoning effort is already (provider default).");
+        reasoningSelectionService.CallCount.Should().Be(1);
         session.ActiveModelId.Should().Be("model-a");
         configurationStore.VerifyNoOtherCalls();
     }
@@ -83,15 +95,20 @@ public sealed class InteractiveModelSelectionServiceTests
             "model-a",
             ["model-a", "model-b"]);
 
+        StubReasoningSelectionService reasoningSelectionService = new(
+            ReplCommandResult.Continue("should not be used"));
+
         InteractiveModelSelectionService sut = new(
             selectionPrompt,
             new ModelActivationService(),
-            configurationStore.Object);
+            configurationStore.Object,
+            reasoningSelectionService);
 
         ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Warning);
         result.Message.Should().Be("Model selection cancelled.");
+        reasoningSelectionService.CallCount.Should().Be(0);
         session.ActiveModelId.Should().Be("model-a");
         configurationStore.VerifyNoOtherCalls();
     }
@@ -115,6 +132,26 @@ public sealed class InteractiveModelSelectionServiceTests
                 ?? throw new InvalidOperationException("Unexpected prompt type.");
 
             return Task.FromResult((T)(object)_selectedModelId);
+        }
+    }
+
+    private sealed class StubReasoningSelectionService : IInteractiveReasoningSelectionService
+    {
+        private readonly ReplCommandResult _result;
+
+        public StubReasoningSelectionService(ReplCommandResult result)
+        {
+            _result = result;
+        }
+
+        public int CallCount { get; private set; }
+
+        public Task<ReplCommandResult> SelectAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(_result);
         }
     }
 

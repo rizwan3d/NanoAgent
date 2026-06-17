@@ -9,16 +9,19 @@ internal sealed class InteractiveModelSelectionService : IInteractiveModelSelect
 {
     private readonly IAgentConfigurationStore _configurationStore;
     private readonly IModelActivationService _modelActivationService;
+    private readonly IInteractiveReasoningSelectionService _reasoningSelectionService;
     private readonly ISelectionPrompt _selectionPrompt;
 
     public InteractiveModelSelectionService(
         ISelectionPrompt selectionPrompt,
         IModelActivationService modelActivationService,
-        IAgentConfigurationStore configurationStore)
+        IAgentConfigurationStore configurationStore,
+        IInteractiveReasoningSelectionService reasoningSelectionService)
     {
         _selectionPrompt = selectionPrompt;
         _modelActivationService = modelActivationService;
         _configurationStore = configurationStore;
+        _reasoningSelectionService = reasoningSelectionService;
     }
 
     public async Task<ReplCommandResult> SelectAsync(
@@ -72,23 +75,47 @@ internal sealed class InteractiveModelSelectionService : IInteractiveModelSelect
                 cancellationToken);
         }
 
-        return result.Status switch
+        switch (result.Status)
         {
-            ModelActivationStatus.Switched =>
-                ReplCommandResult.Continue(
-                    $"Active model switched to '{result.ResolvedModelId.ToDisplayName()}'."),
-            ModelActivationStatus.AlreadyActive =>
-                ReplCommandResult.Continue(
-                    $"Already using '{result.ResolvedModelId.ToDisplayName()}'."),
-            ModelActivationStatus.Ambiguous =>
-                ReplCommandResult.Continue(
+            case ModelActivationStatus.Switched:
+                return await ChainReasoningSelectionAsync(
+                    session,
+                    $"Active model switched to '{result.ResolvedModelId.ToDisplayName()}'.",
+                    cancellationToken);
+            case ModelActivationStatus.AlreadyActive:
+                return await ChainReasoningSelectionAsync(
+                    session,
+                    $"Already using '{result.ResolvedModelId.ToDisplayName()}'.",
+                    cancellationToken);
+            case ModelActivationStatus.Ambiguous:
+                return ReplCommandResult.Continue(
                     "Selected model is ambiguous. Matches: " + string.Join(", ", result.CandidateModelIds.Select(id => id.ToDisplayName())),
-                    ReplFeedbackKind.Error),
-            _ =>
-                ReplCommandResult.Continue(
+                    ReplFeedbackKind.Error);
+            default:
+                return ReplCommandResult.Continue(
                     $"Selected model '{selectedModelId.ToDisplayName()}' is not available.",
-                    ReplFeedbackKind.Error)
-        };
+                    ReplFeedbackKind.Error);
+        }
+    }
+
+    private async Task<ReplCommandResult> ChainReasoningSelectionAsync(
+        ReplSessionContext session,
+        string modelMessage,
+        CancellationToken cancellationToken)
+    {
+        ReplCommandResult reasoningResult = await _reasoningSelectionService.SelectAsync(
+            session,
+            cancellationToken);
+
+        string combinedMessage = string.IsNullOrWhiteSpace(reasoningResult.Message)
+            ? modelMessage
+            : $"{modelMessage} {reasoningResult.Message}";
+
+        ReplFeedbackKind feedbackKind = reasoningResult.FeedbackKind == ReplFeedbackKind.Error
+            ? ReplFeedbackKind.Error
+            : ReplFeedbackKind.Info;
+
+        return ReplCommandResult.Continue(combinedMessage, feedbackKind);
     }
 
     private static SelectionPromptOption<string>[] CreateOptions(
