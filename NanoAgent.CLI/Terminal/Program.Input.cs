@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Text;
 
 namespace NanoAgent.CLI;
@@ -39,6 +41,13 @@ public static partial class Program
             {
                 state.Running = false;
                 return;
+            }
+
+            if (key.Key == ConsoleKey.V &&
+                key.Modifiers.HasFlag(ConsoleModifiers.Control))
+            {
+                PasteFromClipboard(state);
+                continue;
             }
 
             if (IsEscapeKey(key))
@@ -1106,6 +1115,107 @@ public static partial class Program
             }
         }
     }
+
+    private static void PasteFromClipboard(AppState state)
+    {
+        string? text = TryReadClipboardText();
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        AppendInputText(state, text, collapseLargePaste: true);
+    }
+
+    private static string? TryReadClipboardText()
+    {
+        ClipboardReadCommand[] commands = OperatingSystem.IsWindows()
+            ? [new ClipboardReadCommand("powershell.exe", ["-NoProfile", "-Command", "Get-Clipboard -Raw"], TrimTrailingNewline: true)]
+            : OperatingSystem.IsMacOS()
+                ? [new ClipboardReadCommand("pbpaste", [], TrimTrailingNewline: false)]
+                : [
+                    new ClipboardReadCommand("wl-paste", ["--no-newline"], TrimTrailingNewline: false),
+                    new ClipboardReadCommand("xclip", ["-selection", "clipboard", "-o"], TrimTrailingNewline: false),
+                    new ClipboardReadCommand("xsel", ["--clipboard", "--output"], TrimTrailingNewline: false)
+                ];
+
+        foreach (ClipboardReadCommand command in commands)
+        {
+            try
+            {
+                ProcessStartInfo startInfo = new()
+                {
+                    FileName = command.FileName,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+
+                foreach (string argument in command.Arguments)
+                {
+                    startInfo.ArgumentList.Add(argument);
+                }
+
+                using Process? process = Process.Start(startInfo);
+                if (process is null)
+                {
+                    continue;
+                }
+
+                string output = process.StandardOutput.ReadToEnd();
+                if (!process.WaitForExit(ClipboardReadTimeoutMilliseconds))
+                {
+                    try
+                    {
+                        process.Kill(entireProcessTree: true);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                    }
+
+                    continue;
+                }
+
+                if (process.ExitCode != 0 || output.Length == 0)
+                {
+                    continue;
+                }
+
+                return command.TrimTrailingNewline
+                    ? TrimSingleTrailingNewline(output)
+                    : output;
+            }
+            catch (Win32Exception)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static string TrimSingleTrailingNewline(string text)
+    {
+        if (text.EndsWith("\r\n", StringComparison.Ordinal))
+        {
+            return text[..^2];
+        }
+
+        if (text.Length > 0 && text[^1] is '\n' or '\r')
+        {
+            return text[..^1];
+        }
+
+        return text;
+    }
+
+    private sealed record ClipboardReadCommand(
+        string FileName,
+        IReadOnlyList<string> Arguments,
+        bool TrimTrailingNewline);
 
     private static void ConsumeBracketedPasteInput(AppState state)
     {
