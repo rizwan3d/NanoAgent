@@ -68,6 +68,7 @@ public static partial class Program
                     if (running.Length == 0)
                     {
                         appState.AddSystemMessage("No running background terminals to view. Start one with !!<command>.");
+                        TryStartNextPendingSubmission(appState);
                         return;
                     }
 
@@ -90,6 +91,7 @@ public static partial class Program
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
+                    TryStartNextPendingSubmission(appState);
                 });
             }
             catch (Exception exception)
@@ -99,6 +101,7 @@ public static partial class Program
                     appState.IsBusy = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.AddSystemMessage($"Failed to list background terminals: {exception.Message}");
+                    TryStartNextPendingSubmission(appState);
                 });
             }
         });
@@ -243,6 +246,7 @@ public static partial class Program
         state.IsBusy = false;
         state.ClearBusyWhenStreamCompletes = false;
         state.ActivityText = state.IsReady ? "Ready" : "Idle";
+        TryStartNextPendingSubmission(state);
     }
 
     private static string DescribeTerminalCommand(string command)
