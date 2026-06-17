@@ -153,6 +153,46 @@ public sealed class ToolOutputFormatterTests
     }
 
     [Fact]
+    public void FormatResults_ShouldRenderCompleteShellOutput_WhenFullToolOutputIsEnabled()
+    {
+        bool? previousOverride = ToolOutputDisplay.FullToolOutputOverride;
+        bool? previousProfile = ToolOutputDisplay.ProfileFullToolOutput;
+        try
+        {
+            ToolOutputDisplay.FullToolOutputOverride = true;
+            ToolOutputDisplay.ProfileFullToolOutput = null;
+
+            string output = string.Join("\\n", Enumerable.Range(1, 10).Select(static line => $"out {line}"));
+            ToolExecutionBatchResult batch = new(
+            [
+                CreateResult(
+                    "shell_command",
+                    $$"""
+                    {
+                      "Command": "ls",
+                      "WorkingDirectory": "/repo",
+                      "ExitCode": 0,
+                      "StandardOutput": "{{output}}",
+                      "StandardError": ""
+                    }
+                    """)
+            ]);
+
+            IReadOnlyList<string> messages = _sut.FormatResults(batch);
+
+            messages.Should().ContainSingle();
+            messages[0].Should().Contain("out 1");
+            messages[0].Should().Contain("out 10");
+            messages[0].Should().NotContain("... +");
+        }
+        finally
+        {
+            ToolOutputDisplay.FullToolOutputOverride = previousOverride;
+            ToolOutputDisplay.ProfileFullToolOutput = previousProfile;
+        }
+    }
+
+    [Fact]
     public void FormatResults_ShouldBuildPreviews_ForFileReadDirectorySearchAndTextSearch()
     {
         ToolExecutionBatchResult batch = new(
@@ -229,6 +269,111 @@ public sealed class ToolOutputFormatterTests
     }
 
     [Fact]
+    public void FormatResults_ShouldTruncateFileReadPreview_WhenFullToolOutputIsDisabled()
+    {
+        bool? previousOverride = ToolOutputDisplay.FullToolOutputOverride;
+        bool? previousProfile = ToolOutputDisplay.ProfileFullToolOutput;
+        try
+        {
+            ToolOutputDisplay.FullToolOutputOverride = false;
+            ToolOutputDisplay.ProfileFullToolOutput = null;
+            ToolExecutionBatchResult batch = CreateTenLineFileReadBatch();
+
+            IReadOnlyList<string> messages = _sut.FormatResults(batch);
+
+            messages.Should().ContainSingle();
+            messages[0].Should().Contain("  - preview:");
+            messages[0].Should().Contain("1 line 1");
+            messages[0].Should().Contain("8 line 8");
+            messages[0].Should().NotContain("9 line 9");
+            messages[0].Should().Contain("... +2 lines");
+        }
+        finally
+        {
+            ToolOutputDisplay.FullToolOutputOverride = previousOverride;
+            ToolOutputDisplay.ProfileFullToolOutput = previousProfile;
+        }
+    }
+
+    [Fact]
+    public void FormatResults_ShouldRenderCompleteFile_WhenCommandOverrideEnablesFullOutput()
+    {
+        bool? previousOverride = ToolOutputDisplay.FullToolOutputOverride;
+        bool? previousProfile = ToolOutputDisplay.ProfileFullToolOutput;
+        try
+        {
+            ToolOutputDisplay.FullToolOutputOverride = true;
+            ToolOutputDisplay.ProfileFullToolOutput = null;
+            ToolExecutionBatchResult batch = CreateTenLineFileReadBatch();
+
+            IReadOnlyList<string> messages = _sut.FormatResults(batch);
+
+            messages.Should().ContainSingle();
+            messages[0].Should().Contain("  - content:");
+            messages[0].Should().Contain("1 line 1");
+            messages[0].Should().Contain("9 line 9");
+            messages[0].Should().Contain("10 line 10");
+            messages[0].Should().NotContain("... +");
+        }
+        finally
+        {
+            ToolOutputDisplay.FullToolOutputOverride = previousOverride;
+            ToolOutputDisplay.ProfileFullToolOutput = previousProfile;
+        }
+    }
+
+    [Fact]
+    public void FormatResults_ShouldRenderCompleteFile_WhenActiveProfilePrefersFullOutput()
+    {
+        bool? previousOverride = ToolOutputDisplay.FullToolOutputOverride;
+        bool? previousProfile = ToolOutputDisplay.ProfileFullToolOutput;
+        try
+        {
+            // No command override; the active profile preference should win over the default.
+            ToolOutputDisplay.FullToolOutputOverride = null;
+            ToolOutputDisplay.ProfileFullToolOutput = true;
+            ToolExecutionBatchResult batch = CreateTenLineFileReadBatch();
+
+            IReadOnlyList<string> messages = _sut.FormatResults(batch);
+
+            messages.Should().ContainSingle();
+            messages[0].Should().Contain("  - content:");
+            messages[0].Should().Contain("10 line 10");
+            messages[0].Should().NotContain("... +");
+        }
+        finally
+        {
+            ToolOutputDisplay.FullToolOutputOverride = previousOverride;
+            ToolOutputDisplay.ProfileFullToolOutput = previousProfile;
+        }
+    }
+
+    [Fact]
+    public void FormatResults_ShouldLetCommandOverrideWinOverProfilePreference()
+    {
+        bool? previousOverride = ToolOutputDisplay.FullToolOutputOverride;
+        bool? previousProfile = ToolOutputDisplay.ProfileFullToolOutput;
+        try
+        {
+            ToolOutputDisplay.FullToolOutputOverride = false;
+            ToolOutputDisplay.ProfileFullToolOutput = true;
+            ToolExecutionBatchResult batch = CreateTenLineFileReadBatch();
+
+            IReadOnlyList<string> messages = _sut.FormatResults(batch);
+
+            messages.Should().ContainSingle();
+            messages[0].Should().Contain("  - preview:");
+            messages[0].Should().NotContain("9 line 9");
+            messages[0].Should().Contain("... +2 lines");
+        }
+        finally
+        {
+            ToolOutputDisplay.FullToolOutputOverride = previousOverride;
+            ToolOutputDisplay.ProfileFullToolOutput = previousProfile;
+        }
+    }
+
+    [Fact]
     public void FormatResults_ShouldSummarizeWebSearchSearchesAndWarnings()
     {
         ToolExecutionBatchResult batch = new(
@@ -282,6 +427,23 @@ public sealed class ToolOutputFormatterTests
 
         messages.Should().ContainSingle();
         messages[0].Should().Be($"Tool issue: Title{Environment.NewLine}{Environment.NewLine}Rendered text");
+    }
+
+    private static ToolExecutionBatchResult CreateTenLineFileReadBatch()
+    {
+        string content = string.Join("\\n", Enumerable.Range(1, 10).Select(static line => $"line {line}"));
+        return new ToolExecutionBatchResult(
+        [
+            CreateResult(
+                "file_read",
+                $$"""
+                {
+                  "Path": "README.md",
+                  "Content": "{{content}}",
+                  "CharacterCount": {{content.Replace("\\n", "\n", StringComparison.Ordinal).Length}}
+                }
+                """)
+        ]);
     }
 
     private static ToolInvocationResult CreateResult(

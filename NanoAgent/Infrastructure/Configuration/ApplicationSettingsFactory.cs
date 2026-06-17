@@ -74,7 +74,8 @@ internal static class ApplicationSettingsFactory
             DefaultTimeoutSeconds = Math.Max(1, configured.DefaultTimeoutSeconds),
             MaxConcurrentBackgroundTerminalsPerSession = Math.Max(1, configured.MaxConcurrentBackgroundTerminalsPerSession),
             CompletedBackgroundTerminalTtlSeconds = Math.Max(1, configured.CompletedBackgroundTerminalTtlSeconds),
-            AgentOrchestrationTimeoutSeconds = Math.Max(0, configured.AgentOrchestrationTimeoutSeconds)
+            AgentOrchestrationTimeoutSeconds = Math.Max(0, configured.AgentOrchestrationTimeoutSeconds),
+            ToolOutput = configured.ToolOutput
         };
     }
 
