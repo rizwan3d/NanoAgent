@@ -26,6 +26,7 @@ public sealed class WorkspaceSystemPromptProviderTests : IDisposable
 
         string? result = await sut.LoadAsync(
             CreateSession(),
+            configuredSystemPrompt: null,
             CancellationToken.None);
 
         result.Should().BeNull();
@@ -44,11 +45,77 @@ public sealed class WorkspaceSystemPromptProviderTests : IDisposable
 
         string? result = await sut.LoadAsync(
             CreateSession(),
+            configuredSystemPrompt: "Base prompt",
             CancellationToken.None);
 
         result.Should().NotBeNull();
         result.Should().StartWith(ConversationOptions.IdentityDescription);
         result.Should().EndWith("Prefer repository-specific release rules.");
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_AppendWorkspacePromptToConfiguredSystemPrompt()
+    {
+        string nanoAgentDirectory = Path.Combine(_workspaceRoot, ".nanoagent");
+        Directory.CreateDirectory(nanoAgentDirectory);
+        File.WriteAllText(
+            Path.Combine(nanoAgentDirectory, "SystemPrompt-Append.md"),
+            "  Follow the workspace deployment checklist.  ");
+
+        WorkspaceSystemPromptProvider sut = new();
+
+        string? result = await sut.LoadAsync(
+            CreateSession(),
+            configuredSystemPrompt: "Base prompt",
+            CancellationToken.None);
+
+        result.Should().Be($"Base prompt{Environment.NewLine}{Environment.NewLine}Follow the workspace deployment checklist.");
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_CreateSystemPromptFromAppendFile_When_NoConfiguredPromptExists()
+    {
+        string nanoAgentDirectory = Path.Combine(_workspaceRoot, ".nanoagent");
+        Directory.CreateDirectory(nanoAgentDirectory);
+        File.WriteAllText(
+            Path.Combine(nanoAgentDirectory, "SystemPrompt-Append.md"),
+            "Prefer focused workspace rules.");
+
+        WorkspaceSystemPromptProvider sut = new();
+
+        string? result = await sut.LoadAsync(
+            CreateSession(),
+            configuredSystemPrompt: null,
+            CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result.Should().StartWith(ConversationOptions.IdentityDescription);
+        result.Should().EndWith("Prefer focused workspace rules.");
+    }
+
+    [Fact]
+    public async Task LoadAsync_Should_PreferOverrideFile_When_AppendFileAlsoExists()
+    {
+        string nanoAgentDirectory = Path.Combine(_workspaceRoot, ".nanoagent");
+        Directory.CreateDirectory(nanoAgentDirectory);
+        File.WriteAllText(
+            Path.Combine(nanoAgentDirectory, "SystemPrompt.md"),
+            "Use the full override.");
+        File.WriteAllText(
+            Path.Combine(nanoAgentDirectory, "SystemPrompt-Append.md"),
+            "This should be ignored.");
+
+        WorkspaceSystemPromptProvider sut = new();
+
+        string? result = await sut.LoadAsync(
+            CreateSession(),
+            configuredSystemPrompt: "Base prompt",
+            CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result.Should().Contain("Use the full override.");
+        result.Should().NotContain("This should be ignored.");
+        result.Should().NotContain("Base prompt");
     }
 
     public void Dispose()

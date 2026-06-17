@@ -885,11 +885,19 @@ The recommended preset creates:
 
 Place `AGENTS.md` or `.agent/AGENTS.md` in the workspace for persistent project instructions. NanoAgent adds them to the model context after secret redaction.
 
+### `.nanoagent/SystemPrompt-Append.md`
+
+Create `.nanoagent/SystemPrompt-Append.md` when you want to append workspace-specific base rules to NanoAgent's configured default system prompt. This keeps the normal base behavior intact and adds your extra instructions before the active profile prompt, workspace instructions, skills, memory, and session state.
+
+Use `AGENTS.md` for ordinary repository instructions. Use `SystemPrompt-Append.md` when you only need to layer a few durable workspace rules onto the default base behavior.
+
+If both `SystemPrompt.md` and `SystemPrompt-Append.md` exist, `SystemPrompt.md` wins and the append file is ignored.
+
 ### `.nanoagent/SystemPrompt.md`
 
 Create `.nanoagent/SystemPrompt.md` to replace NanoAgent's base system prompt for that workspace. NanoAgent always prepends its identity header before the custom file content, then appends the active profile prompt, workspace instructions, skills, memory, and session state as usual.
 
-Use `AGENTS.md` for ordinary repository instructions. Use `SystemPrompt.md` only when the workspace needs a different base behavior.
+Use `AGENTS.md` for ordinary repository instructions. Use `SystemPrompt.md` only when the workspace needs a different base behavior than both the default prompt and the append-only option.
 
 `/init custom` can create `.nanoagent/SystemPrompt.md.template` as an inactive starter. Edit and rename it to `SystemPrompt.md` only when you intentionally want the override.
 

@@ -509,6 +509,74 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_AppendWorkspaceSystemPromptWhenProviderExtendsConfiguredPrompt()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_workspace_prompt_append"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Done.",
+                [],
+                "resp_workspace_prompt_append"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            workspaceSystemPromptProvider: new FixedWorkspaceSystemPromptProvider(
+                configuredSystemPrompt => string.Join(
+                    $"{Environment.NewLine}{Environment.NewLine}",
+                    configuredSystemPrompt ?? string.Empty,
+                    "Workspace append prompt.")));
+
+        await ProcessAsync(
+            sut,
+            "Do the thing.",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].SystemPrompt.Should().Contain("Base prompt");
+        requests[0].SystemPrompt.Should().Contain("Workspace append prompt.");
+        requests[0].SystemPrompt.Should().Contain("Active agent profile: build.");
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_UseWorkspaceProfilePromptWhenAvailable()
     {
         ReplSessionContext session = CreateSession();
@@ -2874,10 +2942,11 @@ public sealed class AgentConversationPipelineTests
     {
         public Task<string?> LoadAsync(
             ReplSessionContext session,
+            string? configuredSystemPrompt,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult<string?>(null);
+            return Task.FromResult(configuredSystemPrompt);
         }
     }
 
@@ -2894,19 +2963,25 @@ public sealed class AgentConversationPipelineTests
 
     private sealed class FixedWorkspaceSystemPromptProvider : IWorkspaceSystemPromptProvider
     {
-        private readonly string? _systemPrompt;
+        private readonly Func<string?, string?> _systemPromptFactory;
 
         public FixedWorkspaceSystemPromptProvider(string? systemPrompt)
+            : this(_ => systemPrompt)
         {
-            _systemPrompt = systemPrompt;
+        }
+
+        public FixedWorkspaceSystemPromptProvider(Func<string?, string?> systemPromptFactory)
+        {
+            _systemPromptFactory = systemPromptFactory;
         }
 
         public Task<string?> LoadAsync(
             ReplSessionContext session,
+            string? configuredSystemPrompt,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult(_systemPrompt);
+            return Task.FromResult(_systemPromptFactory(configuredSystemPrompt));
         }
     }
 
