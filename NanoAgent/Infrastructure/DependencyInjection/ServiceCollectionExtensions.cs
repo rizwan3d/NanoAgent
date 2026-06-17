@@ -47,6 +47,10 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton(static serviceProvider =>
+            AgentProfileConfigurationReader.LoadCodebaseIndexSettings(
+                serviceProvider.GetRequiredService<IUserDataPathProvider>(),
+                serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
+        services.AddSingleton(static serviceProvider =>
             AgentProfileConfigurationReader.LoadToolAuditSettings(
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));

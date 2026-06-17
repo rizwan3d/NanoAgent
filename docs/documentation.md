@@ -642,6 +642,21 @@ Use the `/index` REPL command to refresh the local codebase index from a termina
 /index rebuild
 /index list
 /index list 50
+```
+
+### Automatic Index Updates
+
+NanoAgent can refresh the local codebase index automatically after each conversation turn completes, so the next prompt sees an up-to-date index. This runs after the assistant response and all tool calls finish, reuses unchanged files, and updates changed files incrementally. A failed refresh is logged and never fails the completed turn.
+
+This is **disabled by default**. Enable it in user-level or workspace-level `.nanoagent/agent-profile.json`:
+
+```json
+{
+  "codebaseIndex": {
+    "autoUpdateAfterTask": true
+  }
+}
+```
 
 ## Providers and Models
 

@@ -2797,6 +2797,92 @@ public sealed class AgentConversationPipelineTests
             .WithMessage("*Configured limit: 2 round(s).*");
     }
 
+    [Fact]
+    public async Task ProcessAsync_Should_UpdateCodebaseIndex_When_AutoUpdateAfterTaskEnabled()
+    {
+        RecordingCodebaseIndexService codebaseIndexService = new();
+        AgentConversationPipeline sut = CreateSuccessfulTurnSut(
+            codebaseIndexService,
+            new CodebaseIndexSettings { AutoUpdateAfterTask = true });
+
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
+            "Implement the next refactor.",
+            CreateSession());
+
+        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
+        codebaseIndexService.BuildCalls.Should().Equal(false);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_NotUpdateCodebaseIndex_When_AutoUpdateAfterTaskDisabled()
+    {
+        RecordingCodebaseIndexService codebaseIndexService = new();
+        AgentConversationPipeline sut = CreateSuccessfulTurnSut(
+            codebaseIndexService,
+            new CodebaseIndexSettings { AutoUpdateAfterTask = false });
+
+        ConversationTurnResult result = await ProcessAsync(
+            sut,
+            "Implement the next refactor.",
+            CreateSession());
+
+        result.Kind.Should().Be(ConversationTurnResultKind.AssistantMessage);
+        codebaseIndexService.BuildCalls.Should().BeEmpty();
+    }
+
+    private static AgentConversationPipeline CreateSuccessfulTurnSut(
+        ICodebaseIndexService codebaseIndexService,
+        CodebaseIndexSettings codebaseIndexSettings)
+    {
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.FileRead)]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ConversationProviderPayload(
+                ProviderKind.OpenAiCompatible,
+                """{ "choices": [] }""",
+                "resp_1"));
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Implemented the refactor.",
+                [],
+                "resp_1"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+
+        return CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            codebaseIndexService: codebaseIndexService,
+            codebaseIndexSettings: codebaseIndexSettings);
+    }
+
     private static AgentConversationPipeline CreateSut(
         TimeProvider timeProvider,
         ITokenEstimator tokenEstimator,
@@ -2812,7 +2898,9 @@ public sealed class AgentConversationPipelineTests
         ILessonMemoryService? lessonMemoryService = null,
         ILifecycleHookService? lifecycleHookService = null,
         ISkillService? skillService = null,
-        IBudgetControlsUsageService? budgetControlsUsageService = null)
+        IBudgetControlsUsageService? budgetControlsUsageService = null,
+        ICodebaseIndexService? codebaseIndexService = null,
+        CodebaseIndexSettings? codebaseIndexSettings = null)
     {
         return new AgentConversationPipeline(
             timeProvider,
@@ -2830,7 +2918,9 @@ public sealed class AgentConversationPipelineTests
             lifecycleHookService,
             skillService,
             budgetControlsUsageService: budgetControlsUsageService,
-            workspaceAgentProfilePromptProvider: workspaceAgentProfilePromptProvider ?? new EmptyWorkspaceAgentProfilePromptProvider());
+            workspaceAgentProfilePromptProvider: workspaceAgentProfilePromptProvider ?? new EmptyWorkspaceAgentProfilePromptProvider(),
+            codebaseIndexService: codebaseIndexService,
+            codebaseIndexSettings: codebaseIndexSettings);
     }
 
     private static Task<ConversationTurnResult> ProcessAsync(
@@ -3050,6 +3140,49 @@ public sealed class AgentConversationPipelineTests
                 string.Equals(context.EventName, LifecycleHookEvents.AfterTaskComplete, StringComparison.Ordinal)
                     ? LifecycleHookRunResult.Blocked("reject_after_complete", "Rejected after completion.")
                     : LifecycleHookRunResult.Allowed());
+        }
+    }
+
+    private sealed class RecordingCodebaseIndexService : ICodebaseIndexService
+    {
+        public List<bool> BuildCalls { get; } = [];
+
+        public Task<CodebaseIndexBuildResult> BuildAsync(
+            bool force,
+            CancellationToken cancellationToken)
+        {
+            BuildCalls.Add(force);
+            return Task.FromResult(new CodebaseIndexBuildResult(
+                ".nanoagent/cache/codebase-index.json",
+                DateTimeOffset.UnixEpoch,
+                IndexedFileCount: 0,
+                AddedFileCount: 0,
+                UpdatedFileCount: 0,
+                RemovedFileCount: 0,
+                ReusedFileCount: 0,
+                SkippedFileCount: 0,
+                DurationMilliseconds: 0));
+        }
+
+        public Task<CodebaseIndexStatusResult> GetStatusAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<CodebaseIndexSearchResult> SearchAsync(
+            string query,
+            int limit,
+            bool includeSnippets,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<CodebaseIndexListResult> ListAsync(
+            int limit,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
         }
     }
 
