@@ -15,9 +15,12 @@ public static partial class Program
         bool insertedInputInBatch = false;
         bool likelyPastedInputInBatch = false;
 
-        while (Console.KeyAvailable)
+        while (HasPendingOrBufferedInput(state))
         {
-            ConsoleKeyInfo key = Console.ReadKey(intercept: true);
+            if (!TryReadNextInputKey(state, out ConsoleKeyInfo key))
+            {
+                break;
+            }
 
             if (IsEscapeKey(key) &&
                 TryHandleTerminalEscapeInput(state))
@@ -385,11 +388,18 @@ public static partial class Program
 
     private static bool TryHandleTerminalEscapeInput(AppState state)
     {
-        if (!TryReadBufferedKey(out ConsoleKeyInfo prefixKey))
+        if (!TryReadBufferedKey(state, out ConsoleKeyInfo prefixKey))
         {
             return false;
         }
 
+        return TryHandleTerminalEscapeFollowupKey(state, prefixKey);
+    }
+
+    private static bool TryHandleTerminalEscapeFollowupKey(
+        AppState state,
+        ConsoleKeyInfo prefixKey)
+    {
         if (prefixKey.KeyChar == '[')
         {
             return ConsumeCsiInput(state);
@@ -401,20 +411,13 @@ public static partial class Program
             return true;
         }
 
-        if (state.ActiveModal is not null)
-        {
-            state.ActiveModal.HandleKey(
-                state,
-                new ConsoleKeyInfo('\u001b', ConsoleKey.Escape, false, false, false));
-            return true;
-        }
-
-        return true;
+        state.PendingInputKeys.Enqueue(prefixKey);
+        return false;
     }
 
     private static bool ConsumeCsiInput(AppState state)
     {
-        if (!TryReadBufferedKey(out ConsoleKeyInfo modeKey))
+        if (!TryReadBufferedKey(state, out ConsoleKeyInfo modeKey))
         {
             return true;
         }
@@ -436,7 +439,7 @@ public static partial class Program
 
         if (!IsAnsiFinalByte(modeKey.KeyChar))
         {
-            while (TryReadBufferedKey(out ConsoleKeyInfo sequenceKey))
+            while (TryReadBufferedKey(state, out ConsoleKeyInfo sequenceKey))
             {
                 sequence.Append(sequenceKey.KeyChar);
                 if (IsAnsiFinalByte(sequenceKey.KeyChar))
@@ -454,7 +457,7 @@ public static partial class Program
     {
         StringBuilder sequence = new();
 
-        while (TryReadBufferedKey(out ConsoleKeyInfo key))
+        while (TryReadBufferedKey(state, out ConsoleKeyInfo key))
         {
             char character = key.KeyChar;
             if (!char.IsDigit(character) &&
@@ -493,20 +496,20 @@ public static partial class Program
 
     private static void ConsumeX10MouseInput(AppState state)
     {
-        if (!TryReadBufferedKey(out ConsoleKeyInfo buttonKey))
+        if (!TryReadBufferedKey(state, out ConsoleKeyInfo buttonKey))
         {
             return;
         }
 
-        TryReadBufferedKey(out _);
-        TryReadBufferedKey(out _);
+        TryReadBufferedKey(state, out _);
+        TryReadBufferedKey(state, out _);
 
         HandleMouseButtonCode(state, buttonKey.KeyChar - 32);
     }
 
     private static void ConsumeSs3Input(AppState state)
     {
-        if (!TryReadBufferedKey(out ConsoleKeyInfo key))
+        if (!TryReadBufferedKey(state, out ConsoleKeyInfo key))
         {
             return;
         }
@@ -1218,19 +1221,16 @@ public static partial class Program
                     continue;
                 }
 
-                string output = process.StandardOutput.ReadToEnd();
-                if (!process.WaitForExit(ClipboardReadTimeoutMilliseconds))
-                {
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                    }
+                Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+                Task<string> errorTask = process.StandardError.ReadToEndAsync();
 
+                if (!TryWaitForProcessExit(process, ClipboardReadTimeoutMilliseconds))
+                {
                     continue;
                 }
+
+                string output = outputTask.GetAwaiter().GetResult();
+                _ = errorTask.GetAwaiter().GetResult();
 
                 if (process.ExitCode != 0 || output.Length == 0)
                 {
@@ -1315,18 +1315,16 @@ public static partial class Program
                 process.StandardInput.Write(text);
                 process.StandardInput.Close();
 
-                if (!process.WaitForExit(ClipboardReadTimeoutMilliseconds))
-                {
-                    try
-                    {
-                        process.Kill(entireProcessTree: true);
-                    }
-                    catch (InvalidOperationException)
-                    {
-                    }
+                Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+                Task<string> errorTask = process.StandardError.ReadToEndAsync();
 
+                if (!TryWaitForProcessExit(process, ClipboardReadTimeoutMilliseconds))
+                {
                     continue;
                 }
+
+                _ = outputTask.GetAwaiter().GetResult();
+                _ = errorTask.GetAwaiter().GetResult();
 
                 if (process.ExitCode == 0)
                 {
@@ -1355,10 +1353,10 @@ public static partial class Program
     {
         StringBuilder pastedText = new();
 
-        while (TryReadBufferedKey(out ConsoleKeyInfo key))
+        while (TryReadBufferedKey(state, out ConsoleKeyInfo key))
         {
             if (key.KeyChar == '\u001b' &&
-                TryConsumeBracketedPasteTerminator(pastedText))
+                TryConsumeBracketedPasteTerminator(state, pastedText))
             {
                 AppendInputText(
                     state,
@@ -1376,9 +1374,11 @@ public static partial class Program
             collapseLargePaste: true);
     }
 
-    private static bool TryConsumeBracketedPasteTerminator(StringBuilder pastedText)
+    private static bool TryConsumeBracketedPasteTerminator(
+        AppState state,
+        StringBuilder pastedText)
     {
-        if (!TryReadBufferedKey(out ConsoleKeyInfo prefixKey))
+        if (!TryReadBufferedKey(state, out ConsoleKeyInfo prefixKey))
         {
             pastedText.Append('\u001b');
             return false;
@@ -1392,7 +1392,7 @@ public static partial class Program
         }
 
         StringBuilder sequence = new();
-        while (TryReadBufferedKey(out ConsoleKeyInfo sequenceKey))
+        while (TryReadBufferedKey(state, out ConsoleKeyInfo sequenceKey))
         {
             sequence.Append(sequenceKey.KeyChar);
             if (IsAnsiFinalByte(sequenceKey.KeyChar))
@@ -1445,11 +1445,17 @@ public static partial class Program
         return true;
     }
 
-    private static bool TryReadBufferedKey(out ConsoleKeyInfo key)
+    private static bool TryReadBufferedKey(AppState state, out ConsoleKeyInfo key)
     {
+        if (state.PendingInputKeys.Count > 0)
+        {
+            key = state.PendingInputKeys.Dequeue();
+            return true;
+        }
+
         DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMilliseconds(TerminalSequenceReadTimeoutMilliseconds);
 
-        while (!Console.KeyAvailable)
+        while (!HasPendingOrBufferedInput(state))
         {
             if (DateTimeOffset.UtcNow >= deadline)
             {
@@ -1460,8 +1466,63 @@ public static partial class Program
             Thread.Sleep(1);
         }
 
+        if (state.PendingInputKeys.Count > 0)
+        {
+            key = state.PendingInputKeys.Dequeue();
+            return true;
+        }
+
         key = Console.ReadKey(intercept: true);
         return true;
+    }
+
+    private static bool TryReadNextInputKey(AppState state, out ConsoleKeyInfo key)
+    {
+        if (state.PendingInputKeys.Count > 0)
+        {
+            key = state.PendingInputKeys.Dequeue();
+            return true;
+        }
+
+        if (!Console.KeyAvailable)
+        {
+            key = default;
+            return false;
+        }
+
+        key = Console.ReadKey(intercept: true);
+        return true;
+    }
+
+    private static bool HasPendingOrBufferedInput(AppState state)
+    {
+        return state.PendingInputKeys.Count > 0 || Console.KeyAvailable;
+    }
+
+    private static bool TryWaitForProcessExit(Process process, int timeoutMilliseconds)
+    {
+        if (process.WaitForExit(timeoutMilliseconds))
+        {
+            return true;
+        }
+
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        try
+        {
+            process.WaitForExit();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        return false;
     }
 
     private static bool HasBufferedInputAfterDelay(int timeoutMilliseconds)
