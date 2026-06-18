@@ -321,31 +321,35 @@ public static partial class Program
         string? providerAuthKey,
         bool autoApproveAllTools)
     {
-        Console.CursorVisible = false;
-        EnableTerminalWheelScrolling();
-
-        UiBridge uiBridge = new(providerAuthKey);
-        BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
-                EnsureStartupPromptsArg(runtimeArguments.RawArgs, enabled: true))
-            .WithDefaults(
-                runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
-                runtimeArguments.SkipUpdateCheck);
-        INanoAgentBackend backend = new NanoAgentBackend(
-            interactiveRuntimeArguments,
-            sessionMcpServers: [],
-            autoApproveAllTools);
-        AppState state = new(uiBridge, backend);
-        ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            state.Running = false;
-        };
-
-        StartInitialization(state);
-        Console.CancelKeyPress += cancelKeyPressHandler;
+        ConsoleCancelEventHandler? cancelKeyPressHandler = null;
+        INanoAgentBackend? backend = null;
+        AppState? state = null;
 
         try
         {
+            Console.CursorVisible = false;
+            EnableTerminalWheelScrolling();
+
+            UiBridge uiBridge = new(providerAuthKey);
+            BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
+                    EnsureStartupPromptsArg(runtimeArguments.RawArgs, enabled: true))
+                .WithDefaults(
+                    runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
+                    runtimeArguments.SkipUpdateCheck);
+            backend = new NanoAgentBackend(
+                interactiveRuntimeArguments,
+                sessionMcpServers: [],
+                autoApproveAllTools);
+            state = new AppState(uiBridge, backend);
+            cancelKeyPressHandler = (_, eventArgs) =>
+            {
+                eventArgs.Cancel = true;
+                state.Running = false;
+            };
+
+            Console.CancelKeyPress += cancelKeyPressHandler;
+            StartInitialization(state);
+
             await AnsiConsole
                 .Live(BuildUi(state))
                 .StartAsync(async context =>
@@ -373,22 +377,32 @@ public static partial class Program
         }
         finally
         {
-            Console.CancelKeyPress -= cancelKeyPressHandler;
-            state.LifetimeCancellation.Cancel();
+            if (cancelKeyPressHandler is not null)
+            {
+                Console.CancelKeyPress -= cancelKeyPressHandler;
+            }
+
+            state?.LifetimeCancellation.Cancel();
 
             try
             {
-                await backend.DisposeAsync();
+                if (backend is not null)
+                {
+                    await backend.DisposeAsync();
+                }
             }
             finally
             {
                 AnsiConsole.Clear();
                 DisableTerminalWheelScrolling();
-                state.LifetimeCancellation.Dispose();
                 Console.CursorVisible = true;
                 Console.ResetColor();
-                WriteFatalExitMessage(state);
-                WriteExitResumeHint(state);
+                if (state is not null)
+                {
+                    state.LifetimeCancellation.Dispose();
+                    WriteFatalExitMessage(state);
+                    WriteExitResumeHint(state);
+                }
             }
         }
     }
@@ -650,7 +664,9 @@ public static partial class Program
                     appState.IsBusy = false;
                     appState.HasFatalError = true;
                     appState.ActivityText = "Backend startup failed";
-                    appState.AddSystemMessage($"Failed to start NanoAgent: {exception.Message}");
+                    appState.FatalExitMessage = $"Failed to start NanoAgent: {exception.Message}";
+                    appState.AddSystemMessage(appState.FatalExitMessage);
+                    appState.Running = false;
                 });
             }
         });
