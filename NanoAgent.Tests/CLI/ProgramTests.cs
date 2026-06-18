@@ -211,6 +211,96 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public void SubmitInput_Should_PreserveInput_When_BackendIsNotReady()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            InputCursorIndex = "Wait for startup".Length
+        };
+        state.Input.Append("Wait for startup");
+
+        MethodInfo submitInput = typeof(Program).GetMethod(
+            "SubmitInput",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        submitInput.Invoke(null, [state]);
+
+        state.Input.ToString().Should().Be("Wait for startup");
+        state.InputCursorIndex.Should().Be("Wait for startup".Length);
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text == "NanoAgent is still starting up. Please wait.");
+    }
+
+    [Fact]
+    public async Task StartInitialization_Should_StopInteractiveSession_When_BackendStartupFails()
+    {
+        Mock<INanoAgentBackend> backend = new(MockBehavior.Strict);
+        backend
+            .Setup(static value => value.InitializeAsync(
+                It.IsAny<NanoAgent.Application.UI.IUiBridge>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("boom"));
+
+        AppState state = new(new UiBridge(), backend.Object);
+
+        MethodInfo startInitialization = typeof(Program).GetMethod(
+            "StartInitialization",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        startInitialization.Invoke(null, [state]);
+        await state.ActiveOperation!;
+        state.UiBridge.ApplyPending(state);
+
+        state.HasFatalError.Should().BeTrue();
+        state.Running.Should().BeFalse();
+        state.FatalExitMessage.Should().Be("Failed to start NanoAgent: boom");
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text == "Failed to start NanoAgent: boom");
+    }
+
+    [Fact]
+    public void GetSafePath_Should_RejectSiblingDirectoryPrefixEscape()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        string rootName = new DirectoryInfo(state.RootDirectory).Name;
+
+        MethodInfo getSafePath = typeof(Program).GetMethod(
+            "GetSafePath",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Action act = () => getSafePath.Invoke(
+            null,
+            [state, $@"..\{rootName}-copy\secret.txt"]);
+
+        TargetInvocationException exception = act.Should().Throw<TargetInvocationException>().Which;
+        exception.InnerException.Should().BeOfType<InvalidOperationException>()
+            .Which.Message.Should().Be("Path escapes workspace.");
+    }
+
+    [Fact]
+    public void TryHandleTerminalEscapeFollowupKey_Should_RequeueNonAnsiInput()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        MethodInfo tryHandleTerminalEscapeFollowupKey = typeof(Program).GetMethod(
+            "TryHandleTerminalEscapeFollowupKey",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        object? handled = tryHandleTerminalEscapeFollowupKey.Invoke(
+            null,
+            [state, new ConsoleKeyInfo('a', ConsoleKey.A, false, false, false)]);
+
+        handled.Should().Be(false);
+        state.PendingInputKeys.Should().ContainSingle();
+        state.PendingInputKeys.Peek().KeyChar.Should().Be('a');
+    }
+
+    [Fact]
     public void TryStartNextPendingSubmission_Should_RunQueuedPrompt_When_Idle()
     {
         AppState state = new(new UiBridge(), CreateConversationBackend().Object)

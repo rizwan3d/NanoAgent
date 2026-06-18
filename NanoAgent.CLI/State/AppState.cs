@@ -121,6 +121,8 @@ public sealed class AppState
 
     public Queue<PendingSubmission> PendingSubmissions { get; } = new();
 
+    public Queue<ConsoleKeyInfo> PendingInputKeys { get; } = new();
+
     public string? ProviderName { get; set; }
 
     public string? ReasoningEffort { get; set; }
