@@ -5,7 +5,9 @@ readonly OWNER="rizwan3d"
 readonly REPO="NanoAgent"
 readonly APP_NAME="NanoAgent.CLI"
 readonly EXECUTABLE_NAME="NanoAgent.CLI"
-readonly COMMAND_NAME="nanoai"
+# Installed command name: '/update' sets NanoAgent_COMMAND_NAME so the running
+# binary's filename is preserved when replacing it in place.
+readonly COMMAND_NAME="${NANOAGENT_COMMAND_NAME:-${NanoAgent_COMMAND_NAME:-nanoai}}"
 readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 readonly TOTAL_STEPS=7
