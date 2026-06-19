@@ -58,7 +58,7 @@ same binary from the same release assets.
 
 #### Install script
 
-macOS / Linux:
+Curl:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash

@@ -129,8 +129,7 @@ Release assets publish `SHA256SUMS` and GitHub artifact attestations so you can 
 Every installer exposes the same `nanoai` command and downloads the same self-contained release binary.
 
 #### Install script
-
-macOS / Linux:
+Curl:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
@@ -141,6 +140,8 @@ Windows PowerShell:
 ```powershell
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
+
+On Windows, both scripts install the same `nanoai` CLI. The Bash installer downloads the `win-x64` release, installs `nanoai.exe` into `%LOCALAPPDATA%\Programs\NanoAgent\bin` by default, and adds that directory to your user `PATH`.
 
 #### npm / pnpm / bun
 
