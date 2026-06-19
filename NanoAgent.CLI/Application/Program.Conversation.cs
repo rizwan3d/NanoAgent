@@ -15,11 +15,6 @@ public static partial class Program
     {
         string text = state.Input.ToString().Trim();
         ConversationAttachment[] attachments = state.InputAttachments.ToArray();
-        state.Input.Clear();
-        state.InputAttachments.Clear();
-        state.CollapsedInputPastes.Clear();
-        state.InputCursorIndex = 0;
-        ResetSlashCommandSuggestions(state);
 
         if (string.IsNullOrWhiteSpace(text) && attachments.Length == 0)
         {
@@ -41,6 +36,12 @@ public static partial class Program
                     : "NanoAgent is still starting up. Please wait.");
             return;
         }
+
+        state.Input.Clear();
+        state.InputAttachments.Clear();
+        state.CollapsedInputPastes.Clear();
+        state.InputCursorIndex = 0;
+        ResetSlashCommandSuggestions(state);
 
         PendingSubmission submission = new(
             PendingSubmissionKind.Prompt,
@@ -386,7 +387,9 @@ public static partial class Program
 
     private static string GetSafePath(AppState state, string path)
     {
-        string root = Path.GetFullPath(state.RootDirectory);
+        string root = Path.GetFullPath(state.RootDirectory)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
+            Path.DirectorySeparatorChar;
         string fullPath = Path.GetFullPath(Path.Combine(root, path));
 
         StringComparison comparison = OperatingSystem.IsWindows()
