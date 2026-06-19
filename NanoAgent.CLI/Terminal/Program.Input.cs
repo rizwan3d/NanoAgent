@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
@@ -74,6 +74,12 @@ public static partial class Program
                 key.Modifiers.HasFlag(ConsoleModifiers.Control))
             {
                 PasteFromClipboard(state);
+                continue;
+            }
+
+            if (IsToggleThinkingKey(key))
+            {
+                ToggleThinkingExpansion(state);
                 continue;
             }
 
@@ -367,6 +373,20 @@ public static partial class Program
             key.KeyChar == '\u0001';
     }
 
+    private static bool IsToggleThinkingKey(ConsoleKeyInfo key)
+    {
+        // Ctrl+T arrives as ConsoleKey.T+Control on the direct read path and as the
+        // raw 0x14 control character on the terminal escape path.
+        return (key.Key == ConsoleKey.T && key.Modifiers.HasFlag(ConsoleModifiers.Control)) ||
+            key.KeyChar == '';
+    }
+
+    private static void ToggleThinkingExpansion(AppState state)
+    {
+        state.ToggleAllThinking();
+        state.SkipNextInputLineFeed = false;
+    }
+
     private static bool IsEnterKey(ConsoleKeyInfo key)
     {
         return key.Key == ConsoleKey.Enter ||
@@ -555,6 +575,7 @@ public static partial class Program
             return;
         }
 
+        bool isPress = sequence[^1] == 'M';
         string[] parts = sequence[..^1].Split(';');
         if (parts.Length != 3 ||
             !int.TryParse(parts[0], out int buttonCode))
@@ -562,7 +583,46 @@ public static partial class Program
             return;
         }
 
-        HandleMouseButtonCode(state, buttonCode);
+        // Wheel events (button codes 64/65) scroll regardless of press/release.
+        int normalizedButtonCode = buttonCode & ~0b1_1100;
+        if (normalizedButtonCode is 64 or 65)
+        {
+            HandleMouseButtonCode(state, buttonCode);
+            return;
+        }
+
+        // A left-button press (code 0) toggles the thinking block under the pointer.
+        if (isPress &&
+            normalizedButtonCode == 0 &&
+            int.TryParse(parts[2], out int row))
+        {
+            HandleConversationClick(state, row);
+        }
+    }
+
+    // Maps a 1-based terminal row to the conversation line rendered there and toggles its
+    // thinking block, if any. Disabled while a modal, reader view, or copy mode is active.
+    private static void HandleConversationClick(AppState state, int row)
+    {
+        if (state.ActiveModal is not null ||
+            state.IsReaderViewActive ||
+            state.IsCopyModeActive ||
+            state.MessagesContentTopRow <= 0)
+        {
+            return;
+        }
+
+        int index = row - state.MessagesContentTopRow;
+        int?[] visibleIds = state.VisibleThinkingMessageIds;
+        if (index < 0 || index >= visibleIds.Length)
+        {
+            return;
+        }
+
+        if (visibleIds[index] is int messageId)
+        {
+            state.ToggleThinkingMessage(messageId);
+        }
     }
 
     private static void ConsumeX10MouseInput(AppState state)
