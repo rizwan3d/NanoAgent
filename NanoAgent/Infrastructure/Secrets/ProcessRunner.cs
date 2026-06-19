@@ -89,11 +89,13 @@ internal sealed class ProcessRunner : IProcessRunner
         Task<string> standardOutputTask = ReadToEndCappedAsync(
             process.StandardOutput,
             request.MaxOutputCharacters,
-            cancellationToken);
+            cancellationToken,
+            request.OnOutputLine);
         Task<string> standardErrorTask = ReadToEndCappedAsync(
             process.StandardError,
             request.MaxOutputCharacters,
-            cancellationToken);
+            cancellationToken,
+            request.OnOutputLine);
 
         if (request.StandardInput is not null)
         {
@@ -552,20 +554,20 @@ internal sealed class ProcessRunner : IProcessRunner
     private static async Task<string> ReadToEndCappedAsync(
         TextReader reader,
         int? maxCharacters,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<string>? onLine = null)
     {
         const int BufferSize = 4096;
 
-        if (maxCharacters is <= 0)
-        {
-            await DrainAsync(reader, cancellationToken);
-            return string.Empty;
-        }
+        // Capture stops once the cap is exhausted (or is non-positive), but line
+        // streaming must keep draining so 'onLine' sees every line to the end.
+        bool capture = maxCharacters is not <= 0;
 
         char[] buffer = new char[BufferSize];
-        StringBuilder builder = maxCharacters is null
-            ? new StringBuilder()
-            : new StringBuilder(Math.Min(maxCharacters.Value, BufferSize));
+        StringBuilder builder = maxCharacters is > 0
+            ? new StringBuilder(Math.Min(maxCharacters.Value, BufferSize))
+            : new StringBuilder();
+        StringBuilder? lineBuffer = onLine is null ? null : new StringBuilder();
         bool truncated = false;
 
         while (true)
@@ -576,6 +578,16 @@ internal sealed class ProcessRunner : IProcessRunner
             if (read == 0)
             {
                 break;
+            }
+
+            if (lineBuffer is not null)
+            {
+                EmitCompletedLines(buffer, read, lineBuffer, onLine!);
+            }
+
+            if (!capture)
+            {
+                continue;
             }
 
             if (maxCharacters is null)
@@ -596,6 +608,11 @@ internal sealed class ProcessRunner : IProcessRunner
             truncated |= charactersToAppend < read;
         }
 
+        if (lineBuffer is { Length: > 0 })
+        {
+            onLine!(lineBuffer.ToString());
+        }
+
         if (truncated && maxCharacters is > 3)
         {
             builder.Length = Math.Min(builder.Length, maxCharacters.Value - 3);
@@ -605,13 +622,29 @@ internal sealed class ProcessRunner : IProcessRunner
         return builder.ToString();
     }
 
-    private static async Task DrainAsync(
-        TextReader reader,
-        CancellationToken cancellationToken)
+    private static void EmitCompletedLines(
+        char[] buffer,
+        int count,
+        StringBuilder lineBuffer,
+        Action<string> onLine)
     {
-        char[] buffer = new char[4096];
-        while (await reader.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken) > 0)
+        for (int index = 0; index < count; index++)
         {
+            char character = buffer[index];
+            if (character != '\n')
+            {
+                lineBuffer.Append(character);
+                continue;
+            }
+
+            // Strip a trailing '\r' so CRLF-terminated lines stream cleanly.
+            if (lineBuffer.Length > 0 && lineBuffer[^1] == '\r')
+            {
+                lineBuffer.Length--;
+            }
+
+            onLine(lineBuffer.ToString());
+            lineBuffer.Clear();
         }
     }
 
