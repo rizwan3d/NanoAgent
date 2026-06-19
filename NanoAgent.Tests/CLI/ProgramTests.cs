@@ -6,6 +6,7 @@ using Moq;
 using NanoAgent.Infrastructure.WindowsSandbox;
 using Spectre.Console;
 using System.Reflection;
+using System.Collections;
 
 namespace NanoAgent.Tests.CLI;
 
@@ -506,6 +507,34 @@ public sealed class ProgramTests
         state.StreamQueue.Count.Should().Be(bufferedText.Length - message.Text.Length);
     }
 
+    [Fact]
+    public void BuildConversationLines_Should_RenderFileEditPreviewAsSideBySideDiff()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        state.AddSystemMessage(
+            "\u2022 Edited 1 file (+1 -1)\n" +
+            "  - src/app.cs (+1 -1)\n" +
+            "      10 -return 0;\n" +
+            "      10 +return 1;\n" +
+            "    ... +2 lines");
+
+        MethodInfo buildConversationLines = typeof(Program).GetMethod(
+            "BuildConversationLines",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        IEnumerable renderedLines = (IEnumerable)buildConversationLines.Invoke(null, [state, 90])!;
+        string[] plainLines = GetConversationLinePropertyValues(renderedLines, "Plain");
+        string[] markupLines = GetConversationLinePropertyValues(renderedLines, "Markup");
+
+        plainLines.Should().Contain(line => line.Contains("before") && line.Contains("|") && line.Contains("after"));
+        plainLines.Should().Contain(line => line.Contains("10 - return 0;") && line.Contains("|") && line.Contains("10 + return 1;"));
+        plainLines.Should().Contain(line => line.Contains("... +2 lines"));
+        markupLines.Should().Contain(line => line.Contains("white on red") && line.Contains("return 0;"));
+        markupLines.Should().Contain(line => line.Contains("black on green") && line.Contains("return 1;"));
+    }
+
     private static Mock<INanoAgentBackend> CreateConversationBackend()
     {
         Mock<INanoAgentBackend> backend = new(MockBehavior.Strict);
@@ -518,5 +547,20 @@ public sealed class ProgramTests
             .ReturnsAsync(ConversationTurnResult.AssistantMessage("Done."));
 
         return backend;
+    }
+
+    private static string[] GetConversationLinePropertyValues(
+        IEnumerable lines,
+        string propertyName)
+    {
+        List<string> values = [];
+
+        foreach (object line in lines)
+        {
+            PropertyInfo property = line.GetType().GetProperty(propertyName)!;
+            values.Add((string)property.GetValue(line)!);
+        }
+
+        return values.ToArray();
     }
 }
