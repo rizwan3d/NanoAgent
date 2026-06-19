@@ -29,7 +29,9 @@ public static partial class Program
         Console.Write(EnableAlternateScreenSequence);
         Console.Write(ClearScreenSequence);
         Console.Write(EnableBracketedPasteSequence);
-        Console.Write(EnableWheelScrollingSequence);
+        // Full button tracking reports wheel events as SGR codes too, so we no longer need
+        // the alternate-scroll mode (?1007h) — enabling both would double-count the wheel.
+        Console.Write(EnableMouseTrackingSequence);
     }
 
     private static void DisableTerminalWheelScrolling()
