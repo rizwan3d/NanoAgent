@@ -61,6 +61,7 @@ public static partial class Program
         state.InputAttachments.Clear();
         state.CollapsedInputPastes.Clear();
         state.InputCursorIndex = 0;
+        state.ClearInputSelection();
         ResetSlashCommandSuggestions(state);
     }
 
@@ -76,6 +77,8 @@ public static partial class Program
 
         state.ResetTurnCancellation();
         state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+        long operationId = state.BeginTrackedOperation();
+        state.UiBridge.SetActiveCliOperation(operationId);
 
         state.IsBusy = true;
         state.ClearBusyWhenStreamCompletes = false;
@@ -97,6 +100,11 @@ public static partial class Program
 
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     string completionNote = result.Metrics is null
                         ? string.Empty
                         : FormatCompletionNote(
@@ -114,12 +122,18 @@ public static partial class Program
                         !string.IsNullOrWhiteSpace(result.ResponseText))
                     {
                         appState.BeginAssistantStream(result.ResponseText);
+                        appState.ActiveOperation = null;
+                        appState.ResetTurnCancellation();
+                        appState.IsTurnInterruptPending = false;
                         appState.ClearBusyWhenStreamCompletes = true;
                         appState.ActivityText = "Streaming response";
                         return;
                     }
 
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     TryStartNextPendingSubmission(appState);
                 });
@@ -131,12 +145,19 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ClearBusyWhenStreamCompletes = false;
                     appState.CurrentTurnStartedAt = null;
                     appState.PendingCompletionNote = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage("Turn cancelled.");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -145,11 +166,19 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ClearBusyWhenStreamCompletes = false;
                     appState.CurrentTurnStartedAt = null;
                     appState.PendingCompletionNote = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage($"NanoAgent error: {exception.Message}");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -200,7 +229,7 @@ public static partial class Program
         if (command == "/clear")
         {
             state.Messages.Clear();
-            state.ConversationScrollOffset = 0;
+            state.ResetConversationViewport();
             state.CurrentTurnStartedAt = null;
             state.PendingCompletionNote = null;
             state.AddSystemMessage("Screen cleared.");
@@ -413,6 +442,8 @@ public static partial class Program
     {
         state.ResetTurnCancellation();
         state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+        long operationId = state.BeginTrackedOperation();
+        state.UiBridge.SetActiveCliOperation(operationId);
 
         state.IsBusy = true;
         state.ActivityText = $"Running {FormatCommandActivity(command)}";
@@ -427,7 +458,15 @@ public static partial class Program
 
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     ApplySessionInfo(appState, result.SessionInfo);
 
@@ -458,9 +497,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage("Turn cancelled.");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -469,8 +515,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage($"Command failed: {exception.Message}");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -495,7 +549,7 @@ public static partial class Program
             return true;
         }
 
-        state.ConversationScrollOffset = 0;
+        state.JumpConversationToBottom();
         state.AddMessage(Role.User, command);
         StartConversation(state, resolution.ExpandedPrompt);
         return true;
@@ -505,6 +559,8 @@ public static partial class Program
     {
         state.ResetTurnCancellation();
         state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+        long operationId = state.BeginTrackedOperation();
+        state.UiBridge.SetActiveCliOperation(operationId);
 
         state.IsBusy = true;
         state.ActivityText = "Choosing model";
@@ -518,7 +574,15 @@ public static partial class Program
 
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     ApplySessionInfo(appState, result.SessionInfo);
 
@@ -533,9 +597,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage("Turn cancelled.");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -544,8 +615,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage($"Model selection failed: {exception.Message}");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -607,7 +686,10 @@ public static partial class Program
             if (state.ClearBusyWhenStreamCompletes)
             {
                 state.IsBusy = false;
+                state.ActiveOperation = null;
                 state.ClearBusyWhenStreamCompletes = false;
+                state.ResetTurnCancellation();
+                state.IsTurnInterruptPending = false;
                 state.ActivityText = state.IsReady ? "Ready" : "Idle";
                 TryStartNextPendingSubmission(state);
             }
@@ -655,7 +737,7 @@ public static partial class Program
 
             case PendingSubmissionKind.Prompt:
                 IReadOnlyList<ConversationAttachment> attachments = submission.Attachments ?? [];
-                state.ConversationScrollOffset = 0;
+                state.JumpConversationToBottom();
                 state.AddMessage(Role.User, FormatUserInputForDisplay(submission.Text, attachments));
                 StartConversation(state, submission.Text, attachments);
                 return;

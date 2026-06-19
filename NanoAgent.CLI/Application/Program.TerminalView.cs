@@ -42,6 +42,8 @@ public static partial class Program
     {
         state.ResetTurnCancellation();
         state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+        long operationId = state.BeginTrackedOperation();
+        state.UiBridge.SetActiveCliOperation(operationId);
 
         state.IsBusy = true;
         state.ActivityText = "Listing terminals";
@@ -57,9 +59,16 @@ public static partial class Program
 
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
 
                     BackgroundTerminalInfo[] running = terminals
                         .Where(static terminal => string.Equals(terminal.Status, RunningTerminalStatus, StringComparison.Ordinal))
@@ -88,9 +97,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
                     appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     TryStartNextPendingSubmission(appState);
                 });
             }
@@ -98,8 +114,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.IsBusy = false;
+                    appState.ActiveOperation = null;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage($"Failed to list background terminals: {exception.Message}");
                     TryStartNextPendingSubmission(appState);
                 });
@@ -144,6 +168,8 @@ public static partial class Program
 
         state.ResetTurnCancellation();
         state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+        long operationId = state.BeginTrackedOperation();
+        state.UiBridge.SetActiveCliOperation(operationId);
 
         state.IsBusy = true;
         state.CurrentTurnStartedAt = DateTimeOffset.UtcNow;
@@ -199,7 +225,15 @@ public static partial class Program
                 ShellCommandExecutionResult completed = finalResult!;
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.CurrentTurnStartedAt = null;
+                    appState.ActiveOperation = null;
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     FinishTerminalAttach(appState);
 
                     string message = string.Equals(completed.TerminalStatus, NotFoundTerminalStatus, StringComparison.Ordinal)
@@ -215,9 +249,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.CurrentTurnStartedAt = null;
+                    appState.ActiveOperation = null;
                     FinishTerminalAttach(appState);
                     appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage(
                         $"Detached from background terminal {normalizedId}. It is still running; re-attach with /terminals view {normalizedId}.");
                 });
@@ -226,8 +267,16 @@ public static partial class Program
             {
                 state.UiBridge.Enqueue(appState =>
                 {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
                     appState.CurrentTurnStartedAt = null;
+                    appState.ActiveOperation = null;
                     FinishTerminalAttach(appState);
+                    appState.ResetTurnCancellation();
+                    appState.IsTurnInterruptPending = false;
                     appState.AddSystemMessage($"Failed to view terminal {normalizedId}: {exception.Message}");
                 });
             }
