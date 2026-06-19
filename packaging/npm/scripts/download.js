@@ -77,7 +77,7 @@ function extractExecutable(zipBuffer, destinationPath) {
 
 // Ensures the platform binary is present in vendor/. Returns the absolute path.
 async function ensureBinary(options = {}) {
-  const { force = false, log = () => {} } = options;
+  const { force = false, log = () => {}, tag } = options;
 
   const binaryPath = platform.installedBinaryPath();
   if (!force && fs.existsSync(binaryPath)) {
@@ -86,11 +86,14 @@ async function ensureBinary(options = {}) {
 
   const rid = platform.resolveRid();
   const asset = platform.assetName(rid);
-  const base = platform.baseDownloadUrl();
+  const resolvedTag = tag && tag.trim()
+    ? tag.trim()
+    : platform.resolveTag();
+  const base = platform.baseDownloadUrl(resolvedTag);
   const assetUrl = `${base}/${asset}`;
   const checksumsUrl = `${base}/${platform.CHECKSUMS_NAME}`;
 
-  log(`Downloading ${asset} (${platform.resolveTag()})...`);
+  log(`Downloading ${asset} (${resolvedTag})...`);
   const archiveBuffer = await fetchBuffer(assetUrl);
 
   log(`Verifying ${platform.CHECKSUMS_NAME}...`);

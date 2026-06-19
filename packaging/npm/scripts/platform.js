@@ -62,12 +62,15 @@ function resolveTag() {
   return `v${resolveVersion()}`;
 }
 
-function baseDownloadUrl() {
+function baseDownloadUrl(tagOverride) {
   const override = process.env.NANOAGENT_CLI_BASE_URL;
   if (override && override.trim()) {
     return override.trim().replace(/\/+$/, "");
   }
-  return `https://github.com/${OWNER}/${REPO}/releases/download/${resolveTag()}`;
+  const tag = tagOverride && tagOverride.trim()
+    ? tagOverride.trim()
+    : resolveTag();
+  return `https://github.com/${OWNER}/${REPO}/releases/download/${tag}`;
 }
 
 function assetName(rid) {
