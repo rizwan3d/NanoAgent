@@ -1,7 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$Tag = $env:NanoAgent_TAG,
-    [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\NanoAgent\bin'),
+    [string]$InstallDir,
+    [string]$CommandName,
     [string]$WaitForProcessId = $env:NanoAgent_WAIT_FOR_PROCESS_ID
 )
 
@@ -9,11 +10,32 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
+# Resolve the install directory: explicit -InstallDir wins, then NanoAgent_INSTALL_DIR
+# (used by '/update' to replace the running binary in place), then the default location.
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+    $InstallDir = if (-not [string]::IsNullOrWhiteSpace($env:NanoAgent_INSTALL_DIR)) {
+        $env:NanoAgent_INSTALL_DIR
+    }
+    else {
+        Join-Path $env:LOCALAPPDATA 'Programs\NanoAgent\bin'
+    }
+}
+
+# Resolve the installed command name the same way so '/update' keeps the running
+# binary's filename. The '.exe' extension is appended below.
+if ([string]::IsNullOrWhiteSpace($CommandName)) {
+    $CommandName = if (-not [string]::IsNullOrWhiteSpace($env:NanoAgent_COMMAND_NAME)) {
+        $env:NanoAgent_COMMAND_NAME
+    }
+    else {
+        'nanoai'
+    }
+}
+
 $Owner = 'rizwan3d'
 $Repo = 'NanoAgent'
 $AppName = 'NanoAgent.CLI'
 $ExecutableName = 'NanoAgent.CLI'
-$CommandName = 'nanoai'
 $AssetName = "$ExecutableName-win-x64.zip"
 $ChecksumsName = 'SHA256SUMS'
 $TotalSteps = 7
