@@ -712,7 +712,7 @@ public static partial class Program
     {
         state.ClearPlanState();
         state.Messages.Clear();
-        state.ConversationScrollOffset = 0;
+        state.ResetConversationViewport();
         state.HasMadeFirstLlmCall = false;
 
         if (!string.IsNullOrWhiteSpace(statusMessage))

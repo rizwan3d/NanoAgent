@@ -17,12 +17,15 @@ public static partial class Program
 
     private readonly record struct InputRenderLine(
         string Text,
-        int? CursorColumn);
+        int? CursorColumn,
+        int? SelectionStartColumn = null,
+        int? SelectionEndColumn = null);
 
     private readonly record struct InputDisplayText(
         string Text,
         int CursorIndex,
-        bool HasCollapsedPastes);
+        bool HasCollapsedPastes,
+        int? SelectionAnchorIndex = null);
 
     private readonly record struct MarkdownFragment(
         string Text,
