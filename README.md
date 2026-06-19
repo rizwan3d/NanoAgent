@@ -36,6 +36,9 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent-vs">
     <img src="https://img.shields.io/badge/Install-VS-0969da?style=for-the-badge" alt="Install NanoAgent VS">
   </a>
+  <a href="https://www.npmjs.com/package/nanoai-cli">
+    <img src="https://img.shields.io/badge/Install-npm-0969da?style=for-the-badge" alt="Install NanoAgent CLI from npm">
+  </a>
   <a href="https://www.nuget.org/packages/NanoAgent/">
     <img src="https://img.shields.io/badge/Install-Nuget-0969da?style=for-the-badge" alt="Install NanoAgent Nuget">
   </a>
@@ -125,7 +128,10 @@ Release assets also publish `SHA256SUMS` and GitHub artifact attestations so you
 
 ### CLI Install
 
-Install with the release installer.
+Pick whichever installer fits your setup. Every method installs the same
+self-contained binary and exposes it as the `nanoai` command.
+
+#### Install script
 
 macOS / Linux:
 
@@ -139,13 +145,27 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
 
+#### npm / bun / pnpm
+
+```bash
+npm install -g nanoai-cli
+# or
+bun add -g nanoai-cli
+# or
+pnpm add -g nanoai-cli
+```
+
+The npm package downloads the matching release binary and verifies it against the
+published `SHA256SUMS`. (bun skips `postinstall`, so the binary is fetched on the
+first `nanoai` run instead.)
+
 Then start NanoAgent:
 
 ```bash
 nanoai
 ```
 
-The CLI is distributed only through the release installers above; the tag-based release workflows publish just the `NanoAgent` library to NuGet.org.
+The tag-based release workflow also publishes the `NanoAgent` library to NuGet.org.
 
 ## Quick Start
 

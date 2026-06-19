@@ -51,7 +51,11 @@ New release assets include `SHA256SUMS` beside the downloads. The release pipeli
 
 ### CLI
 
-Install with the release installer.
+The CLI ships as a self-contained, AOT-compiled binary exposed as the `nanoai`
+command. Choose whichever installer fits your environment — they all install the
+same binary from the same release assets.
+
+#### Install script
 
 macOS / Linux:
 
@@ -65,13 +69,27 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
 
-The installers show step status and download progress when run in an interactive terminal. Set `NANOAGENT_NO_PROGRESS=1` to keep output compact in CI logs.
+The installers show step status and download progress when run in an interactive terminal. Set `NANOAGENT_NO_PROGRESS=1` to keep output compact in CI logs. Restart your terminal if `nanoai` is not found immediately after installation.
 
-Restart your terminal if `nanoai` is not found immediately after installation.
+#### npm, bun, and pnpm
 
-The release workflows also pack the `NanoAgent` library and publish it to NuGet.org for every `v*` tag release. The CLI is distributed only as a release installer, not as a NuGet package.
+```bash
+npm install -g nanoai-cli
+# or
+bun add -g nanoai-cli
+# or
+pnpm add -g nanoai-cli
+```
 
-The CLI install scripts verify the archive checksum against `SHA256SUMS`, or the SHA256 digest from GitHub release metadata, before extraction. Checksum verification is mandatory â€” installation fails if the checksum cannot be validated.
+The [`nanoai-cli`](packaging/npm) package is a thin installer. On `postinstall` (or on the first `nanoai` run) it downloads the matching `NanoAgent.CLI-<rid>.zip` release asset, verifies it against the published `SHA256SUMS`, and unpacks the binary — no .NET toolchain required. Because `bun install` skips `postinstall` scripts by default, bun fetches the binary lazily the first time you run `nanoai`. Supported targets: `win-x64`, `osx-x64`, `osx-arm64`, `linux-x64`, `linux-arm64`. Useful overrides: `NANOAGENT_SKIP_DOWNLOAD=1`, `NANOAGENT_CLI_TAG`, `NANOAGENT_CLI_BASE_URL`.
+
+#### NuGet library
+
+The release workflows also pack the `NanoAgent` library and publish it to NuGet.org for every `v*` tag release. The CLI itself is distributed through the installers above, not as a NuGet package.
+
+#### Checksum verification
+
+Every installer verifies the downloaded archive against `SHA256SUMS` (the install scripts also fall back to the SHA256 digest from GitHub release metadata) before extraction. Checksum verification is mandatory — installation fails if the checksum cannot be validated.
 
 ## First Run
 
