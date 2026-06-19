@@ -1,0 +1,52 @@
+{
+  "name": "nanoai-cli",
+  "version": "1.0.7",
+  "description": "Terminal UI, ACP server, and automation-friendly CLI for NanoAgent.",
+  "keywords": [
+    "nanoagent",
+    "nanoai",
+    "ai",
+    "agent",
+    "cli",
+    "acp",
+    "coding-agent"
+  ],
+  "homepage": "https://github.com/rizwan3d/NanoAgent#readme",
+  "bugs": {
+    "url": "https://github.com/rizwan3d/NanoAgent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rizwan3d/NanoAgent.git",
+    "directory": "packaging/npm"
+  },
+  "license": "Apache-2.0",
+  "author": "NanoAgent",
+  "type": "commonjs",
+  "bin": {
+    "nanoai": "bin/nanoai.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/postinstall.js"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "os": [
+    "win32",
+    "darwin",
+    "linux"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ],
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  }
+}
