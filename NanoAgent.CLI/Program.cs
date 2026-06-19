@@ -1,4 +1,4 @@
-using NanoAgent.Application.Backend;
+﻿using NanoAgent.Application.Backend;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
@@ -27,6 +27,11 @@ public static partial class Program
     private const string DisableBracketedPasteSequence = "\u001b[?2004l";
     private const string EnableWheelScrollingSequence = "\u001b[?1007h";
     private const string DisableWheelScrollingSequence = "\u001b[?1007l";
+    // Normal button tracking (?1000h) plus SGR extended coordinates (?1006h): reports
+    // clicks and wheel events with row/column so we can hit-test the conversation. This
+    // captures the mouse, so native drag-select needs Shift+drag (or Reader View / Copy
+    // mode) -- an accepted trade-off for click-to-toggle.
+    private const string EnableMouseTrackingSequence = "\u001b[?1000h\u001b[?1006h";
     private const string DisableMouseTrackingSequence = "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l";
     private const int StdInputHandle = -10;
     private const uint EnableVirtualTerminalInput = 0x0200;

@@ -29,6 +29,9 @@ public static partial class Program
         int windowWidth,
         int windowHeight)
     {
+        // Off-screen by default; only the standard layout below maps clicks to rows.
+        state.MessagesContentTopRow = -1;
+
         if (state.IsReaderViewActive)
         {
             return BuildReaderView(state);
@@ -65,6 +68,10 @@ public static partial class Program
                 return BuildCompactUi(state, windowWidth, windowHeight);
             }
         }
+
+        // The body panel sits directly under the header; its top border (with header text)
+        // is one row, so the first visible conversation line is headerSize + 2 (1-based).
+        state.MessagesContentTopRow = headerSize + 2;
 
         Layout root = new Layout("root");
             root.SplitRows(
@@ -389,6 +396,13 @@ public static partial class Program
             .Take(viewportLineCount)
             .ToList();
 
+        // Snapshot which thinking block (if any) each on-screen row maps to, so a mouse
+        // click can toggle the right block. Captured before copy-mode highlighting, which
+        // rebuilds lines without the thinking tag (clicks are ignored in copy mode anyway).
+        state.VisibleThinkingMessageIds = visibleLines
+            .Select(line => line.ThinkingMessageId)
+            .ToArray();
+
         if (state.IsCopyModeActive)
         {
             visibleLines = ApplyCopyModeHighlight(state, visibleLines, startIndex);
@@ -415,7 +429,8 @@ public static partial class Program
 
         foreach (ChatMessage message in state.Messages)
         {
-            AddMessageLines(lines, message, contentWidth);
+            bool expanded = state.ExpandedThinkingMessageIds.Contains(message.Id);
+            AddMessageLines(lines, message, contentWidth, expanded);
         }
 
         return lines;
@@ -424,7 +439,8 @@ public static partial class Program
     private static void AddMessageLines(
         List<ConversationLine> lines,
         ChatMessage message,
-        int contentWidth)
+        int contentWidth,
+        bool expandThinking)
     {
         string roleName = message.Role switch
         {
@@ -443,6 +459,16 @@ public static partial class Program
             Role.System => "yellow",
             _ => "grey"
         };
+
+        int thinkingStartIndex = lines.Count;
+
+        if (message.Role == Role.Thinking && !expandThinking)
+        {
+            AddCollapsedThinkingLine(lines, message, roleName, roleColor, contentWidth);
+            TagThinkingLines(lines, thinkingStartIndex, message.Id);
+            lines.Add(new ConversationLine(string.Empty, string.Empty));
+            return;
+        }
 
         string[] rawLines = message.Text
             .Replace("\r\n", "\n", StringComparison.Ordinal)
@@ -514,7 +540,72 @@ public static partial class Program
                 contentWidth);
         }
 
+        if (message.Role == Role.Thinking)
+        {
+            TagThinkingLines(lines, thinkingStartIndex, message.Id);
+        }
+
         lines.Add(new ConversationLine(string.Empty, string.Empty));
+    }
+
+    // Stamps every conversation line of a thinking block with its message id so a click on
+    // any of them (collapsed summary or expanded body) toggles that block.
+    private static void TagThinkingLines(
+        List<ConversationLine> lines,
+        int startIndex,
+        int messageId)
+    {
+        for (int index = startIndex; index < lines.Count; index++)
+        {
+            lines[index] = lines[index] with { ThinkingMessageId = messageId };
+        }
+    }
+
+    // Renders a collapsed thinking block as a single dimmed summary line that reports how
+    // much reasoning is hidden and how to reveal it.
+    private static void AddCollapsedThinkingLine(
+        List<ConversationLine> lines,
+        ChatMessage message,
+        string roleName,
+        string roleColor,
+        int contentWidth)
+    {
+        int lineCount = CountThinkingBodyLines(message.Text);
+        string summary = lineCount > 0
+            ? $"Thinking… ({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
+            : "Thinking… · click or Ctrl+T to expand";
+
+        int contentBudget = Math.Max(1, contentWidth - (roleName.Length + 2));
+        if (summary.Length > contentBudget)
+        {
+            summary = contentBudget <= 1
+                ? summary[..contentBudget]
+                : summary[..(contentBudget - 1)] + "…";
+        }
+
+        bool firstLine = true;
+        AddConversationContentLine(
+            lines,
+            $"[grey58]{Markup.Escape(summary)}[/]",
+            summary,
+            ref firstLine,
+            roleName,
+            roleColor);
+    }
+
+    private static int CountThinkingBodyLines(string text)
+    {
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        const string prefix = "Thinking:";
+        if (normalized.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            normalized = normalized[prefix.Length..];
+        }
+
+        return normalized
+            .Split('\n')
+            .Count(line => !string.IsNullOrWhiteSpace(line));
     }
 
     private static string BuildScrollableConversationMarkup(
