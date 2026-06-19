@@ -574,10 +574,6 @@ jobs:
     needs:
       - validate
       - publish-release
-    # Opt in by setting the repository variable PUBLISH_NPM to 'true' and adding
-    # the NPM_TOKEN secret. The published package downloads the v<version>
-    # release assets, so it must run after the GitHub release exists.
-    if: ${{ vars.PUBLISH_NPM == 'true' }}
     runs-on: ubuntu-24.04
     environment:
       name: production-release
