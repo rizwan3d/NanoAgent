@@ -7,6 +7,7 @@ using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Application.Tools.Services;
 using NanoAgent.Domain.Models;
+using System.Text.Json;
 
 namespace NanoAgent.Tests.Application.Tools.Services;
 
@@ -21,6 +22,10 @@ public sealed class RegistryBackedToolInvokerTests
         new AgentProviderProfile(ProviderKind.OpenAi, null),
         "gpt-5-mini",
         ["gpt-5-mini"]);
+    private static readonly ReplSessionContext DeepSeekSession = new(
+        new AgentProviderProfile(ProviderKind.DeepSeek, null),
+        "deepseek-v4-pro",
+        ["deepseek-v4-pro"]);
 
     [Fact]
     public async Task InvokeAsync_Should_ReturnNotFoundResult_When_ToolIsUnknown()
@@ -58,6 +63,109 @@ public sealed class RegistryBackedToolInvokerTests
 
         result.Result.Status.Should().Be(ToolResultStatus.InvalidArguments);
         result.Result.Message.Should().Contain("JSON-object arguments");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_RepairStringifiedArrayArguments_ForDeepSeekSessions()
+    {
+        ArrayCaptureTool tool = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", tool.Name, """{ "items": "[\"alpha\",\"beta\"]" }"""),
+            DeepSeekSession,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(tool.Name),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        tool.Items.Should().Equal("alpha", "beta");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_RepairBareStringArrayArguments_ForDeepSeekSessions()
+    {
+        ArrayCaptureTool tool = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", tool.Name, """{ "items": "alpha" }"""),
+            DeepSeekSession,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(tool.Name),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        tool.Items.Should().Equal("alpha");
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_RepairSingleObjectArrayArguments_ForDeepSeekSessions()
+    {
+        ObjectArrayCaptureTool tool = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", tool.Name, """{ "tasks": { "task": "review", "context": null } }"""),
+            DeepSeekSession,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(tool.Name),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        tool.TaskCount.Should().Be(1);
+        tool.FirstTask.Should().Be("review");
+        tool.FirstTaskHadContext.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_UnwrapMarkdownPaths_And_RemoveOptionalNulls_ForDeepSeekSessions()
+    {
+        PathCaptureTool tool = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", tool.Name, """{ "path": "docs/[notes.md](http://notes.md)", "overwrite": null }"""),
+            DeepSeekSession,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(tool.Name),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        tool.Path.Should().Be("docs/notes.md");
+        tool.HadOverwrite.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_NotRepairArguments_ForNonDeepSeekSessions()
+    {
+        ArrayCaptureTool tool = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", tool.Name, """{ "items": "[\"alpha\",\"beta\"]" }"""),
+            Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(tool.Name),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Result.Message.Should().Contain("requires 'items' to be an array");
     }
 
     [Fact]
@@ -371,6 +479,168 @@ public sealed class RegistryBackedToolInvokerTests
                 "Completed.",
                 new ToolErrorPayload("slow", "done"),
                 ToolJsonContext.Default.ToolErrorPayload);
+        }
+    }
+
+    private sealed class ArrayCaptureTool : ITool
+    {
+        public IReadOnlyList<string> Items { get; private set; } = [];
+
+        public string Description => "Array capture tool";
+
+        public string Name => "array_capture_tool";
+
+        public string PermissionRequirements => """{ "approvalMode": "Automatic" }""";
+
+        public string Schema => """
+            {
+              "type": "object",
+              "properties": {
+                "items": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["items"],
+              "additionalProperties": false
+            }
+            """;
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!context.Arguments.TryGetProperty("items", out JsonElement itemsElement) ||
+                itemsElement.ValueKind != JsonValueKind.Array)
+            {
+                return Task.FromResult(ToolResultFactory.InvalidArguments(
+                    "invalid_items",
+                    "Tool 'array_capture_tool' requires 'items' to be an array.",
+                    new ToolRenderPayload(
+                        "Invalid array capture arguments",
+                        "Provide 'items' as an array.")));
+            }
+
+            Items = itemsElement
+                .EnumerateArray()
+                .Select(static item => item.GetString() ?? string.Empty)
+                .ToArray();
+
+            return Task.FromResult(ToolResultFactory.Success(
+                "Captured items.",
+                new ToolErrorPayload("ok", "ok"),
+                ToolJsonContext.Default.ToolErrorPayload));
+        }
+    }
+
+    private sealed class ObjectArrayCaptureTool : ITool
+    {
+        public string? FirstTask { get; private set; }
+
+        public bool FirstTaskHadContext { get; private set; }
+
+        public int TaskCount { get; private set; }
+
+        public string Description => "Object array capture tool";
+
+        public string Name => "object_array_capture_tool";
+
+        public string PermissionRequirements => """{ "approvalMode": "Automatic" }""";
+
+        public string Schema => """
+            {
+              "type": "object",
+              "properties": {
+                "tasks": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "task": {
+                        "type": "string"
+                      },
+                      "context": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["task"],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": ["tasks"],
+              "additionalProperties": false
+            }
+            """;
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            if (!context.Arguments.TryGetProperty("tasks", out JsonElement tasksElement) ||
+                tasksElement.ValueKind != JsonValueKind.Array)
+            {
+                return Task.FromResult(ToolResultFactory.InvalidArguments(
+                    "invalid_tasks",
+                    "Tool 'object_array_capture_tool' requires 'tasks' to be an array.",
+                    new ToolRenderPayload(
+                        "Invalid object array arguments",
+                        "Provide 'tasks' as an array.")));
+            }
+
+            TaskCount = tasksElement.GetArrayLength();
+            JsonElement firstTask = tasksElement.EnumerateArray().First();
+            FirstTask = firstTask.GetProperty("task").GetString();
+            FirstTaskHadContext = firstTask.TryGetProperty("context", out _);
+
+            return Task.FromResult(ToolResultFactory.Success(
+                "Captured tasks.",
+                new ToolErrorPayload("ok", "ok"),
+                ToolJsonContext.Default.ToolErrorPayload));
+        }
+    }
+
+    private sealed class PathCaptureTool : ITool
+    {
+        public bool HadOverwrite { get; private set; }
+
+        public string? Path { get; private set; }
+
+        public string Description => "Path capture tool";
+
+        public string Name => "path_capture_tool";
+
+        public string PermissionRequirements => """{ "approvalMode": "Automatic" }""";
+
+        public string Schema => """
+            {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "overwrite": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["path"],
+              "additionalProperties": false
+            }
+            """;
+
+        public Task<ToolResult> ExecuteAsync(
+            ToolExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            Path = context.Arguments.GetProperty("path").GetString();
+            HadOverwrite = context.Arguments.TryGetProperty("overwrite", out _);
+
+            return Task.FromResult(ToolResultFactory.Success(
+                "Captured path.",
+                new ToolErrorPayload("ok", "ok"),
+                ToolJsonContext.Default.ToolErrorPayload));
         }
     }
 
