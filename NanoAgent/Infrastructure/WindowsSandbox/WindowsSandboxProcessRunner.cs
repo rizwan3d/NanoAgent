@@ -58,18 +58,20 @@ internal static class WindowsSandboxProcessRunner
         WindowsSandboxPaths.EnsureStateDirectories(context.NanoAgentHome);
         WindowsSandboxLog.Write(context.NanoAgentHome, $"background command start: mode={context.Mode}, cwd={context.CommandCwd}, file={request.FileName}");
 
+        IReadOnlyDictionary<string, string> sandboxEnvironment = BuildSandboxEnvironmentMap(
+            request.EnvironmentVariables,
+            context.NanoAgentHome);
         WindowsAllowDenyPaths paths = WindowsAllowDenyPlanner.Compute(
             context.Mode,
             context.PolicyCwd,
             context.CommandCwd,
             context.WritableRoots,
-            request.EnvironmentVariables,
+            sandboxEnvironment,
             context.IncludeTempEnvironmentVariables);
         EnsureSetupFresh(context, paths);
 
         WindowsCapabilitySids capabilitySids = WindowsCapabilitySidStore.LoadOrCreate(context.NanoAgentHome);
         string workspaceSid = WindowsCapabilitySidStore.WorkspaceSidForCwd(context.NanoAgentHome, context.CommandCwd);
-        request = MaterializeExternalExecutableIfNeeded(request, context);
 
         // Unlike the foreground path, the prepared ACEs must remain applied for the full lifetime of
         // the background command. Ownership of the revocation list transfers to the returned handle,
@@ -79,7 +81,9 @@ internal static class WindowsSandboxProcessRunner
         try
         {
             string sandboxGroupSid = SandboxGroupSids()[0];
-            PrepareAcls(context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces);
+            PrepareAcls(context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            request = MaterializeExternalExecutableIfNeeded(request, context);
             WindowsSandboxBackgroundProcess handle = await LaunchBackgroundViaSelfRunnerAsync(
                 request,
                 context,
@@ -134,24 +138,28 @@ internal static class WindowsSandboxProcessRunner
         CancellationToken cancellationToken,
         Func<ProcessExecutionRequest, WindowsSandboxExecutionContext, CancellationToken, Task<ProcessExecutionResult>> launcher)
     {
+        IReadOnlyDictionary<string, string> sandboxEnvironment = BuildSandboxEnvironmentMap(
+            request.EnvironmentVariables,
+            context.NanoAgentHome);
         WindowsAllowDenyPaths paths = WindowsAllowDenyPlanner.Compute(
             context.Mode,
             context.PolicyCwd,
             context.CommandCwd,
             context.WritableRoots,
-            request.EnvironmentVariables,
+            sandboxEnvironment,
             context.IncludeTempEnvironmentVariables);
         EnsureSetupFresh(context, paths);
 
         WindowsCapabilitySids capabilitySids = WindowsCapabilitySidStore.LoadOrCreate(context.NanoAgentHome);
         string workspaceSid = WindowsCapabilitySidStore.WorkspaceSidForCwd(context.NanoAgentHome, context.CommandCwd);
-        request = MaterializeExternalExecutableIfNeeded(request, context);
 
         List<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces = [];
         try
         {
             string sandboxGroupSid = SandboxGroupSids()[0];
-            PrepareAcls(context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces);
+            PrepareAcls(context, capabilitySids, workspaceSid, sandboxGroupSid, paths, temporaryAces, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            request = MaterializeExternalExecutableIfNeeded(request, context);
             ProcessExecutionResult result = await ExecuteWithStartupRetryAsync(
                 async innerCancellationToken => await launcher(
                     request,
@@ -1032,7 +1040,6 @@ internal static class WindowsSandboxProcessRunner
 
         string[] writableDirectories =
         [
-            runtimeDir,
             profileDir,
             tempDir,
             appDataDir,
@@ -1177,9 +1184,11 @@ internal static class WindowsSandboxProcessRunner
         string workspaceSid,
         string sandboxGroupSid,
         WindowsAllowDenyPaths paths,
-        List<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces)
+        List<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces,
+        CancellationToken cancellationToken)
     {
         FileSystemRights readExecute = FileSystemRights.ReadAndExecute | FileSystemRights.ListDirectory;
+        cancellationToken.ThrowIfCancellationRequested();
         WindowsSandboxAcl.AllowNulDevice(capabilitySids.Readonly);
         PrepareRuntimeProfileAcls(context.NanoAgentHome, capabilitySids, sandboxGroupSid, temporaryAces);
         WindowsSandboxAcl.AddAllowAce(context.CommandCwd, sandboxGroupSid, readExecute);
@@ -1189,20 +1198,33 @@ internal static class WindowsSandboxProcessRunner
         // Grant explicit read/execute to platform default system directories.
         // These are already readable by Everyone/Users - the explicit ACEs are
         // defense-in-depth for restricted tokens that strip inherited group memberships.
-        // If the caller lacks WRITE_DAC (e.g. non-elevated test host), skip gracefully.
-        foreach (string platformRoot in WindowsSandboxSetupRoots.PlatformDefaultReadRoots)
+        // If the caller lacks WRITE_DAC (e.g. non-elevated test host), skip the
+        // attempts entirely because probing protected roots can be very slow.
+        if (ShouldGrantPlatformRootAcls())
         {
-            if (!Directory.Exists(platformRoot) && !File.Exists(platformRoot)) continue;
-            try
+            foreach (string platformRoot in WindowsSandboxSetupRoots.PlatformDefaultReadRoots)
             {
-                WindowsSandboxAcl.AddAllowAce(platformRoot, sandboxGroupSid, readExecute);
-                temporaryAces.Add((platformRoot, sandboxGroupSid, readExecute, AccessControlType.Allow));
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!Directory.Exists(platformRoot) && !File.Exists(platformRoot))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    WindowsSandboxAcl.AddAllowAce(platformRoot, sandboxGroupSid, readExecute);
+                    temporaryAces.Add((platformRoot, sandboxGroupSid, readExecute, AccessControlType.Allow));
+                }
+                catch (Exception aceException)
+                {
+                    WindowsSandboxLog.Write(context.NanoAgentHome,
+                        $"skipped platform root ACE for {platformRoot}: {aceException.GetType().Name}: {aceException.Message}");
+                }
             }
-            catch (Exception aceException)
-            {
-                WindowsSandboxLog.Write(context.NanoAgentHome,
-                    $"skipped platform root ACE for {platformRoot}: {aceException.GetType().Name}: {aceException.Message}");
-            }
+        }
+        else
+        {
+            WindowsSandboxLog.Write(context.NanoAgentHome, "skipped platform root ACE grants: process is not elevated");
         }
 
         if (context.Mode != ToolSandboxMode.WorkspaceWrite)
@@ -1212,6 +1234,7 @@ internal static class WindowsSandboxProcessRunner
 
         foreach (string path in paths.Allow)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             FileSystemRights writeRights = FileSystemRights.Modify | FileSystemRights.ReadAndExecute;
             string sid = string.Equals(
                 WindowsCapabilitySidStore.CanonicalPathKey(path),
@@ -1227,9 +1250,15 @@ internal static class WindowsSandboxProcessRunner
 
         foreach (string path in paths.Deny)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             WindowsSandboxAcl.AddDenyWriteAce(path, workspaceSid);
             WindowsSandboxAcl.AddDenyWriteAce(path, capabilitySids.Workspace);
         }
+    }
+
+    private static bool ShouldGrantPlatformRootAcls()
+    {
+        return WindowsSandboxSetupOrchestrator.IsElevated();
     }
 
     private static void PrepareRuntimeProfileAcls(

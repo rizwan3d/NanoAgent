@@ -424,7 +424,10 @@ public static partial class Program
         string root = Path.GetFullPath(state.RootDirectory)
             .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) +
             Path.DirectorySeparatorChar;
-        string fullPath = Path.GetFullPath(Path.Combine(root, path));
+        string normalizedPath = path
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar);
+        string fullPath = Path.GetFullPath(Path.Combine(root, normalizedPath));
 
         StringComparison comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
