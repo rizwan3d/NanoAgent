@@ -568,3 +568,49 @@ jobs:
               --notes-file "${{ steps.release_notes.outputs.path }}" \
               --target "$target_sha"
           fi
+
+  publish-npm:
+    name: Publish npm package
+    needs:
+      - validate
+      - publish-release
+    # Opt in by setting the repository variable PUBLISH_NPM to 'true' and adding
+    # the NPM_TOKEN secret. The published package downloads the v<version>
+    # release assets, so it must run after the GitHub release exists.
+    if: ${{ vars.PUBLISH_NPM == 'true' }}
+    runs-on: ubuntu-24.04
+    environment:
+      name: production-release
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Set package version
+        working-directory: packaging/npm
+        run: npm version "$RELEASE_VERSION" --no-git-tag-version --allow-same-version
+
+      - name: Publish to npm
+        working-directory: packaging/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NODE_AUTH_TOKEN:-}" ]]; then
+            echo "NPM_TOKEN secret is required to publish the npm package." >&2
+            exit 1
+          fi
+          npm publish --access public --provenance
