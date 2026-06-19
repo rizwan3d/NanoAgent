@@ -208,6 +208,8 @@ public sealed class ProgramTests
         state.Messages.Should().ContainSingle(message =>
             message.Role == Role.System &&
             message.Text.Contains("That command is unavailable while NanoAgent is working."));
+        state.Input.ToString().Should().BeEmpty();
+        state.InputCursorIndex.Should().Be(0);
     }
 
     [Fact]
@@ -227,6 +229,28 @@ public sealed class ProgramTests
 
         state.Input.ToString().Should().Be("Wait for startup");
         state.InputCursorIndex.Should().Be("Wait for startup".Length);
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text == "NanoAgent is still starting up. Please wait.");
+    }
+
+    [Fact]
+    public void SubmitInput_Should_ClearSlashCommand_When_BackendIsNotReady()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            InputCursorIndex = "/help".Length
+        };
+        state.Input.Append("/help");
+
+        MethodInfo submitInput = typeof(Program).GetMethod(
+            "SubmitInput",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        submitInput.Invoke(null, [state]);
+
+        state.Input.ToString().Should().BeEmpty();
+        state.InputCursorIndex.Should().Be(0);
         state.Messages.Should().ContainSingle(message =>
             message.Role == Role.System &&
             message.Text == "NanoAgent is still starting up. Please wait.");
