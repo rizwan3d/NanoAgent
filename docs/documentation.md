@@ -389,6 +389,36 @@ Use `$ARGUMENTS` for the full argument string, or name positional arguments in `
 Press F2 in the terminal UI to choose the active model with the same arrow-key picker.
 Type `/` in the terminal input to open command suggestions, then use Up/Down and Enter to choose a command.
 Start input with `!` to run the rest as a local shell command directly, for example `!git status --short`.
+Start input with `!!` to run the rest as a background terminal whose output streams live, for example `!!dotnet watch`. Manage these background terminals with `/terminals`.
+
+### Terminal Input and Keys
+
+The interactive terminal UI adds keyboard controls for editing, navigating history, queueing work, and interrupting a running turn.
+
+#### Queue prompts and commands
+
+You no longer have to wait for the current turn to finish before lining up the next request. When NanoAgent is busy or streaming, pressing Enter queues the prompt or slash command instead of rejecting it. Queued items run automatically, in order, as soon as the active turn completes.
+
+- The busy status line shows how many requests are waiting, for example `… - 2 queued`.
+- A summary line under the input reports the queue depth and reminds you that F4 removes the newest queued item.
+- Press F4 while busy to drop the most recently queued submission.
+- Queued slash commands run only when NanoAgent is ready; commands that are unavailable while working stay queued until the turn finishes.
+
+#### Interrupt a running or stuck turn
+
+While a turn is running, the footer shows `Esc: interrupt` and `Esc again: abandon`.
+
+- Press Esc once to request a graceful interrupt. The status changes to `Interrupting` and NanoAgent cancels the active turn so the backend can stop cleanly.
+- Press Esc again if the turn does not stop promptly to abandon it locally. NanoAgent detaches from the turn, returns to Ready, and ignores any late output that arrives from the abandoned turn. Any queued submissions then start.
+
+#### Edit and scroll
+
+- Ctrl+A selects all input text so you can replace or delete a draft in one step. Selected text is highlighted, and typing, Backspace, or Delete replaces the selection.
+- Auto-scroll pauses automatically when you scroll up to read earlier conversation history, so new streamed output does not yank you back to the bottom. Scrolling back to the bottom resumes auto-scroll.
+
+#### Tab-complete file and directory paths
+
+After a `!` or `!!` shell command and a space, Tab completes file and directory paths from the workspace, the same way a normal terminal does. For example, `!cat ./sr` then Tab completes the typed path component while preserving the directory portion exactly as you typed it. Because shell commands usually take more arguments after a path, completing a path does not submit the command — it only fills in the path so you can keep typing. Completing a directory appends a trailing `/` so you can drill in further.
 
 ### Tool Runtime Settings
 
@@ -682,6 +712,10 @@ This is **disabled by default**. Enable it in user-level or workspace-level `.na
 NanoAgent stores a provider profile locally and discovers models from that provider when possible.
 
 Use the terminal F2 or `/models` picker, `/use <model>`, or the desktop model control to switch models. The active model is stored with the local configuration and section state. If a preferred model is unavailable, NanoAgent falls back to a discovered model when possible.
+
+### DeepSeek Tool-Argument Repair
+
+When the active provider is DeepSeek (or the active model id contains `deepseek`), NanoAgent runs a provider-specific repair pass over tool-call arguments before executing the tool. DeepSeek models sometimes emit arguments that do not match the tool schema — for example wrapping a plain path or value in Markdown auto-link syntax such as `[text](path)`. The repair layer normalizes these against the tool's JSON schema so the call still runs correctly. The pass is a no-op for other providers and only rewrites arguments when a repair is actually needed.
 
 ### Thinking Mode
 

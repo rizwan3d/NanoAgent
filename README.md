@@ -217,6 +217,15 @@ Inside a session, a few useful commands are:
 | `/init` | Scaffold workspace-local `.nanoagent` files. |
 | `/undo` / `/redo` | Roll back or re-apply the most recent tracked edit. |
 
+The interactive terminal also keeps you moving while NanoAgent works:
+
+- Queue the next prompt or slash command with Enter while a turn is running; queued items run in order as soon as it finishes (F4 removes the newest).
+- Press Esc to interrupt the current turn, or Esc again to abandon a stuck turn locally.
+- Use Ctrl+A to select all input, and Tab to complete file and directory paths after a `!` or `!!` shell command.
+- Scrolling up to read history pauses auto-scroll until you return to the bottom.
+
+DeepSeek models get an automatic tool-argument repair pass so malformed tool calls still run. See the [documentation](docs/documentation.md#terminal-input-and-keys) for details.
+
 ## Providers
 
 NanoAgent supports:
