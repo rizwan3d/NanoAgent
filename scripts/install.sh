@@ -9,7 +9,7 @@ readonly EXECUTABLE_NAME="NanoAgent.CLI"
 # binary's filename is preserved when replacing it in place.
 readonly COMMAND_NAME="${NANOAGENT_COMMAND_NAME:-${NanoAgent_COMMAND_NAME:-nanoai}}"
 readonly CHECKSUMS_NAME="SHA256SUMS"
-readonly DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
+readonly POSIX_DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 readonly TOTAL_STEPS=7
 
 TEMP_ROOT=""
@@ -53,6 +53,10 @@ progress_enabled() {
   esac
 }
 
+is_windows_platform() {
+  [[ "$1" == win-* ]]
+}
+
 start_step() {
   CURRENT_STEP=$((CURRENT_STEP + 1))
   log "[$CURRENT_STEP/$TOTAL_STEPS] $1"
@@ -60,6 +64,86 @@ start_step() {
 
 finish_step() {
   log "    $1"
+}
+
+to_posix_path() {
+  if ! command -v cygpath >/dev/null 2>&1; then
+    fail "Windows installs from bash require 'cygpath' to translate paths."
+  fi
+
+  cygpath -au "$1"
+}
+
+to_windows_path() {
+  if ! command -v cygpath >/dev/null 2>&1; then
+    fail "Windows installs from bash require 'cygpath' to translate paths."
+  fi
+
+  cygpath -aw "$1"
+}
+
+resolve_default_install_dir() {
+  local platform="$1"
+  local local_app_data
+
+  if ! is_windows_platform "$platform"; then
+    printf '%s\n' "$POSIX_DEFAULT_INSTALL_DIR"
+    return
+  fi
+
+  local_app_data="${LOCALAPPDATA:-${LocalAppData:-}}"
+  if [[ -z "$local_app_data" && -n "${USERPROFILE:-}" ]]; then
+    local_app_data="${USERPROFILE}\\AppData\\Local"
+  fi
+
+  if [[ -z "$local_app_data" ]]; then
+    fail "Unable to determine LOCALAPPDATA for the default Windows install directory. Set NANOAGENT_INSTALL_DIR and try again."
+  fi
+
+  to_posix_path "${local_app_data}\\Programs\\NanoAgent\\bin"
+}
+
+normalize_install_dir() {
+  local platform="$1"
+  local install_dir="$2"
+
+  if is_windows_platform "$platform"; then
+    case "$install_dir" in
+      [A-Za-z]:[\\/]*|\\\\*)
+        to_posix_path "$install_dir"
+        return
+        ;;
+    esac
+  fi
+
+  printf '%s\n' "$install_dir"
+}
+
+resolve_archive_executable_name() {
+  local platform="$1"
+
+  if is_windows_platform "$platform"; then
+    printf '%s.exe\n' "$EXECUTABLE_NAME"
+  else
+    printf '%s\n' "$EXECUTABLE_NAME"
+  fi
+}
+
+resolve_destination_file_name() {
+  local platform="$1"
+
+  if is_windows_platform "$platform"; then
+    case "$COMMAND_NAME" in
+      *.exe|*.EXE)
+        printf '%s\n' "$COMMAND_NAME"
+        ;;
+      *)
+        printf '%s.exe\n' "$COMMAND_NAME"
+        ;;
+    esac
+  else
+    printf '%s\n' "$COMMAND_NAME"
+  fi
 }
 
 format_bytes() {
@@ -289,6 +373,16 @@ detect_platform() {
           ;;
       esac
       ;;
+    MINGW*|MSYS*|CYGWIN*)
+      case "$arch" in
+        x86_64|amd64)
+          printf 'win-x64\n'
+          ;;
+        *)
+          fail "Unsupported Windows architecture '$arch'. This installer supports Windows x64 only."
+          ;;
+      esac
+      ;;
     Darwin)
       case "$arch" in
         x86_64)
@@ -303,7 +397,7 @@ detect_platform() {
       esac
       ;;
     *)
-      fail "Unsupported operating system '$os'. This installer supports Linux and macOS only."
+      fail "Unsupported operating system '$os'. This installer supports Windows, Linux, and macOS."
       ;;
   esac
 }
@@ -462,10 +556,16 @@ link_command_into_existing_path() {
 
 add_install_dir_to_github_path() {
   local install_dir="$1"
+  local platform="${2:-}"
   local github_path_dir
+  local github_path_value="$install_dir"
 
   if [[ -z "${GITHUB_PATH:-}" ]]; then
     return 1
+  fi
+
+  if is_windows_platform "$platform"; then
+    github_path_value="$(to_windows_path "$install_dir")"
   fi
 
   github_path_dir="$(dirname "$GITHUB_PATH")"
@@ -473,14 +573,41 @@ add_install_dir_to_github_path() {
     return 1
   fi
 
-  printf '%s\n' "$install_dir" >> "$GITHUB_PATH"
-  log "Added '${install_dir}' to GitHub Actions PATH for later steps."
+  printf '%s\n' "$github_path_value" >> "$GITHUB_PATH"
+  log "Added '${github_path_value}' to GitHub Actions PATH for later steps."
   return 0
+}
+
+windows_user_path_contains_directory() {
+  local install_dir="$1"
+  local install_dir_windows
+
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    return 1
+  fi
+
+  install_dir_windows="$(to_windows_path "$install_dir")"
+
+  NANOAGENT_INSTALL_DIR_WIN="$install_dir_windows" powershell.exe -NoProfile -Command "\$target = [System.IO.Path]::GetFullPath(\$env:NANOAGENT_INSTALL_DIR_WIN).TrimEnd('\\'); \$current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ([string]::IsNullOrWhiteSpace(\$current)) { exit 1 }; foreach (\$entry in (\$current -split ';')) { if ([string]::IsNullOrWhiteSpace(\$entry)) { continue }; try { \$candidate = [System.IO.Path]::GetFullPath(\$entry).TrimEnd('\\') } catch { continue }; if ([string]::Equals(\$candidate, \$target, [StringComparison]::OrdinalIgnoreCase)) { exit 0 } }; exit 1" >/dev/null 2>&1
+}
+
+add_install_dir_to_windows_user_path() {
+  local install_dir="$1"
+  local install_dir_windows
+
+  if ! command -v powershell.exe >/dev/null 2>&1; then
+    fail "Unable to update the Windows user PATH because 'powershell.exe' is not available."
+  fi
+
+  install_dir_windows="$(to_windows_path "$install_dir")"
+
+  NANOAGENT_INSTALL_DIR_WIN="$install_dir_windows" powershell.exe -NoProfile -Command "\$target = \$env:NANOAGENT_INSTALL_DIR_WIN; \$current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ([string]::IsNullOrWhiteSpace(\$current)) { \$newPath = \$target } else { \$newPath = \$current.TrimEnd(';') + ';' + \$target }; [Environment]::SetEnvironmentVariable('Path', \$newPath, 'User')"
 }
 
 make_command_available() {
   local destination_binary="$1"
   local install_dir="$2"
+  local platform="$3"
   local linked_path
   local updated_profiles
   local profile_path
@@ -491,15 +618,28 @@ make_command_available() {
     return 0
   fi
 
+  if add_install_dir_to_github_path "$install_dir" "$platform"; then
+    COMMAND_AVAILABLE_SCOPE="ci"
+    return 1
+  fi
+
+  if is_windows_platform "$platform"; then
+    if windows_user_path_contains_directory "$install_dir"; then
+      log "The install directory is already on your user PATH."
+    else
+      add_install_dir_to_windows_user_path "$install_dir"
+      log "Added '${install_dir}' to your user PATH."
+    fi
+
+    log "Restart your shell to use '${COMMAND_NAME}'."
+    COMMAND_AVAILABLE_SCOPE="new_terminal"
+    return 1
+  fi
+
   if linked_path="$(link_command_into_existing_path "$destination_binary" "$install_dir")"; then
     log "Linked '${COMMAND_NAME}' into PATH at ${linked_path}."
     COMMAND_AVAILABLE_SCOPE="current"
     return 0
-  fi
-
-  if add_install_dir_to_github_path "$install_dir"; then
-    COMMAND_AVAILABLE_SCOPE="ci"
-    return 1
   fi
 
   updated_profiles="$(add_install_dir_to_shell_profiles "$install_dir")"
@@ -520,16 +660,19 @@ make_command_available() {
 }
 
 main() {
-  local install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-$DEFAULT_INSTALL_DIR}}"
+  local requested_install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-}}"
   local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
   local tag="$requested_tag"
   local platform
+  local install_dir
   local asset_name
   local download_url
   local archive_path
   local extract_dir
   local source_binary
   local destination_binary
+  local source_binary_name
+  local destination_file_name
 
   log "NanoAgent CLI Installer"
   start_step "Checking system requirements..."
@@ -538,6 +681,12 @@ main() {
   require_command find
 
   platform="$(detect_platform)"
+  if [[ -n "$requested_install_dir" ]]; then
+    install_dir="$(normalize_install_dir "$platform" "$requested_install_dir")"
+  else
+    install_dir="$(resolve_default_install_dir "$platform")"
+  fi
+
   finish_step "Detected ${platform}."
 
   start_step "Resolving release..."
@@ -547,6 +696,8 @@ main() {
 
   asset_name="${APP_NAME}-${platform}.zip"
   download_url="https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${asset_name}"
+  source_binary_name="$(resolve_archive_executable_name "$platform")"
+  destination_file_name="$(resolve_destination_file_name "$platform")"
 
   finish_step "Using ${APP_NAME} ${tag} for ${platform}."
 
@@ -572,21 +723,23 @@ main() {
   start_step "Extracting archive..."
   unzip -qo "$archive_path" -d "$extract_dir"
 
-  source_binary="$(find "$extract_dir" -type f -name "$EXECUTABLE_NAME" | head -n 1)"
+  source_binary="$(find "$extract_dir" -type f -name "$source_binary_name" | head -n 1)"
 
   if [[ -z "$source_binary" || ! -f "$source_binary" ]]; then
-    fail "Expected executable '${EXECUTABLE_NAME}' was not found in ${asset_name}."
+    fail "Expected executable '${source_binary_name}' was not found in ${asset_name}."
   fi
-  finish_step "Found ${EXECUTABLE_NAME}."
+  finish_step "Found ${source_binary_name}."
 
   start_step "Installing command..."
-  destination_binary="${install_dir}/${COMMAND_NAME}"
+  destination_binary="${install_dir}/${destination_file_name}"
   cp "$source_binary" "$destination_binary"
-  chmod 0755 "$destination_binary"
+  if ! is_windows_platform "$platform"; then
+    chmod 0755 "$destination_binary"
+  fi
 
   finish_step "Installed '${COMMAND_NAME}' to ${destination_binary}."
 
-  if make_command_available "$destination_binary" "$install_dir"; then
+  if make_command_available "$destination_binary" "$install_dir" "$platform"; then
     log "Done. Run '${COMMAND_NAME}' to start NanoAgent."
   elif [[ "$COMMAND_AVAILABLE_SCOPE" == "ci" ]]; then
     log "Done. '${COMMAND_NAME}' will be available in later GitHub Actions steps."
