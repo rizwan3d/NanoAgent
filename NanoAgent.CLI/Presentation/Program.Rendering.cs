@@ -535,7 +535,7 @@ public static partial class Program
                 if (TryAddHighlightedToolOutputLine(
                         lines,
                         rawLines[lineIndex],
-                        toolOutputContext,
+                        ref toolOutputContext,
                         ref firstLine,
                         roleName,
                         roleColor,
