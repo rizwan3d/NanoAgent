@@ -334,19 +334,22 @@ public static partial class Program
         AppState state,
         string input)
     {
+        // Shell commands (!/!!) often take further arguments after a path, so completing a
+        // file should not immediately submit the command the way /read or /import do.
+        bool isShellCommand = input.StartsWith('!');
         return FilePathSuggestionProvider
             .GetSuggestions(
                 state.RootDirectory,
                 input,
                 MaxSlashCommandSuggestionCount)
-            .Select(static suggestion => new SlashCommandSuggestion(
+            .Select(suggestion => new SlashCommandSuggestion(
                 suggestion.CompletedInput,
                 suggestion.DisplayPath,
                 suggestion.Description,
                 suggestion.IsDirectory,
                 SlashCommandSuggestionKind.FilePath,
                 suggestion.CompletedInput,
-                SubmitOnEnter: !suggestion.IsDirectory))
+                SubmitOnEnter: !suggestion.IsDirectory && !isShellCommand))
             .ToArray();
     }
 
