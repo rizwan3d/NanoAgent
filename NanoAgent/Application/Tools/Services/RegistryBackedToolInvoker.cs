@@ -82,6 +82,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
         try
         {
             arguments = ParseArguments(toolCall);
+            arguments = ToolArgumentRepairer.RepairIfNeeded(arguments, registration.Tool.Schema, session);
         }
         catch (JsonException exception)
         {
