@@ -2,6 +2,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Secrets;
 using System.Globalization;
+using System.IO;
 using System.Reflection;
 using System.Text.Json;
 
@@ -99,6 +100,18 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
             ["NanoAgent_TAG"] = latestVersion
         };
 
+        // Update in place: target the directory and filename of the binary that is
+        // currently running rather than the installer's fixed default location.
+        if (TryResolveRunningInstallLocation(
+                Environment.ProcessPath,
+                OperatingSystem.IsWindows(),
+                out string installDirectory,
+                out string commandName))
+        {
+            environment["NanoAgent_INSTALL_DIR"] = installDirectory;
+            environment["NanoAgent_COMMAND_NAME"] = commandName;
+        }
+
         if (OperatingSystem.IsWindows())
         {
             environment["NanoAgent_WAIT_FOR_PROCESS_ID"] = Environment.ProcessId.ToString(CultureInfo.InvariantCulture);
@@ -130,6 +143,48 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
 
         throw new PlatformNotSupportedException(
             "Automatic updates are supported on Windows, Linux, and macOS.");
+    }
+
+    /// <summary>
+    /// Resolves the install directory and command filename of the currently running
+    /// executable so an update can replace the binary in place. Returns <c>false</c>
+    /// (and the installer falls back to its default location) when the running process
+    /// is a shared host such as <c>dotnet</c> or the path cannot be determined.
+    /// </summary>
+    internal static bool TryResolveRunningInstallLocation(
+        string? processPath,
+        bool stripExecutableExtension,
+        out string installDirectory,
+        out string commandName)
+    {
+        installDirectory = string.Empty;
+        commandName = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(processPath))
+        {
+            return false;
+        }
+
+        string? directory = Path.GetDirectoryName(processPath);
+        string? name = stripExecutableExtension
+            ? Path.GetFileNameWithoutExtension(processPath)
+            : Path.GetFileName(processPath);
+
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(name))
+        {
+            return false;
+        }
+
+        // Launched through a shared host (e.g. `dotnet NanoAgent.CLI.dll`): the running
+        // executable is the host, not NanoAgent, so leave the installer's default alone.
+        if (string.Equals(name, "dotnet", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        installDirectory = directory;
+        commandName = name;
+        return true;
     }
 
     private static string GetCurrentVersion()
