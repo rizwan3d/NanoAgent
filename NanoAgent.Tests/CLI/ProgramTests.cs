@@ -325,6 +325,103 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public void HandleInputEditingKey_Should_SelectAndReplaceAllInput_WhenCtrlAIsPressed()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object)
+        {
+            InputCursorIndex = "Replace me".Length
+        };
+        state.Input.Append("Replace me");
+
+        MethodInfo handleInputEditingKey = typeof(Program).GetMethod(
+            "HandleInputEditingKey",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        MethodInfo insertInputText = typeof(Program).GetMethod(
+            "InsertInputText",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        object? handled = handleInputEditingKey.Invoke(
+            null,
+            [state, new ConsoleKeyInfo('\u0001', ConsoleKey.A, false, false, true)]);
+
+        handled.Should().Be(true);
+        state.HasInputSelection.Should().BeTrue();
+        state.InputSelectionAnchor.Should().Be(0);
+        state.InputCursorIndex.Should().Be("Replace me".Length);
+
+        insertInputText.Invoke(null, [state, "Updated", false]);
+
+        state.Input.ToString().Should().Be("Updated");
+        state.InputCursorIndex.Should().Be("Updated".Length);
+        state.HasInputSelection.Should().BeFalse();
+    }
+
+    [Fact]
+    public void UpdateConversationViewportAfterContentChange_Should_PreserveViewport_WhenAutoScrollIsPaused()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object)
+        {
+            ConversationScrollOffset = 4,
+            IsConversationAutoScrollPaused = true,
+            LastConversationLineCount = 20
+        };
+
+        MethodInfo updateConversationViewportAfterContentChange = typeof(Program).GetMethod(
+            "UpdateConversationViewportAfterContentChange",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        updateConversationViewportAfterContentChange.Invoke(null, [state, 27]);
+
+        state.ConversationScrollOffset.Should().Be(11);
+        state.LastConversationLineCount.Should().Be(27);
+    }
+
+    [Fact]
+    public void TryCancelActiveTurn_Should_AbandonTurn_OnSecondEscape()
+    {
+        AppState state = new(new UiBridge(), CreateConversationBackend().Object)
+        {
+            IsReady = true,
+            IsBusy = true,
+            ActivityText = "Thinking",
+            TurnCancellation = new CancellationTokenSource(),
+            ActiveOperation = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously).Task
+        };
+        long operationId = state.BeginTrackedOperation();
+
+        MethodInfo tryCancelActiveTurn = typeof(Program).GetMethod(
+            "TryCancelActiveTurn",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        object? firstHandled = tryCancelActiveTurn.Invoke(null, [state]);
+
+        firstHandled.Should().Be(true);
+        state.IsBusy.Should().BeTrue();
+        state.IsTurnInterruptPending.Should().BeTrue();
+        state.ActivityText.Should().Be("Interrupting");
+        state.TurnCancellation!.IsCancellationRequested.Should().BeTrue();
+        state.Messages.Should().ContainSingle(message =>
+            message.Role == Role.System &&
+            message.Text.Contains("Interrupt requested."));
+
+        object? secondHandled = tryCancelActiveTurn.Invoke(null, [state]);
+
+        secondHandled.Should().Be(true);
+        state.IsBusy.Should().BeFalse();
+        state.ActiveOperation.Should().BeNull();
+        state.TurnCancellation.Should().BeNull();
+        state.IsTurnInterruptPending.Should().BeFalse();
+        state.IsTrackedOperationCurrent(operationId).Should().BeFalse();
+        state.Messages.Should().Contain(message =>
+            message.Role == Role.System &&
+            message.Text.Contains("Turn abandoned locally."));
+    }
+
+    [Fact]
     public void TryStartNextPendingSubmission_Should_RunQueuedPrompt_When_Idle()
     {
         AppState state = new(new UiBridge(), CreateConversationBackend().Object)

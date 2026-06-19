@@ -7,6 +7,8 @@ namespace NanoAgent.CLI;
 
 public sealed class TextModalState : UiModalState
 {
+    private const string SelectionMarkupStyle = "black on grey70";
+
     private readonly Action<Exception>? _onCancelled;
     private readonly Action<string> _onSubmitted;
 
@@ -39,6 +41,8 @@ public sealed class TextModalState : UiModalState
 
     public int CursorIndex { get; private set; }
 
+    private int? SelectionAnchor { get; set; }
+
     public void AppendText(string text)
     {
         if (string.IsNullOrEmpty(text))
@@ -49,6 +53,8 @@ public sealed class TextModalState : UiModalState
         string normalized = text
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
+
+        RemoveSelectionIfAny();
 
         int cursorIndex = ClampCursor();
         Value.Insert(cursorIndex, normalized);
@@ -96,8 +102,8 @@ public sealed class TextModalState : UiModalState
     public override string BuildFooterMarkup()
     {
         return AllowCancellation
-            ? "[grey]Type to edit[/]  [grey]|[/]  [grey]Enter: submit[/]  [grey]|[/]  [grey]Esc: cancel[/]"
-            : "[grey]Type to edit[/]  [grey]|[/]  [grey]Enter: submit[/]";
+            ? "[grey]Type to edit[/]  [grey]|[/]  [grey]Ctrl+A: select all[/]  [grey]|[/]  [grey]Enter: submit[/]  [grey]|[/]  [grey]Esc: cancel[/]"
+            : "[grey]Type to edit[/]  [grey]|[/]  [grey]Ctrl+A: select all[/]  [grey]|[/]  [grey]Enter: submit[/]";
     }
 
     public override string BuildInputMarkup()
@@ -114,16 +120,38 @@ public sealed class TextModalState : UiModalState
         int cursorIndex = Value.Length == 0 && IsSecret
             ? text.Length
             : Math.Clamp(CursorIndex, 0, text.Length);
-        string beforeCursor = text[..cursorIndex];
-        string afterCursor = text[cursorIndex..];
-        return $"[bold green]❯[/] {Markup.Escape(beforeCursor)}{Program.BuildInputCursorMarkup()}{Markup.Escape(afterCursor)}";
+
+        if (!TryGetSelectionRange(out int selectionStart, out int selectionLength))
+        {
+            string beforeCursor = text[..cursorIndex];
+            string afterCursor = text[cursorIndex..];
+            return $"[bold green]❯[/] {Markup.Escape(beforeCursor)}{Program.BuildInputCursorMarkup()}{Markup.Escape(afterCursor)}";
+        }
+
+        int selectionEnd = selectionStart + selectionLength;
+        string beforeSelection = text[..selectionStart];
+        string selectedText = text[selectionStart..selectionEnd];
+        string afterSelection = text[selectionEnd..];
+
+        return $"[bold green]❯[/] {Markup.Escape(beforeSelection)}[{SelectionMarkupStyle}]{Markup.Escape(selectedText)}[/]{Markup.Escape(afterSelection)}";
     }
 
     public override void HandleKey(AppState state, ConsoleKeyInfo key)
     {
+        if (IsSelectAllKey(key))
+        {
+            SelectAll();
+            return;
+        }
+
         if (key.Key == ConsoleKey.Backspace ||
             key.KeyChar is '\b' or '\u007f')
         {
+            if (RemoveSelectionIfAny())
+            {
+                return;
+            }
+
             int cursorIndex = ClampCursor();
             if (cursorIndex > 0)
             {
@@ -136,6 +164,11 @@ public sealed class TextModalState : UiModalState
 
         if (key.Key == ConsoleKey.Delete)
         {
+            if (RemoveSelectionIfAny())
+            {
+                return;
+            }
+
             int cursorIndex = ClampCursor();
             if (cursorIndex < Value.Length)
             {
@@ -148,24 +181,28 @@ public sealed class TextModalState : UiModalState
         if (key.Key == ConsoleKey.LeftArrow)
         {
             CursorIndex = Math.Max(0, ClampCursor() - 1);
+            ClearSelection();
             return;
         }
 
         if (key.Key == ConsoleKey.RightArrow)
         {
             CursorIndex = Math.Min(Value.Length, ClampCursor() + 1);
+            ClearSelection();
             return;
         }
 
         if (key.Key == ConsoleKey.Home)
         {
             CursorIndex = 0;
+            ClearSelection();
             return;
         }
 
         if (key.Key == ConsoleKey.End)
         {
             CursorIndex = Value.Length;
+            ClearSelection();
             return;
         }
 
@@ -184,9 +221,11 @@ public sealed class TextModalState : UiModalState
 
         if (!char.IsControl(key.KeyChar))
         {
+            RemoveSelectionIfAny();
             int cursorIndex = ClampCursor();
             Value.Insert(cursorIndex, key.KeyChar);
             CursorIndex = cursorIndex + 1;
+            ClearSelection();
         }
     }
 
@@ -213,5 +252,62 @@ public sealed class TextModalState : UiModalState
     {
         CursorIndex = Math.Clamp(CursorIndex, 0, Value.Length);
         return CursorIndex;
+    }
+
+    private bool TryGetSelectionRange(out int startIndex, out int length)
+    {
+        startIndex = 0;
+        length = 0;
+
+        if (SelectionAnchor is not int anchor)
+        {
+            return false;
+        }
+
+        int cursorIndex = ClampCursor();
+        int normalizedAnchor = Math.Clamp(anchor, 0, Value.Length);
+        if (cursorIndex == normalizedAnchor)
+        {
+            return false;
+        }
+
+        startIndex = Math.Min(cursorIndex, normalizedAnchor);
+        length = Math.Abs(cursorIndex - normalizedAnchor);
+        return length > 0;
+    }
+
+    private void ClearSelection()
+    {
+        SelectionAnchor = null;
+    }
+
+    private void SelectAll()
+    {
+        if (Value.Length == 0)
+        {
+            return;
+        }
+
+        SelectionAnchor = 0;
+        CursorIndex = Value.Length;
+    }
+
+    private bool RemoveSelectionIfAny()
+    {
+        if (!TryGetSelectionRange(out int startIndex, out int length))
+        {
+            return false;
+        }
+
+        Value.Remove(startIndex, length);
+        CursorIndex = startIndex;
+        ClearSelection();
+        return true;
+    }
+
+    private static bool IsSelectAllKey(ConsoleKeyInfo key)
+    {
+        return (key.Key == ConsoleKey.A && key.Modifiers.HasFlag(ConsoleModifiers.Control)) ||
+            key.KeyChar == '\u0001';
     }
 }

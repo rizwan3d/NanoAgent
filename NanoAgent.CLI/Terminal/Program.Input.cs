@@ -196,18 +196,27 @@ public static partial class Program
             return false;
         }
 
+        if (state.ActiveOperation is { IsCompleted: false })
+        {
+            if (!state.IsTurnInterruptPending)
+            {
+                state.IsTurnInterruptPending = true;
+                state.ActivityText = "Interrupting";
+                state.CancelTurn();
+                state.AddSystemMessage(
+                    "Interrupt requested. Press Esc again to abandon this turn locally if it does not stop.");
+                return true;
+            }
+
+            AbandonActiveTurn(state);
+            return true;
+        }
+
         // If the backend operation is still running, cancel its token. This covers
         // both a plain in-flight turn and a !! background stream that streams output
         // live while the backend poll loop is still active: the backend observes the
         // cancellation and finishes gracefully (detaching from the terminal, which
         // keeps running).
-        if (state.ActiveOperation is { IsCompleted: false })
-        {
-            state.CancelTurn();
-            return true;
-        }
-
-        // Otherwise we are only draining a finished stream - clean up UI directly.
         if (state.IsStreaming)
         {
             state.IsStreaming = false;
@@ -219,6 +228,7 @@ public static partial class Program
             state.PendingCompletionNote = null;
             state.ActivityText = state.IsReady ? "Ready" : "Idle";
             state.ResetTurnCancellation();
+            state.IsTurnInterruptPending = false;
             state.AddSystemMessage("Turn cancelled.");
             return true;
         }
@@ -227,6 +237,14 @@ public static partial class Program
         // yet; cancel the token defensively so Esc is never a no-op while busy.
         if (state.IsBusy)
         {
+            if (!state.IsTurnInterruptPending)
+            {
+                state.IsTurnInterruptPending = true;
+                state.ActivityText = "Interrupting";
+                state.CancelTurn();
+                return true;
+            }
+
             state.CancelTurn();
             return true;
         }
@@ -234,28 +252,74 @@ public static partial class Program
         return false;
     }
 
+    private static void AbandonActiveTurn(AppState state)
+    {
+        state.CancelTurn();
+        state.IsStreaming = false;
+        state.StreamingMessageId = null;
+        state.StreamQueue.Clear();
+        state.ClearBusyWhenStreamCompletes = false;
+        state.IsBusy = false;
+        state.ActiveOperation = null;
+        state.CurrentTurnStartedAt = null;
+        state.PendingCompletionNote = null;
+        state.ActivityText = state.IsReady ? "Ready" : "Idle";
+        state.ResetTurnCancellation();
+        state.AbandonTrackedOperation();
+        state.AddSystemMessage("Turn abandoned locally. Late output from the interrupted turn will be ignored.");
+        TryStartNextPendingSubmission(state);
+    }
+
     private static bool HandleInputEditingKey(AppState state, ConsoleKeyInfo key)
     {
+        if (IsSelectAllKey(key))
+        {
+            SelectAllInput(state);
+            return true;
+        }
+
         if (IsBackspaceKey(key))
         {
+            if (DeleteSelectedInput(state))
+            {
+                return true;
+            }
+
             DeleteInputBeforeCursor(state);
             return true;
         }
 
         if (IsDeleteKey(key))
         {
+            if (DeleteSelectedInput(state))
+            {
+                return true;
+            }
+
             DeleteInputAtCursor(state);
             return true;
         }
 
         if (key.Key == ConsoleKey.LeftArrow && state.Input.Length > 0)
         {
+            if (state.HasInputSelection)
+            {
+                CollapseInputSelection(state, collapseToStart: true);
+                return true;
+            }
+
             MoveInputCursor(state, -1);
             return true;
         }
 
         if (key.Key == ConsoleKey.RightArrow && state.Input.Length > 0)
         {
+            if (state.HasInputSelection)
+            {
+                CollapseInputSelection(state, collapseToStart: false);
+                return true;
+            }
+
             MoveInputCursor(state, 1);
             return true;
         }
@@ -295,6 +359,12 @@ public static partial class Program
     private static bool IsDeleteKey(ConsoleKeyInfo key)
     {
         return key.Key == ConsoleKey.Delete;
+    }
+
+    private static bool IsSelectAllKey(ConsoleKeyInfo key)
+    {
+        return (key.Key == ConsoleKey.A && key.Modifiers.HasFlag(ConsoleModifiers.Control)) ||
+            key.KeyChar == '\u0001';
     }
 
     private static bool IsEnterKey(ConsoleKeyInfo key)
@@ -375,10 +445,11 @@ public static partial class Program
 
             case ConsoleKey.Home:
                 state.ConversationScrollOffset = GetMaxConversationScrollOffset(state);
+                state.SyncConversationAutoScrollPreference();
                 return true;
 
             case ConsoleKey.End:
-                state.ConversationScrollOffset = 0;
+                state.JumpConversationToBottom();
                 return true;
 
             default:
@@ -597,11 +668,12 @@ public static partial class Program
             case "H":
             case "1~":
                 state.ConversationScrollOffset = GetMaxConversationScrollOffset(state);
+                state.SyncConversationAutoScrollPreference();
                 return;
 
             case "F":
             case "4~":
-                state.ConversationScrollOffset = 0;
+                state.JumpConversationToBottom();
                 return;
         }
     }
@@ -734,6 +806,8 @@ public static partial class Program
             return;
         }
 
+        DeleteSelectedInput(state);
+
         int cursorIndex = ClampInputCursor(state);
         AdjustCollapsedInputPastesForInsertion(state, cursorIndex, text.Length);
         state.Input.Insert(cursorIndex, text);
@@ -749,6 +823,7 @@ public static partial class Program
         }
 
         state.SkipNextInputLineFeed = false;
+        state.ClearInputSelection();
         ResetSlashCommandSuggestions(state);
     }
 
@@ -812,6 +887,7 @@ public static partial class Program
             cursorIndex,
             nextIndex,
             delta);
+        state.ClearInputSelection();
         state.SkipNextInputLineFeed = false;
     }
 
@@ -864,12 +940,14 @@ public static partial class Program
     private static void MoveInputCursorToStart(AppState state)
     {
         state.InputCursorIndex = 0;
+        state.ClearInputSelection();
         state.SkipNextInputLineFeed = false;
     }
 
     private static void MoveInputCursorToEnd(AppState state)
     {
         state.InputCursorIndex = state.Input.Length;
+        state.ClearInputSelection();
         state.SkipNextInputLineFeed = false;
     }
 
@@ -880,6 +958,48 @@ public static partial class Program
             0,
             state.Input.Length);
         return state.InputCursorIndex;
+    }
+
+    private static void SelectAllInput(AppState state)
+    {
+        if (state.Input.Length == 0)
+        {
+            return;
+        }
+
+        state.InputSelectionAnchor = 0;
+        state.InputCursorIndex = state.Input.Length;
+        state.SkipNextInputLineFeed = false;
+    }
+
+    private static void CollapseInputSelection(AppState state, bool collapseToStart)
+    {
+        if (!state.TryGetInputSelectionRange(out int startIndex, out int length))
+        {
+            return;
+        }
+
+        state.InputCursorIndex = collapseToStart
+            ? startIndex
+            : startIndex + length;
+        state.ClearInputSelection();
+        state.SkipNextInputLineFeed = false;
+    }
+
+    private static bool DeleteSelectedInput(AppState state)
+    {
+        if (!state.TryGetInputSelectionRange(out int startIndex, out int length))
+        {
+            return false;
+        }
+
+        AdjustCollapsedInputPastesForDeletion(state, startIndex, length);
+        state.Input.Remove(startIndex, length);
+        state.InputCursorIndex = startIndex;
+        state.ClearInputSelection();
+        state.SkipNextInputLineFeed = false;
+        ResetSlashCommandSuggestions(state);
+        return true;
     }
 
     private static void TrackInputInsertedInBatch(
