@@ -535,6 +535,91 @@ public sealed class ProgramTests
         markupLines.Should().Contain(line => line.Contains("black on green") && line.Contains("return 1;"));
     }
 
+    [Fact]
+    public void BuildConversationLines_Should_HighlightStandaloneCssCodeBlock()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        state.AddMessage(
+            Role.Assistant,
+            "```css\n" +
+            "/* theme */\n" +
+            "body { color: red; }\n" +
+            "```");
+
+        string[] markupLines = RenderConversationMarkup(state);
+
+        // /* */ comments are a CSS construct the generic highlighter would not color.
+        markupLines.Should().Contain(line => line.Contains("[grey]/* theme */"));
+        // "color" is a CSS keyword, absent from the generic keyword set, so coloring it
+        // proves the css language mapping is in effect.
+        markupLines.Should().Contain(line => line.Contains("[deepskyblue1]color"));
+    }
+
+    [Fact]
+    public void BuildConversationLines_Should_HighlightEmbeddedCssAndJsInsideHtmlCodeBlock()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        state.AddMessage(
+            Role.Assistant,
+            "```html\n" +
+            "<style>\n" +
+            "/* heading */\n" +
+            "h1 { color: red; }\n" +
+            "</style>\n" +
+            "<script>\n" +
+            "// run\n" +
+            "const value = 1;\n" +
+            "</script>\n" +
+            "```");
+
+        string[] markupLines = RenderConversationMarkup(state);
+
+        // Inside <style> the content is CSS: block comments and property names get colored,
+        // neither of which the flat markup highlighter produces.
+        markupLines.Should().Contain(line => line.Contains("[grey]/* heading */"));
+        markupLines.Should().Contain(line => line.Contains("[deepskyblue1]color"));
+        // Inside <script> the content is JS: line comments and keywords get colored.
+        markupLines.Should().Contain(line => line.Contains("[grey]// run"));
+        markupLines.Should().Contain(line => line.Contains("[deepskyblue1]const"));
+    }
+
+    [Fact]
+    public void BuildConversationLines_Should_PersistBlockCommentHighlightingAcrossFileReadPreviewLines()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        state.AddSystemMessage(
+            "• Read src/widget.cs (80 chars)\n" +
+            "  - preview:\n" +
+            $"      {1,4} /* block comment start\n" +
+            $"      {2,4} still inside the comment\n" +
+            $"      {3,4} end of comment */\n" +
+            $"      {4,4} var visible = 1;");
+
+        string[] markupLines = RenderConversationMarkup(state);
+
+        // The middle line carries no comment markers of its own, so it can only be grey if
+        // the block-comment state survived from the first preview line.
+        markupLines.Should().Contain(line => line.Contains("[grey]still inside the comment"));
+        // Once the comment closes, later lines highlight as code again.
+        markupLines.Should().Contain(line => line.Contains("[deepskyblue1]var"));
+    }
+
+    private static string[] RenderConversationMarkup(AppState state)
+    {
+        MethodInfo buildConversationLines = typeof(Program).GetMethod(
+            "BuildConversationLines",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        IEnumerable renderedLines = (IEnumerable)buildConversationLines.Invoke(null, [state, 90])!;
+        return GetConversationLinePropertyValues(renderedLines, "Markup");
+    }
+
     private static Mock<INanoAgentBackend> CreateConversationBackend()
     {
         Mock<INanoAgentBackend> backend = new(MockBehavior.Strict);

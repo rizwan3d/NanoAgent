@@ -20,13 +20,31 @@ public static partial class Program
         bool SupportsBacktickStrings,
         bool IsMarkup = false);
 
+    // The raw-text language embedded in an HTML <style>/<script> element. Its content is
+    // highlighted with CSS/JS rules until the matching close tag.
+    private enum EmbeddedCodeLanguage
+    {
+        None,
+        Css,
+        JavaScript,
+    }
+
     // Cross-line highlighting state for constructs that can span multiple lines
-    // (C-style block comments, HTML/XML comments, and open markup tags).
+    // (C-style block comments, HTML/XML comments, open markup tags, and the CSS/JS
+    // content of <style>/<script> elements).
     private struct CodeHighlightState
     {
         public bool InsideBlockComment;
         public bool InsideMarkupComment;
         public bool InsideTag;
+
+        // Set while inside a <style>/<script> element, so its content is highlighted as
+        // CSS/JS until the matching close tag is reached on this or a later line.
+        public EmbeddedCodeLanguage EmbeddedLanguage;
+
+        // The language to switch into once the currently-open tag finishes: recorded when
+        // a <style>/<script> tag name is recognized, applied when the tag's '>' is seen.
+        public EmbeddedCodeLanguage PendingEmbeddedLanguage;
     }
 
     // Detects a fenced code block (``` or ~~~) starting at <startIndex>.
@@ -398,6 +416,29 @@ public static partial class Program
         int index = 0;
         int plainStart = 0;
 
+        // Inside a <style>/<script> element the content is raw CSS/JS until the matching
+        // close tag; highlight that span with the embedded language's rules.
+        if (state.EmbeddedLanguage != EmbeddedCodeLanguage.None)
+        {
+            string closeTag = state.EmbeddedLanguage == EmbeddedCodeLanguage.Css
+                ? "</style"
+                : "</script";
+            int closeIndex = line.IndexOf(closeTag, StringComparison.OrdinalIgnoreCase);
+            CodeLanguageSyntax embeddedSyntax = GetEmbeddedSyntax(state.EmbeddedLanguage);
+
+            if (closeIndex < 0)
+            {
+                HighlightCodeLine(line, embeddedSyntax, fragments, ref state);
+                return;
+            }
+
+            HighlightCodeLine(line[..closeIndex], embeddedSyntax, fragments, ref state);
+            state.EmbeddedLanguage = EmbeddedCodeLanguage.None;
+            state.InsideBlockComment = false;
+            index = closeIndex;
+            plainStart = closeIndex;
+        }
+
         while (index < length)
         {
             if (state.InsideMarkupComment)
@@ -434,6 +475,18 @@ public static partial class Program
                 {
                     state.InsideTag = false;
                     index++;
+
+                    // A completed <style>/<script> open tag switches the remainder of the
+                    // line (and following lines) to embedded CSS/JS highlighting.
+                    if (state.PendingEmbeddedLanguage != EmbeddedCodeLanguage.None)
+                    {
+                        state.EmbeddedLanguage = state.PendingEmbeddedLanguage;
+                        state.PendingEmbeddedLanguage = EmbeddedCodeLanguage.None;
+                        AddMarkdownFragment(fragments, line[plainStart..index], string.Empty);
+                        HighlightMarkupLine(line[index..], fragments, ref state);
+                        return;
+                    }
+
                     continue;
                 }
 
@@ -481,8 +534,10 @@ public static partial class Program
                     AddMarkdownFragment(fragments, line[plainStart..index], string.Empty);
 
                     int delimiterEnd = index + 1;
+                    bool isClosingTag = false;
                     if (delimiterEnd < length && line[delimiterEnd] is '/' or '!' or '?')
                     {
+                        isClosingTag = line[delimiterEnd] == '/';
                         delimiterEnd++;
                     }
 
@@ -496,7 +551,13 @@ public static partial class Program
 
                     if (nameEnd > delimiterEnd)
                     {
-                        AddMarkdownFragment(fragments, line[delimiterEnd..nameEnd], CodeKeywordStyle);
+                        string tagName = line[delimiterEnd..nameEnd];
+                        AddMarkdownFragment(fragments, tagName, CodeKeywordStyle);
+
+                        if (!isClosingTag)
+                        {
+                            state.PendingEmbeddedLanguage = GetEmbeddedLanguageForTag(tagName);
+                        }
                     }
 
                     index = nameEnd;
@@ -513,6 +574,28 @@ public static partial class Program
         {
             AddMarkdownFragment(fragments, line[plainStart..], string.Empty);
         }
+    }
+
+    private static EmbeddedCodeLanguage GetEmbeddedLanguageForTag(string tagName)
+    {
+        if (string.Equals(tagName, "style", StringComparison.OrdinalIgnoreCase))
+        {
+            return EmbeddedCodeLanguage.Css;
+        }
+
+        if (string.Equals(tagName, "script", StringComparison.OrdinalIgnoreCase))
+        {
+            return EmbeddedCodeLanguage.JavaScript;
+        }
+
+        return EmbeddedCodeLanguage.None;
+    }
+
+    private static CodeLanguageSyntax GetEmbeddedSyntax(EmbeddedCodeLanguage language)
+    {
+        return language == EmbeddedCodeLanguage.Css
+            ? GetCodeLanguageSyntax("css")
+            : GetCodeLanguageSyntax("js");
     }
 
     private static bool IsMarkupNameStart(char character)
@@ -614,6 +697,10 @@ public static partial class Program
                 new CodeLanguageSyntax(ShellKeywords, ["#"], HasBlockComments: false, SupportsBacktickStrings: true),
             "sql" =>
                 new CodeLanguageSyntax(SqlKeywords, ["--"], HasBlockComments: true, SupportsBacktickStrings: true),
+            "css" =>
+                new CodeLanguageSyntax(CssKeywords, [], HasBlockComments: true, SupportsBacktickStrings: false),
+            "scss" or "sass" or "less" or "styl" or "stylus" =>
+                new CodeLanguageSyntax(CssKeywords, ["//"], HasBlockComments: true, SupportsBacktickStrings: false),
             "json" =>
                 new CodeLanguageSyntax(JsonKeywords, [], HasBlockComments: false, SupportsBacktickStrings: false),
             "yaml" or "yml" or "toml" or "ini" =>
@@ -723,6 +810,30 @@ public static partial class Program
     private static readonly IReadOnlySet<string> JsonKeywords = new HashSet<string>(StringComparer.Ordinal)
     {
         "true", "false", "null",
+    };
+
+    // CSS has no real keywords, so this colors the most common property/value/at-rule
+    // words. Hyphenated names (for example background-color) match on their leading
+    // segment, which is enough to read structure at a glance. Functions such as rgb(),
+    // url() and calc() are colored separately by the shared call-detection path.
+    private static readonly IReadOnlySet<string> CssKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        // at-rules and structural words
+        "media", "import", "charset", "keyframes", "supports", "font", "face", "page",
+        "namespace", "container", "layer", "property", "scope", "from", "to", "and", "or",
+        "not", "only", "screen", "print", "all",
+        // common properties (leading segments)
+        "align", "animation", "background", "border", "bottom", "box", "color", "content",
+        "cursor", "display", "filter", "flex", "float", "font", "gap", "grid", "height",
+        "justify", "left", "letter", "line", "list", "margin", "max", "min", "opacity",
+        "outline", "overflow", "padding", "position", "right", "shadow", "size", "spacing",
+        "text", "top", "transform", "transition", "translate", "visibility", "white",
+        "width", "word", "wrap", "zoom",
+        // common values
+        "absolute", "auto", "block", "bold", "center", "column", "fixed", "flex-start",
+        "hidden", "inherit", "initial", "inline", "italic", "none", "normal", "nowrap",
+        "pointer", "relative", "solid", "static", "sticky", "transparent", "unset",
+        "uppercase", "lowercase", "visible",
     };
 
     private static readonly IReadOnlySet<string> ConfigKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
