@@ -101,6 +101,19 @@ public sealed class AppState
 
     public int LastConversationLineCount { get; set; }
 
+    // Thinking/reasoning messages render collapsed (a single summary line) by default.
+    // A message id present in this set is expanded inline. Ctrl+T toggles all blocks at
+    // once; clicking a block toggles just that one.
+    public HashSet<int> ExpandedThinkingMessageIds { get; } = [];
+
+    // Screen geometry captured on the last standard-layout render so mouse clicks can be
+    // mapped back to conversation lines. TopRow is the 1-based terminal row of the first
+    // visible conversation line (-1 when the messages view is not on screen); the id array
+    // maps each visible viewport row to the thinking message it belongs to (null if none).
+    public int MessagesContentTopRow { get; set; } = -1;
+
+    public int?[] VisibleThinkingMessageIds { get; set; } = [];
+
     // Reader view: a full-screen, chrome-free plain-text transcript that pauses the
     // live redraw so the terminal's own mouse selection can grab clean text.
     public bool IsReaderViewActive { get; set; }
@@ -177,6 +190,53 @@ public sealed class AppState
 
         Messages.Add(message);
         return message;
+    }
+
+    public void ToggleThinkingMessage(int messageId)
+    {
+        if (!ExpandedThinkingMessageIds.Remove(messageId))
+        {
+            ExpandedThinkingMessageIds.Add(messageId);
+        }
+    }
+
+    // True only when at least one thinking message exists and every one is expanded.
+    public bool AreAllThinkingExpanded()
+    {
+        bool any = false;
+        foreach (ChatMessage message in Messages)
+        {
+            if (message.Role != Role.Thinking)
+            {
+                continue;
+            }
+
+            any = true;
+            if (!ExpandedThinkingMessageIds.Contains(message.Id))
+            {
+                return false;
+            }
+        }
+
+        return any;
+    }
+
+    // Ctrl+T behaviour: collapse everything if all blocks are open, otherwise open all.
+    public void ToggleAllThinking()
+    {
+        if (AreAllThinkingExpanded())
+        {
+            ExpandedThinkingMessageIds.Clear();
+            return;
+        }
+
+        foreach (ChatMessage message in Messages)
+        {
+            if (message.Role == Role.Thinking)
+            {
+                ExpandedThinkingMessageIds.Add(message.Id);
+            }
+        }
     }
 
     public void BeginAssistantStream(string text)

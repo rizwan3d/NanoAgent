@@ -6,10 +6,13 @@ public static partial class Program
     // Plain: the markup-stripped on-screen text (still includes role prefix / gutters).
     // Copy: the clean underlying text for copy mode / clipboard, with no role prefix,
     //       code-block gutter, or scrollbar chrome. Defaults to empty for spacer lines.
+    // ThinkingMessageId: when set, this line belongs to a thinking block and a mouse click
+    // on it toggles that block's collapsed/expanded state.
     private readonly record struct ConversationLine(
         string Markup,
         string Plain,
-        string Copy = "");
+        string Copy = "",
+        int? ThinkingMessageId = null);
 
     private readonly record struct InlineRenderResult(
         string Markup,
