@@ -28,6 +28,8 @@ x86/
 [Aa][Rr][Mm]64/
 bld/
 [Bb]in/
+!packaging/npm/bin/
+!packaging/npm/bin/nanoai.js
 [Oo]bj/
 [Oo]ut/
 [Ll]og/
