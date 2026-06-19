@@ -55,6 +55,7 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
 
     public async Task<ApplicationUpdateInstallResult> InstallAsync(
         ApplicationUpdateInfo updateInfo,
+        IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(updateInfo);
@@ -66,7 +67,18 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
                 $"NanoAgent is already up to date ({updateInfo.CurrentVersion}).");
         }
 
-        ProcessExecutionRequest request = CreateInstallRequest(updateInfo.LatestVersion);
+        Action<string>? onOutputLine = progress is null
+            ? null
+            : line =>
+            {
+                string trimmed = line.TrimEnd();
+                if (trimmed.Length > 0)
+                {
+                    progress.Report(trimmed);
+                }
+            };
+
+        ProcessExecutionRequest request = CreateInstallRequest(updateInfo.LatestVersion, onOutputLine);
         ProcessExecutionResult result = await _processRunner.RunAsync(request, cancellationToken);
 
         if (result.ExitCode == 0)
@@ -93,7 +105,9 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
                 : $"NanoAgent update failed with exit code {result.ExitCode}: {Truncate(detail, 600)}");
     }
 
-    private static ProcessExecutionRequest CreateInstallRequest(string latestVersion)
+    private static ProcessExecutionRequest CreateInstallRequest(
+        string latestVersion,
+        Action<string>? onOutputLine)
     {
         Dictionary<string, string> environment = new(StringComparer.Ordinal)
         {
@@ -126,7 +140,8 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
                     $"irm {InstallPowerShellScriptUrl} | iex"
                 ],
                 MaxOutputCharacters: 20_000,
-                EnvironmentVariables: environment);
+                EnvironmentVariables: environment,
+                OnOutputLine: onOutputLine);
         }
 
         if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
@@ -138,7 +153,8 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
                     $"curl -fsSL {InstallScriptUrl} | bash"
                 ],
                 MaxOutputCharacters: 20_000,
-                EnvironmentVariables: environment);
+                EnvironmentVariables: environment,
+                OnOutputLine: onOutputLine);
         }
 
         throw new PlatformNotSupportedException(

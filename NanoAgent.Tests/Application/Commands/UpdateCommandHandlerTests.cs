@@ -24,7 +24,8 @@ public sealed class UpdateCommandHandlerTests
             .ReturnsAsync(updateInfo);
 
         Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
-        UpdateCommandHandler sut = new(updateService.Object, confirmationPrompt.Object);
+        Mock<IStatusMessageWriter> statusMessageWriter = new();
+        UpdateCommandHandler sut = new(updateService.Object, confirmationPrompt.Object, statusMessageWriter.Object);
 
         ReplCommandResult result = await sut.ExecuteAsync(
             CreateContext(argumentText: string.Empty),
@@ -32,7 +33,7 @@ public sealed class UpdateCommandHandlerTests
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
         result.Message.Should().Be("NanoAgent is up to date. Current version: 1.2.3.");
-        updateService.Verify(service => service.InstallAsync(It.IsAny<ApplicationUpdateInfo>(), It.IsAny<CancellationToken>()), Times.Never);
+        updateService.Verify(service => service.InstallAsync(It.IsAny<ApplicationUpdateInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Never);
         confirmationPrompt.VerifyNoOtherCalls();
     }
 
@@ -53,11 +54,12 @@ public sealed class UpdateCommandHandlerTests
             .Setup(service => service.CheckAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(updateInfo);
         updateService
-            .Setup(service => service.InstallAsync(updateInfo, It.IsAny<CancellationToken>()))
+            .Setup(service => service.InstallAsync(updateInfo, It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(installResult);
 
         Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
-        UpdateCommandHandler sut = new(updateService.Object, confirmationPrompt.Object);
+        Mock<IStatusMessageWriter> statusMessageWriter = new();
+        UpdateCommandHandler sut = new(updateService.Object, confirmationPrompt.Object, statusMessageWriter.Object);
 
         ReplCommandResult result = await sut.ExecuteAsync(
             CreateContext("now"),
@@ -88,7 +90,8 @@ public sealed class UpdateCommandHandlerTests
             .Setup(prompt => prompt.PromptAsync(It.IsAny<ConfirmationPromptRequest>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(false);
 
-        UpdateCommandHandler sut = new(updateService.Object, confirmationPrompt.Object);
+        Mock<IStatusMessageWriter> statusMessageWriter = new();
+        UpdateCommandHandler sut = new(updateService.Object, confirmationPrompt.Object, statusMessageWriter.Object);
 
         ReplCommandResult result = await sut.ExecuteAsync(
             CreateContext(argumentText: string.Empty),
@@ -96,7 +99,7 @@ public sealed class UpdateCommandHandlerTests
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
         result.Message.Should().Contain("Skipped NanoAgent 1.2.4.");
-        updateService.Verify(service => service.InstallAsync(It.IsAny<ApplicationUpdateInfo>(), It.IsAny<CancellationToken>()), Times.Never);
+        updateService.Verify(service => service.InstallAsync(It.IsAny<ApplicationUpdateInfo>(), It.IsAny<IProgress<string>>(), It.IsAny<CancellationToken>()), Times.Never);
         confirmationPrompt.VerifyAll();
     }
 
