@@ -513,6 +513,21 @@ public static partial class Program
                 continue;
             }
 
+            if (message.Role == Role.System &&
+                TryReadFileEditDiffBlock(rawLines, lineIndex, out FileEditDiffBlock fileEditBlock, out int fileEditConsumedLineCount))
+            {
+                AddFileEditDiffBlockLines(
+                    lines,
+                    fileEditBlock,
+                    ref firstLine,
+                    roleName,
+                    roleColor,
+                    contentWidth);
+
+                lineIndex += fileEditConsumedLineCount - 1;
+                continue;
+            }
+
             if (message.Role == Role.System)
             {
                 UpdateToolOutputHighlightContext(rawLines[lineIndex], ref toolOutputContext);
