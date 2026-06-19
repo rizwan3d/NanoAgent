@@ -484,6 +484,28 @@ public sealed class ProgramTests
             message.Text == "That command is unavailable while NanoAgent is working.");
     }
 
+    [Fact]
+    public void UpdateStreaming_Should_DrainLargeBufferedResponsesInBiggerChunks()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        string bufferedText = new('x', 200);
+        state.BeginAssistantStream(bufferedText);
+
+        MethodInfo updateStreaming = typeof(Program).GetMethod(
+            "UpdateStreaming",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        updateStreaming.Invoke(null, [state]);
+
+        ChatMessage? message = state.GetStreamingMessage();
+        message.Should().NotBeNull();
+        message!.Text.Length.Should().BeGreaterThan(6);
+        message.Text.Length.Should().BeLessThan(bufferedText.Length);
+        state.StreamQueue.Count.Should().Be(bufferedText.Length - message.Text.Length);
+    }
+
     private static Mock<INanoAgentBackend> CreateConversationBackend()
     {
         Mock<INanoAgentBackend> backend = new(MockBehavior.Strict);
