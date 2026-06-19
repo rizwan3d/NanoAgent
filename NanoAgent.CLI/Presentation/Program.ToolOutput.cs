@@ -19,6 +19,12 @@ public static partial class Program
     {
         public string? Language;
         public ToolPreviewMode Mode;
+
+        // Carries multi-line highlight state (block comments, embedded <style>/<script>
+        // regions) across the numbered code lines of a single file-read preview, so large
+        // files highlight as consistently as a fenced code block. Reset by every new
+        // file/edit header below.
+        public CodeHighlightState HighlightState;
     }
 
     // Tracks the file/language context of tool-output preview lines so that the code
@@ -36,6 +42,7 @@ public static partial class Program
             string path = suffixIndex >= 0 ? remainder[..suffixIndex] : remainder;
             context.Language = ExtractLanguageFromPath(path);
             context.Mode = ToolPreviewMode.FileContent;
+            context.HighlightState = default;
             return;
         }
 
@@ -43,6 +50,7 @@ public static partial class Program
         {
             context.Language = ExtractLanguageFromPath(savedPath);
             context.Mode = ToolPreviewMode.FileContent;
+            context.HighlightState = default;
             return;
         }
 
@@ -50,6 +58,7 @@ public static partial class Program
         {
             context.Language = ExtractLanguageFromPath(editPath);
             context.Mode = ToolPreviewMode.FileEdit;
+            context.HighlightState = default;
         }
     }
 
@@ -134,7 +143,7 @@ public static partial class Program
     private static bool TryAddHighlightedToolOutputLine(
         List<ConversationLine> lines,
         string rawLine,
-        ToolOutputHighlightContext context,
+        ref ToolOutputHighlightContext context,
         ref bool firstLine,
         string roleName,
         string roleColor,
@@ -166,8 +175,22 @@ public static partial class Program
         string continuationPlain = new(' ', prefix.Length);
 
         List<MarkdownFragment> fragments = [];
-        CodeHighlightState highlightState = default;
-        HighlightLine(code, GetCodeLanguageSyntax(context.Language), fragments, ref highlightState);
+        CodeLanguageSyntax syntax = GetCodeLanguageSyntax(context.Language);
+
+        if (context.Mode == ToolPreviewMode.FileContent)
+        {
+            // File reads show contiguous lines, so carry multi-line state forward to keep
+            // block comments and embedded <style>/<script> regions highlighting correctly.
+            HighlightLine(code, syntax, fragments, ref context.HighlightState);
+        }
+        else
+        {
+            // Edit previews interleave added/removed/context lines from different file
+            // versions, so highlight each line independently to avoid one hunk's open
+            // construct bleeding into another.
+            CodeHighlightState lineState = default;
+            HighlightLine(code, syntax, fragments, ref lineState);
+        }
 
         AddWrappedFragmentLine(
             lines,
