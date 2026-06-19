@@ -8,5 +8,6 @@ public interface IApplicationUpdateService
 
     Task<ApplicationUpdateInstallResult> InstallAsync(
         ApplicationUpdateInfo updateInfo,
+        IProgress<string>? progress,
         CancellationToken cancellationToken);
 }

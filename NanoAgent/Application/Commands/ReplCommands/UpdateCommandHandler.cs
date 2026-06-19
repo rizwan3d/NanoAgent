@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.UI;
 
 namespace NanoAgent.Application.Commands;
 
@@ -7,13 +8,16 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
 {
     private readonly IApplicationUpdateService _updateService;
     private readonly IConfirmationPrompt _confirmationPrompt;
+    private readonly IStatusMessageWriter _statusMessageWriter;
 
     public UpdateCommandHandler(
         IApplicationUpdateService updateService,
-        IConfirmationPrompt confirmationPrompt)
+        IConfirmationPrompt confirmationPrompt,
+        IStatusMessageWriter statusMessageWriter)
     {
         _updateService = updateService;
         _confirmationPrompt = confirmationPrompt;
+        _statusMessageWriter = statusMessageWriter;
     }
 
     public string CommandName => "update";
@@ -77,10 +81,17 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
             }
         }
 
+        await _statusMessageWriter.ShowInfoAsync(
+            $"Installing NanoAgent {updateInfo.LatestVersion}...",
+            cancellationToken);
+
         ApplicationUpdateInstallResult installResult;
         try
         {
-            installResult = await _updateService.InstallAsync(updateInfo, cancellationToken);
+            installResult = await _updateService.InstallAsync(
+                updateInfo,
+                new StatusMessageProgress(_statusMessageWriter),
+                cancellationToken);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or

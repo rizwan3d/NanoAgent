@@ -23,6 +23,7 @@ public sealed class GitHubApplicationUpdateServiceTests
 
         ApplicationUpdateInstallResult result = await sut.InstallAsync(
             updateInfo,
+            progress: null,
             CancellationToken.None);
 
         ProcessExecutionRequest request = processRunner.Requests.Single();
@@ -55,7 +56,7 @@ public sealed class GitHubApplicationUpdateServiceTests
             new Uri("https://github.com/rizwan3d/NanoAgent/releases/latest"),
             IsUpdateAvailable: true);
 
-        await sut.InstallAsync(updateInfo, CancellationToken.None);
+        await sut.InstallAsync(updateInfo, progress: null, CancellationToken.None);
 
         ProcessExecutionRequest request = processRunner.Requests.Single();
 
@@ -77,6 +78,42 @@ public sealed class GitHubApplicationUpdateServiceTests
             request.EnvironmentVariables.Should().NotContainKey("NanoAgent_INSTALL_DIR");
             request.EnvironmentVariables.Should().NotContainKey("NanoAgent_COMMAND_NAME");
         }
+    }
+
+    [Fact]
+    public async Task InstallAsync_Should_StreamInstallerOutputLinesToProgress()
+    {
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(
+            new ProcessExecutionResult(0, string.Empty, string.Empty),
+            "[NanoAgent.CLI] [1/7] Checking system requirements...",
+            "   ",
+            "[NanoAgent.CLI] [2/7] Resolving release...");
+        GitHubApplicationUpdateService sut = new(new HttpClient(), processRunner);
+        ApplicationUpdateInfo updateInfo = new(
+            "1.2.3",
+            "1.2.4",
+            new Uri("https://github.com/rizwan3d/NanoAgent/releases/latest"),
+            IsUpdateAvailable: true);
+
+        List<string> reported = [];
+        CapturingProgress progress = new(reported);
+
+        await sut.InstallAsync(updateInfo, progress, CancellationToken.None);
+
+        // Whitespace-only lines are skipped; meaningful step lines stream through in order.
+        reported.Should().Equal(
+            "[NanoAgent.CLI] [1/7] Checking system requirements...",
+            "[NanoAgent.CLI] [2/7] Resolving release...");
+    }
+
+    private sealed class CapturingProgress : IProgress<string>
+    {
+        private readonly List<string> _values;
+
+        public CapturingProgress(List<string> values) => _values = values;
+
+        public void Report(string value) => _values.Add(value);
     }
 
     [Fact]
