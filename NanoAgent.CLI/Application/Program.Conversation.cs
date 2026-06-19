@@ -22,13 +22,7 @@ public static partial class Program
         }
 
         bool isSlashCommand = attachments.Length == 0 && text.StartsWith('/');
-        if (isSlashCommand)
-        {
-            HandleCommand(state, text);
-            return;
-        }
-
-        if (!state.IsReady)
+        if (!state.IsReady && !isSlashCommand)
         {
             state.AddSystemMessage(
                 state.HasFatalError
@@ -37,11 +31,13 @@ public static partial class Program
             return;
         }
 
-        state.Input.Clear();
-        state.InputAttachments.Clear();
-        state.CollapsedInputPastes.Clear();
-        state.InputCursorIndex = 0;
-        ResetSlashCommandSuggestions(state);
+        ClearSubmittedInput(state);
+
+        if (isSlashCommand)
+        {
+            HandleCommand(state, text);
+            return;
+        }
 
         PendingSubmission submission = new(
             PendingSubmissionKind.Prompt,
@@ -57,6 +53,15 @@ public static partial class Program
         }
 
         ExecutePendingSubmission(state, submission);
+    }
+
+    private static void ClearSubmittedInput(AppState state)
+    {
+        state.Input.Clear();
+        state.InputAttachments.Clear();
+        state.CollapsedInputPastes.Clear();
+        state.InputCursorIndex = 0;
+        ResetSlashCommandSuggestions(state);
     }
 
     private static void StartConversation(
