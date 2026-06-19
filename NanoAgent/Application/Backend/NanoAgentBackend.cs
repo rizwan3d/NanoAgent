@@ -493,10 +493,17 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             return;
         }
 
+        await _statusMessageWriter.ShowInfoAsync(
+            $"Installing NanoAgent {updateInfo.LatestVersion}...",
+            cancellationToken);
+
         ApplicationUpdateInstallResult installResult;
         try
         {
-            installResult = await _updateService.InstallAsync(updateInfo, cancellationToken);
+            installResult = await _updateService.InstallAsync(
+                updateInfo,
+                new StatusMessageProgress(_statusMessageWriter),
+                cancellationToken);
         }
         catch (Exception exception) when (
             exception is InvalidOperationException or
