@@ -5,7 +5,11 @@
 <h1 align="center">NanoAgent</h1>
 
 <p align="center">
-  Your local AI coding agent for desktop, terminal, and editor workflows.
+  Local AI coding agent for desktop, terminal, editor, and CI workflows.
+</p>
+
+<p align="center">
+  NanoAgent helps you understand a repository, plan a change, edit files, run validation, review diffs, and automate pull request feedback without giving up local control.
 </p>
 
 <p align="center">
@@ -22,42 +26,51 @@
 
 <p align="center">
   <a href="https://github.com/rizwan3d/NanoAgent/releases/latest">
-    <img src="https://img.shields.io/badge/View-Releases-0969da?style=for-the-badge" alt="View NanoAgent releases">
-  </a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent">
-    <img src="https://img.shields.io/badge/Install-VSCode-0969da?style=for-the-badge" alt="Install NanoAgent VSCode">
+    <img src="https://img.shields.io/badge/Get-Releases-0969da?style=for-the-badge" alt="Get NanoAgent releases">
   </a>
   <a href="#cli-install">
     <img src="https://img.shields.io/badge/Install-CLI-0969da?style=for-the-badge" alt="Install NanoAgent CLI">
   </a>
-  <a href="#desktop-app">
+   <a href="#desktop-app">
     <img src="https://img.shields.io/badge/Install-Desktop-0969da?style=for-the-badge" alt="Install NanoAgent Desktop">
   </a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent">
+    <img src="https://img.shields.io/badge/Install-VS_Code-0969da?style=for-the-badge" alt="Install NanoAgent VS Code extension">
+  </a>
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.nanoagent-vs">
-    <img src="https://img.shields.io/badge/Install-VS-0969da?style=for-the-badge" alt="Install NanoAgent VS">
+    <img src="https://img.shields.io/badge/Install-Visual_Studio-0969da?style=for-the-badge" alt="Install NanoAgent Visual Studio extension">
   </a>
   <a href="https://www.npmjs.com/package/nanoai-cli">
-    <img src="https://img.shields.io/badge/Install-npm-0969da?style=for-the-badge" alt="Install NanoAgent CLI from npm">
+    <img src="https://img.shields.io/badge/Install-npm-0969da?style=for-the-badge" alt="Install NanoAgent from npm">
   </a>
   <a href="https://www.nuget.org/packages/NanoAgent/">
     <img src="https://img.shields.io/badge/Install-Nuget-0969da?style=for-the-badge" alt="Install NanoAgent Nuget">
+    <a href="docs/documentation.md">
+    <img src="https://img.shields.io/badge/Read-Docs-0969da?style=for-the-badge" alt="Read NanoAgent documentation">
   </a>
 </p>
 
 ---
 
-NanoAgent gives developers an AI teammate that can work inside a real repository while keeping the human in control. Ask it to understand a codebase, plan a change, edit files, run validation, review a diff, or automate a pull request review from the same toolchain you already use.
+NanoAgent is built for practical engineering work. It runs against a real local repository, uses real shells and tools, keeps workspace memory in versionable files, and asks for approval when an action should stay under human control.
 
-It is built for practical engineering work: local projects, real shells, version-controlled memory, reviewable changes, and explicit approval for sensitive actions.
+Use it when you want one agent experience across:
+
+- interactive implementation in a terminal
+- desktop chat with activity, controls, and undo/redo
+- VS Code and Visual Studio editor workflows
+- ACP-compatible editor integrations
+- CI review automation for pull requests and merge requests
 
 ## Table of Contents
 
+- [Why NanoAgent](#why-nanoagent)
 - [What You Can Do](#what-you-can-do)
-- [Product Surfaces](#product-surfaces)
-- [Built For Control](#built-for-control)
+- [Choose Your Surface](#choose-your-surface)
 - [Get Started](#get-started)
 - [Quick Start](#quick-start)
-- [Provider Choice](#provider-choice)
+- [Providers](#providers)
+- [Built For Control](#built-for-control)
 - [Benchmarks](#benchmarks)
 - [Telemetry](#telemetry)
 - [Documentation](#documentation)
@@ -65,71 +78,55 @@ It is built for practical engineering work: local projects, real shells, version
 - [Support](#support)
 - [License](#license)
 
+## Why NanoAgent
+
+- Works inside a real repository instead of a detached chat sandbox.
+- Keeps the human in control with approval prompts, permissions, and profiles.
+- Reuses the same agent across desktop, CLI, IDE, and CI workflows.
+- Stores reusable commands and team memory in `.nanoagent/` files you can review and commit.
+- Supports both subscription-style sign-in and API-key or local-model setups.
+
 ## What You Can Do
 
-- Understand unfamiliar code faster with repository-aware search, summaries, and focused file inspection.
-- Turn feature requests and bug reports into planned, editable, testable changes.
-- Run code review with a findings-first workflow for local diffs, files, pull requests, and merge requests.
-- Switch between hands-on implementation, read-only planning, and read-only review profiles.
-- Keep team knowledge in reviewable `.nanoagent/memory` files instead of hidden agent notes.
-- Save repeatable slash prompts in `.nanoagent/commands` and run them from the terminal, desktop app, or editor.
-- Use the provider that fits your budget and policy, from API-key providers to subscription sign-in and local Ollama.
-- Bring the same agent into desktop, terminal, VS Code, ACP-compatible editors, and CI review automation.
+- Understand unfamiliar code with repository-aware search, file inspection, and focused summaries.
+- Use built-in LSP-powered code intelligence for symbols, definitions, references, diagnostics, and rename previews.
+- Turn feature requests and bug reports into concrete implementation plans.
+- Edit files, run checks, and iterate on a change without leaving your working tree.
+- Review local diffs, files, pull requests, and merge requests with a findings-first workflow.
+- Switch between implementation, planning, review, exploration, and delegated work profiles.
+- Save repeatable prompts as slash commands in `.nanoagent/commands`.
+- Keep long-lived project knowledge in `.nanoagent/memory` instead of hidden agent state.
 
-## Product Surfaces
+## Choose Your Surface
 
-### Desktop App
-
-Use the desktop app for a visual workspace with chat, model controls, profile switching, budget controls, permission prompts, activity output, and undo/redo for tracked file edits.
-
-### Terminal
-
-Use `nanoai` when you want a keyboard-first agent for interactive work, one-shot prompts, piped input, quick reviews, and automation-friendly output.
-
-### VS Code
-
-Use the VS Code extension to chat with NanoAgent, send selections, review files, review Git diffs, and apply suggested changes from inside the editor.
-
-### Visual Studio
-
-Use the Visual Studio extension to keep a NanoAgent tool window inside Visual Studio while driving the local NanoAgent CLI over ACP.
-
-### CI Review Automation
-
-Use the included GitHub Actions, GitLab CI, and Bitbucket Pipelines examples to run NanoAgent against pull request and merge request diffs, then post review comments back to your platform.
-
-## Built For Control
-
-NanoAgent is designed for useful automation without silent surprises.
-
-- Profiles separate implementation, planning, review, exploration, and delegated work.
-- Permission rules decide what can run automatically, what asks first, and what is denied.
-- Sensitive actions can require approval, including file edits, shell commands, network access, MCP tools, memory writes, and elevated operations.
-- Tracked file edits can be undone and redone.
-- Secret redaction is off by default; when enabled, secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
-- Your workspace stays local; prompts and selected context are sent only to the model provider you configure when needed for a request.
+| Surface | Best for |
+| --- | --- |
+| Desktop app | Visual workspace with chat, model controls, profile switching, activity output, permission prompts, and undo/redo for tracked edits. |
+| `nanoai` CLI | Keyboard-first work, one-shot prompts, piped input, quick reviews, and automation-friendly output. |
+| VS Code extension | Chat, selected-context prompts, file review, diff review, and applying suggestions without leaving the editor. |
+| Visual Studio extension | Docked NanoAgent tool window powered by the local CLI over ACP. |
+| CI automation | Running NanoAgent in GitHub Actions, GitLab CI, and Bitbucket Pipelines to review proposed changes automatically. |
 
 ## Get Started
 
-Download the latest desktop build from [GitHub Releases](https://github.com/rizwan3d/NanoAgent/releases/latest), or install the CLI:
+Download the latest desktop build from [GitHub Releases](https://github.com/rizwan3d/NanoAgent/releases/latest), or install the CLI with the method that fits your environment.
 
-Release assets also publish `SHA256SUMS` and GitHub artifact attestations so you can verify both checksums and build provenance.
+Release assets publish `SHA256SUMS` and GitHub artifact attestations so you can verify both checksums and build provenance.
 
 ### Desktop App
 
-| Platform | Architecture | Download|
-|---|---:|---|
+| Platform | Architecture | Download |
+| --- | --- | --- |
 | Windows | x64 | [Setup `.exe`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64-setup.exe) |
 | Windows | x64 | [Portable `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-win-x64.zip) |
-| macOS | Apple Silicon / arm64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-arm64.zip) |
-| macOS | Intel / x64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-x64.zip) |
+| macOS | arm64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-arm64.zip) |
+| macOS | x64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-osx-x64.zip) |
 | Linux | x64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-x64.zip) |
 | Linux | arm64 | [Download `.zip`](https://github.com/rizwan3d/NanoAgent/releases/latest/download/NanoAgent.Desktop-linux-arm64.zip) |
 
 ### CLI Install
 
-Pick whichever installer fits your setup. Every method installs the same
-self-contained binary and exposes it as the `nanoai` command.
+Every installer exposes the same `nanoai` command and downloads the same self-contained release binary.
 
 #### Install script
 
@@ -145,33 +142,33 @@ Windows PowerShell:
 irm https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.ps1 | iex
 ```
 
-#### npm / bun / pnpm
+#### npm / pnpm / bun
 
 ```bash
 npm install -g nanoai-cli
 # or
-bun add -g nanoai-cli
-# or
 pnpm add -g nanoai-cli
+# or
+bun add -g nanoai-cli
 ```
 
-The npm package downloads the matching release binary and verifies it against the
-published `SHA256SUMS`. (bun skips `postinstall`, so the binary is fetched on the
-first `nanoai` run instead.)
+The npm package downloads the matching release binary and verifies it against published `SHA256SUMS`. If `postinstall` is skipped or the download fails, the binary is fetched automatically the first time you run `nanoai`.
 
-Then start NanoAgent:
+Start NanoAgent:
 
 ```bash
 nanoai
 ```
 
-The tag-based release workflow also publishes the `NanoAgent` library to NuGet.org.
+The release workflow also publishes the `NanoAgent` library to [NuGet.org](https://www.nuget.org/packages/NanoAgent/).
 
 ## Quick Start
 
-On first launch, NanoAgent walks you through provider setup: pick a subscription account, API-key provider, OpenAI-compatible endpoint, or a local provider, then let it discover available models. After that you are ready to work.
+On first launch, NanoAgent walks you through provider setup. Choose a subscription account, an API-key provider, an OpenAI-compatible endpoint, or a local provider, then let NanoAgent discover the models that are available to that setup.
 
-If you already know the provider, model, thinking mode, and API key you want, you can preseed them with environment variables before the first run. NanoAgent will use that complete setup without prompting for onboarding and will save it as the active provider profile for later runs.
+If you already know the provider configuration you want, you can preseed it before first run and skip interactive onboarding.
+
+PowerShell:
 
 ```powershell
 $env:NANOAGENT_PROVIDER="openrouter"
@@ -182,6 +179,8 @@ $env:NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 nanoai -p "Say hello in one short line"
 ```
 
+Bash:
+
 ```bash
 export NANOAGENT_PROVIDER="openrouter"
 export NANOAGENT_MODEL="poolside/laguna-m.1:free"
@@ -191,72 +190,90 @@ export NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 nanoai -p "Say hello in one short line"
 ```
 
-Start an interactive session in your repository:
+Common ways to use NanoAgent:
 
 ```bash
+# Start an interactive session in the current repository
 nanoai
-```
 
-Run a single prompt and print the response:
-
-```bash
+# Ask one question and print the result
 nanoai "Find risky changes in this branch"
-```
 
-Pipe context in from another command:
-
-```bash
+# Review piped input with the review profile
 git diff --stat | nanoai --stdin --profile review
-```
 
-Resume where you left off (NanoAgent prints a resume command when you exit):
-
-```bash
+# Resume a previous session
 nanoai --session <session-guid>
 ```
 
-Once inside a session, common commands include:
+Inside a session, a few useful commands are:
 
 | Command | What it does |
 | --- | --- |
-| `/help` | List all commands and usage. |
-| `/models` | Pick the active model with the arrow-key picker. |
-| `/profile <name>` | Switch between implementation, planning, and review profiles. |
+| `/help` | List commands and usage. |
+| `/models` | Pick the active model. |
+| `/profile <name>` | Switch profiles such as implementation, planning, and review. |
 | `/permissions` | Review what runs automatically, asks first, or is denied. |
 | `/init` | Scaffold workspace-local `.nanoagent` files. |
 | `/undo` / `/redo` | Roll back or re-apply the most recent tracked edit. |
 
-Save your own repeatable prompts as `.nanoagent/commands/*.md` and run them as slash commands. See the [full documentation](docs/documentation.md) for the complete command, profile, and configuration reference.
+## Providers
 
-## Provider Choice
+NanoAgent supports:
 
-NanoAgent supports OpenAI, ChatGPT Plus/Pro sign-in, Anthropic Claude Pro/Max sign-in, GitHub Copilot sign-in, OpenRouter, Kilo Code, Cerebras, Groq, DeepSeek, Anthropic, Google AI Studio, Ollama, LM Studio, Ollama Cloud, and OpenAI-compatible providers.
+- OpenAI
+- ChatGPT Plus/Pro sign-in
+- Anthropic Claude Pro/Max sign-in
+- GitHub Copilot sign-in
+- OpenRouter
+- Kilo Code
+- Cerebras
+- Groq
+- DeepSeek
+- Anthropic
+- Google AI Studio
+- Ollama
+- LM Studio
+- Ollama Cloud
+- OpenAI-compatible providers
+
+## Built For Control
+
+NanoAgent is designed for useful automation without silent surprises.
+
+- Profiles separate implementation, planning, review, exploration, and delegated work.
+- Permission rules control what runs automatically, what asks first, and what is denied.
+- Sensitive actions can require approval, including file edits, shell commands, network access, MCP tools, memory writes, and elevated operations.
+- Tracked file edits can be undone and redone.
+- Secret redaction is off by default; when enabled, secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
+- Your workspace stays local. Only the prompt and selected context needed for a request are sent to the provider you configure.
 
 ## Benchmarks
 
-NanoAgent includes task-based benchmarks in [`benchmarks/`](benchmarks) so we can measure real coding-agent behavior, not just chat-style answers. The benchmark suites currently cover bug fixing, repository understanding, patch quality, security review, tool safety, and a regression bundle that reruns the same tasks over time.
+NanoAgent includes task-based benchmarks in [`benchmarks/`](benchmarks) so we can measure real coding-agent behavior, not just chat-style answers.
 
-Tasks are defined in [`benchmarks/tasks/`](benchmarks/tasks) and grouped by [`benchmarks/manifest.json`](benchmarks/manifest.json). Each task can score the agent with response checks, validation commands, and diff constraints against small local fixtures or this repository itself.
+- Benchmark tasks live in [`benchmarks/tasks/`](benchmarks/tasks).
+- Suites are grouped in [`benchmarks/manifest.json`](benchmarks/manifest.json).
+- Results are refreshed in [`benchmarks/results/latest.md`](benchmarks/results/latest.md) and [`benchmarks/results/latest.json`](benchmarks/results/latest.json).
 
-Run the full benchmark set locally with:
+Run the full benchmark set:
 
 ```bash
 python benchmarks/scripts/run_benchmarks.py --all --system --skip-preflight
 ```
 
-Run the regression-only suite with:
+Run the regression-only suite:
 
 ```bash
 python benchmarks/scripts/run_benchmarks.py --suite regression --system --skip-preflight
 ```
-
-Generated summaries are refreshed in [`benchmarks/results/latest.md`](benchmarks/results/latest.md) and [`benchmarks/results/latest.json`](benchmarks/results/latest.json).
 
 ## Telemetry
 
 NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.nanoagent/agent-profile.json` for the current workspace.
 
 Collected:
+
 - NanoAgent version
 - OS family
 - app surface such as CLI, Desktop, VS Code, Visual Studio, JetBrains, GitHub Actions, GitLab CI, or Bitbucket Pipelines
@@ -268,6 +285,7 @@ Collected:
 - daily runs and usage-time buckets
 
 Never collected:
+
 - prompts
 - source code
 - file paths
@@ -277,7 +295,7 @@ Never collected:
 
 ## Documentation
 
-The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
+The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, LSP-powered code intelligence, codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
 
 ## Contributing
 
