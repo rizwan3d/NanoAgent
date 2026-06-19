@@ -14,6 +14,7 @@ public sealed class UiBridge : IUiBridge
     private readonly IToolOutputFormatter _toolOutputFormatter;
     private readonly object _providerAuthKeySync = new();
     private int _assistantMessageChunkCount;
+    private long _activeCliOperationId;
     private string? _providerAuthKey;
     private bool _providerAuthKeyConsumed;
 
@@ -44,6 +45,11 @@ public sealed class UiBridge : IUiBridge
     {
         ArgumentNullException.ThrowIfNull(update);
         _pending.Enqueue(update);
+    }
+
+    internal void SetActiveCliOperation(long operationId)
+    {
+        Interlocked.Exchange(ref _activeCliOperationId, operationId);
     }
 
     public async Task<T> RequestSelectionAsync<T>(
@@ -126,17 +132,17 @@ public sealed class UiBridge : IUiBridge
 
     public void ShowError(string message)
     {
-        Enqueue(state => state.AddSystemMessage($"Error: {message}"));
+        EnqueueForActiveOperation(state => state.AddSystemMessage($"Error: {message}"));
     }
 
     public void ShowInfo(string message)
     {
-        Enqueue(state => state.AddSystemMessage(message));
+        EnqueueForActiveOperation(state => state.AddSystemMessage(message));
     }
 
     public void ShowSuccess(string message)
     {
-        Enqueue(state => state.AddSystemMessage($"Success: {message}"));
+        EnqueueForActiveOperation(state => state.AddSystemMessage($"Success: {message}"));
     }
 
     public void ShowAssistantMessageChunk(string text)
@@ -148,7 +154,7 @@ public sealed class UiBridge : IUiBridge
 
         Interlocked.Increment(ref _assistantMessageChunkCount);
 
-        Enqueue(state =>
+        EnqueueForActiveOperation(state =>
         {
             state.ActivityText = "Streaming response";
             state.ClearBusyWhenStreamCompletes = true;
@@ -163,7 +169,7 @@ public sealed class UiBridge : IUiBridge
             return;
         }
 
-        Enqueue(state =>
+        EnqueueForActiveOperation(state =>
         {
             state.ActivityText = "Thinking";
             state.AddThinkingMessage("Thinking:\n\n" + reasoningText.Trim());
@@ -177,7 +183,7 @@ public sealed class UiBridge : IUiBridge
             .Where(static description => !string.IsNullOrWhiteSpace(description))
             .ToArray();
 
-        Enqueue(state =>
+        EnqueueForActiveOperation(state =>
         {
             state.ActivityText = descriptions.Length == 0
                 ? "Running tools"
@@ -215,7 +221,7 @@ public sealed class UiBridge : IUiBridge
             ];
         }
     
-        Enqueue(state =>
+        EnqueueForActiveOperation(state =>
         {
             foreach (string message in messages)
             {
@@ -228,7 +234,7 @@ public sealed class UiBridge : IUiBridge
     {
         string description = _planOutputFormatter.Format(progress);
 
-        Enqueue(state =>
+        EnqueueForActiveOperation(state =>
         {
             state.ActivityText = progress.Tasks.Count == 0
                 ? "Working"
@@ -249,7 +255,7 @@ public sealed class UiBridge : IUiBridge
 
     public void ShowProviderRetry(ProviderRetryProgress progress)
     {
-        Enqueue(state =>
+        EnqueueForActiveOperation(state =>
         {
             state.ActivityText = $"Trying {progress.Attempt}/{progress.MaxAttempts}";
             state.AddSystemMessage(
@@ -315,5 +321,20 @@ public sealed class UiBridge : IUiBridge
         return string.IsNullOrWhiteSpace(value)
             ? null
             : value.Trim();
+    }
+
+    private void EnqueueForActiveOperation(Action<AppState> update)
+    {
+        long operationId = Volatile.Read(ref _activeCliOperationId);
+
+        Enqueue(state =>
+        {
+            if (operationId != 0 && !state.IsTrackedOperationCurrent(operationId))
+            {
+                return;
+            }
+
+            update(state);
+        });
     }
 }
