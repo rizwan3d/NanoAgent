@@ -17,6 +17,7 @@ public static partial class Program
     private const int PanelChromeLineCount = 2;
     private const int FooterPanelSize = 1;
     private const string BusyStatusText = "NanoAgent is working";
+    private const string InputSelectionMarkupStyle = "black on grey70";
 
     private static IRenderable BuildUi(AppState state)
     {
@@ -372,6 +373,8 @@ public static partial class Program
             EnsureCopyCursorVisible(state, lines.Count, viewportLineCount);
         }
 
+        UpdateConversationViewportAfterContentChange(state, lines.Count);
+
         int maxScrollOffset = Math.Max(0, lines.Count - viewportLineCount);
         state.ConversationScrollOffset = Math.Clamp(
             state.ConversationScrollOffset,
@@ -578,6 +581,33 @@ public static partial class Program
         return Math.Max(0, lineCount - GetMessageViewportLineCount(state));
     }
 
+    private static void UpdateConversationViewportAfterContentChange(
+        AppState state,
+        int totalLineCount)
+    {
+        int lineDelta = totalLineCount - state.LastConversationLineCount;
+
+        if (state.IsCopyModeActive)
+        {
+            state.LastConversationLineCount = totalLineCount;
+            return;
+        }
+
+        if (state.IsConversationAutoScrollPaused)
+        {
+            if (lineDelta > 0)
+            {
+                state.ConversationScrollOffset += lineDelta;
+            }
+        }
+        else
+        {
+            state.ConversationScrollOffset = 0;
+        }
+
+        state.LastConversationLineCount = totalLineCount;
+    }
+
     private static void ScrollConversation(AppState state, int delta)
     {
         int maxScrollOffset = GetMaxConversationScrollOffset(state);
@@ -585,6 +615,7 @@ public static partial class Program
             state.ConversationScrollOffset + delta,
             0,
             maxScrollOffset);
+        state.SyncConversationAutoScrollPreference();
     }
 
     private static bool HasPinnedPlan(AppState state)
@@ -796,7 +827,8 @@ public static partial class Program
         InputDisplayText inputDisplay = BuildInputDisplayText(
             input,
             state.InputCursorIndex,
-            state.CollapsedInputPastes);
+            state.CollapsedInputPastes,
+            state.InputSelectionAnchor);
 
         if (inputDisplay.HasCollapsedPastes)
         {
@@ -804,6 +836,7 @@ public static partial class Program
                 state,
                 inputDisplay.Text,
                 inputDisplay.CursorIndex,
+                inputDisplay.SelectionAnchorIndex,
                 isBusy);
         }
 
@@ -820,6 +853,7 @@ public static partial class Program
             state,
             input,
             state.InputCursorIndex,
+            state.InputSelectionAnchor,
             isBusy);
     }
 
@@ -827,11 +861,13 @@ public static partial class Program
         AppState state,
         string input,
         int cursorIndex,
+        int? selectionAnchorIndex,
         bool isBusy)
     {
         string inputMarkup = BuildInputLineMarkup(
             input,
-            cursorIndex);
+            cursorIndex,
+            selectionAnchorIndex);
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -977,7 +1013,7 @@ public static partial class Program
         if (state.IsBusy || state.IsStreaming)
         {
             return BuildFooterLineMarkup(
-                "[grey]Enter: queue prompt[/]  [grey]|[/]  [grey]F4: remove queued[/]  [grey]|[/]  [grey]Esc: interrupt[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+                "[grey]Enter: queue prompt[/]  [grey]|[/]  [grey]F4: remove queued[/]  [grey]|[/]  [grey]Esc: interrupt[/]  [grey]|[/]  [grey]Esc again: abandon[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
         }
 
         if (TryGetSlashCommandSuggestions(state, out _))
@@ -987,12 +1023,13 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]Ctrl+A: select all[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
 
     private static string BuildInputLineMarkup(
         string input,
-        int cursorIndex)
+        int cursorIndex,
+        int? selectionAnchorIndex)
     {
         string normalizedInput = input ?? string.Empty;
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
@@ -1005,6 +1042,7 @@ public static partial class Program
         IReadOnlyList<InputRenderLine> inputLines = WrapInputTextForCursor(
             normalizedInput,
             normalizedCursorIndex,
+            selectionAnchorIndex,
             maxInputLength,
             Math.Max(1, contentWidth - 2 - InputCursorColumnWidth));
         List<string> renderedLines = [];
@@ -1024,6 +1062,20 @@ public static partial class Program
 
     private static string BuildInputRenderLineMarkup(InputRenderLine line)
     {
+        if (line.SelectionStartColumn is int selectionStartColumn &&
+            line.SelectionEndColumn is int selectionEndColumn)
+        {
+            int normalizedSelectionStart = Math.Clamp(selectionStartColumn, 0, line.Text.Length);
+            int normalizedSelectionEnd = Math.Clamp(selectionEndColumn, normalizedSelectionStart, line.Text.Length);
+            string beforeSelection = line.Text[..normalizedSelectionStart];
+            string selectedText = line.Text[normalizedSelectionStart..normalizedSelectionEnd];
+            string afterSelection = line.Text[normalizedSelectionEnd..];
+
+            return Markup.Escape(beforeSelection) +
+                $"[{InputSelectionMarkupStyle}]{Markup.Escape(selectedText)}[/]" +
+                Markup.Escape(afterSelection);
+        }
+
         if (line.CursorColumn is not int cursorColumn)
         {
             return Markup.Escape(line.Text);
@@ -1047,7 +1099,8 @@ public static partial class Program
         InputDisplayText inputDisplay = BuildInputDisplayText(
             input,
             state.InputCursorIndex,
-            state.CollapsedInputPastes);
+            state.CollapsedInputPastes,
+            state.InputSelectionAnchor);
         string visibleInput = inputDisplay.HasCollapsedPastes
             ? inputDisplay.Text
             : input;
@@ -1094,10 +1147,14 @@ public static partial class Program
     private static InputDisplayText BuildInputDisplayText(
         string input,
         int cursorIndex,
-        IReadOnlyList<CollapsedInputPaste> collapsedPastes)
+        IReadOnlyList<CollapsedInputPaste> collapsedPastes,
+        int? selectionAnchorIndex)
     {
         string normalizedInput = input ?? string.Empty;
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
+        int? normalizedSelectionAnchor = selectionAnchorIndex is int selectionAnchor
+            ? Math.Clamp(selectionAnchor, 0, normalizedInput.Length)
+            : null;
         List<CollapsedInputPaste> validPastes = collapsedPastes
             .Where(paste => paste.Length > 0 &&
                 paste.LineCount > MultilinePastePreviewLineThreshold &&
@@ -1117,6 +1174,7 @@ public static partial class Program
         StringBuilder display = new();
         int inputIndex = 0;
         int? displayCursorIndex = null;
+        int? displaySelectionAnchorIndex = null;
 
         foreach (CollapsedInputPaste paste in validPastes)
         {
@@ -1132,8 +1190,10 @@ public static partial class Program
                 inputIndex,
                 pasteStartIndex,
                 normalizedCursorIndex,
+                normalizedSelectionAnchor,
                 display,
-                ref displayCursorIndex);
+                ref displayCursorIndex,
+                ref displaySelectionAnchorIndex);
 
             string summary = BuildCollapsedPasteSummary(paste.LineCount);
             bool hasSuffix = pasteEndIndex < normalizedInput.Length;
@@ -1150,6 +1210,14 @@ public static partial class Program
                 displayCursorIndex = display.Length + summary.Length;
             }
 
+            if (displaySelectionAnchorIndex is null &&
+                normalizedSelectionAnchor is int selectionAnchorWithinPaste &&
+                selectionAnchorWithinPaste > pasteStartIndex &&
+                selectionAnchorWithinPaste < pasteEndIndex)
+            {
+                displaySelectionAnchorIndex = display.Length + summary.Length;
+            }
+
             display.Append(summary);
             display.Append(separator);
 
@@ -1157,6 +1225,12 @@ public static partial class Program
                 normalizedCursorIndex == pasteEndIndex)
             {
                 displayCursorIndex = display.Length;
+            }
+
+            if (displaySelectionAnchorIndex is null &&
+                normalizedSelectionAnchor == pasteEndIndex)
+            {
+                displaySelectionAnchorIndex = display.Length;
             }
 
             inputIndex = pasteEndIndex;
@@ -1167,13 +1241,16 @@ public static partial class Program
             inputIndex,
             normalizedInput.Length,
             normalizedCursorIndex,
+            normalizedSelectionAnchor,
             display,
-            ref displayCursorIndex);
+            ref displayCursorIndex,
+            ref displaySelectionAnchorIndex);
 
         return new InputDisplayText(
             display.ToString(),
             Math.Clamp(displayCursorIndex ?? display.Length, 0, display.Length),
-            HasCollapsedPastes: true);
+            HasCollapsedPastes: true,
+            SelectionAnchorIndex: displaySelectionAnchorIndex);
     }
 
     private static void AppendVisibleInputRange(
@@ -1181,8 +1258,10 @@ public static partial class Program
         int startIndex,
         int endIndex,
         int cursorIndex,
+        int? selectionAnchorIndex,
         StringBuilder display,
-        ref int? displayCursorIndex)
+        ref int? displayCursorIndex,
+        ref int? displaySelectionAnchorIndex)
     {
         int safeStartIndex = Math.Clamp(startIndex, 0, input.Length);
         int safeEndIndex = Math.Clamp(endIndex, safeStartIndex, input.Length);
@@ -1192,6 +1271,14 @@ public static partial class Program
             cursorIndex <= safeEndIndex)
         {
             displayCursorIndex = display.Length + cursorIndex - safeStartIndex;
+        }
+
+        if (displaySelectionAnchorIndex is null &&
+            selectionAnchorIndex is int normalizedSelectionAnchor &&
+            normalizedSelectionAnchor >= safeStartIndex &&
+            normalizedSelectionAnchor <= safeEndIndex)
+        {
+            displaySelectionAnchorIndex = display.Length + normalizedSelectionAnchor - safeStartIndex;
         }
 
         display.Append(input, safeStartIndex, safeEndIndex - safeStartIndex);
@@ -1237,6 +1324,7 @@ public static partial class Program
             state,
             summary,
             summary.Length,
+            null,
             isBusy);
         return true;
     }
@@ -1368,6 +1456,7 @@ public static partial class Program
     private static IReadOnlyList<InputRenderLine> WrapInputTextForCursor(
         string input,
         int cursorIndex,
+        int? selectionAnchorIndex,
         int firstLineWidth,
         int continuationLineWidth)
     {
@@ -1375,6 +1464,16 @@ public static partial class Program
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
+        int? normalizedSelectionAnchor = selectionAnchorIndex is int selectionAnchor
+            ? Math.Clamp(selectionAnchor, 0, normalizedInput.Length)
+            : null;
+        bool hasSelection = normalizedSelectionAnchor is int anchor && anchor != normalizedCursorIndex;
+        int selectionStart = hasSelection
+            ? Math.Min(normalizedCursorIndex, normalizedSelectionAnchor!.Value)
+            : 0;
+        int selectionEnd = hasSelection
+            ? Math.Max(normalizedCursorIndex, normalizedSelectionAnchor!.Value)
+            : 0;
         List<InputRenderLine> lines = [];
         int width = Math.Max(1, firstLineWidth);
         int globalLineStart = 0;
@@ -1391,7 +1490,12 @@ public static partial class Program
                     ? 0
                     : null;
                 cursorRendered |= cursorColumn is not null;
-                lines.Add(new InputRenderLine(string.Empty, cursorColumn));
+                int? selectionColumn = hasSelection && selectionStart == globalLineStart ? 0 : null;
+                lines.Add(new InputRenderLine(
+                    string.Empty,
+                    cursorColumn,
+                    selectionColumn,
+                    selectionColumn));
             }
             else
             {
@@ -1411,9 +1515,21 @@ public static partial class Program
                         cursorRendered = true;
                     }
 
+                    int? selectionStartColumn = null;
+                    int? selectionEndColumn = null;
+                    if (hasSelection &&
+                        selectionStart < segmentEnd &&
+                        selectionEnd > segmentStart)
+                    {
+                        selectionStartColumn = Math.Max(0, selectionStart - segmentStart);
+                        selectionEndColumn = Math.Min(length, selectionEnd - segmentStart);
+                    }
+
                     lines.Add(new InputRenderLine(
                         logicalLine.Substring(offset, length),
-                        cursorColumn));
+                        cursorColumn,
+                        selectionStartColumn,
+                        selectionEndColumn));
                     offset += length;
                     width = Math.Max(1, continuationLineWidth);
                 }
