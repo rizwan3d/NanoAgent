@@ -1,8 +1,8 @@
 # NanoAgent Documentation
 
-NanoAgent is an AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app, the `nanoai` terminal command, a VS Code extension, a Visual Studio extension, and an ACP-compatible editor server.
+NanoAgent is an AI coding agent for people who want an assistant that can work directly inside a repository while still respecting local permissions, approval prompts, and workspace policy. It runs as a desktop app, the `nanoai` terminal command, a VS Code extension, a Visual Studio extension, and an ACP-compatible editor server. It also includes Language Server Protocol (LSP) powered code intelligence for semantic navigation and diagnostics.
 
-This guide contains the setup, reference, and technical material for NanoAgent. The root README is the product overview; this document is the handbook for installation, daily use, safety controls, integration, automation, and advanced workspace customization.
+This guide contains the setup, reference, and technical material for NanoAgent. The root README is the product overview; this document is the handbook for installation, daily use, LSP-powered code intelligence, safety controls, integration, automation, and advanced workspace customization.
 
 ## Contents
 
@@ -14,6 +14,7 @@ This guide contains the setup, reference, and technical material for NanoAgent. 
 - [Visual Studio Extension](#visual-studio-extension)
 - [ACP Editor Integration](#acp-editor-integration)
 - [Review Automation](#review-automation)
+- [Code Intelligence](#code-intelligence)
 - [Codebase Indexing](#codebase-indexing)
 - [Providers and Models](#providers-and-models)
 - [Profiles and Subagents](#profiles-and-subagents)
@@ -1069,6 +1070,8 @@ Supported transports:
 Use `enabledTools` and `disabledTools` to filter exposed tools. Use `/mcp` to inspect loaded MCP servers, custom tool providers, and dynamic tools.
 
 ## Code Intelligence
+
+NanoAgent supports Language Server Protocol (LSP) integrations through the `code_intelligence` tool and the `/lsp` CLI command family.
 
 `code_intelligence` now discovers language servers from built-in definitions, the current workspace, and optional user or workspace profile overrides.
 
