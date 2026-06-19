@@ -92,6 +92,96 @@ public sealed class FilePathSuggestionProviderTests : IDisposable
             .Equal(".nanoagent/agent-profile.json");
     }
 
+    [Fact]
+    public void GetSuggestions_Should_CompleteDirectoryTokenForShellCommand()
+    {
+        WriteFile("src/index.html", "<html></html>");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!cd ./sr",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("./src/");
+        suggestions[0].CompletedInput.Should().Be("!cd ./src/");
+        suggestions[0].IsDirectory.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteFileTokenForShellCommand()
+    {
+        WriteFile("index.html", "<html></html>");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!nano in",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("index.html");
+        suggestions[0].CompletedInput.Should().Be("!nano index.html");
+        suggestions[0].IsDirectory.Should().BeFalse();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_PreserveTypedDirectoryPrefixForShellCommand()
+    {
+        WriteFile("src/components/button.tsx", "export {}");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!cat src/comp",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("src/components/");
+        suggestions[0].CompletedInput.Should().Be("!cat src/components/");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteTokenForBackgroundShellCommand()
+    {
+        WriteFile("server.js", "//");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!!node ser",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].CompletedInput.Should().Be("!!node server.js");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_ListWorkspaceWhenShellCommandHasTrailingSpace()
+    {
+        WriteFile("README.md", "hello");
+        WriteFile("docs/guide.md", "hello");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!ls ",
+            maxCount: 8);
+
+        suggestions.Select(suggestion => suggestion.DisplayPath)
+            .Should()
+            .Equal("docs/", "README.md");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_NotCompleteShellCommandName()
+    {
+        WriteFile("cdrom.txt", "data");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!cd",
+            maxCount: 8);
+
+        suggestions.Should().BeEmpty();
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

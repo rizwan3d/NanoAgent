@@ -6,6 +6,7 @@ internal static class FilePathSuggestionProvider
     private const string ImportCommandPrefix = "/import ";
     private const string ExportJsonCommandPrefix = "/export json ";
     private const string ExportHtmlCommandPrefix = "/export html ";
+    private const string DirectShellPrefix = "!";
     private static readonly char[] DirectorySeparators = ['/', '\\'];
 
     public static IReadOnlyList<FilePathSuggestion> GetSuggestions(
@@ -32,6 +33,13 @@ internal static class FilePathSuggestionProvider
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
+        // For shell commands the user types a path token in place (e.g. "cd ./sr"); we
+        // complete only the final name component while preserving the directory portion
+        // exactly as typed. Slash commands instead receive the full workspace-relative path.
+        string literalDirectoryPrefix = request.PreserveTypedPath
+            ? GetLiteralDirectoryPrefix(request.PathText)
+            : string.Empty;
+
         List<FilePathSuggestion> suggestions = [];
         foreach (DirectoryInfo directory in EnumerateDirectories(searchDirectory)
             .Where(directory => directory.Name.StartsWith(namePrefix, comparison))
@@ -42,7 +50,9 @@ internal static class FilePathSuggestionProvider
                 continue;
             }
 
-            string displayPath = ToDisplayPath(request.RootDirectory, directory.FullName) + "/";
+            string displayPath = request.PreserveTypedPath
+                ? literalDirectoryPrefix + directory.Name + "/"
+                : ToDisplayPath(request.RootDirectory, directory.FullName) + "/";
             suggestions.Add(new FilePathSuggestion(
                 request.CommandPrefix + displayPath,
                 displayPath,
@@ -65,7 +75,9 @@ internal static class FilePathSuggestionProvider
                 continue;
             }
 
-            string displayPath = ToDisplayPath(request.RootDirectory, file.FullName);
+            string displayPath = request.PreserveTypedPath
+                ? literalDirectoryPrefix + file.Name
+                : ToDisplayPath(request.RootDirectory, file.FullName);
             suggestions.Add(new FilePathSuggestion(
                 request.CommandPrefix + displayPath,
                 displayPath,
@@ -98,12 +110,65 @@ internal static class FilePathSuggestionProvider
         if (TryCreateRequest(input, ReadCommandPrefix, fullRoot, jsonOnly: false, out request) ||
             TryCreateRequest(input, ImportCommandPrefix, fullRoot, jsonOnly: true, out request) ||
             TryCreateRequest(input, ExportJsonCommandPrefix, fullRoot, jsonOnly: false, out request) ||
-            TryCreateRequest(input, ExportHtmlCommandPrefix, fullRoot, jsonOnly: false, out request))
+            TryCreateRequest(input, ExportHtmlCommandPrefix, fullRoot, jsonOnly: false, out request) ||
+            TryCreateBangRequest(input, fullRoot, out request))
         {
             return true;
         }
 
         return false;
+    }
+
+    private static bool TryCreateBangRequest(
+        string input,
+        string rootDirectory,
+        out FilePathSuggestionRequest? request)
+    {
+        request = null;
+        if (!input.StartsWith(DirectShellPrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Only complete an argument token: there must be a command name followed by
+        // whitespace after the bang prefix(es). "!cd" is still naming the command, while
+        // "!cd ./sr" (or a trailing space) is completing an argument.
+        int bangLength = input.StartsWith("!!", StringComparison.Ordinal) ? 2 : 1;
+        string rest = input[bangLength..];
+        if (!rest.TrimStart().Any(char.IsWhiteSpace))
+        {
+            return false;
+        }
+
+        int lastWhitespaceIndex = -1;
+        for (int index = input.Length - 1; index >= bangLength; index--)
+        {
+            if (char.IsWhiteSpace(input[index]))
+            {
+                lastWhitespaceIndex = index;
+                break;
+            }
+        }
+
+        if (lastWhitespaceIndex < 0)
+        {
+            return false;
+        }
+
+        string commandPrefix = input[..(lastWhitespaceIndex + 1)];
+        string pathText = input[(lastWhitespaceIndex + 1)..];
+        if (Path.IsPathRooted(pathText))
+        {
+            return false;
+        }
+
+        request = new FilePathSuggestionRequest(
+            rootDirectory,
+            commandPrefix,
+            pathText,
+            JsonOnly: false,
+            PreserveTypedPath: true);
+        return true;
     }
 
     private static bool TryCreateRequest(
@@ -129,8 +194,18 @@ internal static class FilePathSuggestionProvider
             rootDirectory,
             commandPrefix,
             pathText,
-            jsonOnly);
+            jsonOnly,
+            PreserveTypedPath: false);
         return true;
+    }
+
+    private static string GetLiteralDirectoryPrefix(string pathText)
+    {
+        string trimmed = pathText.TrimStart();
+        int lastSeparator = trimmed.LastIndexOfAny(DirectorySeparators);
+        return lastSeparator < 0
+            ? string.Empty
+            : trimmed[..(lastSeparator + 1)];
     }
 
     private static string GetDirectoryPart(string pathText)
@@ -258,7 +333,8 @@ internal static class FilePathSuggestionProvider
         string RootDirectory,
         string CommandPrefix,
         string PathText,
-        bool JsonOnly);
+        bool JsonOnly,
+        bool PreserveTypedPath);
 }
 
 internal readonly record struct FilePathSuggestion(
