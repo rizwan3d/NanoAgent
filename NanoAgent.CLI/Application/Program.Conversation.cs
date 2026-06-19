@@ -700,7 +700,18 @@ public static partial class Program
             return;
         }
 
-        for (int index = 0; index < 6 && state.StreamQueue.Count > 0; index++)
+        // Drain larger batches when a backlog builds up so completed tool output
+        // and shell command results do not replay with an artificial slow-typing
+        // effect.
+        int charactersPerFrame = state.StreamQueue.Count switch
+        {
+            > 2048 => 512,
+            > 512 => 256,
+            > 128 => 96,
+            _ => 48
+        };
+
+        for (int index = 0; index < charactersPerFrame && state.StreamQueue.Count > 0; index++)
         {
             message.Text += state.StreamQueue.Dequeue();
         }
