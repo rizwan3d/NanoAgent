@@ -7,6 +7,7 @@ namespace NanoAgent.CLI;
 public sealed class AppState
 {
     private int _nextMessageId = 1;
+    private long _nextOperationId;
 
     public AppState(UiBridge uiBridge, INanoAgentBackend backend)
     {
@@ -42,6 +43,8 @@ public sealed class AppState
     public List<ConversationAttachment> InputAttachments { get; } = [];
 
     public int InputCursorIndex { get; set; }
+
+    public int? InputSelectionAnchor { get; set; }
 
     public bool SkipNextInputLineFeed { get; set; }
 
@@ -94,6 +97,10 @@ public sealed class AppState
 
     public int ConversationScrollOffset { get; set; }
 
+    public bool IsConversationAutoScrollPaused { get; set; }
+
+    public int LastConversationLineCount { get; set; }
+
     // Reader view: a full-screen, chrome-free plain-text transcript that pauses the
     // live redraw so the terminal's own mouse selection can grab clean text.
     public bool IsReaderViewActive { get; set; }
@@ -119,6 +126,8 @@ public sealed class AppState
 
     public string? PendingCompletionNote { get; set; }
 
+    public bool IsTurnInterruptPending { get; set; }
+
     public Queue<PendingSubmission> PendingSubmissions { get; } = new();
 
     public Queue<ConsoleKeyInfo> PendingInputKeys { get; } = new();
@@ -141,7 +150,11 @@ public sealed class AppState
 
     public Queue<char> StreamQueue { get; } = new();
 
+    public long CurrentOperationId { get; private set; }
+
     public UiBridge UiBridge { get; }
+
+    public bool HasInputSelection => TryGetInputSelectionRange(out _, out _);
 
     public void AddSystemMessage(string text)
     {
@@ -202,6 +215,69 @@ public sealed class AppState
         return StreamingMessageId is null
             ? null
             : Messages.FirstOrDefault(message => message.Id == StreamingMessageId.Value);
+    }
+
+    public bool TryGetInputSelectionRange(out int startIndex, out int length)
+    {
+        startIndex = 0;
+        length = 0;
+
+        if (InputSelectionAnchor is not int anchor)
+        {
+            return false;
+        }
+
+        int cursorIndex = Math.Clamp(InputCursorIndex, 0, Input.Length);
+        int normalizedAnchor = Math.Clamp(anchor, 0, Input.Length);
+        if (cursorIndex == normalizedAnchor)
+        {
+            return false;
+        }
+
+        startIndex = Math.Min(cursorIndex, normalizedAnchor);
+        length = Math.Abs(cursorIndex - normalizedAnchor);
+        return length > 0;
+    }
+
+    public void ClearInputSelection()
+    {
+        InputSelectionAnchor = null;
+    }
+
+    public void ResetConversationViewport()
+    {
+        ConversationScrollOffset = 0;
+        IsConversationAutoScrollPaused = false;
+        LastConversationLineCount = 0;
+    }
+
+    public void JumpConversationToBottom()
+    {
+        ConversationScrollOffset = 0;
+        IsConversationAutoScrollPaused = false;
+    }
+
+    public void SyncConversationAutoScrollPreference()
+    {
+        IsConversationAutoScrollPaused = ConversationScrollOffset > 0;
+    }
+
+    public long BeginTrackedOperation()
+    {
+        IsTurnInterruptPending = false;
+        return CurrentOperationId = Interlocked.Increment(ref _nextOperationId);
+    }
+
+    public bool IsTrackedOperationCurrent(long operationId)
+    {
+        return operationId != 0 && CurrentOperationId == operationId;
+    }
+
+    public void AbandonTrackedOperation()
+    {
+        CurrentOperationId = Interlocked.Increment(ref _nextOperationId);
+        ActiveOperation = null;
+        IsTurnInterruptPending = false;
     }
 }
 
