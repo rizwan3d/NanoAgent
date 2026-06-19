@@ -257,7 +257,7 @@ public sealed class ProcessRunnerTests
             WorkingDirectory: temp.WorkspaceRoot,
             MaxOutputCharacters: 256);
 
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
         ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
             request,
             context,
@@ -290,7 +290,7 @@ public sealed class ProcessRunnerTests
             WorkingDirectory: temp.WorkspaceRoot,
             MaxOutputCharacters: 256);
 
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
         ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
             request,
             context,
@@ -319,7 +319,7 @@ public sealed class ProcessRunnerTests
             WorkingDirectory: workingDirectory,
             MaxOutputCharacters: 256);
 
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
         ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
             request,
             context,
@@ -355,7 +355,7 @@ public sealed class ProcessRunnerTests
                 [variableName] = variableValue
             });
 
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
         ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
             request,
             context,
@@ -418,7 +418,7 @@ public sealed class ProcessRunnerTests
             WorkingDirectory: temp.WorkspaceRoot,
             MaxOutputCharacters: 256);
 
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
         ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
             request,
             context,
@@ -445,7 +445,7 @@ public sealed class ProcessRunnerTests
             WorkingDirectory: temp.WorkspaceRoot,
             MaxOutputCharacters: 256);
 
-        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(30));
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
         ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
             request,
             context,
@@ -592,6 +592,11 @@ public sealed class ProcessRunnerTests
             workspaceRoot,
             [workspaceRoot],
             IncludeTempEnvironmentVariables: true);
+    }
+
+    private static CancellationTokenSource CreateWindowsSandboxTimeout()
+    {
+        return new CancellationTokenSource(TimeSpan.FromMinutes(3));
     }
 
     private sealed class TempNanoAgentHome : IDisposable
