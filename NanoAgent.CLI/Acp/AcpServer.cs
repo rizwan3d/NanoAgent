@@ -78,10 +78,15 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            // ponytail: factory runs inside CreateSessionAsync right after
+            // SetCurrentDirectory(cwd), so GetCurrentDirectory() == the session cwd.
+            // Pinning it here makes the session's tools workspace-independent of
+            // global cwd, which is what lets prompts run concurrently.
             (args, sessionMcpServers) => new NanoAgentBackend(
                 args,
                 sessionMcpServers,
-                autoApproveAllTools))
+                autoApproveAllTools,
+                Directory.GetCurrentDirectory()))
     {
     }
 
@@ -321,10 +326,31 @@ internal sealed class AcpServer : IAsyncDisposable
 
     private async Task ProcessRequestQueueAsync(CancellationToken cancellationToken)
     {
+        // session/prompt is the only long-running method; let prompts for
+        // different sessions overlap. Everything else (initialize, session/new,
+        // load, close, ...) stays serial so the handshake ordering clients rely
+        // on is preserved. Same-session prompts still serialize via TurnLock.
+        List<Task> inFlightPrompts = [];
         await foreach (JsonElement root in _requestQueue.Reader.ReadAllAsync(cancellationToken))
         {
-            await ProcessRequestAsync(root, cancellationToken);
+            if (IsPromptMethod(root))
+            {
+                inFlightPrompts.RemoveAll(static task => task.IsCompleted);
+                inFlightPrompts.Add(ProcessRequestAsync(root, cancellationToken));
+            }
+            else
+            {
+                await ProcessRequestAsync(root, cancellationToken);
+            }
         }
+
+        await Task.WhenAll(inFlightPrompts);
+    }
+
+    private static bool IsPromptMethod(JsonElement root)
+    {
+        return TryGetString(root, "method", out string method) &&
+            string.Equals(method, "session/prompt", StringComparison.Ordinal);
     }
 
     private async Task ProcessRequestAsync(JsonElement root, CancellationToken cancellationToken)
@@ -617,7 +643,6 @@ internal sealed class AcpServer : IAsyncDisposable
 
         try
         {
-            Directory.SetCurrentDirectory(session.WorkingDirectory);
             session.Bridge.ResetAssistantMessageChunkTracking();
 
             string responseText;
@@ -772,6 +797,10 @@ internal sealed class AcpServer : IAsyncDisposable
         IReadOnlyList<BackendMcpServerConfiguration> sessionMcpServers,
         CancellationToken cancellationToken)
     {
+        // Session creation is processed serially (only session/prompt runs
+        // concurrently), so setting global cwd here is race-free. The default
+        // backend factory captures this cwd as the session's fixed workspace
+        // root; backend init also reads cwd for config/git probes.
         Directory.SetCurrentDirectory(cwd);
 
         string[] backendArgs = CreateBackendArgs(sectionId);
