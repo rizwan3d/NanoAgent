@@ -77,7 +77,13 @@ internal sealed class CodebaseIndexCommandHandler : IReplCommandHandler
             Removed: {result.RemovedFileCount}
             Reused: {result.ReusedFileCount}
             Skipped: {result.SkippedFileCount}
+            Semantic symbols: {result.Stats.SemanticSymbolCount}
+            Dependencies: {result.Stats.DependencyEdgeCount}
+            Calls: {result.Stats.CallEdgeCount}
+            Owned files: {result.Stats.OwnedFileCount}
+            Ownership rules: {result.Stats.OwnershipRuleCount}
             Duration: {result.DurationMilliseconds} ms
+            {FormatWarnings(result.Warnings)}
             """.Trim(),
             ReplFeedbackKind.Info);
     }
@@ -100,10 +106,16 @@ internal sealed class CodebaseIndexCommandHandler : IReplCommandHandler
         message.AppendLine($"Changed: {result.ChangedFileCount}");
         message.AppendLine($"Deleted: {result.DeletedFileCount}");
         message.AppendLine($"Skipped: {result.SkippedFileCount}");
+        message.AppendLine($"Semantic symbols: {result.Stats.SemanticSymbolCount}");
+        message.AppendLine($"Dependencies: {result.Stats.DependencyEdgeCount}");
+        message.AppendLine($"Calls: {result.Stats.CallEdgeCount}");
+        message.AppendLine($"Owned files: {result.Stats.OwnedFileCount}");
+        message.AppendLine($"Ownership rules: {result.Stats.OwnershipRuleCount}");
 
         AppendSamples(message, "New files", result.SampleNewFiles);
         AppendSamples(message, "Changed files", result.SampleChangedFiles);
         AppendSamples(message, "Deleted files", result.SampleDeletedFiles);
+        AppendWarnings(message, result.Warnings);
 
         return ReplCommandResult.Continue(
             message.ToString().TrimEnd(),
@@ -139,6 +151,12 @@ internal sealed class CodebaseIndexCommandHandler : IReplCommandHandler
             Indexed files: {result.TotalIndexedFileCount}
             Showing: {result.ReturnedFileCount}
             Path: {result.IndexPath}
+            Semantic symbols: {result.Stats.SemanticSymbolCount}
+            Dependencies: {result.Stats.DependencyEdgeCount}
+            Calls: {result.Stats.CallEdgeCount}
+            Owned files: {result.Stats.OwnedFileCount}
+            Ownership rules: {result.Stats.OwnershipRuleCount}
+            {FormatWarnings(result.Warnings)}
 
             {string.Join(Environment.NewLine, result.Files)}
             """.Trim(),
@@ -165,5 +183,22 @@ internal sealed class CodebaseIndexCommandHandler : IReplCommandHandler
         }
 
         message.AppendLine($"{label}: {string.Join(", ", samples.Take(5))}");
+    }
+
+    private static void AppendWarnings(
+        StringBuilder message,
+        IReadOnlyList<string> warnings)
+    {
+        foreach (string warning in warnings)
+        {
+            message.AppendLine($"Warning: {warning}");
+        }
+    }
+
+    private static string FormatWarnings(IReadOnlyList<string> warnings)
+    {
+        return warnings.Count == 0
+            ? "Warnings: none"
+            : $"Warnings: {string.Join(" | ", warnings)}";
     }
 }

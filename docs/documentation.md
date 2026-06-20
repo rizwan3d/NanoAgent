@@ -675,17 +675,25 @@ NanoAgent includes a local codebase index for repository-wide discovery. The `co
 - `search`: rank likely relevant files for a natural-language, symbol, path, or behavior query.
 - `list`: show indexed file paths.
 
-NanoAgent implements codebase indexing by computing and caching lightweight local embeddings for files, refreshing incrementally when the index is searched or rebuilt, and respecting ignore files such as `.gitignore`.
+NanoAgent implements codebase indexing locally by computing lightweight embeddings and a richer repository map for each indexed file. Alongside path and language metadata, the index stores:
+
+- semantic symbols with kind, container, signature, and line ranges,
+- dependency edges such as imports, usings, project references, and relative module links,
+- call edges between best-effort resolved workspace functions or methods,
+- ownership data from the first available `CODEOWNERS` file (`.github/CODEOWNERS`, `CODEOWNERS`, or `docs/CODEOWNERS`),
+- and stale-index warnings when the workspace has drifted since the last build.
+
+The index still refreshes incrementally when searched or rebuilt and still respects ignore files such as `.gitignore`.
 
 ```text
 .nanoagent/cache/codebase-index.json
 ```
 
-The cache does not store full file contents. It stores per-file metadata such as path, length, hash, language, line count, symbols, and the local embedding vector used for ranking. Search snippets are read from current workspace files when results are returned.
+The cache does not store full file contents. It stores per-file metadata such as path, length, language, line count, legacy symbol strings, semantic symbol entries, dependency links, call edges, ownership matches, and the local embedding vector used for ranking. Search snippets are read from current workspace files when results are returned.
 
 Indexing respects `.gitignore`, `.nanoagent/.nanoignore`, and built-in exclusions for generated or local runtime directories such as `.git/`, `node_modules/`, `bin/`, `obj/`, `.nanoagent/cache/`, `.nanoagent/logs/`, and `.nanoagent/sessions/`.
 
-Use `codebase_index` for broad discovery first, then use `file_read`, `text_search`, or `code_intelligence` to verify exact behavior before editing.
+Use `codebase_index` for broad discovery first, especially when you want to trace ownership, dependencies, callers, or likely symbol definitions across a repo. Then use `file_read`, `text_search`, or `code_intelligence` to verify exact behavior before editing.
 
 ### Manual Index Updates
 
