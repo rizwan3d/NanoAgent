@@ -12,8 +12,12 @@ if (process.env.NANOAGENT_SKIP_DOWNLOAD === "1") {
 }
 
 const { ensureBinary } = require("./download");
+const { trackInstall } = require("./telemetry");
 
-ensureBinary({ log: (m) => console.error(`[nanoagent] ${m}`) })
+ensureBinary({
+  log: (m) => console.error(`[nanoagent] ${m}`),
+  onDownloaded: () => trackInstall(),
+})
   .then(() => {
     console.error("[nanoagent] Ready. Run `nanoai` to start.");
   })
