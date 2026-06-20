@@ -10,6 +10,8 @@ namespace NanoAgent.Infrastructure.Plugins;
 [JsonSerializable(typeof(PluginMarketplaceEntry))]
 [JsonSerializable(typeof(PluginManifest))]
 [JsonSerializable(typeof(PluginManifestFile))]
+[JsonSerializable(typeof(PluginMarketplaceIndex))]
+[JsonSerializable(typeof(PluginIndexEntry))]
 [JsonSerializable(typeof(InstalledPluginLock))]
 [JsonSerializable(typeof(InstalledPluginEntry))]
 internal sealed partial class PluginJsonContext : JsonSerializerContext

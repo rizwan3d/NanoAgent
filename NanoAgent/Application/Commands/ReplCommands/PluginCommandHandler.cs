@@ -17,7 +17,7 @@ internal sealed class PluginCommandHandler : IReplCommandHandler
 
     public string Description => "Manage data-only plugin marketplaces and installs.";
 
-    public string Usage => "/plugin [marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]|install <pluginId>@<marketplaceAlias> [--force]|list|uninstall <pluginId>]";
+    public string Usage => "/plugin [marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]|marketplace remove <alias>|browse <marketplaceAlias>|install <pluginId>@<marketplaceAlias> [--force]|list|uninstall <pluginId>]";
 
     public async Task<ReplCommandResult> ExecuteAsync(
         ReplCommandContext context,
@@ -37,6 +37,7 @@ internal sealed class PluginCommandHandler : IReplCommandHandler
             {
                 "help" or "-h" or "--help" => ReplCommandResult.Continue(BuildHelpText()),
                 "marketplace" => await ExecuteMarketplaceAsync(context, cancellationToken),
+                "browse" => await ExecuteBrowseAsync(context, cancellationToken),
                 "install" => await ExecuteInstallAsync(context, cancellationToken),
                 "list" => await ExecuteListAsync(context, cancellationToken),
                 "uninstall" or "remove" => await ExecuteUninstallAsync(context, cancellationToken),
@@ -55,14 +56,27 @@ internal sealed class PluginCommandHandler : IReplCommandHandler
         ReplCommandContext context,
         CancellationToken cancellationToken)
     {
-        if (context.Arguments.Count < 2 ||
-            !string.Equals(context.Arguments[1], "add", StringComparison.OrdinalIgnoreCase))
+        if (context.Arguments.Count < 2)
         {
             return ReplCommandResult.Continue(
-                "Usage: /plugin marketplace add <owner>/<repo> [--ref <ref>] [--alias <alias>]",
+                "Usage: /plugin marketplace <add <owner>/<repo> [--ref <ref>] [--alias <alias>]|remove <alias>>",
                 ReplFeedbackKind.Error);
         }
 
+        return context.Arguments[1].Trim().ToLowerInvariant() switch
+        {
+            "add" => await ExecuteMarketplaceAddAsync(context, cancellationToken),
+            "remove" or "rm" => await ExecuteMarketplaceRemoveAsync(context, cancellationToken),
+            _ => ReplCommandResult.Continue(
+                "Usage: /plugin marketplace <add <owner>/<repo> [--ref <ref>] [--alias <alias>]|remove <alias>>",
+                ReplFeedbackKind.Error)
+        };
+    }
+
+    private async Task<ReplCommandResult> ExecuteMarketplaceAddAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
         if (!TryParseOptions(
                 context.Arguments.Skip(2),
                 valueOptions: ["--ref", "--alias"],
@@ -91,6 +105,68 @@ internal sealed class PluginCommandHandler : IReplCommandHandler
         return ReplCommandResult.Continue(
             $"Added plugin marketplace '{result.Alias}' -> {result.Entry.Repository}@{result.Entry.Ref}.",
             ReplFeedbackKind.Info);
+    }
+
+    private async Task<ReplCommandResult> ExecuteMarketplaceRemoveAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.Arguments.Count != 3)
+        {
+            return ReplCommandResult.Continue(
+                "Usage: /plugin marketplace remove <alias>",
+                ReplFeedbackKind.Error);
+        }
+
+        PluginMarketplaceRemoveResult result = await _pluginService.RemoveMarketplaceAsync(
+            context.Session.WorkspacePath,
+            context.Arguments[2],
+            cancellationToken);
+
+        return ReplCommandResult.Continue(
+            $"Removed plugin marketplace '{result.Alias}' -> {result.Removed.Repository}@{result.Removed.Ref}.",
+            ReplFeedbackKind.Info);
+    }
+
+    private async Task<ReplCommandResult> ExecuteBrowseAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
+        if (context.Arguments.Count != 2)
+        {
+            return ReplCommandResult.Continue(
+                "Usage: /plugin browse <marketplaceAlias>",
+                ReplFeedbackKind.Error);
+        }
+
+        PluginBrowseResult result = await _pluginService.BrowseMarketplaceAsync(
+            context.Session.WorkspacePath,
+            context.Arguments[1],
+            cancellationToken);
+
+        StringBuilder builder = new();
+        builder.AppendLine(
+            $"Plugins available in '{result.Alias}' ({result.Marketplace.Repository}@{result.Marketplace.Ref}):");
+        if (result.Plugins.Count == 0)
+        {
+            builder.AppendLine("- None published.");
+        }
+        else
+        {
+            foreach (PluginIndexEntry plugin in result.Plugins
+                         .OrderBy(static entry => entry.Id, StringComparer.OrdinalIgnoreCase))
+            {
+                builder.AppendLine(plugin.Name is null
+                    ? $"- {plugin.Id}"
+                    : $"- {plugin.Id} ({plugin.Name})");
+                if (plugin.Description is not null)
+                {
+                    builder.AppendLine($"    {plugin.Description}");
+                }
+            }
+        }
+
+        return ReplCommandResult.Continue(builder.ToString().TrimEnd(), ReplFeedbackKind.Info);
     }
 
     private async Task<ReplCommandResult> ExecuteInstallAsync(
@@ -301,6 +377,8 @@ internal sealed class PluginCommandHandler : IReplCommandHandler
             [
                 "Plugin commands:",
                 "/plugin marketplace add <owner>/<repo> [--ref <ref>] [--alias <alias>]",
+                "/plugin marketplace remove <alias>",
+                "/plugin browse <marketplaceAlias>",
                 "/plugin install <pluginId>@<marketplaceAlias> [--force]",
                 "/plugin list",
                 "/plugin uninstall <pluginId>"

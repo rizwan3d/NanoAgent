@@ -58,9 +58,32 @@ public sealed class InstalledPluginEntry
     public List<string> Files { get; init; } = [];
 }
 
+public sealed class PluginMarketplaceIndex
+{
+    public List<PluginIndexEntry> Plugins { get; init; } = [];
+}
+
+public sealed class PluginIndexEntry
+{
+    public string Id { get; init; } = string.Empty;
+
+    public string? Name { get; init; }
+
+    public string? Description { get; init; }
+}
+
 public sealed record PluginMarketplaceAddResult(
     string Alias,
     PluginMarketplaceEntry Entry);
+
+public sealed record PluginMarketplaceRemoveResult(
+    string Alias,
+    PluginMarketplaceEntry Removed);
+
+public sealed record PluginBrowseResult(
+    string Alias,
+    PluginMarketplaceEntry Marketplace,
+    IReadOnlyList<PluginIndexEntry> Plugins);
 
 public sealed record PluginInstallResult(
     InstalledPluginEntry InstalledPlugin,
