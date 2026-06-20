@@ -50,6 +50,16 @@ export type SessionInfo = {
     totalEstimatedOutputTokens?: number;
 };
 
+export type SessionSummaryInfo = {
+    sessionId: string;
+    title: string;
+    updatedAtUtc?: string;
+    modelId?: string;
+    profileName?: string;
+    turnCount?: number;
+    parentSessionId?: string;
+};
+
 export type PromptState = {
     isRunning: boolean;
     isCancelling: boolean;
@@ -221,6 +231,37 @@ export class SessionManager extends EventEmitter {
             });
 
         await this.sessionPromise;
+    }
+
+    public async listSessions(): Promise<SessionSummaryInfo[]> {
+        const client = await this.getReadyClient();
+        const result = await client.sendRequest<{ sessions?: unknown[] }>('session/list', {});
+        const sessions = Array.isArray(result?.sessions) ? result.sessions : [];
+        return sessions
+            .map((entry) => this.readSessionSummary(entry))
+            .filter((summary): summary is SessionSummaryInfo => summary !== null);
+    }
+
+    private readSessionSummary(value: unknown): SessionSummaryInfo | null {
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+
+        const record = value as Record<string, unknown>;
+        const sessionId = this.optionalString(record.sessionId);
+        if (!sessionId) {
+            return null;
+        }
+
+        return {
+            sessionId,
+            title: this.optionalString(record.title) ?? 'Untitled session',
+            updatedAtUtc: this.optionalString(record.updatedAtUtc),
+            modelId: this.optionalString(record.modelId),
+            profileName: this.optionalString(record.profileName),
+            turnCount: this.optionalNonNegativeNumber(record.turnCount),
+            parentSessionId: this.optionalString(record.parentSessionId)
+        };
     }
 
     public async sendPrompt(text: string): Promise<SessionPromptResult> {
