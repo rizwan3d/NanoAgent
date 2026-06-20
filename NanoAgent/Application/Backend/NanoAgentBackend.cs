@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Sdk.Internal;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Telemetry;
@@ -64,6 +65,34 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             sessionMcpServers,
             autoApproveAllTools)
     {
+    }
+
+    // Pins the workspace root to an explicit directory instead of the process
+    // current directory, so concurrent sessions in different workspaces don't
+    // depend on (or clobber) global cwd. Mirrors NanoAgentClientBuilder.WithWorkspace.
+    public NanoAgentBackend(
+        string[] args,
+        IReadOnlyList<BackendMcpServerConfiguration>? sessionMcpServers,
+        bool autoApproveAllTools,
+        string? workspaceRoot)
+        : this(
+            BackendRuntimeArguments.Parse(args),
+            sessionMcpServers,
+            autoApproveAllTools,
+            CreateFixedWorkspaceRootConfiguration(workspaceRoot))
+    {
+    }
+
+    private static Action<IServiceCollection>? CreateFixedWorkspaceRootConfiguration(string? workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(workspaceRoot))
+        {
+            return null;
+        }
+
+        string root = workspaceRoot.Trim();
+        return services => services.AddSingleton<IWorkspaceRootProvider>(
+            new FixedWorkspaceRootProvider(root));
     }
 
     internal NanoAgentBackend(

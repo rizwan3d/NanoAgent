@@ -435,6 +435,56 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_OverlapPromptsAcrossSessions()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        ConcurrentPromptProbe probe = new();
+        List<ConcurrentPromptBackend> backends = [];
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}",
+            "{\"jsonrpc\":\"2.0\",\"id\":3,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}",
+            """
+            {"jsonrpc":"2.0","id":4,"method":"session/prompt","params":{"sessionId":"sess-1","prompt":[{"type":"text","text":"First"}]}}
+            """,
+            """
+            {"jsonrpc":"2.0","id":5,"method":"session/prompt","params":{"sessionId":"sess-2","prompt":[{"type":"text","text":"Second"}]}}
+            """);
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            _ =>
+            {
+                ConcurrentPromptBackend backend = new($"sess-{backends.Count + 1}", probe);
+                backends.Add(backend);
+                return backend;
+            });
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        FindResponse(messages, 4).GetProperty("result").GetProperty("stopReason").GetString().Should().Be("end_turn");
+        FindResponse(messages, 5).GetProperty("result").GetProperty("stopReason").GetString().Should().Be("end_turn");
+        probe.MaxConcurrentTurns.Should().BeGreaterThan(1);
+        backends[0].Inputs.Should().Equal("First");
+        backends[1].Inputs.Should().Equal("Second");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_HandleOnboardingPromptsBeforeSessionExists()
     {
         string cwd = Directory.GetCurrentDirectory();
@@ -937,6 +987,124 @@ public sealed class AcpServerTests
                     new BackendAgentProfileInfo("custom-review", "primary", "Workspace custom review profile")
                 ]
             };
+        }
+    }
+
+    private sealed class ConcurrentPromptBackend : INanoAgentBackend
+    {
+        private readonly ConcurrentPromptProbe _probe;
+        private readonly string _sessionId;
+
+        public ConcurrentPromptBackend(string sessionId, ConcurrentPromptProbe probe)
+        {
+            _sessionId = sessionId;
+            _probe = probe;
+        }
+
+        public List<string> Inputs { get; } = [];
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+
+        public Task<BackendSessionInfo> InitializeAsync(
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new BackendSessionInfo(
+                SessionId: _sessionId,
+                SectionResumeCommand: $"nanoai --session {_sessionId}",
+                ProviderName: "OpenAI",
+                ModelId: "gpt-test",
+                ActiveModelContextWindowTokens: null,
+                AvailableModelIds: ["gpt-test"],
+                ThinkingMode: "off",
+                ReasoningEffort: null,
+                ShowThinking: false,
+                AgentProfileName: "build",
+                SectionTitle: "Concurrent session",
+                IsResumedSection: false,
+                ConversationHistory: []));
+        }
+
+        public Task<BackendCommandResult> RunCommandAsync(
+            string commandText,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            return RunTurnAsync(input, [], uiBridge, cancellationToken);
+        }
+
+        public async Task<ConversationTurnResult> RunTurnAsync(
+            string input,
+            IReadOnlyList<ConversationAttachment> attachments,
+            IUiBridge uiBridge,
+            CancellationToken cancellationToken)
+        {
+            Inputs.Add(input);
+            await _probe.HoldTurnAsync(cancellationToken);
+            return ConversationTurnResult.AssistantMessage($"Done:{_sessionId}");
+        }
+
+        public Task<BackendCommandResult> SelectModelAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class ConcurrentPromptProbe
+    {
+        private readonly TaskCompletionSource _overlapObserved =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _activeTurns;
+        private int _maxConcurrentTurns;
+
+        public int MaxConcurrentTurns => Volatile.Read(ref _maxConcurrentTurns);
+
+        public async Task HoldTurnAsync(CancellationToken cancellationToken)
+        {
+            int activeTurns = Interlocked.Increment(ref _activeTurns);
+            UpdateMaxConcurrentTurns(activeTurns);
+            if (activeTurns > 1)
+            {
+                _overlapObserved.TrySetResult();
+            }
+
+            try
+            {
+                await Task.WhenAny(
+                    _overlapObserved.Task,
+                    Task.Delay(TimeSpan.FromMilliseconds(500), cancellationToken));
+            }
+            finally
+            {
+                Interlocked.Decrement(ref _activeTurns);
+            }
+        }
+
+        private void UpdateMaxConcurrentTurns(int activeTurns)
+        {
+            while (true)
+            {
+                int snapshot = Volatile.Read(ref _maxConcurrentTurns);
+                if (activeTurns <= snapshot)
+                {
+                    return;
+                }
+
+                if (Interlocked.CompareExchange(ref _maxConcurrentTurns, activeTurns, snapshot) == snapshot)
+                {
+                    return;
+                }
+            }
         }
     }
 
