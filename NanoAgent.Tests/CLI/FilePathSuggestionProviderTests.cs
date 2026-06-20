@@ -166,7 +166,27 @@ public sealed class FilePathSuggestionProviderTests : IDisposable
 
         suggestions.Select(suggestion => suggestion.DisplayPath)
             .Should()
-            .Equal("docs/", "README.md");
+            .Equal("./", "docs/", "README.md");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_SuggestCurrentDirectoryForShellDotToken()
+    {
+        WriteFile("README.md", "hello");
+        WriteFile("docs/guide.md", "hello");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!!ls .",
+            maxCount: 8);
+
+        suggestions.Select(suggestion => suggestion.DisplayPath)
+            .Should()
+            .Equal("./");
+
+        suggestions[0].CompletedInput.Should().Be("!!ls ./");
+        suggestions[0].Description.Should().Be("Current directory");
+        suggestions[0].IsDirectory.Should().BeTrue();
     }
 
     [Fact]
