@@ -15,7 +15,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     processManager = new NanoAgentProcessManager();
     sessionManager = new SessionManager(processManager, context.secrets);
-    const chatViewProvider = new ChatViewProvider(sessionManager);
+    const chatViewProvider = new ChatViewProvider(sessionManager, context.extensionUri);
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
