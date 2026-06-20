@@ -1027,6 +1027,7 @@ internal sealed class AcpServer : IAsyncDisposable
         writer.WriteNumber("totalEstimatedOutputTokens", sessionInfo.TotalEstimatedOutputTokens);
         writer.WriteNumber("sectionEstimatedContextTokens", sessionInfo.SectionEstimatedContextTokens);
         writer.WriteString("thinkingMode", sessionInfo.ThinkingMode);
+        writer.WriteString("reasoningEffort", sessionInfo.ReasoningEffort);
         writer.WriteString("agentProfileName", sessionInfo.AgentProfileName);
         writer.WritePropertyName("availableAgentProfiles");
         writer.WriteStartArray();
