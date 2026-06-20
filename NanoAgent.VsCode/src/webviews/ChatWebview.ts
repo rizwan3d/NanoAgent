@@ -30,7 +30,9 @@ type ChatMessage =
     | OpenFileMessage
     | SearchFilesMessage
     | ListSessionsMessage
-    | ResumeSessionMessage;
+    | ResumeSessionMessage
+    | LoadPluginsMessage
+    | PluginActionMessage;
 
 type SendMessage = {
     command: 'sendMessage';
@@ -95,6 +97,15 @@ type ResumeSessionMessage = {
     sessionId: string;
 };
 
+type LoadPluginsMessage = {
+    command: 'loadPlugins';
+};
+
+type PluginActionMessage = {
+    command: 'pluginAction';
+    text: string;
+};
+
 type ChatCommandSuggestion = {
     command: string;
     usage: string;
@@ -125,6 +136,7 @@ const CHAT_COMMANDS: ChatCommandSuggestion[] = [
     { command: '/new', usage: '/new', description: 'Start a new session.', insertText: '/new' },
     { command: '/onboard', usage: '/onboard', description: 'Re-run provider onboarding.', insertText: '/onboard' },
     { command: '/permissions', usage: '/permissions', description: 'Show permission policy and overrides.', insertText: '/permissions' },
+    { command: '/plugin', usage: '/plugin [marketplace add|install|list|uninstall]', description: 'Manage plugin marketplaces and installs.', insertText: '/plugin ' },
     { command: '/provider', usage: '/provider [list|<name>]', description: 'List or switch saved providers.', insertText: '/provider ' },
     { command: '/profile', usage: '/profile <name>', description: 'Switch the active agent profile.', insertText: '/profile ' },
     { command: '/read', usage: '/read <file>', description: 'Read a workspace file after confirmation.', insertText: '/read ' },
@@ -190,6 +202,10 @@ export class ChatWebviewController {
                     await this.handleListSessions();
                 } else if (message.command === 'resumeSession') {
                     await this.resumeChatSession(message.sessionId);
+                } else if (message.command === 'loadPlugins') {
+                    await this.postPluginState();
+                } else if (message.command === 'pluginAction') {
+                    await this.handlePluginAction(message.text);
                 } else if (message.command === 'ready') {
                     this.postInitialState();
                     await this.ensureSessionReady();
@@ -516,6 +532,57 @@ export class ChatWebviewController {
             const message = error instanceof Error ? error.message : 'Unable to list sessions.';
             LogService.getInstance().error('List sessions failed', error);
             this.postSystemMessage(`Error: ${message}`);
+        }
+    }
+
+    private async handlePluginAction(text: string) {
+        const trimmedText = text.trim();
+        if (!trimmedText.startsWith('/plugin')) {
+            return;
+        }
+
+        // ponytail: runs the same /plugin command the CLI uses, then re-reads state from disk.
+        await this.runSessionCommand(trimmedText, 'Plugin command failed');
+        await this.postPluginState();
+    }
+
+    private async postPluginState() {
+        const root = this.getOpenFileRoots()[0];
+        const marketplaces: unknown = await this.readPluginJson(root, 'marketplaces.json');
+        const installed: unknown = await this.readPluginJson(root, 'installed.json');
+
+        const marketplaceMap = (marketplaces as { marketplaces?: Record<string, { type?: string; repository?: string; ref?: string }> })?.marketplaces ?? {};
+        const installedMap = (installed as { plugins?: Record<string, { marketplaceAlias?: string; repository?: string; ref?: string; files?: string[] }> })?.plugins ?? {};
+
+        this.webview.postMessage({
+            command: 'pluginState',
+            marketplaces: Object.entries(marketplaceMap).map(([alias, entry]) => ({
+                alias,
+                type: entry?.type ?? 'github',
+                repository: entry?.repository ?? '',
+                ref: entry?.ref ?? 'main'
+            })),
+            installed: Object.entries(installedMap).map(([pluginId, entry]) => ({
+                pluginId,
+                marketplaceAlias: entry?.marketplaceAlias ?? '',
+                repository: entry?.repository ?? '',
+                ref: entry?.ref ?? 'main',
+                files: Array.isArray(entry?.files) ? entry.files : []
+            }))
+        });
+    }
+
+    private async readPluginJson(root: string | undefined, fileName: string): Promise<unknown> {
+        if (!root) {
+            return null;
+        }
+
+        try {
+            const uri = vscode.Uri.file(path.join(root, '.nanoagent', 'plugins', fileName));
+            const bytes = await vscode.workspace.fs.readFile(uri);
+            return JSON.parse(new TextDecoder().decode(bytes));
+        } catch {
+            return null; // missing or invalid file -> empty state
         }
     }
 
@@ -2009,6 +2076,43 @@ function getChatWebviewContent(nonce: string) {
             border-color: var(--focus);
         }
 
+        .plugin-panel {
+            display: grid;
+            gap: 14px;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+
+        .plugin-section {
+            display: grid;
+            gap: 6px;
+        }
+
+        .plugin-form {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 6px;
+            align-items: center;
+        }
+
+        .plugin-row {
+            display: flex;
+            gap: 8px;
+            align-items: stretch;
+        }
+
+        .plugin-row .modal-option {
+            flex: 1 1 auto;
+        }
+
+        .plugin-check {
+            display: flex;
+            gap: 6px;
+            align-items: center;
+            color: var(--muted);
+            font-size: 11px;
+        }
+
         .modal-actions {
             display: flex;
             justify-content: flex-end;
@@ -2171,6 +2275,13 @@ function getChatWebviewContent(nonce: string) {
                                     <span class="settings-action-description">List running terminals and stop them with /terminals stop.</span>
                                 </span>
                                 <span class="settings-action-value">view</span>
+                            </button>
+                            <button class="settings-action" data-action="plugins">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Plugins</span>
+                                    <span class="settings-action-description">Browse marketplaces and install or remove plugins.</span>
+                                </span>
+                                <span class="settings-action-value">manage</span>
                             </button>
                         </section>
                         <section class="settings-group">
@@ -2632,6 +2743,8 @@ function getChatWebviewContent(nonce: string) {
                 showSettingsPage();
             } else if (message.command === 'sessionList') {
                 showSessionBrowser(message.sessions || [], message.currentSessionId || '');
+            } else if (message.command === 'pluginState') {
+                showPluginPanel(message.marketplaces || [], message.installed || []);
             } else if (message.command === 'fileMentions') {
                 if (message.query === fileMentionQuery) {
                     fileMentionResults = Array.isArray(message.files) ? message.files : [];
@@ -2677,6 +2790,11 @@ function getChatWebviewContent(nonce: string) {
 
             if (action === 'sessions') {
                 post({ command: 'listSessions' });
+                return;
+            }
+
+            if (action === 'plugins') {
+                post({ command: 'loadPlugins' });
                 return;
             }
 
@@ -3433,6 +3551,218 @@ function getChatWebviewContent(nonce: string) {
 
             modalActions.appendChild(fork);
             modalActions.appendChild(exportButton);
+            modalActions.appendChild(close);
+            modalBackdrop.classList.remove('hidden');
+        }
+
+        function showPluginPanel(marketplaces, installed) {
+            if (activeModalRequest) {
+                return;
+            }
+
+            const busy = promptState.isRunning === true;
+
+            modalTitle.textContent = 'Plugins';
+            modalDescription.hidden = false;
+            modalDescription.textContent =
+                marketplaces.length + (marketplaces.length === 1 ? ' marketplace · ' : ' marketplaces · ') +
+                installed.length + (installed.length === 1 ? ' installed' : ' installed');
+            modalBody.textContent = '';
+            modalActions.textContent = '';
+
+            const panel = document.createElement('div');
+            panel.className = 'plugin-panel';
+            modalBody.appendChild(panel);
+
+            function runPlugin(text) {
+                if (promptState.isRunning === true) {
+                    return;
+                }
+                post({ command: 'pluginAction', text: text });
+            }
+
+            function sectionLabel(text) {
+                const label = document.createElement('div');
+                label.className = 'context-label';
+                label.textContent = text;
+                return label;
+            }
+
+            function infoOption(name, metaText) {
+                const info = document.createElement('div');
+                info.className = 'modal-option';
+                const strong = document.createElement('strong');
+                strong.textContent = name;
+                info.appendChild(strong);
+                const meta = document.createElement('span');
+                meta.textContent = metaText;
+                info.appendChild(meta);
+                return info;
+            }
+
+            // Installed plugins (with uninstall buttons)
+            const installedSection = document.createElement('div');
+            installedSection.className = 'plugin-section';
+            installedSection.appendChild(sectionLabel('Installed plugins'));
+            if (installed.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-panel';
+                empty.textContent = 'No plugins installed yet.';
+                installedSection.appendChild(empty);
+            } else {
+                installed.forEach(plugin => {
+                    const row = document.createElement('div');
+                    row.className = 'plugin-row';
+
+                    const parts = [];
+                    if (plugin.repository) {
+                        parts.push(plugin.repository + '@' + plugin.ref);
+                    }
+                    if (plugin.marketplaceAlias) {
+                        parts.push('via ' + plugin.marketplaceAlias);
+                    }
+                    const fileCount = Array.isArray(plugin.files) ? plugin.files.length : 0;
+                    parts.push(fileCount + (fileCount === 1 ? ' file' : ' files'));
+                    row.appendChild(infoOption(plugin.pluginId, parts.join(' · ')));
+
+                    const uninstall = document.createElement('button');
+                    uninstall.className = 'danger-button';
+                    uninstall.textContent = 'Uninstall';
+                    uninstall.disabled = busy;
+                    uninstall.addEventListener('click', () => runPlugin('/plugin uninstall ' + plugin.pluginId));
+                    row.appendChild(uninstall);
+
+                    installedSection.appendChild(row);
+                });
+            }
+            panel.appendChild(installedSection);
+
+            // Install a plugin (id + marketplace + force + button)
+            const installSection = document.createElement('div');
+            installSection.className = 'plugin-section';
+            installSection.appendChild(sectionLabel('Install a plugin'));
+            if (marketplaces.length === 0) {
+                const note = document.createElement('div');
+                note.className = 'empty-panel';
+                note.textContent = 'Add a marketplace below before installing.';
+                installSection.appendChild(note);
+            } else {
+                const idInput = document.createElement('input');
+                idInput.className = 'modal-input';
+                idInput.placeholder = 'plugin-id';
+                idInput.disabled = busy;
+                installSection.appendChild(idInput);
+
+                const select = document.createElement('select');
+                select.className = 'modal-input';
+                select.disabled = busy;
+                marketplaces.forEach(market => {
+                    const option = document.createElement('option');
+                    option.value = market.alias;
+                    option.textContent = market.alias + ' (' + market.repository + ')';
+                    select.appendChild(option);
+                });
+                installSection.appendChild(select);
+
+                const forceLabel = document.createElement('label');
+                forceLabel.className = 'plugin-check';
+                const force = document.createElement('input');
+                force.type = 'checkbox';
+                force.disabled = busy;
+                forceLabel.appendChild(force);
+                forceLabel.appendChild(document.createTextNode(' Overwrite existing files (--force)'));
+                installSection.appendChild(forceLabel);
+
+                const installButton = document.createElement('button');
+                installButton.className = 'primary-button';
+                installButton.textContent = 'Install';
+                installButton.disabled = busy;
+                installButton.addEventListener('click', () => {
+                    const id = idInput.value.trim();
+                    if (!id) {
+                        idInput.focus();
+                        return;
+                    }
+                    runPlugin('/plugin install ' + id + '@' + select.value + (force.checked ? ' --force' : ''));
+                });
+                installSection.appendChild(installButton);
+            }
+            panel.appendChild(installSection);
+
+            // Marketplaces (list + add form)
+            const marketSection = document.createElement('div');
+            marketSection.className = 'plugin-section';
+            marketSection.appendChild(sectionLabel('Marketplaces'));
+            if (marketplaces.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-panel';
+                empty.textContent = 'No marketplaces configured.';
+                marketSection.appendChild(empty);
+            } else {
+                marketplaces.forEach(market => {
+                    const row = document.createElement('div');
+                    row.className = 'plugin-row';
+                    row.appendChild(infoOption(market.alias, market.repository + '@' + market.ref));
+
+                    const browse = document.createElement('button');
+                    browse.className = 'ghost-button';
+                    browse.textContent = 'Browse';
+                    browse.disabled = busy;
+                    browse.title = 'List plugins this marketplace offers (output in chat)';
+                    browse.addEventListener('click', () => {
+                        if (promptState.isRunning === true) {
+                            return;
+                        }
+                        post({ command: 'runSessionCommand', text: '/plugin browse ' + market.alias });
+                        closeModal();
+                    });
+                    row.appendChild(browse);
+
+                    const remove = document.createElement('button');
+                    remove.className = 'danger-button';
+                    remove.textContent = 'Remove';
+                    remove.disabled = busy;
+                    remove.addEventListener('click', () => runPlugin('/plugin marketplace remove ' + market.alias));
+                    row.appendChild(remove);
+
+                    marketSection.appendChild(row);
+                });
+            }
+
+            const addForm = document.createElement('div');
+            addForm.className = 'plugin-form';
+            const repoInput = document.createElement('input');
+            repoInput.className = 'modal-input';
+            repoInput.placeholder = 'owner/repo';
+            repoInput.disabled = busy;
+            addForm.appendChild(repoInput);
+            const addButton = document.createElement('button');
+            addButton.className = 'ghost-button';
+            addButton.textContent = 'Add';
+            addButton.disabled = busy;
+            addButton.addEventListener('click', () => {
+                const repo = repoInput.value.trim();
+                if (!repo) {
+                    repoInput.focus();
+                    return;
+                }
+                runPlugin('/plugin marketplace add ' + repo);
+            });
+            addForm.appendChild(addButton);
+            marketSection.appendChild(addForm);
+            panel.appendChild(marketSection);
+
+            const refresh = document.createElement('button');
+            refresh.className = 'ghost-button';
+            refresh.textContent = 'Refresh';
+            refresh.addEventListener('click', () => post({ command: 'loadPlugins' }));
+
+            const close = document.createElement('button');
+            close.className = 'ghost-button';
+            close.textContent = 'Close';
+            close.addEventListener('click', closeModal);
+
+            modalActions.appendChild(refresh);
             modalActions.appendChild(close);
             modalBackdrop.classList.remove('hidden');
         }
