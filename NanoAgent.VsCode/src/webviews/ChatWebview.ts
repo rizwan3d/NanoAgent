@@ -2636,6 +2636,9 @@ function getChatWebviewContent(nonce: string) {
                 const option = document.createElement('option');
                 option.value = profile.name;
                 option.textContent = profile.mode ? profile.name + ' (' + profile.mode + ')' : profile.name;
+                if (profile.description) {
+                    option.title = profile.description;
+                }
                 option.selected = profile.name.toLowerCase() === profileName.toLowerCase();
                 profileSelect.appendChild(option);
             });
@@ -2649,7 +2652,11 @@ function getChatWebviewContent(nonce: string) {
             }
 
             profileSelect.value = profileName;
-            profileSelect.title = 'Profile: ' + profileName;
+            const activeProfile = renderedProfiles.find(profile =>
+                profile.name.toLowerCase() === profileName.toLowerCase());
+            profileSelect.title = activeProfile && activeProfile.description
+                ? profileName + ' — ' + activeProfile.description
+                : 'Profile: ' + profileName;
         }
 
         function renderModelSelect(models) {
