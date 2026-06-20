@@ -11,6 +11,7 @@ import {
     SessionInfo,
     SessionManager,
     SessionMessageChunk,
+    SessionSummaryInfo,
     ToolCallUpdate,
     TurnMetrics
 } from '../services/SessionManager';
@@ -27,7 +28,9 @@ type ChatMessage =
     | ResolveClientRequestMessage
     | CancelPromptMessage
     | OpenFileMessage
-    | SearchFilesMessage;
+    | SearchFilesMessage
+    | ListSessionsMessage
+    | ResumeSessionMessage;
 
 type SendMessage = {
     command: 'sendMessage';
@@ -81,6 +84,15 @@ type OpenFileMessage = {
 type SearchFilesMessage = {
     command: 'searchFiles';
     query: string;
+};
+
+type ListSessionsMessage = {
+    command: 'listSessions';
+};
+
+type ResumeSessionMessage = {
+    command: 'resumeSession';
+    sessionId: string;
 };
 
 type ChatCommandSuggestion = {
@@ -174,6 +186,10 @@ export class ChatWebviewController {
                     await this.openFileFromChat(message.filePath, message.line, message.column);
                 } else if (message.command === 'searchFiles') {
                     await this.searchFileMentions(message.query);
+                } else if (message.command === 'listSessions') {
+                    await this.handleListSessions();
+                } else if (message.command === 'resumeSession') {
+                    await this.resumeChatSession(message.sessionId);
                 } else if (message.command === 'ready') {
                     this.postInitialState();
                     await this.ensureSessionReady();
@@ -485,6 +501,21 @@ export class ChatWebviewController {
         } catch (error) {
             LogService.getInstance().error('File mention search failed', error);
             this.webview.postMessage({ command: 'fileMentions', query, files: [] });
+        }
+    }
+
+    private async handleListSessions() {
+        try {
+            const sessions: SessionSummaryInfo[] = await this.sessionManager.listSessions();
+            this.webview.postMessage({
+                command: 'sessionList',
+                sessions,
+                currentSessionId: this.currentSessionInfo?.sessionId ?? this.sessionManager.getSessionInfo()?.sessionId ?? ''
+            });
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unable to list sessions.';
+            LogService.getInstance().error('List sessions failed', error);
+            this.postSystemMessage(`Error: ${message}`);
         }
     }
 
@@ -1993,6 +2024,13 @@ function getChatWebviewContent(nonce: string) {
                                 </span>
                                 <span class="settings-action-value">open</span>
                             </button>
+                            <button class="settings-action" data-action="sessions">
+                                <span class="settings-action-main">
+                                    <span class="settings-action-title">Sessions</span>
+                                    <span class="settings-action-description">Browse, resume, fork, or export saved sessions.</span>
+                                </span>
+                                <span class="settings-action-value">browse</span>
+                            </button>
                         </section>
                         <section class="settings-group">
                             <h2>Provider</h2>
@@ -2510,6 +2548,8 @@ function getChatWebviewContent(nonce: string) {
                 updateComposerState();
             } else if (message.command === 'showSettings') {
                 showSettingsPage();
+            } else if (message.command === 'sessionList') {
+                showSessionBrowser(message.sessions || [], message.currentSessionId || '');
             } else if (message.command === 'fileMentions') {
                 if (message.query === fileMentionQuery) {
                     fileMentionResults = Array.isArray(message.files) ? message.files : [];
@@ -2550,6 +2590,11 @@ function getChatWebviewContent(nonce: string) {
 
             if (action === 'vscodeSettings') {
                 post({ command: 'openVsCodeSettings' });
+                return;
+            }
+
+            if (action === 'sessions') {
+                post({ command: 'listSessions' });
                 return;
             }
 
@@ -3218,6 +3263,129 @@ function getChatWebviewContent(nonce: string) {
             close.addEventListener('click', closeModal);
             modalActions.appendChild(close);
             modalBackdrop.classList.remove('hidden');
+        }
+
+        function showSessionBrowser(sessions, currentSessionId) {
+            if (activeModalRequest) {
+                return;
+            }
+
+            modalTitle.textContent = 'Sessions';
+            modalDescription.textContent = sessions.length === 1 ? '1 saved session' : sessions.length + ' saved sessions';
+            modalDescription.hidden = false;
+            modalBody.textContent = '';
+            modalActions.textContent = '';
+
+            const options = document.createElement('div');
+            options.className = 'modal-options';
+            modalBody.appendChild(options);
+
+            if (sessions.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'empty-panel';
+                empty.textContent = 'No saved sessions yet.';
+                options.appendChild(empty);
+            }
+
+            sessions.forEach(session => {
+                const button = document.createElement('button');
+                button.className = 'modal-option' + (session.sessionId === currentSessionId ? ' active' : '');
+                button.addEventListener('click', () => {
+                    if (session.sessionId !== currentSessionId) {
+                        post({ command: 'resumeSession', sessionId: session.sessionId });
+                    }
+                    closeModal();
+                });
+
+                const name = document.createElement('strong');
+                name.textContent = session.title || 'Untitled session';
+                button.appendChild(name);
+
+                const metaParts = [];
+                if (session.modelId) {
+                    metaParts.push(session.modelId);
+                }
+                if (typeof session.turnCount === 'number') {
+                    metaParts.push(session.turnCount + (session.turnCount === 1 ? ' turn' : ' turns'));
+                }
+                if (session.parentSessionId) {
+                    metaParts.push('fork');
+                }
+                const when = formatRelativeTime(session.updatedAtUtc);
+                if (when) {
+                    metaParts.push(when);
+                }
+                if (session.sessionId === currentSessionId) {
+                    metaParts.push('current');
+                }
+
+                const meta = document.createElement('span');
+                meta.textContent = metaParts.join(' · ');
+                button.appendChild(meta);
+
+                options.appendChild(button);
+            });
+
+            const fork = document.createElement('button');
+            fork.className = 'ghost-button';
+            fork.textContent = 'Fork current';
+            fork.title = 'Fork the active session';
+            fork.addEventListener('click', () => {
+                post({ command: 'runSessionCommand', text: '/fork' });
+                closeModal();
+            });
+
+            const exportButton = document.createElement('button');
+            exportButton.className = 'ghost-button';
+            exportButton.textContent = 'Export current';
+            exportButton.title = 'Export the active session to JSON';
+            exportButton.addEventListener('click', () => {
+                post({ command: 'runSessionCommand', text: '/export json' });
+                closeModal();
+            });
+
+            const close = document.createElement('button');
+            close.className = 'ghost-button';
+            close.textContent = 'Close';
+            close.addEventListener('click', closeModal);
+
+            modalActions.appendChild(fork);
+            modalActions.appendChild(exportButton);
+            modalActions.appendChild(close);
+            modalBackdrop.classList.remove('hidden');
+        }
+
+        function formatRelativeTime(iso) {
+            if (!iso) {
+                return '';
+            }
+
+            const then = Date.parse(iso);
+            if (!Number.isFinite(then)) {
+                return '';
+            }
+
+            const diff = Date.now() - then;
+            if (diff < 0) {
+                return '';
+            }
+
+            const minutes = Math.floor(diff / 60000);
+            if (minutes < 1) {
+                return 'just now';
+            }
+            if (minutes < 60) {
+                return minutes + 'm ago';
+            }
+            const hours = Math.floor(minutes / 60);
+            if (hours < 24) {
+                return hours + 'h ago';
+            }
+            const days = Math.floor(hours / 24);
+            if (days < 30) {
+                return days + 'd ago';
+            }
+            return Math.floor(days / 30) + 'mo ago';
         }
 
         function getAvailableModelIds() {
