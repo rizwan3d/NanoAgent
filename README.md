@@ -307,7 +307,7 @@ Never collected:
 
 ## Documentation
 
-The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, LSP-powered code intelligence, codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
+The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, LSP-powered code intelligence, graph-aware local codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
 
 ## Contributing
 
