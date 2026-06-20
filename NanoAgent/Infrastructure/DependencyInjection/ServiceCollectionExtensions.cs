@@ -18,6 +18,7 @@ using NanoAgent.Infrastructure.Mcp;
 using NanoAgent.Infrastructure.Models;
 using NanoAgent.Infrastructure.NanoAgentEnterprise;
 using NanoAgent.Infrastructure.OpenAi;
+using NanoAgent.Infrastructure.Plugins;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
 using NanoAgent.Infrastructure.Telemetry;
@@ -94,6 +95,13 @@ public static class ServiceCollectionExtensions
                 TimeSpan.FromSeconds(20));
         });
         services.AddHttpClient<IBudgetControlsUsageService, BudgetControlsUsageService>((serviceProvider, client) =>
+        {
+            ConfigureHttpClient(
+                client,
+                serviceProvider.GetRequiredService<ToolExecutionSettings>(),
+                TimeSpan.FromSeconds(20));
+        });
+        services.AddHttpClient<IPluginService, PluginService>((serviceProvider, client) =>
         {
             ConfigureHttpClient(
                 client,
