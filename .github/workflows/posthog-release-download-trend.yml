@@ -1,10 +1,14 @@
-name: PostHog GitHub release and NuGet install trend
+name: PostHog GitHub release, NuGet and VS Code Marketplace install trend
 
 on:
   workflow_dispatch:
     inputs:
       nuget_package_ids:
         description: 'Comma/newline-separated NuGet package IDs to track. Leave blank to use vars.NUGET_PACKAGE_IDS.'
+        required: false
+        type: string
+      vscode_extension_ids:
+        description: 'Comma/newline-separated VS Code Marketplace extension IDs (publisher.name) to track. Leave blank to use vars.VSCODE_EXTENSION_IDS.'
         required: false
         type: string
   schedule:
@@ -22,6 +26,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPOSITORY: ${{ github.repository }}
       NUGET_PACKAGE_IDS: ${{ github.event.inputs.nuget_package_ids || vars.NUGET_PACKAGE_IDS || '' }}
+      VSCODE_EXTENSION_IDS: ${{ github.event.inputs.vscode_extension_ids || vars.VSCODE_EXTENSION_IDS || 'rizwan3d.nanoagent,rizwan3d.nanoagent-vs' }}
     steps:
       - name: Send GitHub release download snapshots to PostHog
         shell: bash
@@ -291,4 +296,152 @@ jobs:
           }, `nuget-packages:${REPOSITORY}`)
 
           console.log(`Sent NuGet snapshots for ${trackedPackages} packages, ${totalVersionEvents} versions, ${totalDownloads} total downloads to PostHog.`)
+          NODE
+
+      - name: Send VS Code Marketplace extension install snapshots to PostHog
+        if: ${{ env.VSCODE_EXTENSION_IDS != '' }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { POSTHOG_PROJECT_API_KEY, POSTHOG_HOST, REPOSITORY, VSCODE_EXTENSION_IDS } = process.env
+
+          if (!POSTHOG_PROJECT_API_KEY) {
+            throw new Error('Missing required secret: POSTHOG_PROJECT_API_KEY')
+          }
+
+          // Same identity shape as the GitHub release and NuGet steps so every
+          // event this workflow emits stays uniform (same $lib/CI fields).
+          const commonProperties = {
+            '$lib': 'nanoagent-release-trend',
+            source: 'github-actions',
+            app_surface: 'github_actions',
+            execution_environment: 'ci',
+            is_ci: true,
+            ci_provider: 'github_actions',
+          }
+
+          const extensionIds = (VSCODE_EXTENSION_IDS || '')
+            .split(/[\n,]/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+
+          if (extensionIds.length === 0) {
+            console.log('No VS Code extension IDs configured; skipping Marketplace trend capture.')
+            process.exit(0)
+          }
+
+          async function posthogCapture(event, properties, distinctId) {
+            const endpoint = `${POSTHOG_HOST.replace(/\/$/, '')}/i/v0/e/`
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                api_key: POSTHOG_PROJECT_API_KEY,
+                event,
+                distinct_id: distinctId,
+                properties: {
+                  ...commonProperties,
+                  ...properties,
+                  '$process_person_profile': false,
+                },
+              }),
+            })
+            if (!res.ok) {
+              throw new Error(`PostHog capture failed ${res.status}: ${await res.text()}`)
+            }
+          }
+
+          // flags=914 asks the gallery for statistics + version metadata in one call.
+          async function queryExtension(extensionId) {
+            const res = await fetch('https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery', {
+              method: 'POST',
+              headers: {
+                Accept: 'application/json;api-version=3.0-preview.1',
+                'Content-Type': 'application/json',
+                'User-Agent': 'posthog-release-and-nuget-trend',
+              },
+              body: JSON.stringify({
+                filters: [{
+                  criteria: [{ filterType: 7, value: extensionId }],
+                  pageNumber: 1,
+                  pageSize: 1,
+                }],
+                flags: 914,
+              }),
+            })
+            if (!res.ok) {
+              throw new Error(`VS Code Marketplace query failed ${res.status} for ${extensionId}: ${await res.text()}`)
+            }
+            const data = await res.json()
+            const extensions = (data.results && data.results[0] && data.results[0].extensions) || []
+            return extensions[0] || null
+          }
+
+          const collectedAt = new Date().toISOString()
+
+          let trackedExtensions = 0
+          let totalInstalls = 0
+
+          for (const configuredExtensionId of extensionIds) {
+            const extension = await queryExtension(configuredExtensionId)
+
+            if (!extension) {
+              await posthogCapture('nanoagent vscode extension lookup failed', {
+                repository: REPOSITORY,
+                extension_id: configuredExtensionId,
+                collected_at: collectedAt,
+                snapshot_type: 'lookup_failed',
+              }, `vscode-extension:${configuredExtensionId.toLowerCase()}`)
+              console.warn(`VS Code extension was not found: ${configuredExtensionId}`)
+              continue
+            }
+
+            const publisherName = extension.publisher && extension.publisher.publisherName
+            const fullExtensionId = `${publisherName}.${extension.extensionName}`
+            const statistics = Array.isArray(extension.statistics) ? extension.statistics : []
+            const statMap = {}
+            for (const stat of statistics) {
+              statMap[stat.statisticName] = stat.value
+            }
+            const installCount = Number(statMap.install || 0)
+            const versions = Array.isArray(extension.versions) ? extension.versions : []
+            const latestVersion = versions.length ? versions[0].version : null
+
+            trackedExtensions += 1
+            totalInstalls += installCount
+
+            await posthogCapture('nanoagent vscode extension install snapshot', {
+              repository: REPOSITORY,
+              extension_id: fullExtensionId,
+              extension_name: extension.extensionName,
+              extension_display_name: extension.displayName,
+              extension_short_description: extension.shortDescription || null,
+              publisher_name: publisherName,
+              publisher_display_name: extension.publisher && extension.publisher.displayName,
+              published_date: extension.publishedDate,
+              last_updated: extension.lastUpdated,
+              latest_version: latestVersion,
+              install_count: installCount,
+              average_rating: Number(statMap.averagerating || 0),
+              weighted_rating: Number(statMap.weightedRating || 0),
+              rating_count: Number(statMap.ratingcount || 0),
+              update_count: Number(statMap.updateCount || 0),
+              trending_daily: Number(statMap.trendingdaily || 0),
+              trending_weekly: Number(statMap.trendingweekly || 0),
+              trending_monthly: Number(statMap.trendingmonthly || 0),
+              collected_at: collectedAt,
+              snapshot_type: 'extension_total',
+            }, `vscode-extension:${fullExtensionId.toLowerCase()}`)
+          }
+
+          await posthogCapture('nanoagent vscode tracked extensions install snapshot', {
+            repository: REPOSITORY,
+            extension_ids: extensionIds,
+            tracked_extension_count: trackedExtensions,
+            extension_total_installs: totalInstalls,
+            collected_at: collectedAt,
+            snapshot_type: 'tracked_extensions_total',
+          }, `vscode-extensions:${REPOSITORY}`)
+
+          console.log(`Sent VS Code Marketplace snapshots for ${trackedExtensions} extensions, ${totalInstalls} total installs to PostHog.`)
           NODE
