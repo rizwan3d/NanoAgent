@@ -32,7 +32,8 @@ type ChatMessage =
     | ListSessionsMessage
     | ResumeSessionMessage
     | LoadPluginsMessage
-    | PluginActionMessage;
+    | PluginActionMessage
+    | WebviewLogMessage;
 
 type SendMessage = {
     command: 'sendMessage';
@@ -106,6 +107,13 @@ type PluginActionMessage = {
     text: string;
 };
 
+type WebviewLogMessage = {
+    command: 'webviewLog';
+    level?: string;
+    message: string;
+    details?: string;
+};
+
 type ChatCommandSuggestion = {
     command: string;
     usage: string;
@@ -162,6 +170,9 @@ export class ChatWebviewController {
     private currentPlan: PlanUpdate | null = null;
     private currentSessionInfo: SessionInfo | null;
     private localRequestCounter = 0;
+    private bootstrapTimer: NodeJS.Timeout | null = null;
+    private webviewReady = false;
+    private bootstrapAttempt = 0;
 
     constructor(
         private readonly webview: vscode.Webview,
@@ -171,13 +182,13 @@ export class ChatWebviewController {
         this.webview.options = {
             enableScripts: true
         };
+        LogService.getInstance().info('Chat webview controller created');
 
-        const nonce = getNonce();
-        this.webview.html = getChatWebviewContent(nonce);
         this.registerSessionListeners();
 
         this.disposables.push(
             this.webview.onDidReceiveMessage(async (message: ChatMessage) => {
+                LogService.getInstance().info(`Chat webview message received: ${message.command}`);
                 if (message.command === 'sendMessage') {
                     await this.handleUserMessage(message.text);
                 } else if (message.command === 'runSessionCommand') {
@@ -206,15 +217,36 @@ export class ChatWebviewController {
                     await this.postPluginState();
                 } else if (message.command === 'pluginAction') {
                     await this.handlePluginAction(message.text);
+                } else if (message.command === 'webviewLog') {
+                    const details = typeof message.details === 'string' ? message.details : undefined;
+                    const formatted = details ? `${message.message}\n${details}` : message.message;
+                    if (message.level === 'error') {
+                        LogService.getInstance().error(`Chat webview: ${formatted}`);
+                    } else if (message.level === 'warn') {
+                        LogService.getInstance().warn(`Chat webview: ${formatted}`);
+                    } else {
+                        LogService.getInstance().info(`Chat webview: ${formatted}`);
+                    }
                 } else if (message.command === 'ready') {
-                    this.postInitialState();
+                    this.webviewReady = true;
+                    LogService.getInstance().info('Chat webview reported ready');
+                    await this.postInitialState();
                     await this.ensureSessionReady();
                 }
             })
         );
+
+        const nonce = getNonce();
+        this.webview.html = getChatWebviewContent(nonce);
+        this.scheduleBootstrap();
     }
 
     public dispose() {
+        if (this.bootstrapTimer) {
+            clearTimeout(this.bootstrapTimer);
+            this.bootstrapTimer = null;
+        }
+
         for (const resolve of this.localRequestResolvers.values()) {
             resolve({ outcome: 'cancelled' });
         }
@@ -296,20 +328,57 @@ export class ChatWebviewController {
     }
 
     private postInitialState() {
-        this.postProcessStatus(this.sessionManager.getProcessStatus());
-        this.postPromptState(this.sessionManager.getPromptState());
-        this.postSessionInfo(this.currentSessionInfo);
+        LogService.getInstance().debug('Posting initial state to chat webview', {
+            processStatus: this.sessionManager.getProcessStatus(),
+            hasSessionInfo: this.currentSessionInfo !== null,
+            pendingClientRequestCount: this.sessionManager.getPendingClientRequests().length
+        });
+        void this.postProcessStatus(this.sessionManager.getProcessStatus());
+        void this.postPromptState(this.sessionManager.getPromptState());
+        void this.postSessionInfo(this.currentSessionInfo);
 
         if (this.currentPlan) {
-            this.webview.postMessage({ command: 'setPlan', plan: this.currentPlan });
+            void this.postToWebview({ command: 'setPlan', plan: this.currentPlan }, 'plan');
         }
 
         for (const toolCall of this.toolCalls.values()) {
-            this.webview.postMessage({ command: 'setToolCall', toolCall });
+            void this.postToWebview({ command: 'setToolCall', toolCall }, `tool call '${toolCall.toolCallId}'`);
         }
 
         for (const request of this.sessionManager.getPendingClientRequests()) {
             this.postClientRequest(request);
+        }
+    }
+
+    private scheduleBootstrap() {
+        if (this.bootstrapTimer) {
+            clearTimeout(this.bootstrapTimer);
+        }
+
+        this.bootstrapTimer = setTimeout(() => {
+            this.bootstrapTimer = null;
+            void this.bootstrapWebview();
+        }, 150);
+    }
+
+    private async bootstrapWebview() {
+        try {
+            this.bootstrapAttempt += 1;
+            LogService.getInstance().info(`Bootstrapping chat webview (attempt ${this.bootstrapAttempt})`);
+            this.postInitialState();
+            await this.ensureSessionReady();
+            this.postInitialState();
+
+            if (!this.webviewReady && this.bootstrapAttempt < 5) {
+                this.bootstrapTimer = setTimeout(() => {
+                    this.bootstrapTimer = null;
+                    void this.bootstrapWebview();
+                }, this.bootstrapAttempt * 500);
+            }
+        } catch (error) {
+            const message = error instanceof Error ? error.message : 'Unable to initialize NanoAgent session.';
+            LogService.getInstance().error('Deferred chat webview bootstrap failed', error);
+            this.postSystemMessage(`Error: ${message}`);
         }
     }
 
@@ -388,7 +457,7 @@ export class ChatWebviewController {
             return;
         }
 
-        this.postChatMessage(parts.join(' · '), 'metrics');
+        this.postChatMessage(parts.join(' / '), 'metrics');
     }
 
     private async handleModelSelection() {
@@ -499,7 +568,7 @@ export class ChatWebviewController {
         }
 
         try {
-            // ponytail: re-scans (capped) per query. Cache the file list if it lags on huge repos.
+            //  re-scans (capped) per query. Cache the file list if it lags on huge repos.
             const files = await vscode.workspace.findFiles(
                 new vscode.RelativePattern(workspaceFolder, '**/*'),
                 '{**/.git/**,**/node_modules/**,**/bin/**,**/obj/**,**/dist/**,**/out/**}',
@@ -541,7 +610,7 @@ export class ChatWebviewController {
             return;
         }
 
-        // ponytail: runs the same /plugin command the CLI uses, then re-reads state from disk.
+        //  runs the same /plugin command the CLI uses, then re-reads state from disk.
         await this.runSessionCommand(trimmedText, 'Plugin command failed');
         await this.postPluginState();
     }
@@ -844,34 +913,43 @@ export class ChatWebviewController {
     }
 
     private postClientRequest(request: ClientRequest) {
-        this.webview.postMessage({ command: 'showClientRequest', request });
+        void this.postToWebview({ command: 'showClientRequest', request }, 'client request');
     }
 
-    private postProcessStatus(status: NanoAgentProcessStatus) {
-        this.webview.postMessage({ command: 'setProcessStatus', status });
+    private async postProcessStatus(status: NanoAgentProcessStatus) {
+        await this.postToWebview({ command: 'setProcessStatus', status }, `process status '${status}'`);
     }
 
-    private postPromptState(promptState: PromptState) {
-        this.webview.postMessage({ command: 'setPromptState', promptState });
+    private async postPromptState(promptState: PromptState) {
+        await this.postToWebview({ command: 'setPromptState', promptState }, 'prompt state');
     }
 
     private postChatMessage(
         text: string,
         role: 'assistant' | 'system' | 'user' | 'metrics'
     ) {
-        this.webview.postMessage({ command: 'appendMessage', text, role });
+        void this.postToWebview({ command: 'appendMessage', text, role }, `chat message '${role}'`);
     }
 
     private postSystemMessage(text: string) {
         this.postChatMessage(text, 'system');
     }
 
-    private postSessionInfo(sessionInfo: SessionInfo | null) {
-        this.webview.postMessage({
+    private async postSessionInfo(sessionInfo: SessionInfo | null) {
+        await this.postToWebview({
             command: 'setSessionInfo',
             sessionInfo,
             workingDirectory: this.sessionManager.getWorkingDirectory()
-        });
+        }, 'session info');
+    }
+
+    private async postToWebview(message: unknown, purpose: string): Promise<void> {
+        try {
+            const delivered = await this.webview.postMessage(message);
+            LogService.getInstance().info(`Posted ${purpose} to chat webview`, { delivered });
+        } catch (error) {
+            LogService.getInstance().error(`Failed to post ${purpose} to chat webview`, error);
+        }
     }
 }
 
@@ -2315,7 +2393,7 @@ function getChatWebviewContent(nonce: string) {
                 <div class="composer">
                     <div id="suggestions" class="suggestions hidden"></div>
                     <div class="composer-row">
-                        <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask anything · / for commands · @ for files"></textarea>
+                        <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask anything / for commands / @ for files"></textarea>
                         <div class="composer-toolbar">
                             <div class="toolbar-left">
                                 <button id="add-context-button" class="icon-button" title="Read workspace file" aria-label="Read workspace file">+</button>
@@ -2349,7 +2427,51 @@ function getChatWebviewContent(nonce: string) {
     </div>
 
     <script nonce="${nonce}">
-        const api = acquireVsCodeApi();
+        (function () {
+            try {
+                const api = acquireVsCodeApi();
+                window.__nanoAgentVsCodeApi = api;
+                const status = document.getElementById('status-text');
+                if (status) {
+                    status.textContent = 'Loading';
+                }
+
+                api.postMessage({ command: 'webviewLog', level: 'info', message: 'Prelude script started' });
+
+                window.addEventListener('error', event => {
+                    api.postMessage({
+                        command: 'webviewLog',
+                        level: 'error',
+                        message: 'Window error event',
+                        details: event && event.error && event.error.stack
+                            ? String(event.error.stack)
+                            : String(event && event.message ? event.message : 'Unknown error')
+                    });
+                });
+
+                window.addEventListener('unhandledrejection', event => {
+                    const reason = event ? event.reason : undefined;
+                    api.postMessage({
+                        command: 'webviewLog',
+                        level: 'error',
+                        message: 'Unhandled promise rejection',
+                        details: reason && reason.stack
+                            ? String(reason.stack)
+                            : String(reason ?? 'Unknown rejection')
+                    });
+                });
+            } catch (error) {
+                const status = document.getElementById('status-text');
+                if (status) {
+                    status.textContent = 'Prelude error';
+                }
+            }
+        })();
+    </script>
+
+    <script nonce="${nonce}">
+        const api = window.__nanoAgentVsCodeApi || acquireVsCodeApi();
+        api.postMessage({ command: 'webviewLog', level: 'info', message: 'Main script starting' });
         const commandSuggestions = ${commandSuggestionsJson};
         const buildDiffModel = ${buildDiffModel.toString()};
         const messagesDiv = document.getElementById('messages');
@@ -2990,7 +3112,7 @@ function getChatWebviewContent(nonce: string) {
             const activeProfile = renderedProfiles.find(profile =>
                 profile.name.toLowerCase() === profileName.toLowerCase());
             profileSelect.title = activeProfile && activeProfile.description
-                ? profileName + ' — ' + activeProfile.description
+                ? profileName + ' - ' + activeProfile.description
                 : 'Profile: ' + profileName;
         }
 
@@ -3253,7 +3375,7 @@ function getChatWebviewContent(nonce: string) {
             const rawInput = call.rawInput && typeof call.rawInput === 'object'
                 ? call.rawInput
                 : null;
-            const output = Array.isArray(call.content) ? call.content.join('\n').trim() : '';
+            const output = Array.isArray(call.content) ? call.content.join('\\n').trim() : '';
             const status = String(call.status || 'pending');
 
             if (rawInput && typeof rawInput.agent === 'string' && rawInput.agent.trim()) {
@@ -4229,6 +4351,7 @@ function getChatWebviewContent(nonce: string) {
         renderTools();
         updateStatusRail();
         updateComposerState();
+        api.postMessage({ command: 'webviewLog', level: 'info', message: 'Posting ready from main script' });
         post({ command: 'ready' });
     </script>
 </body>
