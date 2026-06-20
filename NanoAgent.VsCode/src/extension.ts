@@ -13,7 +13,7 @@ export function activate(context: vscode.ExtensionContext) {
     const logService = LogService.getInstance();
     logService.info(`NanoAgent extension activated (v${context.extension.packageJSON.version}).`);
 
-    processManager = new NanoAgentProcessManager();
+    processManager = new NanoAgentProcessManager(context.globalState);
     sessionManager = new SessionManager(processManager, context.secrets);
     const chatViewProvider = new ChatViewProvider(sessionManager, context.extensionUri);
 
