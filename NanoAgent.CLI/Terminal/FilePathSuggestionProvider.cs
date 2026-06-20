@@ -41,6 +41,22 @@ internal static class FilePathSuggestionProvider
             : string.Empty;
 
         List<FilePathSuggestion> suggestions = [];
+        if (request.PreserveTypedPath &&
+            ShouldSuggestCurrentDirectory(request.PathText, namePrefix))
+        {
+            string displayPath = literalDirectoryPrefix + "./";
+            suggestions.Add(new FilePathSuggestion(
+                request.CommandPrefix + displayPath,
+                displayPath,
+                "Current directory",
+                IsDirectory: true));
+
+            if (suggestions.Count >= maxCount)
+            {
+                return suggestions;
+            }
+        }
+
         foreach (DirectoryInfo directory in EnumerateDirectories(searchDirectory)
             .Where(directory => directory.Name.StartsWith(namePrefix, comparison))
             .OrderBy(directory => directory.Name, StringComparer.OrdinalIgnoreCase))
@@ -91,6 +107,26 @@ internal static class FilePathSuggestionProvider
         }
 
         return suggestions;
+    }
+
+    private static bool ShouldSuggestCurrentDirectory(
+        string pathText,
+        string namePrefix)
+    {
+        string trimmed = pathText.TrimStart();
+        if (trimmed.Length == 0)
+        {
+            return true;
+        }
+
+        if (!".".StartsWith(namePrefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return trimmed.EndsWith("/", StringComparison.Ordinal) ||
+            trimmed.EndsWith("\\", StringComparison.Ordinal) ||
+            string.Equals(namePrefix, ".", StringComparison.Ordinal);
     }
 
     private static bool TryCreateRequest(
