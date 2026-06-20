@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NanoAgent.Application.Abstractions;
+using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Storage;
 
 namespace NanoAgent.Tests.Infrastructure.Storage;
@@ -135,6 +136,84 @@ public sealed class WorkspaceCodebaseIndexServiceTests
         search.Matches.Should().ContainSingle(match => match.Path == "second.cs");
         var freshStatus = await sut.GetStatusAsync(CancellationToken.None);
         freshStatus.IsStale.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task SearchAsync_Should_IndexSemanticSymbolsDependenciesCallsAndOwners()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        Directory.CreateDirectory(Path.Combine(workspace.Path, ".github"));
+        Directory.CreateDirectory(Path.Combine(workspace.Path, "src"));
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Path, ".github", "CODEOWNERS"),
+            "src/* @web-team\n");
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Path, "src", "lib.ts"),
+            """
+            export function helper() {
+                return true;
+            }
+            """);
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Path, "src", "main.ts"),
+            """
+            import { helper } from "./lib";
+
+            export function run() {
+                return helper();
+            }
+            """);
+
+        WorkspaceCodebaseIndexService sut = CreateService(workspace.Path);
+
+        CodebaseIndexBuildResult build = await sut.BuildAsync(force: false, CancellationToken.None);
+        CodebaseIndexSearchResult search = await sut.SearchAsync(
+            "run helper web",
+            limit: 10,
+            includeSnippets: false,
+            CancellationToken.None);
+
+        build.Stats.SemanticSymbolCount.Should().BeGreaterThanOrEqualTo(2);
+        build.Stats.DependencyEdgeCount.Should().BeGreaterThanOrEqualTo(1);
+        build.Stats.CallEdgeCount.Should().BeGreaterThanOrEqualTo(1);
+        build.Stats.OwnedFileCount.Should().Be(2);
+
+        CodebaseIndexSearchMatch mainMatch = search.Matches.Single(match => match.Path == "src/main.ts");
+        mainMatch.SemanticSymbols.Should().Contain(symbol => symbol.Name == "run" && symbol.Kind == "function");
+        mainMatch.Dependencies.Should().Contain(dependency =>
+            dependency.Target == "./lib" &&
+            dependency.ResolvedPaths.Contains("src/lib.ts"));
+        mainMatch.OutgoingCalls.Should().Contain(call =>
+            call.CallerSymbol == "run" &&
+            call.CalleeSymbol == "helper" &&
+            call.CalleePath == "src/lib.ts");
+        mainMatch.Owners.Should().Contain("@web-team");
+
+        CodebaseIndexSearchMatch libMatch = search.Matches.Single(match => match.Path == "src/lib.ts");
+        libMatch.IncomingCalls.Should().Contain(call =>
+            call.CallerSymbol == "run" &&
+            call.CallerPath == "src/main.ts" &&
+            call.CalleeSymbol == "helper");
+    }
+
+    [Fact]
+    public async Task GetStatusAsync_Should_ReportStaleWarnings()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Path, "first.cs"),
+            "public sealed class FirstFeature {}");
+        WorkspaceCodebaseIndexService sut = CreateService(workspace.Path);
+
+        await sut.BuildAsync(force: false, CancellationToken.None);
+        await File.WriteAllTextAsync(
+            Path.Combine(workspace.Path, "second.cs"),
+            "public sealed class SecondFeature {}");
+
+        CodebaseIndexStatusResult status = await sut.GetStatusAsync(CancellationToken.None);
+
+        status.IsStale.Should().BeTrue();
+        status.Warnings.Should().Contain(warning => warning.Contains("Index is stale", StringComparison.Ordinal));
     }
 
     private static WorkspaceCodebaseIndexService CreateService(string workspacePath)

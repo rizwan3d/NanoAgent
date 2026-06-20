@@ -3161,7 +3161,9 @@ public sealed class AgentConversationPipelineTests
                 RemovedFileCount: 0,
                 ReusedFileCount: 0,
                 SkippedFileCount: 0,
-                DurationMilliseconds: 0));
+                DurationMilliseconds: 0,
+                new CodebaseIndexStats(0, 0, 0, 0, 0),
+                []));
         }
 
         public Task<CodebaseIndexStatusResult> GetStatusAsync(CancellationToken cancellationToken)
