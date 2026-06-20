@@ -76,8 +76,10 @@ function extractExecutable(zipBuffer, destinationPath) {
 }
 
 // Ensures the platform binary is present in vendor/. Returns the absolute path.
+// `onDownloaded` is awaited only when a fresh (non-update) binary is fetched, so
+// callers can record an anonymous install event exactly once per real install.
 async function ensureBinary(options = {}) {
-  const { force = false, log = () => {}, tag } = options;
+  const { force = false, log = () => {}, tag, onDownloaded } = options;
 
   const binaryPath = platform.installedBinaryPath();
   if (!force && fs.existsSync(binaryPath)) {
@@ -121,6 +123,17 @@ async function ensureBinary(options = {}) {
   fs.renameSync(tempPath, binaryPath);
 
   log(`Installed NanoAgent CLI to ${binaryPath}.`);
+
+  // Fire once per genuine install. Updates pass force=true and are intentionally
+  // excluded so they are not counted as new installs.
+  if (!force && typeof onDownloaded === "function") {
+    try {
+      await onDownloaded();
+    } catch {
+      // Telemetry must never affect installation.
+    }
+  }
+
   return binaryPath;
 }
 

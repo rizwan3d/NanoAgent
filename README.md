@@ -282,6 +282,8 @@ python benchmarks/scripts/run_benchmarks.py --suite regression --system --skip-p
 
 NanoAgent sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.nanoagent/agent-profile.json` for the current workspace.
 
+Every installer (the `curl`/PowerShell scripts and the `npm`/`pnpm`/`bun` package) also sends a single anonymous `nanoagent cli installed` event recording the install method, release version, OS family, and CI flag. It is best-effort and never blocks or fails an install. Opt out by setting `NANOAGENT_TELEMETRY_DISABLED=1` (or the cross-tool `DO_NOT_TRACK=1`) before installing.
+
 Collected:
 
 - NanoAgent version
