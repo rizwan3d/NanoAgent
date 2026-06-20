@@ -33,6 +33,17 @@ jobs:
             throw new Error('Missing required secret: POSTHOG_PROJECT_API_KEY')
           }
 
+          // Shared identity fields so every event this workflow emits stays
+          // uniform (same $lib/CI fields) across the GitHub and NuGet steps.
+          const commonProperties = {
+            '$lib': 'nanoagent-release-trend',
+            source: 'github-actions',
+            app_surface: 'github_actions',
+            execution_environment: 'ci',
+            is_ci: true,
+            ci_provider: 'github_actions',
+          }
+
           const githubHeaders = {
             Accept: 'application/vnd.github+json',
             Authorization: `Bearer ${GITHUB_TOKEN}`,
