@@ -14,8 +14,19 @@ type InitializeResult = {
     authMethods?: unknown;
 };
 
-type SessionPromptResult = {
+export type TurnMetrics = {
+    elapsedMilliseconds?: number;
+    estimatedOutputTokens?: number;
+    displayedEstimatedOutputTokens?: number;
+    estimatedTotalTokens?: number;
+    cachedInputTokens?: number;
+    toolRoundCount?: number;
+    providerRetryCount?: number;
+};
+
+export type SessionPromptResult = {
     stopReason?: string;
+    metrics?: TurnMetrics;
 };
 
 export type AgentProfileInfo = {
