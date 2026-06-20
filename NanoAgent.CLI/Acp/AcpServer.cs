@@ -6,6 +6,7 @@ using NanoAgent.Application.Formatting;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.UI;
 using NanoAgent.Infrastructure.Configuration;
+using NanoAgent.Infrastructure.Storage;
 using System.Security.Cryptography;
 using System.Collections.Concurrent;
 using System.Reflection;
@@ -366,6 +367,10 @@ internal sealed class AcpServer : IAsyncDisposable
                     await HandleSessionLoadAsync(root, responseId, cancellationToken);
                     break;
 
+                case "session/list":
+                    await HandleSessionListAsync(responseId, cancellationToken);
+                    break;
+
                 case "session/prompt":
                     await HandleSessionPromptAsync(root, responseId, cancellationToken);
                     break;
@@ -524,6 +529,43 @@ internal sealed class AcpServer : IAsyncDisposable
             cancellationToken);
 
         await SendSessionInfoUpdateAsync(session, cancellationToken);
+    }
+
+    // Reads the on-disk session store directly — no backend/provider init needed just to list.
+    private async Task HandleSessionListAsync(
+        JsonElement? id,
+        CancellationToken cancellationToken)
+    {
+        JsonConversationSectionStore store = new(new UserDataPathProvider());
+        IReadOnlyList<ConversationSectionSnapshot> sessions = await store.ListAsync(cancellationToken);
+
+        await SendResultAsync(
+            id,
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteStartArray("sessions");
+                foreach (ConversationSectionSnapshot snapshot in sessions)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("sessionId", snapshot.SectionId);
+                    writer.WriteString("title", snapshot.Title);
+                    writer.WriteString("updatedAtUtc", snapshot.UpdatedAtUtc.ToString("O"));
+                    writer.WriteString("modelId", snapshot.ActiveModelId);
+                    writer.WriteString("profileName", snapshot.AgentProfileName);
+                    writer.WriteNumber("turnCount", snapshot.Turns.Count);
+                    if (!string.IsNullOrWhiteSpace(snapshot.ParentSessionId))
+                    {
+                        writer.WriteString("parentSessionId", snapshot.ParentSessionId);
+                    }
+
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            },
+            cancellationToken);
     }
 
     private async Task HandleSessionLoadAsync(
