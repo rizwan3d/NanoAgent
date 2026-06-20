@@ -10,13 +10,15 @@ export function registerChatCommands(
     sessionManager: SessionManager,
     chatViewProvider: ChatViewProvider
 ) {
+    const extensionUri = context.extensionUri;
+
     const openChat = async () => {
         try {
             await vscode.commands.executeCommand('workbench.view.extension.nanoagent');
             await vscode.commands.executeCommand(`${ChatViewProvider.viewType}.focus`);
         } catch (error) {
             LogService.getInstance().warn('Falling back to NanoAgent chat webview panel', error);
-            ChatPanel.createOrShow(sessionManager);
+            ChatPanel.createOrShow(sessionManager, extensionUri);
         }
 
         await sessionManager.ensureStarted();
@@ -29,7 +31,7 @@ export function registerChatCommands(
             return;
         }
 
-        ChatPanel.createOrShow(sessionManager);
+        ChatPanel.createOrShow(sessionManager, extensionUri);
         await ChatPanel.currentPanel?.startNewSession();
     };
 
@@ -40,7 +42,7 @@ export function registerChatCommands(
             return;
         }
 
-        ChatPanel.createOrShow(sessionManager);
+        ChatPanel.createOrShow(sessionManager, extensionUri);
         await ChatPanel.currentPanel?.submitMessage(prompt);
     };
 
@@ -51,7 +53,7 @@ export function registerChatCommands(
             return;
         }
 
-        ChatPanel.createOrShow(sessionManager);
+        ChatPanel.createOrShow(sessionManager, extensionUri);
         ChatPanel.currentPanel?.prefillMessage(prompt);
     };
 
@@ -62,7 +64,7 @@ export function registerChatCommands(
             return;
         }
 
-        ChatPanel.createOrShow(sessionManager);
+        ChatPanel.createOrShow(sessionManager, extensionUri);
         ChatPanel.currentPanel?.showSettings();
     };
 
