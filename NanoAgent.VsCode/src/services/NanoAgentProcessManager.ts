@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
 import { spawn, ChildProcess } from 'child_process';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs';
 import { LogService } from './LogService';
 import { EventEmitter } from 'events';
 
@@ -23,7 +26,7 @@ export class NanoAgentProcessManager extends EventEmitter {
         }
 
         const config = vscode.workspace.getConfiguration('nanoagent');
-        const command = config.get<string>('command', 'nanoai');
+        const command = this.resolveCommand(config.get<string>('command', 'nanoai'));
         const configuredArgs = config.get<string[]>('args', ['--acp']);
         const args = this.ensureSurfaceArg(configuredArgs, 'vscode');
         
@@ -129,6 +132,48 @@ export class NanoAgentProcessManager extends EventEmitter {
     private setStatus(status: NanoAgentProcessStatus) {
         this.status = status;
         this.emit('status', status);
+    }
+
+    // GUI-launched VS Code doesn't inherit the shell PATH, so a global `nanoai`
+    // installed via npm/pnpm/bun is invisible. Scan their global bin dirs and
+    // return an absolute path when the default command isn't already a path.
+    private resolveCommand(command: string): string {
+        if (command !== 'nanoai' || command.includes('/') || command.includes(path.sep)) {
+            return command; // user gave an explicit path/command — trust it.
+        }
+
+        const home = os.homedir();
+        const isWin = process.platform === 'win32';
+        const names = isWin ? ['nanoai.cmd', 'nanoai.exe', 'nanoai'] : ['nanoai'];
+
+        const dirs = [
+            process.env.PNPM_HOME,
+            process.env.BUN_INSTALL && path.join(process.env.BUN_INSTALL, 'bin'),
+            isWin && process.env.APPDATA && path.join(process.env.APPDATA, 'npm'),
+            isWin && process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'pnpm'),
+            path.join(home, '.bun', 'bin'),                 // bun default
+            path.join(home, 'Library', 'pnpm'),             // pnpm macOS
+            path.join(home, '.local', 'share', 'pnpm'),     // pnpm Linux
+            path.join(home, '.npm-global', 'bin'),          // common npm prefix
+            '/usr/local/bin',
+            '/opt/homebrew/bin',
+        ].filter(Boolean) as string[];
+
+        // debug() is off by default (logLevel=info) so this trace is dev-only.
+        this.logService.debug('Resolving nanoai across npm/pnpm/bun bin dirs', { dirs, names });
+        for (const dir of dirs) {
+            for (const name of names) {
+                const candidate = path.join(dir, name);
+                const found = fs.existsSync(candidate);
+                this.logService.debug(`  check ${candidate} -> ${found ? 'FOUND' : 'miss'}`);
+                if (found) {
+                    this.logService.info(`Resolved NanoAgent binary: ${candidate}`);
+                    return candidate;
+                }
+            }
+        }
+        this.logService.debug('No binary in known dirs; falling back to PATH lookup of "nanoai"');
+        return command; // fall back to PATH; spawn 'error' handler already reports a clear failure.
     }
 
     private ensureSurfaceArg(args: string[], surface: string): string[] {

@@ -2,7 +2,7 @@ import * as assert from 'assert';
 
 // Parses NanoAgent tool-call input into a renderable diff model.
 // Self-contained (no module-scope helpers) so the webview can inject it via .toString().
-// ponytail: naive per-line classifier — no word-level intra-line diff. Upgrade to a
+//  naive per-line classifier — no word-level intra-line diff. Upgrade to a
 // proper LCS/word-diff only if reviewers ask for inline highlighting.
 
 export type DiffLine = { type: 'add' | 'del' | 'ctx' | 'meta'; text: string };
