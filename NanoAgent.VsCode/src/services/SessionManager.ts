@@ -42,6 +42,7 @@ export type SessionInfo = {
     modelId?: string;
     availableModelIds: string[];
     thinkingMode?: string;
+    reasoningEffort?: string;
     agentProfileName?: string;
     availableAgentProfiles: AgentProfileInfo[];
     sectionTitle?: string;
@@ -927,6 +928,7 @@ export class SessionManager extends EventEmitter {
                 ? sessionUpdate.update.availableModelIds.filter((modelId): modelId is string => typeof modelId === 'string')
                 : [],
             thinkingMode: this.optionalString(sessionUpdate.update.thinkingMode),
+            reasoningEffort: this.optionalString(sessionUpdate.update.reasoningEffort),
             agentProfileName: this.optionalString(sessionUpdate.update.agentProfileName),
             availableAgentProfiles: Array.isArray(sessionUpdate.update.availableAgentProfiles)
                 ? sessionUpdate.update.availableAgentProfiles
