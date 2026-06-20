@@ -34,6 +34,9 @@ export type SessionInfo = {
     agentProfileName?: string;
     availableAgentProfiles: AgentProfileInfo[];
     sectionTitle?: string;
+    activeModelContextWindowTokens?: number;
+    sectionEstimatedContextTokens?: number;
+    totalEstimatedOutputTokens?: number;
 };
 
 export type PromptState = {
@@ -878,7 +881,10 @@ export class SessionManager extends EventEmitter {
                     .map((profile) => this.readAgentProfileInfo(profile))
                     .filter((profile): profile is AgentProfileInfo => profile !== null)
                 : [],
-            sectionTitle: this.optionalString(sessionUpdate.update.sectionTitle)
+            sectionTitle: this.optionalString(sessionUpdate.update.sectionTitle),
+            activeModelContextWindowTokens: this.optionalNonNegativeNumber(sessionUpdate.update.activeModelContextWindowTokens),
+            sectionEstimatedContextTokens: this.optionalNonNegativeNumber(sessionUpdate.update.sectionEstimatedContextTokens),
+            totalEstimatedOutputTokens: this.optionalNonNegativeNumber(sessionUpdate.update.totalEstimatedOutputTokens)
         };
     }
 
