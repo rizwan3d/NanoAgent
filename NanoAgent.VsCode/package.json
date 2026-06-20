@@ -50,7 +50,7 @@
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
-      "auxiliarybar": [
+      "secondarySidebar": [
         {
           "id": "nanoagent",
           "title": "NanoAgent",

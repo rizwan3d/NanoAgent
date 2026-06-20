@@ -11,7 +11,7 @@ let sessionManager: SessionManager;
 
 export function activate(context: vscode.ExtensionContext) {
     const logService = LogService.getInstance();
-    logService.info('NanoAgent extension activated.');
+    logService.info(`NanoAgent extension activated (v${context.extension.packageJSON.version}).`);
 
     processManager = new NanoAgentProcessManager();
     sessionManager = new SessionManager(processManager, context.secrets);
