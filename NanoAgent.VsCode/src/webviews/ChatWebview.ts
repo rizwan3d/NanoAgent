@@ -11,7 +11,8 @@ import {
     SessionInfo,
     SessionManager,
     SessionMessageChunk,
-    ToolCallUpdate
+    ToolCallUpdate,
+    TurnMetrics
 } from '../services/SessionManager';
 import { NanoAgentProcessStatus } from '../services/NanoAgentProcessManager';
 
@@ -308,12 +309,46 @@ export class ChatWebviewController {
         }
 
         try {
-            await this.sessionManager.sendPrompt(trimmedText);
+            const result = await this.sessionManager.sendPrompt(trimmedText);
+            if (!trimmedText.startsWith('/')) {
+                this.postTurnMetrics(result?.metrics);
+            }
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unknown error';
             LogService.getInstance().error('Chat request failed', error);
             this.postSystemMessage(`Error: ${message}`);
         }
+    }
+
+    private postTurnMetrics(metrics: TurnMetrics | undefined) {
+        if (!metrics) {
+            return;
+        }
+
+        const parts: string[] = [];
+        if (typeof metrics.elapsedMilliseconds === 'number' && metrics.elapsedMilliseconds > 0) {
+            const seconds = metrics.elapsedMilliseconds / 1000;
+            parts.push(seconds >= 10 ? `${Math.round(seconds)}s` : `${seconds.toFixed(1)}s`);
+        }
+
+        const outputTokens = metrics.displayedEstimatedOutputTokens ?? metrics.estimatedOutputTokens;
+        if (typeof outputTokens === 'number' && outputTokens > 0) {
+            parts.push(`${formatTokenCount(outputTokens)} tokens`);
+        }
+
+        if (typeof metrics.toolRoundCount === 'number' && metrics.toolRoundCount > 0) {
+            parts.push(`${metrics.toolRoundCount} tool ${metrics.toolRoundCount === 1 ? 'round' : 'rounds'}`);
+        }
+
+        if (typeof metrics.providerRetryCount === 'number' && metrics.providerRetryCount > 0) {
+            parts.push(`${metrics.providerRetryCount} retries`);
+        }
+
+        if (parts.length === 0) {
+            return;
+        }
+
+        this.postChatMessage(parts.join(' · '), 'metrics');
     }
 
     private async handleModelSelection() {
@@ -687,7 +722,7 @@ export class ChatWebviewController {
 
     private postChatMessage(
         text: string,
-        role: 'assistant' | 'system' | 'user'
+        role: 'assistant' | 'system' | 'user' | 'metrics'
     ) {
         this.webview.postMessage({ command: 'appendMessage', text, role });
     }
@@ -1018,6 +1053,15 @@ function getChatWebviewContent(nonce: string) {
         .tool-pending {
             color: var(--muted);
             font-size: 12px;
+        }
+
+        .message-card.metrics {
+            align-self: flex-start;
+            max-width: min(760px, 92%);
+            color: var(--muted);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 11px;
+            opacity: 0.85;
         }
 
         .message-card.system {
@@ -3520,6 +3564,13 @@ function getChatWebviewContent(nonce: string) {
 </html>`;
 }
 
+
+function formatTokenCount(value: number): string {
+    if (value >= 1000) {
+        return `${(value / 1000).toFixed(value >= 10000 ? 0 : 1)}k`;
+    }
+    return String(Math.round(value));
+}
 
 function getNonce(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
