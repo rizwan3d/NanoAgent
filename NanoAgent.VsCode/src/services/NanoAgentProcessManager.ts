@@ -13,8 +13,10 @@ export class NanoAgentProcessManager extends EventEmitter {
     private logService: LogService;
     private isRestarting = false;
     private status: NanoAgentProcessStatus = 'stopped';
+    private static readonly UPDATE_CHECK_KEY = 'nanoagent.lastUpdateCheck';
+    private static readonly UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
-    constructor() {
+    constructor(private readonly globalState?: vscode.Memento) {
         super();
         this.logService = LogService.getInstance();
     }
@@ -86,6 +88,10 @@ export class NanoAgentProcessManager extends EventEmitter {
 
             this.logService.info(`NanoAgent process started successfully (PID: ${this.process.pid}).`);
             this.setStatus('running');
+
+            if (configured === 'nanoai') {
+                void this.checkForUpdate(command); // fire-and-forget; never delays startup.
+            }
         } catch (error) {
             this.logService.error('Exception while starting NanoAgent process', error);
             this.setStatus('error');
@@ -233,6 +239,66 @@ export class NanoAgentProcessManager extends EventEmitter {
         }
         this.logService.info('nanoai installed successfully.');
         return resolved;
+    }
+
+    // Background check: compare installed nanoai against npm latest, offer update on consent.
+    private async checkForUpdate(command: string): Promise<void> {
+        const last = this.globalState?.get<number>(NanoAgentProcessManager.UPDATE_CHECK_KEY, 0) ?? 0;
+        if (Date.now() - last < NanoAgentProcessManager.UPDATE_CHECK_INTERVAL_MS) {
+            return; // checked within the last 24h; skip the npm-view network call.
+        }
+        void this.globalState?.update(NanoAgentProcessManager.UPDATE_CHECK_KEY, Date.now());
+
+        try {
+            const current = this.parseVersion(spawnSync(command, ['--version'], { shell: process.platform === 'win32' }).stdout?.toString());
+            const latest = this.parseVersion(spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', 'nanoai-cli', 'version'], { shell: process.platform === 'win32' }).stdout?.toString());
+            if (!current || !latest || this.compareVersions(latest, current) <= 0) {
+                return; // up to date, or couldn't determine — stay quiet.
+            }
+
+            this.logService.info(`nanoai update available: ${current} -> ${latest}`);
+            const choice = await vscode.window.showInformationMessage(
+                `A new NanoAgent CLI is available (${current} → ${latest}).`,
+                'Update'
+            );
+            if (choice !== 'Update') {
+                return;
+            }
+
+            const ok = await vscode.window.withProgress(
+                { location: vscode.ProgressLocation.Notification, title: 'Updating NanoAgent CLI…' },
+                () => new Promise<boolean>((resolve) => {
+                    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+                    const proc = spawn(npm, ['install', '-g', 'nanoai-cli@latest'], { shell: process.platform === 'win32' });
+                    proc.stdout?.on('data', (d) => this.logService.info(`npm: ${d.toString().trim()}`));
+                    proc.stderr?.on('data', (d) => this.logService.warn(`npm: ${d.toString().trim()}`));
+                    proc.on('error', (err) => { this.logService.error('npm update failed to start.', err); resolve(false); });
+                    proc.on('exit', (code) => resolve(code === 0));
+                })
+            );
+
+            if (!ok) {
+                vscode.window.showErrorMessage('Failed to update nanoai. See logs for details.');
+                return;
+            }
+            this.logService.info('nanoai updated; restarting to use the new version.');
+            await this.restart();
+        } catch (err) {
+            this.logService.debug('Update check skipped', err); // never block the agent on this.
+        }
+    }
+
+    private parseVersion(text: string | undefined): string | null {
+        const m = text?.match(/(\d+)\.(\d+)\.(\d+)/);
+        return m ? m[0] : null;
+    }
+
+    private compareVersions(a: string, b: string): number {
+        const pa = a.split('.').map(Number), pb = b.split('.').map(Number);
+        for (let i = 0; i < 3; i++) {
+            if (pa[i] !== pb[i]) { return pa[i] - pb[i]; }
+        }
+        return 0;
     }
 
     private ensureSurfaceArg(args: string[], surface: string): string[] {
