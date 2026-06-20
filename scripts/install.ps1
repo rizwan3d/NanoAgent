@@ -42,6 +42,13 @@ $TotalSteps = 7
 $CurrentStep = 0
 $InstallActivity = "Installing $AppName"
 
+# Anonymous install analytics. Mirrors the in-product PostHog defaults so installs
+# and usage land in the same project. Opt out with NANOAGENT_TELEMETRY_DISABLED=1
+# or the cross-tool DO_NOT_TRACK convention.
+$TelemetryHost = 'https://us.i.posthog.com'
+$TelemetryProjectToken = 'phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk'
+$TelemetryEvent = 'nanoagent cli installed'
+
 function Write-Status {
     param([string]$Message)
 
@@ -52,6 +59,60 @@ function Fail-Install {
     param([string]$Message)
 
     throw "[$AppName] $Message"
+}
+
+function Test-TelemetryEnabled {
+    $optOut = if (-not [string]::IsNullOrWhiteSpace($env:NANOAGENT_TELEMETRY_DISABLED)) {
+        $env:NANOAGENT_TELEMETRY_DISABLED
+    }
+    else {
+        $env:DO_NOT_TRACK
+    }
+
+    if ($optOut -in @('1', 'true', 'TRUE', 'True', 'yes', 'YES', 'Yes', 'on', 'ON', 'On')) {
+        return $false
+    }
+
+    return -not [string]::IsNullOrWhiteSpace($TelemetryProjectToken)
+}
+
+# Best-effort anonymous "installed" event. Never fails the install: all errors are
+# swallowed and the request is bounded by a short timeout.
+function Send-InstallTelemetry {
+    param([string]$Tag)
+
+    try {
+        if (-not (Test-TelemetryEnabled)) {
+            return
+        }
+
+        $isCi = (-not [string]::IsNullOrWhiteSpace($env:CI)) -or
+            (-not [string]::IsNullOrWhiteSpace($env:GITHUB_ACTIONS)) -or
+            (-not [string]::IsNullOrWhiteSpace($env:GITLAB_CI)) -or
+            (-not [string]::IsNullOrWhiteSpace($env:BITBUCKET_BUILD_NUMBER))
+
+        $payload = @{
+            api_key     = $TelemetryProjectToken
+            event       = $TelemetryEvent
+            distinct_id = [System.Guid]::NewGuid().ToString('N')
+            properties  = @{
+                '$lib'                = 'nanoagent-installer'
+                install_method        = 'install.ps1'
+                nanoagent_version     = if ([string]::IsNullOrWhiteSpace($Tag)) { 'unknown' } else { $Tag }
+                os_family             = 'windows'
+                platform              = 'win-x64'
+                app_surface           = 'cli'
+                execution_environment = if ($isCi) { 'ci' } else { 'local' }
+                is_ci                 = [bool]$isCi
+            }
+        } | ConvertTo-Json -Compress -Depth 5
+
+        $endpoint = "$TelemetryHost/i/v0/e/"
+        Invoke-RestMethod -Uri $endpoint -Method Post -ContentType 'application/json' -Body $payload -TimeoutSec 5 | Out-Null
+    }
+    catch {
+        # Telemetry must never affect installation.
+    }
 }
 
 function Test-ProgressEnabled {
@@ -671,6 +732,8 @@ try {
     else {
         Write-Status 'The install directory is already on your user PATH.'
     }
+
+    Send-InstallTelemetry -Tag $Tag
 
     Complete-InstallStep 'Installation finished.'
     Complete-InstallerProgress

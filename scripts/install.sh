@@ -12,6 +12,13 @@ readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly POSIX_DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 readonly TOTAL_STEPS=7
 
+# Anonymous install analytics. Mirrors the in-product PostHog defaults so installs
+# and usage land in the same project. Opt out with NANOAGENT_TELEMETRY_DISABLED=1
+# or the cross-tool DO_NOT_TRACK convention.
+readonly TELEMETRY_HOST="https://us.i.posthog.com"
+readonly TELEMETRY_PROJECT_TOKEN="phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk"
+readonly TELEMETRY_EVENT="nanoagent cli installed"
+
 TEMP_ROOT=""
 CURRENT_STEP=0
 COMMAND_AVAILABLE_SCOPE="current"
@@ -659,6 +666,69 @@ make_command_available() {
   return 1
 }
 
+telemetry_enabled() {
+  case "${NANOAGENT_TELEMETRY_DISABLED:-${DO_NOT_TRACK:-}}" in
+    1|true|TRUE|True|yes|YES|Yes|on|ON|On)
+      return 1
+      ;;
+  esac
+
+  [[ -n "$TELEMETRY_PROJECT_TOKEN" ]]
+}
+
+telemetry_distinct_id() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr '[:upper:]' '[:lower:]'
+  elif [[ -r /proc/sys/kernel/random/uuid ]]; then
+    cat /proc/sys/kernel/random/uuid
+  else
+    printf 'anon-%s-%s' "$$" "${RANDOM:-0}"
+  fi
+}
+
+# Best-effort anonymous "installed" event. Never fails the install: all errors are
+# swallowed and the request is bounded by a short timeout.
+send_install_telemetry() {
+  local platform="$1"
+  local tag="$2"
+
+  if ! telemetry_enabled; then
+    return 0
+  fi
+
+  local os_family
+  case "$platform" in
+    linux-*) os_family="linux" ;;
+    osx-*) os_family="macos" ;;
+    win-*) os_family="windows" ;;
+    *) os_family="other" ;;
+  esac
+
+  local is_ci="false"
+  local execution_environment="local"
+  if [[ -n "${CI:-}" || -n "${GITHUB_ACTIONS:-}" || -n "${GITLAB_CI:-}" || -n "${BITBUCKET_BUILD_NUMBER:-}" ]]; then
+    is_ci="true"
+    execution_environment="ci"
+  fi
+
+  local distinct_id
+  distinct_id="$(telemetry_distinct_id)"
+
+  local payload
+  payload="$(printf '{"api_key":"%s","event":"%s","distinct_id":"%s","properties":{"$lib":"nanoagent-installer","install_method":"install.sh","nanoagent_version":"%s","os_family":"%s","platform":"%s","app_surface":"cli","execution_environment":"%s","is_ci":%s}}' \
+    "$TELEMETRY_PROJECT_TOKEN" "$TELEMETRY_EVENT" "$distinct_id" "$tag" "$os_family" "$platform" "$execution_environment" "$is_ci")"
+
+  local endpoint="${TELEMETRY_HOST}/i/v0/e/"
+
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS -m 5 -X POST -H 'Content-Type: application/json' -d "$payload" "$endpoint" >/dev/null 2>&1 || true
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -T 5 -O /dev/null --header='Content-Type: application/json' --post-data="$payload" "$endpoint" >/dev/null 2>&1 || true
+  fi
+
+  return 0
+}
+
 main() {
   local requested_install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-}}"
   local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
@@ -738,6 +808,8 @@ main() {
   fi
 
   finish_step "Installed '${COMMAND_NAME}' to ${destination_binary}."
+
+  send_install_telemetry "$platform" "$tag"
 
   if make_command_available "$destination_binary" "$install_dir" "$platform"; then
     log "Done. Run '${COMMAND_NAME}' to start NanoAgent."

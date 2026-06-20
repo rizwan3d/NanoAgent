@@ -86,6 +86,7 @@ NANOAGENT_SKIP_UPDATE_CHECK=1 nanoai
 | Variable | Purpose |
 | --- | --- |
 | `NANOAGENT_SKIP_DOWNLOAD` | Set to `1` to skip the install-time download. The binary will still be fetched on first run. |
+| `NANOAGENT_TELEMETRY_DISABLED` | Set to `1` to opt out of the anonymous `nanoagent cli installed` analytics event. `DO_NOT_TRACK=1` is also honored. |
 | `NANOAGENT_SKIP_UPDATE_CHECK` | Set to `1` to disable the runtime check for newer GitHub releases. |
 | `NANOAGENT_CLI_TAG` | Override the release tag to download, such as `v1.2.3`. |
 | `NANOAGENT_CLI_VERSION` | Override the version used to derive the default release tag. |
