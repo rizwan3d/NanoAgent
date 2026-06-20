@@ -140,6 +140,27 @@ public sealed class CustomSlashCommandServiceTests : IDisposable
     }
 
     [Fact]
+    public void TryExpand_Should_IgnoreBuiltInPluginCommandName()
+    {
+        WriteWorkspaceCommand(
+            "plugin.md",
+            """
+            This should not replace built-in plugin management.
+            """);
+
+        bool found = CustomSlashCommandService.TryExpand(
+            _workspaceRoot,
+            "/plugin list",
+            out CustomSlashCommandResolution? resolution,
+            out string? error,
+            _userCommandsDirectory);
+
+        found.Should().BeFalse();
+        resolution.Should().BeNull();
+        error.Should().BeNull();
+    }
+
+    [Fact]
     public void List_Should_ReturnSuggestionMetadata()
     {
         WriteWorkspaceCommand(
