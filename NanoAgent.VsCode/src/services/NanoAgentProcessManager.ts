@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { spawn, ChildProcess } from 'child_process';
+import { spawn, spawnSync, ChildProcess } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -26,7 +26,15 @@ export class NanoAgentProcessManager extends EventEmitter {
         }
 
         const config = vscode.workspace.getConfiguration('nanoagent');
-        const command = this.resolveCommand(config.get<string>('command', 'nanoai'));
+        const configured = config.get<string>('command', 'nanoai');
+        let command: string | null = this.resolveCommand(configured);
+        if (configured === 'nanoai' && !this.isAvailable(command)) {
+            command = await this.ensureInstalled(command);
+            if (!command) {
+                this.setStatus('error');
+                return; // user declined install or it failed; error already surfaced.
+            }
+        }
         const configuredArgs = config.get<string[]>('args', ['--acp']);
         const args = this.ensureSurfaceArg(configuredArgs, 'vscode');
         
@@ -174,6 +182,57 @@ export class NanoAgentProcessManager extends EventEmitter {
         }
         this.logService.debug('No binary in known dirs; falling back to PATH lookup of "nanoai"');
         return command; // fall back to PATH; spawn 'error' handler already reports a clear failure.
+    }
+
+    // True if resolveCommand found an absolute binary, or bare "nanoai" is on PATH.
+    private isAvailable(command: string): boolean {
+        if (command !== 'nanoai') {
+            return true; // resolveCommand returned an absolute path it verified exists.
+        }
+        const probe = process.platform === 'win32' ? 'where' : 'which';
+        return spawnSync(probe, ['nanoai'], { shell: false }).status === 0;
+    }
+
+    // nanoai not found anywhere. Ask consent, then `npm install -g nanoai-cli`.
+    // Returns the resolved command on success, or null if declined/failed.
+    private async ensureInstalled(command: string): Promise<string | null> {
+        const choice = await vscode.window.showWarningMessage(
+            'NanoAgent CLI (nanoai) was not found. Install it globally via npm?',
+            { modal: true, detail: 'Runs: npm install -g nanoai-cli' },
+            'Install'
+        );
+        if (choice !== 'Install') {
+            this.logService.info('User declined nanoai install.');
+            return null;
+        }
+
+        const ok = await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'Installing NanoAgent CLI…' },
+            () => new Promise<boolean>((resolve) => {
+                const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+                const proc = spawn(npm, ['install', '-g', 'nanoai-cli'], { shell: process.platform === 'win32' });
+                proc.stdout?.on('data', (d) => this.logService.info(`npm: ${d.toString().trim()}`));
+                proc.stderr?.on('data', (d) => this.logService.warn(`npm: ${d.toString().trim()}`));
+                proc.on('error', (err) => {
+                    this.logService.error('npm install failed to start. Is Node.js/npm installed?', err);
+                    resolve(false);
+                });
+                proc.on('exit', (code) => resolve(code === 0));
+            })
+        );
+
+        if (!ok) {
+            vscode.window.showErrorMessage('Failed to install nanoai. Run "npm install -g nanoai-cli" manually. See logs for details.');
+            return null;
+        }
+
+        const resolved = this.resolveCommand('nanoai');
+        if (!this.isAvailable(resolved)) {
+            vscode.window.showErrorMessage('nanoai installed but not found on PATH. You may need to restart VS Code.');
+            return null;
+        }
+        this.logService.info('nanoai installed successfully.');
+        return resolved;
     }
 
     private ensureSurfaceArg(args: string[], surface: string): string[] {
