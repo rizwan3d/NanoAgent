@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { buildDiffModel } from './diffView';
 import { LogService } from '../services/LogService';
 import {
     ClientRequest,
@@ -954,6 +955,66 @@ function getChatWebviewContent(nonce: string) {
             cursor: pointer;
         }
 
+        .diff-view {
+            display: grid;
+            gap: 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .diff-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 5px 8px;
+            background: color-mix(in srgb, var(--input-bg) 80%, transparent);
+            border-bottom: 1px solid var(--border);
+            font-size: 11px;
+        }
+
+        .diff-stat {
+            flex: 0 0 auto;
+            color: var(--muted);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+        }
+
+        .diff-body {
+            max-height: 320px;
+            margin: 0;
+            padding: 4px 0;
+            overflow: auto;
+            border: 0;
+            border-radius: 0;
+            background: var(--app-bg);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 12px;
+            line-height: 1.4;
+            white-space: pre;
+        }
+
+        .diff-line {
+            padding: 0 8px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .diff-add {
+            color: var(--ok);
+            background: color-mix(in srgb, var(--ok) 12%, transparent);
+        }
+
+        .diff-del {
+            color: var(--danger);
+            background: color-mix(in srgb, var(--danger) 12%, transparent);
+        }
+
+        .diff-meta {
+            color: var(--muted);
+            background: color-mix(in srgb, var(--focus) 10%, transparent);
+        }
+
         .tool-pending {
             color: var(--muted);
             font-size: 12px;
@@ -1604,6 +1665,22 @@ function getChatWebviewContent(nonce: string) {
             font-size: 11px;
         }
 
+        .context-meter {
+            flex: 0 0 auto;
+            padding: 2px 7px;
+            border-radius: 7px;
+            color: var(--muted);
+            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 11px;
+            white-space: nowrap;
+        }
+
+        .context-meter.context-meter-warn {
+            color: var(--warning);
+            background: color-mix(in srgb, var(--warning) 14%, transparent);
+        }
+
         .ghost-button:hover,
         .model-pill:hover,
         .model-select:hover,
@@ -1939,6 +2016,7 @@ function getChatWebviewContent(nonce: string) {
                                 <div class="status-pill" title="Process status">
                                     <span id="status-text">Stopped</span>
                                 </div>
+                                <span id="context-meter" class="context-meter" title="Context usage" hidden></span>
                             </div>
                             <div class="toolbar-right">
                                 <button id="stop-button" class="danger-button" disabled>Stop</button>
@@ -1963,6 +2041,7 @@ function getChatWebviewContent(nonce: string) {
     <script nonce="${nonce}">
         const api = acquireVsCodeApi();
         const commandSuggestions = ${commandSuggestionsJson};
+        const buildDiffModel = ${buildDiffModel.toString()};
         const messagesDiv = document.getElementById('messages');
         const emptyState = document.getElementById('empty-state');
         const settingsPage = document.getElementById('settings-page');
@@ -1982,6 +2061,7 @@ function getChatWebviewContent(nonce: string) {
         const profileSelect = document.getElementById('profile-select');
         const sectionTitle = document.getElementById('section-title');
         const statusText = document.getElementById('status-text');
+        const contextMeter = document.getElementById('context-meter');
         const suggestionsDiv = document.getElementById('suggestions');
         const sidePane = document.getElementById('activity-pane');
         const planList = document.getElementById('plan-list');
@@ -2489,9 +2569,38 @@ function getChatWebviewContent(nonce: string) {
             renderProfileSelect();
             renderModelSelect(models);
             renderSettingsSummary();
+            renderContextMeter();
 
             updateStatusRail();
             updateComposerState();
+        }
+
+        function renderContextMeter() {
+            const used = sessionInfo && sessionInfo.sectionEstimatedContextTokens;
+            const window = sessionInfo && sessionInfo.activeModelContextWindowTokens;
+            if (!used) {
+                contextMeter.hidden = true;
+                return;
+            }
+
+            contextMeter.hidden = false;
+            if (window) {
+                const pct = Math.min(100, Math.round((used / window) * 100));
+                contextMeter.textContent = formatTokens(used) + ' / ' + formatTokens(window) + ' (' + pct + '%)';
+                contextMeter.classList.toggle('context-meter-warn', pct >= 80);
+                contextMeter.title = 'Context: ' + formatNumber(used) + ' of ' + formatNumber(window) + ' tokens';
+            } else {
+                contextMeter.textContent = formatTokens(used) + ' ctx';
+                contextMeter.classList.remove('context-meter-warn');
+                contextMeter.title = 'Context: ' + formatNumber(used) + ' tokens';
+            }
+        }
+
+        function formatTokens(value) {
+            if (value >= 1000) {
+                return (value / 1000).toFixed(value >= 10000 ? 0 : 1) + 'k';
+            }
+            return String(value);
         }
 
         function renderSettingsSummary() {
@@ -2710,13 +2819,49 @@ function getChatWebviewContent(nonce: string) {
                 container.appendChild(pending);
             }
 
-            if (typeof call.rawInput !== 'undefined') {
+            const diffModel = buildDiffModel(call);
+            if (diffModel) {
+                diffModel.forEach(file => container.appendChild(createDiffView(file)));
+            } else if (typeof call.rawInput !== 'undefined') {
                 const details = createDetails('Arguments', formatPayload(call.rawInput), false);
                 details.className = 'tool-arguments';
                 container.appendChild(details);
             }
 
             return container;
+        }
+
+        function createDiffView(file) {
+            const wrap = document.createElement('div');
+            wrap.className = 'diff-view';
+
+            const header = document.createElement('div');
+            header.className = 'diff-header';
+            let added = 0;
+            let removed = 0;
+            file.lines.forEach(line => {
+                if (line.type === 'add') { added += 1; }
+                if (line.type === 'del') { removed += 1; }
+            });
+            const pathLink = createFileReferenceLink(file.path, file.path);
+            header.appendChild(pathLink);
+            const stat = document.createElement('span');
+            stat.className = 'diff-stat';
+            stat.textContent = '+' + added + ' -' + removed;
+            header.appendChild(stat);
+            wrap.appendChild(header);
+
+            const pre = document.createElement('pre');
+            pre.className = 'diff-body';
+            file.lines.forEach(line => {
+                const row = document.createElement('div');
+                row.className = 'diff-line diff-' + line.type;
+                const sign = line.type === 'add' ? '+' : line.type === 'del' ? '-' : line.type === 'meta' ? '' : ' ';
+                row.textContent = sign + line.text;
+                pre.appendChild(row);
+            });
+            wrap.appendChild(pre);
+            return wrap;
         }
 
         function createDetails(summaryText, bodyText, open) {
