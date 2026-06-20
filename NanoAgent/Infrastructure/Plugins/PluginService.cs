@@ -12,6 +12,7 @@ internal sealed class PluginService : IPluginService
     private const string DefaultMarketplaceType = "github";
     private const string DefaultRef = "main";
     private const string ManifestFileName = "nanoagent-plugin.json";
+    private const string MarketplaceIndexFileName = "nanoagent-marketplace.json";
     private const string PluginsDirectoryRelativePath = ".nanoagent/plugins";
     private const string InstalledFileName = "installed.json";
     private const string MarketplacesFileName = "marketplaces.json";
@@ -168,6 +169,93 @@ internal sealed class PluginService : IPluginService
             cancellationToken);
 
         return new PluginInstallResult(installedEntry, manifest is not null);
+    }
+
+    public async Task<PluginMarketplaceRemoveResult> RemoveMarketplaceAsync(
+        string workspacePath,
+        string alias,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string workspaceRoot = NormalizeWorkspaceRoot(workspacePath);
+        string normalizedAlias = NormalizeAlias(alias)
+            ?? throw new InvalidOperationException("Marketplace alias cannot be empty.");
+
+        PluginMarketplaceConfig config = await LoadMarketplaceConfigAsync(workspaceRoot, cancellationToken);
+        Dictionary<string, PluginMarketplaceEntry> marketplaces = NormalizeMarketplaces(config.Marketplaces);
+        if (!marketplaces.TryGetValue(normalizedAlias, out PluginMarketplaceEntry? removed))
+        {
+            throw new InvalidOperationException(
+                $"Plugin marketplace '{normalizedAlias}' is not configured.");
+        }
+
+        marketplaces.Remove(normalizedAlias);
+        await SaveMarketplaceConfigAsync(
+            workspaceRoot,
+            new PluginMarketplaceConfig
+            {
+                Marketplaces = marketplaces
+            },
+            cancellationToken);
+
+        return new PluginMarketplaceRemoveResult(normalizedAlias, removed);
+    }
+
+    public async Task<PluginBrowseResult> BrowseMarketplaceAsync(
+        string workspacePath,
+        string marketplaceAlias,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string workspaceRoot = NormalizeWorkspaceRoot(workspacePath);
+        string normalizedAlias = NormalizeAlias(marketplaceAlias)
+            ?? throw new InvalidOperationException("Marketplace alias cannot be empty.");
+
+        PluginMarketplaceConfig config = await LoadMarketplaceConfigAsync(workspaceRoot, cancellationToken);
+        Dictionary<string, PluginMarketplaceEntry> marketplaces = NormalizeMarketplaces(config.Marketplaces);
+        if (!marketplaces.TryGetValue(normalizedAlias, out PluginMarketplaceEntry? marketplace))
+        {
+            throw new InvalidOperationException(
+                $"Plugin marketplace '{normalizedAlias}' is not configured.");
+        }
+
+        string? indexJson = await TryFetchTextFileAsync(
+            marketplace,
+            MarketplaceIndexFileName,
+            cancellationToken);
+        if (indexJson is null)
+        {
+            throw new InvalidOperationException(
+                $"Marketplace '{normalizedAlias}' does not publish a {MarketplaceIndexFileName} index.");
+        }
+
+        PluginMarketplaceIndex? index;
+        try
+        {
+            index = JsonSerializer.Deserialize(
+                indexJson,
+                PluginJsonContext.Default.PluginMarketplaceIndex);
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidOperationException(
+                $"Marketplace index '{MarketplaceIndexFileName}' is not valid JSON.",
+                exception);
+        }
+
+        IReadOnlyList<PluginIndexEntry> entries = (index?.Plugins ?? [])
+            .Where(static entry => entry is not null && !string.IsNullOrWhiteSpace(entry.Id))
+            .Select(static entry => new PluginIndexEntry
+            {
+                Id = entry.Id.Trim(),
+                Name = NormalizeOptional(entry.Name),
+                Description = NormalizeOptional(entry.Description)
+            })
+            .ToArray();
+
+        return new PluginBrowseResult(normalizedAlias, marketplace, entries);
     }
 
     public async Task<PluginListResult> ListAsync(
