@@ -340,6 +340,8 @@ nanoai --session <session-guid>
 | `/use <model>` | Switch directly to a model id. |
 | `/onboard` | Re-run provider onboarding through setup-type and provider submenus, then switch the active session. |
 | `/plugin marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]` | Add or update a GitHub-backed plugin marketplace entry in `.nanoagent/plugins/marketplaces.json`. |
+| `/plugin marketplace remove <alias>` | Drop a configured plugin marketplace entry from `.nanoagent/plugins/marketplaces.json`. |
+| `/plugin browse <marketplaceAlias>` | List the plugins a marketplace offers, read from its `nanoagent-marketplace.json` index. |
 | `/plugin install <pluginId>@<marketplaceAlias> [--force]` | Install a data-only plugin into safe `.nanoagent/...` paths and track it in `.nanoagent/plugins/installed.json`. |
 | `/plugin list` | Show configured plugin marketplaces, installed plugins, and tracked installed files. |
 | `/plugin uninstall <pluginId>` | Remove only the files tracked for an installed plugin. |
