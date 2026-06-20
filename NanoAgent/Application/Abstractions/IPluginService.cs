@@ -18,6 +18,16 @@ public interface IPluginService
         bool force,
         CancellationToken cancellationToken);
 
+    Task<PluginMarketplaceRemoveResult> RemoveMarketplaceAsync(
+        string workspacePath,
+        string alias,
+        CancellationToken cancellationToken);
+
+    Task<PluginBrowseResult> BrowseMarketplaceAsync(
+        string workspacePath,
+        string marketplaceAlias,
+        CancellationToken cancellationToken);
+
     Task<PluginListResult> ListAsync(
         string workspacePath,
         CancellationToken cancellationToken);

@@ -25,6 +25,34 @@ public sealed class PluginCommandHandlerTests
         pluginService.LastInstallRequest.Force.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_RemoveMarketplaceByAlias()
+    {
+        CapturingPluginService pluginService = new();
+        PluginCommandHandler sut = new(pluginService);
+
+        ReplCommandResult result = await sut.ExecuteAsync(
+            CreateContext("marketplace remove ponytail"),
+            CancellationToken.None);
+
+        result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
+        pluginService.LastRemovedAlias.Should().Be("ponytail");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_BrowseMarketplaceByAlias()
+    {
+        CapturingPluginService pluginService = new();
+        PluginCommandHandler sut = new(pluginService);
+
+        ReplCommandResult result = await sut.ExecuteAsync(
+            CreateContext("browse ponytail"),
+            CancellationToken.None);
+
+        result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
+        pluginService.LastBrowsedAlias.Should().Be("ponytail");
+    }
+
     private static ReplCommandContext CreateContext(string argumentText)
     {
         ReplSessionContext session = new(
@@ -46,6 +74,10 @@ public sealed class PluginCommandHandlerTests
     private sealed class CapturingPluginService : IPluginService
     {
         public InstallRequest? LastInstallRequest { get; private set; }
+
+        public string? LastRemovedAlias { get; private set; }
+
+        public string? LastBrowsedAlias { get; private set; }
 
         public Task<PluginMarketplaceAddResult> AddMarketplaceAsync(
             string workspacePath,
@@ -79,6 +111,39 @@ public sealed class PluginCommandHandlerTests
                     ]
                 },
                 UsedManifest: false));
+        }
+
+        public Task<PluginMarketplaceRemoveResult> RemoveMarketplaceAsync(
+            string workspacePath,
+            string alias,
+            CancellationToken cancellationToken)
+        {
+            LastRemovedAlias = alias;
+            return Task.FromResult(new PluginMarketplaceRemoveResult(
+                alias,
+                new PluginMarketplaceEntry
+                {
+                    Repository = "DietrichGebert/ponytail",
+                    Ref = "main"
+                }));
+        }
+
+        public Task<PluginBrowseResult> BrowseMarketplaceAsync(
+            string workspacePath,
+            string marketplaceAlias,
+            CancellationToken cancellationToken)
+        {
+            LastBrowsedAlias = marketplaceAlias;
+            return Task.FromResult(new PluginBrowseResult(
+                marketplaceAlias,
+                new PluginMarketplaceEntry
+                {
+                    Repository = "DietrichGebert/ponytail",
+                    Ref = "main"
+                },
+                [
+                    new PluginIndexEntry { Id = "ponytail", Name = "Ponytail" }
+                ]));
         }
 
         public Task<PluginListResult> ListAsync(
