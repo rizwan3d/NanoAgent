@@ -1,0 +1,283 @@
+name: PostHog GitHub release and NuGet install trend
+
+on:
+  workflow_dispatch:
+    inputs:
+      nuget_package_ids:
+        description: 'Comma/newline-separated NuGet package IDs to track. Leave blank to use vars.NUGET_PACKAGE_IDS.'
+        required: false
+        type: string
+  schedule:
+    - cron: '15 0 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  capture-download-trends:
+    runs-on: ubuntu-latest
+    env:
+      POSTHOG_PROJECT_API_KEY: ${{ secrets.POSTHOG_PROJECT_API_KEY }}
+      POSTHOG_HOST: ${{ vars.POSTHOG_HOST || 'https://us.i.posthog.com' }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPOSITORY: ${{ github.repository }}
+      NUGET_PACKAGE_IDS: ${{ github.event.inputs.nuget_package_ids || vars.NUGET_PACKAGE_IDS || '' }}
+    steps:
+      - name: Send GitHub release download snapshots to PostHog
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { POSTHOG_PROJECT_API_KEY, POSTHOG_HOST, GITHUB_TOKEN, REPOSITORY } = process.env
+
+          if (!POSTHOG_PROJECT_API_KEY) {
+            throw new Error('Missing required secret: POSTHOG_PROJECT_API_KEY')
+          }
+
+          const githubHeaders = {
+            Accept: 'application/vnd.github+json',
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            'X-GitHub-Api-Version': '2022-11-28',
+            'User-Agent': 'posthog-release-and-nuget-trend',
+          }
+
+          async function githubJson(path) {
+            const res = await fetch(`https://api.github.com/repos/${REPOSITORY}${path}`, {
+              headers: githubHeaders,
+            })
+            if (!res.ok) {
+              throw new Error(`GitHub API failed ${res.status}: ${await res.text()}`)
+            }
+            return res.json()
+          }
+
+          async function posthogCapture(event, properties) {
+            const endpoint = `${POSTHOG_HOST.replace(/\/$/, '')}/i/v0/e/`
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                api_key: POSTHOG_PROJECT_API_KEY,
+                event,
+                distinct_id: `github-release-downloads:${REPOSITORY}`,
+                properties: {
+                  ...commonProperties,
+                  ...properties,
+                  '$process_person_profile': false,
+                },
+              }),
+            })
+            if (!res.ok) {
+              throw new Error(`PostHog capture failed ${res.status}: ${await res.text()}`)
+            }
+          }
+
+          const collectedAt = new Date().toISOString()
+          const releases = await githubJson('/releases?per_page=100')
+
+          let repoTotal = 0
+          let assetEvents = 0
+
+          for (const release of releases) {
+            const assets = await githubJson(`/releases/${release.id}/assets?per_page=100`)
+            const releaseTotal = assets.reduce((sum, asset) => sum + (asset.download_count || 0), 0)
+            repoTotal += releaseTotal
+
+            await posthogCapture('nanoagent release download snapshot', {
+              repository: REPOSITORY,
+              release_id: release.id,
+              release_tag: release.tag_name,
+              release_name: release.name,
+              release_draft: release.draft,
+              release_prerelease: release.prerelease,
+              release_published_at: release.published_at,
+              release_download_count: releaseTotal,
+              asset_count: assets.length,
+              collected_at: collectedAt,
+              snapshot_type: 'release_total',
+            })
+
+            for (const asset of assets) {
+              assetEvents += 1
+              await posthogCapture('nanoagent release asset download snapshot', {
+                repository: REPOSITORY,
+                release_id: release.id,
+                release_tag: release.tag_name,
+                release_name: release.name,
+                release_published_at: release.published_at,
+                asset_id: asset.id,
+                asset_name: asset.name,
+                asset_label: asset.label,
+                asset_content_type: asset.content_type,
+                asset_size_bytes: asset.size,
+                asset_download_count: asset.download_count || 0,
+                browser_download_url: asset.browser_download_url,
+                collected_at: collectedAt,
+                snapshot_type: 'asset_total',
+              })
+            }
+          }
+
+          await posthogCapture('nanoagent repository release download snapshot', {
+            repository: REPOSITORY,
+            repository_download_count: repoTotal,
+            release_count: releases.length,
+            asset_event_count: assetEvents,
+            collected_at: collectedAt,
+            snapshot_type: 'repository_total',
+          })
+
+          console.log(`Sent ${releases.length} releases, ${assetEvents} assets, ${repoTotal} total GitHub release downloads to PostHog.`)
+          NODE
+
+      - name: Send NuGet package install/download snapshots to PostHog
+        if: ${{ env.NUGET_PACKAGE_IDS != '' }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { POSTHOG_PROJECT_API_KEY, POSTHOG_HOST, REPOSITORY, NUGET_PACKAGE_IDS } = process.env
+
+          if (!POSTHOG_PROJECT_API_KEY) {
+            throw new Error('Missing required secret: POSTHOG_PROJECT_API_KEY')
+          }
+
+          // Same identity shape as the GitHub release step so every event this
+          // workflow emits stays uniform (same $lib/CI fields and event prefix).
+          const commonProperties = {
+            '$lib': 'nanoagent-release-trend',
+            source: 'github-actions',
+            app_surface: 'github_actions',
+            execution_environment: 'ci',
+            is_ci: true,
+            ci_provider: 'github_actions',
+          }
+
+          const packageIds = (NUGET_PACKAGE_IDS || '')
+            .split(/[\n,]/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+
+          if (packageIds.length === 0) {
+            console.log('No NuGet package IDs configured; skipping NuGet trend capture.')
+            process.exit(0)
+          }
+
+          async function json(url, options = {}) {
+            const res = await fetch(url, options)
+            if (!res.ok) {
+              throw new Error(`Request failed ${res.status} for ${url}: ${await res.text()}`)
+            }
+            return res.json()
+          }
+
+          async function getNugetSearchEndpoint() {
+            const serviceIndex = await json('https://api.nuget.org/v3/index.json')
+            const preferredTypes = [
+              'SearchQueryService/3.5.0',
+              'SearchQueryService',
+              'SearchQueryService/3.0.0-rc',
+            ]
+            for (const type of preferredTypes) {
+              const resource = serviceIndex.resources.find((entry) => entry['@type'] === type)
+              if (resource) return resource['@id']
+            }
+            throw new Error('NuGet SearchQueryService endpoint was not found in the NuGet service index.')
+          }
+
+          async function posthogCapture(event, properties, distinctId) {
+            const endpoint = `${POSTHOG_HOST.replace(/\/$/, '')}/i/v0/e/`
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                api_key: POSTHOG_PROJECT_API_KEY,
+                event,
+                distinct_id: distinctId,
+                properties: {
+                  ...commonProperties,
+                  ...properties,
+                  '$process_person_profile': false,
+                },
+              }),
+            })
+            if (!res.ok) {
+              throw new Error(`PostHog capture failed ${res.status}: ${await res.text()}`)
+            }
+          }
+
+          const collectedAt = new Date().toISOString()
+          const searchEndpoint = await getNugetSearchEndpoint()
+
+          let trackedPackages = 0
+          let totalDownloads = 0
+          let totalVersionEvents = 0
+
+          for (const configuredPackageId of packageIds) {
+            const url = `${searchEndpoint}?q=${encodeURIComponent(configuredPackageId)}&take=20&prerelease=true&semVerLevel=2.0.0`
+            const result = await json(url, { headers: { Accept: 'application/json' } })
+            const packageResult = (result.data || []).find(
+              (entry) => String(entry.id || '').toLowerCase() === configuredPackageId.toLowerCase(),
+            )
+
+            if (!packageResult) {
+              await posthogCapture('nanoagent nuget package lookup failed', {
+                repository: REPOSITORY,
+                package_id: configuredPackageId,
+                collected_at: collectedAt,
+                snapshot_type: 'lookup_failed',
+              }, `nuget-package:${configuredPackageId.toLowerCase()}`)
+              console.warn(`NuGet package was not found: ${configuredPackageId}`)
+              continue
+            }
+
+            const packageId = packageResult.id
+            const packageTotalDownloads = Number(packageResult.totalDownloads || 0)
+            const versions = Array.isArray(packageResult.versions) ? packageResult.versions : []
+            const latestVersion = packageResult.version || (versions.length ? versions[versions.length - 1].version : null)
+
+            trackedPackages += 1
+            totalDownloads += packageTotalDownloads
+            totalVersionEvents += versions.length
+
+            await posthogCapture('nanoagent nuget package install snapshot', {
+              repository: REPOSITORY,
+              package_id: packageId,
+              package_title: packageResult.title || packageId,
+              package_description: packageResult.description || null,
+              package_project_url: packageResult.projectUrl || null,
+              package_license_url: packageResult.licenseUrl || null,
+              package_icon_url: packageResult.iconUrl || null,
+              package_verified: Boolean(packageResult.verified),
+              package_tags: packageResult.tags || [],
+              package_authors: packageResult.authors || [],
+              package_owners: packageResult.owners || [],
+              latest_version: latestVersion,
+              package_total_downloads: packageTotalDownloads,
+              package_version_count: versions.length,
+              collected_at: collectedAt,
+              snapshot_type: 'package_total',
+            }, `nuget-package:${packageId.toLowerCase()}`)
+
+            for (const versionInfo of versions) {
+              await posthogCapture('nanoagent nuget package version install snapshot', {
+                repository: REPOSITORY,
+                package_id: packageId,
+                package_version: versionInfo.version,
+                package_version_downloads: Number(versionInfo.downloads || 0),
+                collected_at: collectedAt,
+                snapshot_type: 'version_total',
+              }, `nuget-package:${packageId.toLowerCase()}`)
+            }
+          }
+
+          await posthogCapture('nanoagent nuget tracked packages install snapshot', {
+            repository: REPOSITORY,
+            package_ids: packageIds,
+            tracked_package_count: trackedPackages,
+            package_version_event_count: totalVersionEvents,
+            package_total_downloads: totalDownloads,
+            collected_at: collectedAt,
+            snapshot_type: 'tracked_packages_total',
+          }, `nuget-packages:${REPOSITORY}`)
+
+          console.log(`Sent NuGet snapshots for ${trackedPackages} packages, ${totalVersionEvents} versions, ${totalDownloads} total downloads to PostHog.`)
+          NODE

@@ -5,6 +5,7 @@ const { spawn } = require("child_process");
 
 const { ensureBinary } = require("../scripts/download");
 const { maybeUpdateBinary } = require("../scripts/update");
+const { trackInstall } = require("../scripts/telemetry");
 
 function log(message) {
   console.error(`[nanoagent] ${message}`);
@@ -23,7 +24,9 @@ function forwardSignal(child, signal) {
 }
 
 async function main() {
-  let binaryPath = await ensureBinary({ log });
+  // On a clean `bun add` (postinstall is skipped) the binary is fetched here on
+  // first launch; record the install once at that point.
+  let binaryPath = await ensureBinary({ log, onDownloaded: () => trackInstall() });
   binaryPath = await maybeUpdateBinary(binaryPath, { log });
 
   const child = spawn(binaryPath, process.argv.slice(2), {
