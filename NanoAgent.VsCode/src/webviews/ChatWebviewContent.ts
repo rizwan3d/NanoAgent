@@ -1293,6 +1293,75 @@ export function getChatWebviewContent(nonce: string) {
             gap: 8px;
         }
 
+        .agent-menu {
+            position: fixed;
+            z-index: 30;
+            display: grid;
+            gap: 1px;
+            min-width: 220px;
+            max-width: min(320px, 90vw);
+            padding: 6px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--panel-bg);
+            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+        }
+
+        .agent-menu.hidden {
+            display: none;
+        }
+
+        .agent-menu-header {
+            padding: 8px 10px 3px;
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+
+        .agent-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            padding: 6px 10px;
+            border-radius: 6px;
+            color: var(--fg);
+            text-align: left;
+            background: transparent;
+            font-size: 12px;
+        }
+
+        .agent-menu-item:hover {
+            background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+        }
+
+        .agent-menu-check {
+            flex: 0 0 auto;
+            width: 14px;
+            color: var(--focus);
+            text-align: center;
+        }
+
+        .agent-menu-label {
+            flex: 1 1 auto;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .agent-menu-sep {
+            height: 1px;
+            margin: 5px 6px;
+            background: var(--border);
+        }
+
+        .agent-menu-models {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
         @media (max-width: 760px) {
             .messages {
                 padding: 12px;
@@ -1513,6 +1582,8 @@ export function getChatWebviewContent(nonce: string) {
         </main>
     </div>
 
+    <div id="agent-menu" class="agent-menu hidden" role="menu"></div>
+
     <div id="modal-backdrop" class="modal-backdrop hidden">
         <div class="modal">
             <h2 id="modal-title"></h2>
@@ -1587,6 +1658,16 @@ export function getChatWebviewContent(nonce: string) {
         const stopButton = document.getElementById('stop-button');
         const modelButton = document.getElementById('model-button');
         const modelButtonLabel = document.getElementById('model-button-label');
+        const agentMenu = document.getElementById('agent-menu');
+        const REASONING_LEVELS = [
+            { label: 'None', value: 'none' },
+            { label: 'Minimal', value: 'minimal' },
+            { label: 'Low', value: 'low' },
+            { label: 'Medium', value: 'medium' },
+            { label: 'High', value: 'high' },
+            { label: 'Extra High', value: 'xhigh' },
+            { label: 'Max', value: 'max' }
+        ];
         const profileSelect = document.getElementById('profile-select');
         const sectionTitle = document.getElementById('section-title');
         const statusText = document.getElementById('status-text');
@@ -1837,7 +1918,7 @@ export function getChatWebviewContent(nonce: string) {
         settingsPage.querySelectorAll('.settings-action').forEach(button => {
             button.addEventListener('click', () => runSettingsAction(button));
         });
-        modelButton.addEventListener('click', showModelPicker);
+        modelButton.addEventListener('click', toggleAgentMenu);
         profileSelect.addEventListener('change', () => {
             post({ command: 'changeProfile', profileName: profileSelect.value || '' });
         });
@@ -2214,10 +2295,125 @@ export function getChatWebviewContent(nonce: string) {
 
         function renderModelSelect(models) {
             const activeModelId = sessionInfo && sessionInfo.modelId ? sessionInfo.modelId : '';
-            modelButtonLabel.textContent = activeModelId || 'Model';
+            const effort = activeReasoningLevel();
+            modelButtonLabel.textContent = (activeModelId || 'Model') + (effort ? ' · ' + effort.label : '');
             modelButton.title = models.length > 0
-                ? 'Choose model. Current: ' + (activeModelId || models[0])
-                : 'Choose model';
+                ? 'Model, reasoning & thinking. Current: ' + (activeModelId || models[0])
+                : 'Model, reasoning & thinking';
+            if (!agentMenu.classList.contains('hidden')) {
+                renderAgentMenu();
+            }
+        }
+
+        function activeReasoningLevel() {
+            const effort = sessionInfo && sessionInfo.reasoningEffort
+                ? String(sessionInfo.reasoningEffort).toLowerCase()
+                : '';
+            return REASONING_LEVELS.find(level => level.value === effort) || null;
+        }
+
+        function thinkingOn() {
+            return String(sessionInfo && sessionInfo.thinkingMode || '').toLowerCase() === 'on';
+        }
+
+        function toggleAgentMenu() {
+            if (agentMenu.classList.contains('hidden')) {
+                openAgentMenu();
+            } else {
+                closeAgentMenu();
+            }
+        }
+
+        function openAgentMenu() {
+            if (!sessionInfo) {
+                post({ command: 'selectModel' });
+                return;
+            }
+            renderAgentMenu();
+            agentMenu.classList.remove('hidden');
+            const rect = modelButton.getBoundingClientRect();
+            agentMenu.style.left = Math.max(8, rect.left) + 'px';
+            agentMenu.style.bottom = (window.innerHeight - rect.top + 6) + 'px';
+            setTimeout(() => document.addEventListener('mousedown', handleAgentMenuOutside), 0);
+        }
+
+        function closeAgentMenu() {
+            agentMenu.classList.add('hidden');
+            document.removeEventListener('mousedown', handleAgentMenuOutside);
+        }
+
+        function handleAgentMenuOutside(event) {
+            if (!agentMenu.contains(event.target) && event.target !== modelButton && !modelButton.contains(event.target)) {
+                closeAgentMenu();
+            }
+        }
+
+        function addMenuHeader(text) {
+            const header = document.createElement('div');
+            header.className = 'agent-menu-header';
+            header.textContent = text;
+            agentMenu.appendChild(header);
+        }
+
+        function addMenuItem(label, checked, onClick) {
+            const item = document.createElement('button');
+            item.className = 'agent-menu-item';
+            item.setAttribute('role', 'menuitemradio');
+            const check = document.createElement('span');
+            check.className = 'agent-menu-check';
+            check.textContent = checked ? '✓' : '';
+            const text = document.createElement('span');
+            text.className = 'agent-menu-label';
+            text.textContent = label;
+            item.appendChild(check);
+            item.appendChild(text);
+            item.addEventListener('click', () => {
+                closeAgentMenu();
+                onClick();
+            });
+            return item;
+        }
+
+        function addMenuSeparator() {
+            const sep = document.createElement('div');
+            sep.className = 'agent-menu-sep';
+            agentMenu.appendChild(sep);
+        }
+
+        function renderAgentMenu() {
+            agentMenu.textContent = '';
+
+            addMenuHeader('Reasoning');
+            const activeEffort = activeReasoningLevel();
+            REASONING_LEVELS.forEach(level => {
+                agentMenu.appendChild(addMenuItem(
+                    level.label,
+                    activeEffort && activeEffort.value === level.value,
+                    () => post({ command: 'runSessionCommand', text: '/reasoning ' + level.value })
+                ));
+            });
+
+            addMenuSeparator();
+            addMenuHeader('Thinking');
+            const isOn = thinkingOn();
+            agentMenu.appendChild(addMenuItem('Thinking on', isOn,
+                () => post({ command: 'runSessionCommand', text: '/thinking on' })));
+            agentMenu.appendChild(addMenuItem('Thinking off', !isOn,
+                () => post({ command: 'runSessionCommand', text: '/thinking off' })));
+
+            const models = getAvailableModelIds();
+            if (models.length > 0) {
+                addMenuSeparator();
+                addMenuHeader('Model');
+                const activeModelId = sessionInfo && sessionInfo.modelId ? sessionInfo.modelId : '';
+                const modelGroup = document.createElement('div');
+                modelGroup.className = 'agent-menu-models';
+                models.forEach(modelId => {
+                    modelGroup.appendChild(addMenuItem(modelId, modelId === activeModelId,
+                        () => post({ command: 'changeModel', modelId })));
+                });
+                agentMenu.appendChild(modelGroup);
+            }
         }
 
         function getDefaultProfileName(profiles) {
