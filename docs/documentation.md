@@ -335,6 +335,7 @@ nanoai --session <session-guid>
 | `/help` | List commands and usage. |
 | `/budget [status\|local\|cloud]` | Show or configure budget controls. |
 | `/config` | Show provider, model, profile, thinking mode, reasoning effort, and reasoning-output behavior. |
+| `/doctor` | Show comprehensive diagnostics for system, workspace, provider, permissions, tools, LSP, sandbox, and budget status. |
 | `/models` | Choose the active model with the arrow-key picker. |
 | `/use <model>` | Switch directly to a model id. |
 | `/onboard` | Re-run provider onboarding through setup-type and provider submenus, then switch the active session. |
@@ -1398,9 +1399,9 @@ Run `/permissions` and `/rules` to see active policy. You can approve the prompt
 
 ### Shell sandboxing fails on Windows
 
-Foreground shell commands in `read-only` and `workspace-write` modes use the Windows sandbox runner. If a restricted command still fails, inspect `%APPDATA%\NanoAgent\.sandbox\sandbox.log`, rerun the Windows sandbox setup if prompted, and verify the working directory still exists.
+Foreground shell commands and background terminals in `read-only` and `workspace-write` modes use the Windows sandbox runner. If a restricted command still fails, inspect `%APPDATA%\NanoAgent\.sandbox\sandbox.log`, rerun the Windows sandbox setup if prompted, and verify the working directory still exists.
 
-Restricted pseudo-terminal sessions and restricted background terminals are not wired to the Windows sandbox runner yet. Those requests fail closed; rerun without `pty`, use a foreground command, or approve sandbox escalation only when you trust the command.
+Restricted pseudo-terminal sessions are not supported by the Windows sandbox runner. Those requests fail closed; rerun without `pty`, use a non-PTY foreground command or background terminal, or approve sandbox escalation only when you trust the command.
 
 ### The agent cannot read a file
 
