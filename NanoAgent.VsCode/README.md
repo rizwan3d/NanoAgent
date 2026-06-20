@@ -50,8 +50,20 @@ Then open the NanoAgent view in VS Code or run `NanoAgent: Open Chat` from the C
 - Review the current file or current Git diff.
 - Prefill planning prompts for code changes.
 - Apply suggested changes from a previous NanoAgent response.
+- Browse, install, and remove data-only plugins from a marketplace panel.
 - Start, stop, and restart the local `nanoai --acp` process.
 - Open extension logs and settings from VS Code commands.
+
+## Plugins
+
+Open **Settings (gear) → Workspace → Plugins** in the NanoAgent chat view to manage data-only plugins without leaving VS Code:
+
+- **Browse** a marketplace to list the plugins it offers (read from the repo's `nanoagent-marketplace.json` index; output shows in chat).
+- **Install** a plugin by id from a configured marketplace, optionally overwriting existing files.
+- **Uninstall** an installed plugin, removing only its tracked files.
+- **Add** a marketplace by `owner/repo`, or **Remove** a configured one.
+
+The panel reads state from `.nanoagent/plugins/marketplaces.json` and `.nanoagent/plugins/installed.json`, and runs the same `/plugin` commands available in the CLI.
 
 ## Settings
 
