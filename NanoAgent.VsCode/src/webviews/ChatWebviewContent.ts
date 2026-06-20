@@ -310,9 +310,9 @@ export function getChatWebviewContent(nonce: string) {
         .messages {
             display: flex;
             flex-direction: column;
-            gap: var(--space-5);
+            gap: 14px;
             min-height: 0;
-            padding: 16px 16px 10px;
+            padding: 18px 14px 10px;
             overflow-y: auto;
             scroll-behavior: smooth;
         }
@@ -328,18 +328,18 @@ export function getChatWebviewContent(nonce: string) {
 
         .message-card.user {
             align-self: flex-end;
-            max-width: min(580px, 86%);
-            padding: 8px 11px;
-            border: 1px solid color-mix(in srgb, var(--focus) 22%, var(--border-subtle));
-            border-radius: 14px 14px 4px 14px;
+            max-width: min(680px, 92%);
+            padding: 0;
+            border: 0;
+            border-radius: 0;
             color: var(--input-fg);
-            background: color-mix(in srgb, var(--input-bg) 76%, var(--focus) 8%);
+            background: transparent;
         }
 
         .message-card.assistant {
             align-self: flex-start;
             max-width: min(860px, 94%);
-            padding: 1px 0;
+            padding: 0;
         }
 
         .message-card.reasoning,
@@ -355,20 +355,16 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         .message-card.tool {
-            padding: 8px 10px;
-            border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--warning);
-            border-radius: var(--radius-md);
+            padding: 0;
+            border: 0;
+            border-radius: 0;
             color: var(--muted);
-            background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+            background: transparent;
         }
 
-        .message-card.tool.completed {
-            border-left-color: var(--ok);
-        }
-
+        .message-card.tool.completed,
         .message-card.tool.failed {
-            border-left-color: var(--danger);
+            border: 0;
         }
 
         .message-card.metrics {
@@ -381,11 +377,11 @@ export function getChatWebviewContent(nonce: string) {
         .message-card.system {
             align-self: center;
             max-width: 96%;
-            padding: 7px 10px;
-            border: 1px solid color-mix(in srgb, var(--warning) 34%, transparent);
-            border-radius: var(--radius-md);
+            padding: 0;
+            border: 0;
+            border-radius: 0;
             color: color-mix(in srgb, var(--warning) 92%, var(--fg));
-            background: color-mix(in srgb, var(--warning) 10%, var(--app-bg));
+            background: transparent;
         }
 
         .message-label {
@@ -402,30 +398,375 @@ export function getChatWebviewContent(nonce: string) {
             color: var(--fg);
         }
 
-        .thinking-details {
-            padding: 8px 10px;
-            border: 1px solid var(--border-subtle);
-            border-left: 2px solid var(--focus);
-            border-radius: var(--radius-md);
-            background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+        .markdown-rendered {
+            color: inherit;
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
-        .thinking-details summary {
+        .markdown-rendered :first-child {
+            margin-top: 0;
+        }
+
+        .markdown-rendered :last-child {
+            margin-bottom: 0;
+        }
+
+        .markdown-rendered p {
+            margin: 0 0 0.58em;
+        }
+
+        .markdown-rendered h1,
+        .markdown-rendered h2,
+        .markdown-rendered h3,
+        .markdown-rendered h4,
+        .markdown-rendered h5,
+        .markdown-rendered h6 {
+            margin: 0.72em 0 0.34em;
+            color: inherit;
+            font-size: inherit;
+            line-height: inherit;
+            font-weight: 700;
+        }
+
+        .markdown-rendered ul,
+        .markdown-rendered ol {
+            margin: 0.34em 0 0.64em 1.35em;
+            padding: 0;
+        }
+
+        .markdown-rendered li {
+            margin: 0.16em 0;
+            padding: 0;
+        }
+
+        .markdown-rendered blockquote {
+            margin: 0.45em 0 0.65em;
+            padding: 0 0 0 0.9em;
+            border: 0;
+            color: inherit;
+        }
+
+        .markdown-rendered code,
+        .markdown-rendered pre {
+            border: 0;
+            border-radius: 0;
+            color: inherit;
+            background: transparent;
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+        }
+
+        .markdown-rendered code {
+            padding: 0;
+            font-size: 0.96em;
+        }
+
+        .markdown-rendered pre {
+            max-height: none;
+            margin: 0.45em 0 0.7em;
+            padding: 0;
+            overflow: auto;
+            font-size: 12px;
+            line-height: 1.48;
+            white-space: pre;
+            overflow-wrap: normal;
+        }
+
+        .markdown-rendered a {
+            color: var(--link);
+            text-decoration: none;
+            text-underline-offset: 2px;
+        }
+
+        .markdown-rendered a:hover {
+            color: var(--vscode-textLink-activeForeground, #4daafc);
+            text-decoration: underline;
+        }
+
+
+        .thinking-details,
+        .tool-call-details {
+            min-width: 0;
+            overflow: visible;
+            border: 0;
+            border-radius: 0;
+            background: transparent;
+        }
+
+        .thinking-details,
+        .tool-call-details,
+        .message-card.tool.completed .tool-call-details,
+        .message-card.tool.failed .tool-call-details {
+            border-left: 0;
+        }
+
+        .thinking-details > summary,
+        .tool-call-details > summary {
+            list-style: none;
+        }
+
+        .thinking-details > summary::-webkit-details-marker,
+        .tool-call-details > summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .inline-call-summary {
+            display: flex;
+            align-items: center;
+            gap: var(--space-3);
+            min-width: 0;
+            padding: 0;
+            color: var(--muted);
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .inline-call-summary:hover .inline-call-title,
+        .inline-call-summary:hover .inline-call-icon,
+        .inline-call-summary:hover .inline-call-chevron {
+            color: var(--fg);
+        }
+
+        .inline-call-icon {
+            flex: 0 0 auto;
+            width: 16px;
+            color: var(--muted-soft);
+            font-size: 12px;
+            line-height: 1;
+            text-align: center;
+        }
+
+        .inline-call-icon:empty {
+            display: none;
+        }
+
+        .inline-call-title {
+            min-width: 0;
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 650;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .inline-call-meta {
+            flex: 0 0 auto;
             color: var(--muted);
             font-size: 10px;
-            font-weight: 700;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
         }
 
-        .thinking-details pre {
-            margin: 7px 0 0;
-            color: var(--muted);
+        .inline-call-chevron {
+            flex: 0 0 auto;
+            margin-left: auto;
+            color: var(--muted-soft);
+            font-size: 12px;
+            transition: transform 0.14s ease;
+        }
+
+        .thinking-details[open] .inline-call-chevron,
+        .tool-call-details[open] .inline-call-chevron {
+            transform: rotate(180deg);
+        }
+
+        .inline-call-content {
+            display: grid;
+            gap: var(--space-3);
+            padding: 6px 0 0 24px;
+        }
+
+        .tool-call-details > .inline-call-content {
+            padding-left: 0;
+        }
+
+        .thinking-details pre,
+        .tool-output-pre {
+            max-height: 260px;
+            margin: 0;
+            padding: 0;
+            overflow: auto;
+            border: 0;
+            border-radius: 0;
+            color: var(--fg);
+            background: transparent;
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
             font-size: 12px;
-            line-height: 1.5;
+            line-height: 1.48;
             white-space: pre-wrap;
             overflow-wrap: anywhere;
+        }
+
+        .thinking-details pre {
+            color: var(--muted);
+        }
+
+        .tool-output-pre {
+            white-space: pre;
+            overflow-wrap: normal;
+        }
+
+        .vscode-code-block {
+            display: grid;
+            max-width: 100%;
+            overflow: hidden;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            background: color-mix(in srgb, var(--surface-1) 96%, #000000 4%);
+        }
+
+        .vscode-code-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-3);
+            min-width: 0;
+            padding: 6px 9px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: color-mix(in srgb, var(--surface-2) 88%, transparent);
+            font-size: 11px;
+        }
+
+        .vscode-code-header-main {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            min-width: 0;
+        }
+
+        .vscode-code-header-main .file-link,
+        .vscode-code-title {
+            min-width: 0;
+            overflow: hidden;
+            color: var(--muted);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .vscode-code-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            flex: 0 0 auto;
+        }
+
+        .vscode-code-language,
+        .vscode-code-line-count {
+            color: var(--muted);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 10px;
+            letter-spacing: 0.25px;
+            text-transform: uppercase;
+        }
+
+        .vscode-code-copy-button {
+            display: inline-grid;
+            place-items: center;
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 0;
+            border-radius: var(--radius-xs);
+            color: var(--muted);
+            background: transparent;
+            font-size: 13px;
+            line-height: 1;
+        }
+
+        .vscode-code-copy-button:hover {
+            color: var(--fg);
+            background: var(--surface-hover);
+        }
+
+        .vscode-code-body {
+            max-height: 360px;
+            margin: 0;
+            padding: 0;
+            overflow: auto;
+            border: 0;
+            border-radius: 0;
+            color: var(--vscode-editor-foreground, var(--fg));
+            background: var(--vscode-editor-background, color-mix(in srgb, var(--app-bg) 91%, #000000 9%));
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 12px;
+            line-height: 1.48;
+            white-space: pre;
+        }
+
+        .vscode-code-line {
+            display: grid;
+            grid-template-columns: minmax(42px, max-content) minmax(0, 1fr);
+            min-width: max-content;
+        }
+
+        .vscode-code-line.no-line-number {
+            grid-template-columns: minmax(0, 1fr);
+            min-width: 0;
+        }
+
+        .vscode-code-block.tool-output .vscode-code-body {
+            max-height: 320px;
+            white-space: pre-wrap;
+        }
+
+        .vscode-code-block.read-file-output .vscode-code-body {
+            max-height: 520px;
+        }
+
+        .vscode-code-block.tool-output .vscode-code-line-content,
+        .vscode-code-line.no-line-number .vscode-code-line-content {
+            padding: 1px 12px;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
+        .vscode-code-line:hover {
+            background: color-mix(in srgb, var(--vscode-editorLineHighlightBackground, var(--fg)) 8%, transparent);
+        }
+
+        .vscode-code-line-number {
+            padding: 1px 9px;
+            color: var(--vscode-editorLineNumber-foreground, var(--muted-soft));
+            text-align: right;
+            user-select: none;
+        }
+
+        .vscode-code-line-content {
+            min-width: 0;
+            padding: 1px 12px 1px 0;
+            white-space: pre;
+        }
+
+        .syntax-comment {
+            color: var(--vscode-editorLineNumber-foreground, var(--muted));
+            font-style: italic;
+        }
+
+        .syntax-keyword {
+            color: var(--vscode-symbolIcon-keywordForeground, #c586c0);
+        }
+
+        .syntax-string {
+            color: var(--vscode-symbolIcon-stringForeground, #ce9178);
+        }
+
+        .syntax-number,
+        .syntax-constant {
+            color: var(--vscode-symbolIcon-numberForeground, #b5cea8);
+        }
+
+        .syntax-function {
+            color: var(--vscode-symbolIcon-functionForeground, #dcdcaa);
+        }
+
+        .syntax-property {
+            color: var(--vscode-symbolIcon-propertyForeground, #9cdcfe);
+        }
+
+        .syntax-muted {
+            color: var(--muted);
         }
 
         .tool-message {
@@ -434,63 +775,16 @@ export function getChatWebviewContent(nonce: string) {
             min-width: 0;
         }
 
-        .tool-message-header {
-            display: flex;
-            align-items: center;
-            gap: var(--space-3);
-            min-width: 0;
-        }
-
-        .tool-message-status {
-            flex: 0 0 auto;
-            padding: 1px 6px;
-            border-radius: 999px;
-            color: var(--warning);
-            background: color-mix(in srgb, var(--warning) 11%, transparent);
-            font-size: 9px;
-            font-weight: 700;
-            letter-spacing: 0.35px;
-            text-transform: uppercase;
-        }
-
-        .message-card.tool.completed .tool-message-status {
-            color: var(--ok);
-            background: color-mix(in srgb, var(--ok) 11%, transparent);
-        }
-
-        .message-card.tool.failed .tool-message-status {
-            color: var(--danger);
-            background: color-mix(in srgb, var(--danger) 12%, transparent);
-        }
-
-        .tool-message-title {
-            min-width: 0;
-            color: var(--fg);
-            font-weight: 600;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .tool-message-kind {
+        .tool-message-kind,
+        .tool-pending {
             color: var(--muted);
             font-size: 11px;
         }
 
-        .tool-output-pre {
-            max-height: 260px;
-            margin: 0;
-            padding: 9px;
-            overflow: auto;
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-sm);
-            color: var(--fg);
-            background: color-mix(in srgb, var(--app-bg) 92%, #000000 8%);
-            font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 12px;
-            line-height: 1.48;
-            white-space: pre;
-            overflow-wrap: normal;
+        .tool-message-kind {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .tool-arguments summary {
@@ -502,10 +796,15 @@ export function getChatWebviewContent(nonce: string) {
         .diff-view {
             display: grid;
             gap: 0;
+            max-width: 100%;
+            overflow: hidden;
             border: 1px solid var(--border-subtle);
             border-radius: var(--radius-md);
-            overflow: hidden;
-            background: var(--surface-1);
+            background: color-mix(in srgb, var(--surface-1) 96%, #000000 4%);
+        }
+
+        .diff-view + .diff-view {
+            margin-top: var(--space-2);
         }
 
         .diff-header {
@@ -513,10 +812,33 @@ export function getChatWebviewContent(nonce: string) {
             align-items: center;
             justify-content: space-between;
             gap: var(--space-3);
+            min-width: 0;
             padding: 6px 9px;
             border-bottom: 1px solid var(--border-subtle);
             background: color-mix(in srgb, var(--surface-2) 88%, transparent);
             font-size: 11px;
+        }
+
+        .diff-header-main {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            min-width: 0;
+        }
+
+        .diff-header-main .file-link {
+            min-width: 0;
+            overflow: hidden;
+            color: var(--muted);
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .diff-header-actions {
+            display: inline-flex;
+            align-items: center;
+            gap: var(--space-2);
+            flex: 0 0 auto;
         }
 
         .diff-stat {
@@ -525,39 +847,100 @@ export function getChatWebviewContent(nonce: string) {
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
         }
 
+        .diff-copy-button {
+            display: inline-grid;
+            place-items: center;
+            width: 20px;
+            height: 20px;
+            padding: 0;
+            border: 0;
+            border-radius: var(--radius-xs);
+            color: var(--muted);
+            background: transparent;
+            font-size: 13px;
+            line-height: 1;
+        }
+
+        .diff-copy-button:hover {
+            color: var(--fg);
+            background: var(--surface-hover);
+        }
+
         .diff-body {
             max-height: 320px;
             margin: 0;
-            padding: 5px 0;
+            padding: 0;
             overflow: auto;
             border: 0;
             border-radius: 0;
-            background: color-mix(in srgb, var(--app-bg) 92%, #000000 8%);
+            background: color-mix(in srgb, var(--app-bg) 91%, #000000 9%);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
             font-size: 12px;
             line-height: 1.45;
             white-space: pre;
         }
 
+        .diff-created .diff-body,
+        .diff-add-only .diff-body {
+            border-left: 4px solid color-mix(in srgb, var(--ok) 88%, transparent);
+        }
+
+        .diff-deleted .diff-body,
+        .diff-del-only .diff-body {
+            border-left: 4px solid color-mix(in srgb, var(--danger) 88%, transparent);
+        }
+
         .diff-line {
-            padding: 1px 9px;
+            display: grid;
+            grid-template-columns: minmax(42px, max-content) 18px minmax(0, 1fr);
+            min-width: max-content;
+            white-space: pre;
+        }
+
+        .diff-line-number {
+            padding: 1px 8px 1px 9px;
+            color: var(--muted-soft);
+            text-align: right;
+            user-select: none;
+        }
+
+        .diff-line-sign {
+            padding: 1px 4px 1px 2px;
+            color: var(--muted-soft);
+            user-select: none;
+        }
+
+        .diff-line-code {
+            min-width: 0;
+            padding: 1px 10px 1px 0;
+            color: inherit;
             white-space: pre-wrap;
             overflow-wrap: anywhere;
         }
 
         .diff-add {
-            color: var(--ok);
+            color: color-mix(in srgb, var(--ok) 84%, var(--fg));
             background: color-mix(in srgb, var(--ok) 12%, transparent);
         }
 
         .diff-del {
-            color: var(--danger);
-            background: color-mix(in srgb, var(--danger) 12%, transparent);
+            color: color-mix(in srgb, var(--danger) 86%, var(--fg));
+            background: color-mix(in srgb, var(--danger) 13%, transparent);
         }
 
         .diff-meta {
             color: var(--muted);
             background: color-mix(in srgb, var(--focus) 10%, transparent);
+        }
+
+        .diff-add .diff-line-sign,
+        .diff-add .diff-line-number {
+            color: color-mix(in srgb, var(--ok) 82%, var(--muted));
+        }
+
+        .diff-del .diff-line-sign,
+        .diff-del .diff-line-number {
+            color: color-mix(in srgb, var(--danger) 82%, var(--muted));
         }
 
         .tool-pending {
@@ -583,12 +966,12 @@ export function getChatWebviewContent(nonce: string) {
             z-index: 1;
             width: max-content;
             max-width: min(320px, 90%);
-            padding: 7px 11px;
-            border: 1px solid var(--border-subtle);
-            border-radius: 999px;
+            padding: 0;
+            border: 0;
+            border-radius: 0;
             color: var(--muted);
-            background: color-mix(in srgb, var(--surface-1) 96%, transparent);
-            box-shadow: 0 -8px 18px color-mix(in srgb, var(--app-bg) 76%, transparent);
+            background: transparent;
+            box-shadow: none;
         }
 
         .progress-dots {
@@ -629,12 +1012,12 @@ export function getChatWebviewContent(nonce: string) {
             margin: auto;
             max-width: 430px;
             padding: 22px 20px;
-            border: 1px solid var(--border-subtle);
-            border-radius: var(--radius-lg);
+            border: 0;
+            border-radius: 0;
             color: var(--muted);
             text-align: center;
             line-height: 1.5;
-            background: color-mix(in srgb, var(--surface-1) 76%, transparent);
+            background: transparent;
         }
 
         .empty-title {
@@ -2168,7 +2551,7 @@ export function getChatWebviewContent(nonce: string) {
 
             const body = document.createElement('div');
             body.className = 'message-text';
-            renderLinkifiedText(body, text);
+            renderMessageText(body, text, role);
             article.appendChild(body);
 
             article.dataset.text = text;
@@ -2184,6 +2567,261 @@ export function getChatWebviewContent(nonce: string) {
         function renderLinkifiedText(container, text) {
             container.textContent = '';
             appendLinkifiedText(container, String(text || ''));
+        }
+
+        function renderMessageText(container, text, role) {
+            if (role === 'assistant' || role === 'reasoning') {
+                renderMarkdownText(container, text);
+                return;
+            }
+
+            renderLinkifiedText(container, text);
+        }
+
+        function renderMarkdownText(container, text) {
+            container.textContent = '';
+            const markdown = document.createElement('div');
+            markdown.className = 'markdown-rendered';
+            appendMarkdownBlocks(markdown, String(text || ''));
+            container.appendChild(markdown);
+        }
+
+        function appendMarkdownBlocks(container, text) {
+            const newline = getMarkdownNewline();
+            const lines = String(text || '').replaceAll(String.fromCharCode(13) + newline, newline).split(newline);
+            let index = 0;
+
+            while (index < lines.length) {
+                const line = lines[index];
+                if (!line || line.trim().length === 0) {
+                    index += 1;
+                    continue;
+                }
+
+                const fence = getMarkdownFence(line);
+                if (fence) {
+                    const block = readMarkdownCodeFence(lines, index, fence);
+                    container.appendChild(createMarkdownCodeBlock(block.content, block.language));
+                    index = block.nextIndex;
+                    continue;
+                }
+
+                const heading = line.match(/^(#{1,6})\\s+(.+)$/);
+                if (heading) {
+                    const level = Math.min(6, heading[1].length);
+                    const element = document.createElement('h' + level);
+                    appendMarkdownInline(element, heading[2].replace(/\\s+#+\\s*$/, ''));
+                    container.appendChild(element);
+                    index += 1;
+                    continue;
+                }
+
+                if (/^\\s*>\\s?/.test(line)) {
+                    const quoteLines = [];
+                    while (index < lines.length && /^\\s*>\\s?/.test(lines[index])) {
+                        quoteLines.push(lines[index].replace(/^\\s*>\\s?/, ''));
+                        index += 1;
+                    }
+                    const quote = document.createElement('blockquote');
+                    appendMarkdownBlocks(quote, quoteLines.join(newline));
+                    container.appendChild(quote);
+                    continue;
+                }
+
+                const listInfo = getMarkdownListInfo(line);
+                if (listInfo) {
+                    const list = document.createElement(listInfo.ordered ? 'ol' : 'ul');
+                    while (index < lines.length) {
+                        const itemInfo = getMarkdownListInfo(lines[index]);
+                        if (!itemInfo || itemInfo.ordered !== listInfo.ordered) {
+                            break;
+                        }
+                        const item = document.createElement('li');
+                        appendMarkdownInline(item, itemInfo.text);
+                        list.appendChild(item);
+                        index += 1;
+                    }
+                    container.appendChild(list);
+                    continue;
+                }
+
+                const paragraph = [];
+                while (index < lines.length) {
+                    const current = lines[index];
+                    if (!current || current.trim().length === 0) {
+                        break;
+                    }
+                    if (getMarkdownFence(current) || /^(#{1,6})\\s+/.test(current) || /^\\s*>\\s?/.test(current) || getMarkdownListInfo(current)) {
+                        break;
+                    }
+                    paragraph.push(current);
+                    index += 1;
+                }
+
+                const p = document.createElement('p');
+                appendMarkdownInline(p, paragraph.join(newline));
+                container.appendChild(p);
+            }
+        }
+
+        function getMarkdownNewline() {
+            return String.fromCharCode(10);
+        }
+
+        function getMarkdownFence(line) {
+            const trimmed = String(line || '').trim();
+            const backtickFence = String.fromCharCode(96).repeat(3);
+            if (trimmed.startsWith(backtickFence)) {
+                return { marker: backtickFence, language: trimmed.slice(backtickFence.length).trim().split(/\\s+/)[0] || '' };
+            }
+            if (trimmed.startsWith('~~~')) {
+                return { marker: '~~~', language: trimmed.slice(3).trim().split(/\\s+/)[0] || '' };
+            }
+            return null;
+        }
+
+        function readMarkdownCodeFence(lines, startIndex, fence) {
+            const newline = getMarkdownNewline();
+            const codeLines = [];
+            let index = startIndex + 1;
+            while (index < lines.length) {
+                const current = String(lines[index] || '');
+                if (current.trim().startsWith(fence.marker)) {
+                    return {
+                        content: codeLines.join(newline),
+                        language: fence.language,
+                        nextIndex: index + 1
+                    };
+                }
+                codeLines.push(current);
+                index += 1;
+            }
+            return {
+                content: codeLines.join(newline),
+                language: fence.language,
+                nextIndex: index
+            };
+        }
+
+        function createMarkdownCodeBlock(content, language) {
+            const pre = document.createElement('pre');
+            pre.className = 'markdown-code-block';
+            if (language) {
+                pre.dataset.language = language;
+            }
+            const code = document.createElement('code');
+            code.textContent = String(content || '');
+            pre.appendChild(code);
+            return pre;
+        }
+
+        function getMarkdownListInfo(line) {
+            const unordered = String(line || '').match(/^\\s*[-+*]\\s+(.+)$/);
+            if (unordered) {
+                return { ordered: false, text: unordered[1] };
+            }
+            const ordered = String(line || '').match(/^\\s*\\d+[.)]\\s+(.+)$/);
+            if (ordered) {
+                return { ordered: true, text: ordered[1] };
+            }
+            return null;
+        }
+
+        function appendMarkdownInline(container, text) {
+            const value = String(text || '');
+            let index = 0;
+            const tick = String.fromCharCode(96);
+            const specials = '[' + tick + '*_~';
+
+            while (index < value.length) {
+                const char = value[index];
+
+                if (char === tick) {
+                    const end = value.indexOf(tick, index + 1);
+                    if (end > index + 1) {
+                        const code = document.createElement('code');
+                        code.textContent = value.slice(index + 1, end);
+                        container.appendChild(code);
+                        index = end + 1;
+                        continue;
+                    }
+                }
+
+                if (value.startsWith('~~', index)) {
+                    const end = value.indexOf('~~', index + 2);
+                    if (end > index + 2) {
+                        const del = document.createElement('del');
+                        appendMarkdownInline(del, value.slice(index + 2, end));
+                        container.appendChild(del);
+                        index = end + 2;
+                        continue;
+                    }
+                }
+
+                if (value.startsWith('**', index) || value.startsWith('__', index)) {
+                    const marker = value.slice(index, index + 2);
+                    const end = value.indexOf(marker, index + 2);
+                    if (end > index + 2) {
+                        const strong = document.createElement('strong');
+                        appendMarkdownInline(strong, value.slice(index + 2, end));
+                        container.appendChild(strong);
+                        index = end + 2;
+                        continue;
+                    }
+                }
+
+                if ((char === '*' || char === '_') && value[index + 1] !== char) {
+                    const end = value.indexOf(char, index + 1);
+                    if (end > index + 1) {
+                        const em = document.createElement('em');
+                        appendMarkdownInline(em, value.slice(index + 1, end));
+                        container.appendChild(em);
+                        index = end + 1;
+                        continue;
+                    }
+                }
+
+                if (char === '[') {
+                    const closeLabel = value.indexOf(']', index + 1);
+                    const openTarget = closeLabel >= 0 && value[closeLabel + 1] === '(' ? closeLabel + 1 : -1;
+                    const closeTarget = openTarget >= 0 ? value.indexOf(')', openTarget + 1) : -1;
+                    if (closeLabel > index + 1 && openTarget >= 0 && closeTarget > openTarget + 1) {
+                        container.appendChild(createMarkdownLink(value.slice(index + 1, closeLabel), value.slice(openTarget + 1, closeTarget)));
+                        index = closeTarget + 1;
+                        continue;
+                    }
+                }
+
+                let next = value.length;
+                for (const special of specials) {
+                    const found = value.indexOf(special, index + 1);
+                    if (found >= 0 && found < next) {
+                        next = found;
+                    }
+                }
+                appendLinkifiedText(container, value.slice(index, next));
+                index = next;
+            }
+        }
+
+        function createMarkdownLink(label, target) {
+            const cleanTarget = String(target || '').trim();
+            const fileTarget = trimFileReference(cleanTarget);
+            if (fileTarget && isLikelyFileReference(fileTarget, cleanTarget, 0)) {
+                return createFileReferenceLink(label || fileTarget, fileTarget);
+            }
+
+            const link = document.createElement('a');
+            link.href = /^(https?:|mailto:)/i.test(cleanTarget) ? cleanTarget : '#';
+            link.textContent = label || cleanTarget;
+            link.title = cleanTarget;
+            if (/^(https?:|mailto:)/i.test(cleanTarget)) {
+                link.target = '_blank';
+                link.rel = 'noopener noreferrer';
+            } else {
+                link.addEventListener('click', event => event.preventDefault());
+            }
+            return link;
         }
 
         function appendLinkifiedText(container, text) {
@@ -2291,7 +2929,7 @@ export function getChatWebviewContent(nonce: string) {
             const currentText = activeAssistantMessage.dataset.text || '';
             const nextText = currentText + chunk.text;
             activeAssistantMessage.dataset.text = nextText;
-            renderLinkifiedText(body, nextText);
+            renderMarkdownText(body, nextText);
             moveProgressIndicatorToEnd();
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             updateStatusRail();
@@ -2308,13 +2946,17 @@ export function getChatWebviewContent(nonce: string) {
 
             emptyState.hidden = true;
             const body = activeReasoningMessage.querySelector('.message-text');
+            if (!body) {
+                return;
+            }
+
+            const previousDetails = body.querySelector('.thinking-details');
+            const shouldOpen = previousDetails ? previousDetails.open : false;
             const currentText = activeReasoningMessage.dataset.text || '';
             const nextText = currentText + text;
             activeReasoningMessage.dataset.text = nextText;
             body.textContent = '';
-            const details = createDetails('Thinking', nextText, true);
-            details.className = 'thinking-details';
-            body.appendChild(details);
+            body.appendChild(createReasoningDetails(nextText, shouldOpen));
             moveProgressIndicatorToEnd();
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
             updateStatusRail();
@@ -2972,10 +3614,17 @@ export function getChatWebviewContent(nonce: string) {
 
             const text = formatToolMessage(call);
             const body = article.querySelector('.message-text');
+            if (!body) {
+                return;
+            }
+
+            const diffModel = getToolDiffModel(call);
+            const previousDetails = body.querySelector('.tool-call-details');
+            const shouldOpen = previousDetails ? previousDetails.open : shouldOpenToolCallByDefault(call, diffModel);
             article.className = 'message-card tool ' + normalizeClass(call.status || 'pending');
             article.dataset.text = text;
             body.textContent = '';
-            body.appendChild(createToolMessageView(call));
+            body.appendChild(createToolMessageView(call, shouldOpen, diffModel));
             moveProgressIndicatorToEnd();
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         }
@@ -3007,88 +3656,1233 @@ export function getChatWebviewContent(nonce: string) {
             return lines.join('\\n');
         }
 
-        function createToolMessageView(call) {
+        function createReasoningDetails(text, open) {
+            const view = createInlineDisclosure({
+                title: 'Thinking',
+                meta: text ? summarizeLineCount(text) : '',
+                icon: '◌',
+                className: 'thinking-details',
+                open
+            });
+
+            const markdown = document.createElement('div');
+            markdown.className = 'thinking-markdown';
+            renderMarkdownText(markdown, text);
+            view.content.appendChild(markdown);
+            return view.details;
+        }
+
+        function createToolMessageView(call, open, diffModel) {
+            const presentation = getToolCallPresentation(call, diffModel);
+            const view = createInlineDisclosure({
+                title: presentation.title,
+                meta: presentation.meta,
+                icon: presentation.icon,
+                className: 'tool-call-details',
+                open
+            });
             const container = document.createElement('div');
             container.className = 'tool-message';
 
-            const header = document.createElement('div');
-            header.className = 'tool-message-header';
+            const output = Array.isArray(call.content) ? call.content.join('\\n') : '';
+            if (diffModel.length > 0) {
+                diffModel.forEach(file => container.appendChild(createDiffView(file)));
+                const extraOutput = stripDiffLikeOutput(output);
+                if (extraOutput) {
+                    container.appendChild(createVsCodeToolOutputBlock(call, extraOutput));
+                }
+            } else {
+                if (call.kind) {
+                    const kind = document.createElement('div');
+                    kind.className = 'tool-message-kind';
+                    kind.textContent = call.kind;
+                    kind.title = call.kind;
+                    container.appendChild(kind);
+                }
 
-            const status = document.createElement('span');
-            status.className = 'tool-message-status';
-            status.textContent = call.status || 'pending';
-            header.appendChild(status);
+                if (output) {
+                    container.appendChild(createToolOutputView(call, output));
+                } else {
+                    const pending = document.createElement('div');
+                    pending.className = 'tool-pending';
+                    pending.textContent = 'Waiting for output...';
+                    container.appendChild(pending);
+                }
+
+                if (typeof call.rawInput !== 'undefined') {
+                    const details = createDetails('Arguments', formatPayload(call.rawInput), false);
+                    details.className = 'tool-arguments';
+                    container.appendChild(details);
+                }
+            }
+
+            view.content.appendChild(container);
+            return view.details;
+        }
+
+        function getToolDiffModel(call) {
+            let model = [];
+            try {
+                model = normalizeDiffModel(buildDiffModel(call));
+            } catch (error) {
+                model = [];
+            }
+
+            if (model.length > 0) {
+                return model;
+            }
+
+            return createFallbackFileDiffModel(call);
+        }
+
+        function createToolOutputView(call, output) {
+            if (isReadFileToolCall(call)) {
+                const readOutput = normalizeReadFileToolOutput(call, output);
+                return createVsCodeCodeBlock({
+                    path: readOutput.path,
+                    title: readOutput.title,
+                    content: readOutput.content,
+                    language: readOutput.language,
+                    className: 'read-file-output',
+                    copyTitle: 'Copy file contents'
+                });
+            }
+
+            return createVsCodeToolOutputBlock(call, output);
+        }
+
+        function normalizeReadFileToolOutput(call, output) {
+            const extracted = extractFencedCodePayload(output);
+            const path = inferToolFilePath(call) || inferReadOutputPath(output);
+            const content = extracted ? extracted.content : String(output || '');
+            const language = extracted && extracted.language
+                ? extracted.language
+                : inferLanguageFromPath(path);
+
+            return {
+                path,
+                title: path ? path : 'Read file output',
+                content,
+                language: language || 'text'
+            };
+        }
+
+        function extractFencedCodePayload(output) {
+            const text = String(output || '').replace(/\\r\\n/g, '\\n');
+            const trimmed = text.trim();
+            if (!trimmed) {
+                return null;
+            }
+
+            const backtickFence = String.fromCharCode(96).repeat(3);
+            const exactFence = readDelimitedCodeFence(trimmed, backtickFence) || readDelimitedCodeFence(trimmed, '~~~');
+            if (exactFence) {
+                return exactFence;
+            }
+
+            const labelMatch = trimmed.match(/^(?:read|opened|contents?|content|file|output)[^\\n]*:\\s*\\n([\\s\\S]+)$/i);
+            if (labelMatch) {
+                return readDelimitedCodeFence(labelMatch[1].trim(), backtickFence)
+                    || readDelimitedCodeFence(labelMatch[1].trim(), '~~~');
+            }
+
+            return null;
+        }
+
+        function readDelimitedCodeFence(text, marker) {
+            const value = String(text || '');
+            if (!value.startsWith(marker)) {
+                return null;
+            }
+
+            const firstLineEnd = value.indexOf('\\n');
+            if (firstLineEnd < 0) {
+                return null;
+            }
+
+            const firstLine = value.slice(marker.length, firstLineEnd).trim();
+            const rest = value.slice(firstLineEnd + 1);
+            const closing = '\\n' + marker;
+            const closingIndex = rest.lastIndexOf(closing);
+            if (closingIndex < 0 || rest.slice(closingIndex + closing.length).trim()) {
+                return null;
+            }
+
+            return {
+                language: normalizeLanguageName(firstLine.split(/\\s+/)[0] || ''),
+                content: rest.slice(0, closingIndex)
+            };
+        }
+
+        function inferReadOutputPath(output) {
+            const text = String(output || '');
+            const patterns = [
+                /(?:read|opened|contents? of|file|path):\\s*([^\\n]+)/i,
+                /^\\s*[-•]?\\s*file:\\s+([^\\n]+)/im
+            ];
+
+            for (const pattern of patterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    const path = trimFileReference(match[1].trim());
+                    if (path && looksLikeFileReference(path)) {
+                        return path;
+                    }
+                }
+            }
+
+            return '';
+        }
+
+        function createVsCodeToolOutputBlock(call, output) {
+            const presentation = getToolOutputBlockPresentation(call, output);
+            return createVsCodeCodeBlock({
+                title: presentation.title,
+                content: output,
+                language: presentation.language,
+                className: 'tool-output ' + presentation.className,
+                lineNumbers: false,
+                syntaxHighlight: false,
+                linkify: true,
+                copyTitle: 'Copy tool output'
+            });
+        }
+
+        function getToolOutputBlockPresentation(call, output) {
+            const haystack = getToolCallHaystack(call);
+
+            if (isListToolCall(call) || looksLikeDirectoryListOutput(output)) {
+                return { title: 'File listing', language: 'list', className: 'listing-output' };
+            }
+
+            if (/search|grep|find|match|rg|ripgrep/.test(haystack)) {
+                return { title: 'Search results', language: 'results', className: 'search-output' };
+            }
+
+            if (/terminal|shell|bash|zsh|powershell|exec|spawn|run command|command/.test(haystack)) {
+                return { title: 'Terminal output', language: 'shell', className: 'terminal-output' };
+            }
+
+            if (/write|create|edit|patch|update|delete|rename|move|copy/.test(haystack)) {
+                return { title: 'Operation output', language: 'output', className: 'operation-output' };
+            }
+
+            return { title: 'Tool output', language: 'output', className: 'generic-output' };
+        }
+
+        function isListToolCall(call) {
+            const haystack = getToolCallHaystack(call);
+            return /(^|\\b)(list|ls|tree|directory|workspace files|files)(\\b|$)/.test(haystack);
+        }
+
+        function looksLikeDirectoryListOutput(output) {
+            const text = String(output || '');
+            return /(^|\\n)\\s*[-•]\\s*(file|directory):\\s+/i.test(text)
+                || /(^|\\n)\\s*[-•]?\\s*listed\\b.*\\(\\d+\\s+entr(?:y|ies)\\)/i.test(text);
+        }
+
+        function getToolCallHaystack(call) {
+            if (!call) {
+                return '';
+            }
+
+            return [
+                call.title,
+                call.kind,
+                formatPayload(call.rawInput || '')
+            ].map(value => String(value || '').toLowerCase()).join(' ');
+        }
+
+        function createToolOutputPre(text) {
+            const pre = document.createElement('pre');
+            pre.className = 'tool-output-pre';
+            renderLinkifiedText(pre, text);
+            return pre;
+        }
+
+        function isReadFileToolCall(call) {
+            if (!call) {
+                return false;
+            }
+
+            const haystack = getToolCallHaystack(call);
+
+            if (/\\b(list|ls|tree|search|grep|find|scan|glob)\\b/.test(haystack)) {
+                return false;
+            }
+
+            if (/\\b(read_file|read-file|readfile|fs_read|fs\\.read|read_file_system|filesystem[._:-]read|filesystem.*readfile)\\b/.test(haystack)) {
+                return true;
+            }
+
+            if (/\\b(read|open|cat|show|view)\\s+(?:a\\s+)?(?:workspace\\s+)?file\\b/.test(haystack)) {
+                return true;
+            }
+
+            if (/\\bcat\\s+[^\\n]+/.test(haystack) && hasLikelyToolFilePath(call)) {
+                return true;
+            }
+
+            return /\\bread\\b/.test(haystack) && hasLikelyToolFilePath(call);
+        }
+
+        function hasLikelyToolFilePath(call) {
+            return Boolean(inferToolFilePath(call));
+        }
+
+        function inferToolFilePath(call) {
+            const rawInput = call && call.rawInput && typeof call.rawInput === 'object'
+                ? call.rawInput
+                : null;
+
+            if (rawInput) {
+                const directPath = firstStringValueDeep(rawInput, [
+                    'path',
+                    'file',
+                    'filename',
+                    'fileName',
+                    'file_name',
+                    'filePath',
+                    'filepath',
+                    'file_path',
+                    'absolutePath',
+                    'absolute_path',
+                    'relativePath',
+                    'relative_path',
+                    'target',
+                    'targetFile',
+                    'target_file',
+                    'uri'
+                ]);
+                if (directPath) {
+                    return trimFileReference(directPath);
+                }
+            }
+
+            const values = [call && call.title, call && call.kind, formatPayload(rawInput || '')];
+            for (const value of values) {
+                const path = firstFileReferenceInText(value);
+                if (path) {
+                    return trimFileReference(path);
+                }
+            }
+
+            return '';
+        }
+
+        function firstFileReferenceInText(text) {
+            fileReferencePattern.lastIndex = 0;
+            const match = fileReferencePattern.exec(String(text || ''));
+            fileReferencePattern.lastIndex = 0;
+            return match ? match[2] : '';
+        }
+
+        function createVsCodeCodeBlock(options) {
+            const path = options && options.path ? String(options.path) : '';
+            const titleText = options && options.title ? String(options.title) : 'Read file output';
+            const content = String((options && options.content) || '');
+            const language = options && options.language ? String(options.language) : inferLanguageFromPath(path);
+            const lines = splitCodeLines(content);
+            const showLineNumbers = !options || options.lineNumbers !== false;
+            const syntaxHighlight = !options || options.syntaxHighlight !== false;
+            const linkify = Boolean(options && options.linkify);
+            const extraClassName = options && options.className ? ' ' + String(options.className).trim() : '';
+
+            const wrap = document.createElement('div');
+            wrap.className = ('vscode-code-block' + extraClassName).trim();
+
+            const header = document.createElement('div');
+            header.className = 'vscode-code-header';
+
+            const headerMain = document.createElement('div');
+            headerMain.className = 'vscode-code-header-main';
+            if (path) {
+                headerMain.appendChild(createFileReferenceLink(path, path));
+            } else {
+                const title = document.createElement('span');
+                title.className = 'vscode-code-title';
+                title.textContent = titleText;
+                headerMain.appendChild(title);
+            }
+            header.appendChild(headerMain);
+
+            const actions = document.createElement('div');
+            actions.className = 'vscode-code-actions';
+
+            if (language) {
+                const lang = document.createElement('span');
+                lang.className = 'vscode-code-language';
+                lang.textContent = language;
+                actions.appendChild(lang);
+            }
+
+            const lineCount = document.createElement('span');
+            lineCount.className = 'vscode-code-line-count';
+            lineCount.textContent = lines.length + (lines.length === 1 ? ' line' : ' lines');
+            actions.appendChild(lineCount);
+
+            const copyButton = document.createElement('button');
+            copyButton.type = 'button';
+            copyButton.className = 'vscode-code-copy-button';
+            copyButton.title = options && options.copyTitle ? String(options.copyTitle) : 'Copy output';
+            copyButton.setAttribute('aria-label', copyButton.title);
+            copyButton.textContent = '⧉';
+            copyButton.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                copyTextToClipboard(content);
+            });
+            actions.appendChild(copyButton);
+            header.appendChild(actions);
+            wrap.appendChild(header);
+
+            const pre = document.createElement('pre');
+            pre.className = 'vscode-code-body';
+            lines.forEach((line, index) => {
+                const row = document.createElement('div');
+                row.className = showLineNumbers ? 'vscode-code-line' : 'vscode-code-line no-line-number';
+
+                if (showLineNumbers) {
+                    const lineNumber = document.createElement('span');
+                    lineNumber.className = 'vscode-code-line-number';
+                    lineNumber.textContent = String(index + 1);
+                    row.appendChild(lineNumber);
+                }
+
+                const code = document.createElement('span');
+                code.className = 'vscode-code-line-content';
+                if (linkify) {
+                    appendToolOutputLine(code, line);
+                } else if (syntaxHighlight) {
+                    appendSyntaxHighlightedLine(code, line, language);
+                } else {
+                    code.textContent = line;
+                }
+                row.appendChild(code);
+
+                pre.appendChild(row);
+            });
+            wrap.appendChild(pre);
+            return wrap;
+        }
+
+        function appendToolOutputLine(container, line) {
+            const text = String(line || '');
+            const entryMatch = text.match(/^(\\s*[-•]\\s*)(directory|file):\\s+(.+)$/i);
+            if (entryMatch) {
+                appendSyntaxSpan(container, entryMatch[1], 'syntax-muted');
+                appendSyntaxSpan(container, entryMatch[2], 'syntax-property');
+                container.appendChild(document.createTextNode(': '));
+                const path = trimFileReference(entryMatch[3].trim());
+                if (path) {
+                    container.appendChild(createFileReferenceLink(path, path));
+                }
+                return;
+            }
+
+            const summaryMatch = text.match(/^(\\s*[-•]?\\s*)(listed|found|matched|created|updated|deleted|read|wrote)(\\b.*)$/i);
+            if (summaryMatch) {
+                appendSyntaxSpan(container, summaryMatch[1], 'syntax-muted');
+                appendSyntaxSpan(container, summaryMatch[2], 'syntax-keyword');
+                appendLinkifiedText(container, summaryMatch[3]);
+                return;
+            }
+
+            const moreMatch = text.match(/^(\\s*\\.{3}\\s*\\+\\d+\\s+.+)$/);
+            if (moreMatch) {
+                appendSyntaxSpan(container, moreMatch[1], 'syntax-muted');
+                return;
+            }
+
+            appendLinkifiedText(container, text);
+        }
+
+        function splitCodeLines(text) {
+            const lines = String(text || '').replace(/\\r\\n/g, '\\n').split('\\n');
+            if (lines.length > 1 && lines[lines.length - 1] === '') {
+                lines.pop();
+            }
+            return lines.length > 0 ? lines : [''];
+        }
+
+        function normalizeLanguageName(language) {
+            const value = String(language || '').trim().toLowerCase();
+            const aliases = {
+                js: 'javascript',
+                jsx: 'javascript',
+                mjs: 'javascript',
+                cjs: 'javascript',
+                ts: 'typescript',
+                tsx: 'typescript',
+                py: 'python',
+                rb: 'ruby',
+                cs: 'csharp',
+                sh: 'shell',
+                bash: 'shell',
+                zsh: 'shell',
+                ps1: 'powershell',
+                yml: 'yaml',
+                md: 'markdown'
+            };
+            return aliases[value] || value;
+        }
+
+        function inferLanguageFromPath(path) {
+            const ext = String(path || '').split(/[?#]/)[0].split('.').pop().toLowerCase();
+            const languages = {
+                js: 'javascript',
+                jsx: 'javascript',
+                mjs: 'javascript',
+                cjs: 'javascript',
+                ts: 'typescript',
+                tsx: 'typescript',
+                json: 'json',
+                jsonc: 'json',
+                py: 'python',
+                rb: 'ruby',
+                go: 'go',
+                rs: 'rust',
+                java: 'java',
+                c: 'c',
+                h: 'c',
+                cpp: 'cpp',
+                cc: 'cpp',
+                cxx: 'cpp',
+                hpp: 'cpp',
+                cs: 'csharp',
+                php: 'php',
+                html: 'html',
+                htm: 'html',
+                xml: 'xml',
+                css: 'css',
+                scss: 'scss',
+                less: 'less',
+                md: 'markdown',
+                sh: 'shell',
+                bash: 'shell',
+                zsh: 'shell',
+                fish: 'shell',
+                ps1: 'powershell',
+                yml: 'yaml',
+                yaml: 'yaml',
+                toml: 'toml',
+                ini: 'ini',
+                sql: 'sql'
+            };
+            return normalizeLanguageName(languages[ext] || ext || 'text');
+        }
+
+        function appendSyntaxHighlightedLine(container, line, language) {
+            const text = String(line || '');
+            const normalizedLanguage = normalizeLanguageName(language);
+
+            if (normalizedLanguage === 'markdown') {
+                appendMarkdownSyntaxHighlightedLine(container, text);
+                return;
+            }
+
+            const commentStart = findSyntaxCommentStart(text, normalizedLanguage);
+            const codeText = commentStart >= 0 ? text.slice(0, commentStart) : text;
+            const commentText = commentStart >= 0 ? text.slice(commentStart) : '';
+
+            appendSyntaxCodeTokens(container, codeText, normalizedLanguage);
+            if (commentText) {
+                appendSyntaxSpan(container, commentText, 'syntax-comment');
+            }
+        }
+
+        function appendMarkdownSyntaxHighlightedLine(container, line) {
+            const text = String(line || '');
+            const headingMatch = text.match(/^(\\s{0,3}#{1,6}\\s+)(.*)$/);
+            if (headingMatch) {
+                appendSyntaxSpan(container, headingMatch[1], 'syntax-keyword');
+                appendSyntaxCodeTokens(container, headingMatch[2], 'markdown');
+                return;
+            }
+
+            const quoteMatch = text.match(/^(\\s*>+\\s?)(.*)$/);
+            if (quoteMatch) {
+                appendSyntaxSpan(container, quoteMatch[1], 'syntax-comment');
+                appendSyntaxCodeTokens(container, quoteMatch[2], 'markdown');
+                return;
+            }
+
+            const listMatch = text.match(/^(\\s*)([-*+]\\s+|\\d+\\.\\s+)(.*)$/);
+            if (listMatch) {
+                container.appendChild(document.createTextNode(listMatch[1]));
+                appendSyntaxSpan(container, listMatch[2], 'syntax-keyword');
+                appendSyntaxCodeTokens(container, listMatch[3], 'markdown');
+                return;
+            }
+
+            const backtickFence = String.fromCharCode(96).repeat(3);
+            if (text.trim().startsWith(backtickFence) || text.trim().startsWith('~~~')) {
+                appendSyntaxSpan(container, text, 'syntax-keyword');
+                return;
+            }
+
+            appendSyntaxCodeTokens(container, text, 'markdown');
+        }
+
+        function findSyntaxCommentStart(text, language) {
+            const value = String(text || '');
+            if (!value) {
+                return -1;
+            }
+
+            if (language === 'html' || language === 'xml' || language === 'markdown') {
+                return value.indexOf('<!--');
+            }
+
+            if (/python|ruby|shell|powershell|yaml|toml|ini/.test(language)) {
+                return value.indexOf('#');
+            }
+
+            if (/css|scss|less/.test(language)) {
+                return value.indexOf('/*');
+            }
+
+            return value.indexOf('//');
+        }
+
+        function appendSyntaxCodeTokens(container, text, language) {
+            const tokenPattern = /("(?:\\\\.|[^"\\\\])*"|'(?:\\\\.|[^'\\\\])*'|\\b[A-Za-z_$][\\w$]*\\b|\\b\\d+(?:\\.\\d+)?\\b)/g;
+            let lastIndex = 0;
+            let match = tokenPattern.exec(text);
+
+            while (match) {
+                if (match.index > lastIndex) {
+                    container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+                }
+
+                const token = match[0];
+                const className = getSyntaxTokenClass(token, language, text.slice(match.index + token.length));
+                if (className) {
+                    appendSyntaxSpan(container, token, className);
+                } else {
+                    container.appendChild(document.createTextNode(token));
+                }
+
+                lastIndex = match.index + token.length;
+                match = tokenPattern.exec(text);
+            }
+
+            if (lastIndex < text.length) {
+                container.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+        }
+
+        function getSyntaxTokenClass(token, language, tail) {
+            if (/^['"]/.test(token)) {
+                return 'syntax-string';
+            }
+
+            if (/^\\d/.test(token)) {
+                return 'syntax-number';
+            }
+
+            const word = token.toLowerCase();
+            const keywords = syntaxKeywordsForLanguage(language);
+            if (keywords.has(word)) {
+                return 'syntax-keyword';
+            }
+
+            if (/^(true|false|null|undefined|none|nil)$/i.test(token)) {
+                return 'syntax-constant';
+            }
+
+            if (/^\\s*\\(/.test(tail || '')) {
+                return 'syntax-function';
+            }
+
+            if (/^\\s*:/.test(tail || '') || /^\\s*=/.test(tail || '')) {
+                return 'syntax-property';
+            }
+
+            return '';
+        }
+
+        function syntaxKeywordsForLanguage(language) {
+            const base = ['break', 'case', 'catch', 'class', 'const', 'continue', 'default', 'delete', 'do', 'else', 'enum', 'export', 'extends', 'finally', 'for', 'from', 'function', 'if', 'import', 'in', 'instanceof', 'let', 'new', 'return', 'static', 'super', 'switch', 'this', 'throw', 'try', 'typeof', 'var', 'void', 'while', 'with', 'yield', 'async', 'await'];
+            const python = ['and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue', 'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from', 'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not', 'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield'];
+            const csharp = ['abstract', 'as', 'base', 'bool', 'byte', 'char', 'checked', 'decimal', 'delegate', 'double', 'event', 'explicit', 'extern', 'false', 'fixed', 'float', 'foreach', 'implicit', 'int', 'interface', 'internal', 'is', 'lock', 'long', 'namespace', 'object', 'operator', 'out', 'override', 'params', 'private', 'protected', 'public', 'readonly', 'ref', 'sbyte', 'sealed', 'short', 'sizeof', 'stackalloc', 'string', 'struct', 'true', 'uint', 'ulong', 'unchecked', 'unsafe', 'ushort', 'using', 'virtual'];
+            const java = ['abstract', 'boolean', 'byte', 'char', 'double', 'final', 'float', 'implements', 'int', 'interface', 'long', 'native', 'package', 'private', 'protected', 'public', 'short', 'strictfp', 'synchronized', 'throws', 'transient', 'volatile'];
+            const go = ['chan', 'defer', 'fallthrough', 'func', 'go', 'import', 'interface', 'map', 'package', 'range', 'select', 'struct', 'type'];
+            const rust = ['as', 'crate', 'dyn', 'extern', 'fn', 'impl', 'loop', 'match', 'mod', 'move', 'mut', 'pub', 'ref', 'self', 'Self', 'trait', 'type', 'unsafe', 'use', 'where'];
+            const css = ['align-items', 'background', 'border', 'color', 'display', 'flex', 'font', 'gap', 'grid', 'height', 'margin', 'overflow', 'padding', 'position', 'width'];
+            const sql = ['select', 'from', 'where', 'join', 'left', 'right', 'inner', 'outer', 'insert', 'update', 'delete', 'create', 'alter', 'drop', 'table', 'group', 'order', 'by', 'limit', 'having', 'and', 'or', 'not', 'null'];
+
+            if (/python/.test(language)) {
+                return new Set(python);
+            }
+            if (/csharp/.test(language)) {
+                return new Set(base.concat(csharp));
+            }
+            if (/java/.test(language)) {
+                return new Set(base.concat(java));
+            }
+            if (/go/.test(language)) {
+                return new Set(base.concat(go));
+            }
+            if (/rust/.test(language)) {
+                return new Set(base.concat(rust));
+            }
+            if (/css|scss|less/.test(language)) {
+                return new Set(css);
+            }
+            if (/sql/.test(language)) {
+                return new Set(sql);
+            }
+            return new Set(base);
+        }
+
+        function appendSyntaxSpan(container, text, className) {
+            const span = document.createElement('span');
+            span.className = className;
+            span.textContent = text;
+            container.appendChild(span);
+        }
+
+        function normalizeDiffModel(model) {
+            if (Array.isArray(model)) {
+                return model
+                    .map(normalizeDiffFile)
+                    .filter(file => file && file.lines.length > 0);
+            }
+
+            if (model && Array.isArray(model.files)) {
+                return model.files
+                    .map(normalizeDiffFile)
+                    .filter(file => file && file.lines.length > 0);
+            }
+
+            return [];
+        }
+
+        function normalizeDiffFile(file) {
+            if (!file || !Array.isArray(file.lines)) {
+                return null;
+            }
+
+            const path = String(file.path || file.file || file.name || 'Changed file');
+            const lines = file.lines.map(line => {
+                if (typeof line === 'string') {
+                    return normalizeDiffLine(line);
+                }
+
+                if (!line || typeof line !== 'object') {
+                    return null;
+                }
+
+                const type = normalizeDiffLineType(line.type || line.kind || line.status);
+                const text = typeof line.text === 'string'
+                    ? line.text
+                    : typeof line.content === 'string'
+                        ? line.content
+                        : '';
+                return Object.assign({}, line, { type, text });
+            }).filter(Boolean);
+
+            return { path, lines };
+        }
+
+        function normalizeDiffLine(line) {
+            const text = String(line || '');
+            if (text.startsWith('+') && !text.startsWith('+++')) {
+                return { type: 'add', text: text.slice(1) };
+            }
+            if (text.startsWith('-') && !text.startsWith('---')) {
+                return { type: 'del', text: text.slice(1) };
+            }
+            if (text.startsWith('@@')) {
+                return { type: 'meta', text };
+            }
+            return { type: 'context', text: text.startsWith(' ') ? text.slice(1) : text };
+        }
+
+        function normalizeDiffLineType(type) {
+            const value = String(type || '').toLowerCase();
+            if (value === 'add' || value === 'added' || value === 'insert' || value === 'inserted' || value === '+') {
+                return 'add';
+            }
+            if (value === 'del' || value === 'delete' || value === 'deleted' || value === 'remove' || value === 'removed' || value === '-') {
+                return 'del';
+            }
+            if (value === 'meta' || value === 'header' || value === 'hunk') {
+                return 'meta';
+            }
+            return 'context';
+        }
+
+        function createFallbackFileDiffModel(call) {
+            const rawInput = call && call.rawInput && typeof call.rawInput === 'object'
+                ? call.rawInput
+                : null;
+            const output = Array.isArray(call && call.content) ? call.content.join('\\n') : '';
+            const fallback = [];
+
+            if (rawInput) {
+                collectRawInputDiffs(rawInput, fallback);
+            }
+
+            if (fallback.length > 0) {
+                return fallback;
+            }
+
+            const payloads = [];
+            if (rawInput) {
+                ['patch', 'diff', 'edits', 'input'].forEach(key => {
+                    if (typeof rawInput[key] === 'string') {
+                        payloads.push(rawInput[key]);
+                    }
+                });
+            }
+            if (output) {
+                payloads.push(output);
+            }
+
+            for (const payload of payloads) {
+                const parsed = parsePatchText(payload);
+                if (parsed.length > 0) {
+                    return parsed;
+                }
+            }
+
+            return [];
+        }
+
+        function collectRawInputDiffs(rawInput, fallback) {
+            if (!rawInput || typeof rawInput !== 'object') {
+                return;
+            }
+
+            if (Array.isArray(rawInput.edits)) {
+                rawInput.edits.forEach(edit => collectRawInputDiffs(edit, fallback));
+            }
+
+            const path = firstStringValue(rawInput, ['path', 'file', 'filePath', 'file_path', 'target', 'targetFile', 'target_file']);
+            const content = firstStringValue(rawInput, ['content', 'text', 'newContent', 'new_content', 'body']);
+            const patch = firstStringValue(rawInput, ['patch', 'diff']);
+
+            if (patch) {
+                parsePatchText(patch).forEach(file => fallback.push(file));
+                return;
+            }
+
+            if (path && content && looksLikeFileWrite(rawInput)) {
+                fallback.push({
+                    path,
+                    lines: splitDiffContent(content).map(line => ({ type: 'add', text: line }))
+                });
+            }
+        }
+
+        function firstStringValue(source, keys) {
+            for (const key of keys) {
+                if (typeof source[key] === 'string' && source[key].trim()) {
+                    return source[key];
+                }
+            }
+            return '';
+        }
+
+        function firstStringValueDeep(source, keys, depth) {
+            if (!source || depth > 4) {
+                return '';
+            }
+
+            const direct = !Array.isArray(source) && typeof source === 'object'
+                ? firstStringValue(source, keys)
+                : '';
+            if (direct) {
+                return direct;
+            }
+
+            const values = Array.isArray(source)
+                ? source
+                : typeof source === 'object'
+                    ? Object.keys(source).map(key => source[key])
+                    : [];
+
+            for (const value of values) {
+                if (!value || typeof value !== 'object') {
+                    continue;
+                }
+                const found = firstStringValueDeep(value, keys, (depth || 0) + 1);
+                if (found) {
+                    return found;
+                }
+            }
+
+            return '';
+        }
+
+        function looksLikeFileWrite(rawInput) {
+            const op = String(rawInput.operation || rawInput.action || rawInput.command || rawInput.kind || '').toLowerCase();
+            return !op || /write|create|add|save|replace|edit|update|patch/.test(op);
+        }
+
+        function parsePatchText(text) {
+            const value = String(text || '');
+            if (!value || (!value.includes('*** ') && !value.includes('@@') && !value.includes('diff --git'))) {
+                return [];
+            }
+
+            if (value.includes('*** Begin Patch') || value.includes('*** Add File:') || value.includes('*** Update File:') || value.includes('*** Delete File:')) {
+                return parseApplyPatchText(value);
+            }
+
+            return parseUnifiedDiffText(value);
+        }
+
+        function parseApplyPatchText(text) {
+            const files = [];
+            let current = null;
+            String(text || '').split(/\\r?\\n/).forEach(line => {
+                const fileMatch = line.match(/^\\*\\*\\*\\s+(Add|Update|Delete) File:\\s+(.+)$/);
+                if (fileMatch) {
+                    current = {
+                        path: fileMatch[2].trim(),
+                        operation: fileMatch[1].toLowerCase(),
+                        lines: []
+                    };
+                    files.push(current);
+                    return;
+                }
+
+                if (!current || line === '*** Begin Patch' || line === '*** End Patch') {
+                    return;
+                }
+
+                if (line.startsWith('@@')) {
+                    current.lines.push({ type: 'meta', text: line });
+                    return;
+                }
+
+                current.lines.push(normalizeDiffLine(line));
+            });
+
+            return files.filter(file => file.lines.length > 0);
+        }
+
+        function parseUnifiedDiffText(text) {
+            const files = [];
+            let current = null;
+            String(text || '').split(/\\r?\\n/).forEach(line => {
+                const gitMatch = line.match(/^diff --git\\s+a\\/(.+?)\\s+b\\/(.+)$/);
+                if (gitMatch) {
+                    current = { path: gitMatch[2].trim(), lines: [] };
+                    files.push(current);
+                    return;
+                }
+
+                const newFileMatch = line.match(/^\\+\\+\\+\\s+(?:b\\/)?(.+)$/);
+                if (newFileMatch && !line.includes('/dev/null')) {
+                    if (!current) {
+                        current = { path: newFileMatch[1].trim(), lines: [] };
+                        files.push(current);
+                    } else {
+                        current.path = newFileMatch[1].trim();
+                    }
+                    return;
+                }
+
+                const oldFileMatch = line.match(/^---\\s+(?:a\\/)?(.+)$/);
+                if (oldFileMatch && !line.includes('/dev/null') && !current) {
+                    current = { path: oldFileMatch[1].trim(), lines: [] };
+                    files.push(current);
+                    return;
+                }
+
+                if (!current) {
+                    return;
+                }
+
+                if (line.startsWith('@@')) {
+                    current.lines.push({ type: 'meta', text: line });
+                } else if (line.startsWith('+') && !line.startsWith('+++')) {
+                    current.lines.push({ type: 'add', text: line.slice(1) });
+                } else if (line.startsWith('-') && !line.startsWith('---')) {
+                    current.lines.push({ type: 'del', text: line.slice(1) });
+                } else if (line.startsWith(' ')) {
+                    current.lines.push({ type: 'context', text: line.slice(1) });
+                }
+            });
+
+            return files.filter(file => file.lines.length > 0);
+        }
+
+        function splitDiffContent(content) {
+            const lines = String(content || '').replace(/\\r\\n/g, '\\n').split('\\n');
+            if (lines.length > 1 && lines[lines.length - 1] === '') {
+                lines.pop();
+            }
+            return lines;
+        }
+
+        function getToolCallPresentation(call, diffModel) {
+            const title = String((call && call.title) || '').trim();
+            const kind = String((call && call.kind) || '').trim();
+            const haystack = (title + ' ' + kind + ' ' + formatPayload((call && call.rawInput) || '')).toLowerCase();
+            const count = diffModel.length;
+
+            if (count > 0) {
+                const totals = countDiffTotals(diffModel);
+                if (/patch|apply_patch|apply patch/.test(haystack)) {
+                    return { title: 'Applied patch', meta: '', icon: '✎' };
+                }
+                if (totals.added > 0 && totals.removed === 0) {
+                    return { title: count === 1 ? 'Created file' : 'Created files', meta: '', icon: '' };
+                }
+                if (totals.removed > 0 && totals.added === 0) {
+                    return { title: count === 1 ? 'Deleted file' : 'Deleted files', meta: '', icon: '✎' };
+                }
+                return { title: count === 1 ? 'Edited a file' : 'Edited files', meta: '', icon: '✎' };
+            }
+
+            if (/create|write|new file|add file/.test(haystack)) {
+                return { title: 'Created file', meta: call.status || 'pending', icon: '' };
+            }
+            if (/edit|replace|patch|update/.test(haystack)) {
+                return { title: 'Edited a file', meta: call.status || 'pending', icon: '✎' };
+            }
+            if (/read|open/.test(haystack)) {
+                return { title: 'Read file', meta: call.status || 'pending', icon: '' };
+            }
+            if (/list|ls|tree/.test(haystack)) {
+                return { title: 'Listed files', meta: call.status || 'pending', icon: '' };
+            }
+            if (/search|grep|find/.test(haystack)) {
+                return { title: 'Searched files', meta: call.status || 'pending', icon: '' };
+            }
+
+            return { title: title || (call && call.toolCallId) || 'Tool call', meta: call.status || 'pending', icon: '◇' };
+        }
+
+        function shouldOpenToolCallByDefault(call, diffModel) {
+            if (diffModel.length > 0) {
+                return true;
+            }
+
+            const title = String((call && call.title) || '').toLowerCase();
+            const kind = String((call && call.kind) || '').toLowerCase();
+            return /create|write|edit|replace|patch|delete|remove/.test(title + ' ' + kind) || isReadFileToolCall(call);
+        }
+
+        function countDiffTotals(files) {
+            return files.reduce((totals, file) => {
+                file.lines.forEach(line => {
+                    if (line.type === 'add') { totals.added += 1; }
+                    if (line.type === 'del') { totals.removed += 1; }
+                });
+                return totals;
+            }, { added: 0, removed: 0 });
+        }
+
+        function stripDiffLikeOutput(output) {
+            const text = String(output || '').trim();
+            if (!text) {
+                return '';
+            }
+
+            if (text.includes('*** Begin Patch') || text.includes('diff --git') || /^@@\\s/m.test(text)) {
+                return '';
+            }
+
+            return text;
+        }
+
+        function createInlineDisclosure(options) {
+            const details = document.createElement('details');
+            details.className = options.className || '';
+            details.open = Boolean(options.open);
+
+            const summary = document.createElement('summary');
+            summary.className = 'inline-call-summary';
+
+            const icon = document.createElement('span');
+            icon.className = 'inline-call-icon';
+            icon.textContent = options.icon || '›';
+            summary.appendChild(icon);
 
             const title = document.createElement('span');
-            title.className = 'tool-message-title';
-            title.textContent = call.title || call.toolCallId;
-            title.title = call.title || call.toolCallId;
-            header.appendChild(title);
-            container.appendChild(header);
+            title.className = 'inline-call-title';
+            title.textContent = options.title || 'Details';
+            title.title = options.title || 'Details';
+            summary.appendChild(title);
 
-            if (call.kind) {
-                const kind = document.createElement('div');
-                kind.className = 'tool-message-kind';
-                kind.textContent = call.kind;
-                container.appendChild(kind);
+            if (options.meta) {
+                const meta = document.createElement('span');
+                meta.className = 'inline-call-meta';
+                meta.textContent = options.meta;
+                summary.appendChild(meta);
             }
 
-            const output = Array.isArray(call.content) ? call.content.join('\\n') : '';
-            if (output) {
-                const pre = document.createElement('pre');
-                pre.className = 'tool-output-pre';
-                renderLinkifiedText(pre, output);
-                container.appendChild(pre);
-            } else {
-                const pending = document.createElement('div');
-                pending.className = 'tool-pending';
-                pending.textContent = 'Waiting for output...';
-                container.appendChild(pending);
+            const chevron = document.createElement('span');
+            chevron.className = 'inline-call-chevron';
+            chevron.textContent = '⌄';
+            summary.appendChild(chevron);
+            details.appendChild(summary);
+
+            const content = document.createElement('div');
+            content.className = 'inline-call-content';
+            details.appendChild(content);
+            return { details, content };
+        }
+
+        function summarizeLineCount(text) {
+            const normalized = String(text || '').trim();
+            if (!normalized) {
+                return '';
             }
 
-            const diffModel = buildDiffModel(call);
-            if (diffModel) {
-                diffModel.forEach(file => container.appendChild(createDiffView(file)));
-            } else if (typeof call.rawInput !== 'undefined') {
-                const details = createDetails('Arguments', formatPayload(call.rawInput), false);
-                details.className = 'tool-arguments';
-                container.appendChild(details);
-            }
-
-            return container;
+            const lineCount = normalized.split(/\\r?\\n/).filter(Boolean).length;
+            return lineCount === 1 ? '1 line' : lineCount + ' lines';
         }
 
         function createDiffView(file) {
             const wrap = document.createElement('div');
-            wrap.className = 'diff-view';
-
-            const header = document.createElement('div');
-            header.className = 'diff-header';
             let added = 0;
             let removed = 0;
             file.lines.forEach(line => {
                 if (line.type === 'add') { added += 1; }
                 if (line.type === 'del') { removed += 1; }
             });
+            wrap.className = 'diff-view' + (added > 0 && removed === 0 ? ' diff-created diff-add-only' : '') + (removed > 0 && added === 0 ? ' diff-deleted diff-del-only' : '');
+
+            const header = document.createElement('div');
+            header.className = 'diff-header';
+
+            const headerMain = document.createElement('div');
+            headerMain.className = 'diff-header-main';
             const pathLink = createFileReferenceLink(file.path, file.path);
-            header.appendChild(pathLink);
+            headerMain.appendChild(pathLink);
+            header.appendChild(headerMain);
+
+            const actions = document.createElement('div');
+            actions.className = 'diff-header-actions';
             const stat = document.createElement('span');
             stat.className = 'diff-stat';
             stat.textContent = '+' + added + ' -' + removed;
-            header.appendChild(stat);
+            actions.appendChild(stat);
+            const copyButton = document.createElement('button');
+            copyButton.type = 'button';
+            copyButton.className = 'diff-copy-button';
+            copyButton.title = 'Copy diff';
+            copyButton.setAttribute('aria-label', 'Copy diff');
+            copyButton.textContent = '⧉';
+            copyButton.addEventListener('click', event => {
+                event.preventDefault();
+                event.stopPropagation();
+                copyTextToClipboard(formatDiffForCopy(file));
+            });
+            actions.appendChild(copyButton);
+            header.appendChild(actions);
             wrap.appendChild(header);
 
             const pre = document.createElement('pre');
             pre.className = 'diff-body';
+            const state = createDiffLineNumberState();
             file.lines.forEach(line => {
                 const row = document.createElement('div');
                 row.className = 'diff-line diff-' + line.type;
-                const sign = line.type === 'add' ? '+' : line.type === 'del' ? '-' : line.type === 'meta' ? '' : ' ';
-                row.textContent = sign + line.text;
+
+                const lineNumber = document.createElement('span');
+                lineNumber.className = 'diff-line-number';
+                lineNumber.textContent = getDiffLineNumber(line, state);
+                row.appendChild(lineNumber);
+
+                const sign = document.createElement('span');
+                sign.className = 'diff-line-sign';
+                sign.textContent = line.type === 'add' ? '+' : line.type === 'del' ? '-' : line.type === 'meta' ? '' : ' ';
+                row.appendChild(sign);
+
+                const code = document.createElement('span');
+                code.className = 'diff-line-code';
+                code.textContent = line.text;
+                row.appendChild(code);
+
                 pre.appendChild(row);
             });
             wrap.appendChild(pre);
             return wrap;
+        }
+
+        function createDiffLineNumberState() {
+            return { oldLine: 1, newLine: 1 };
+        }
+
+        function getDiffLineNumber(line, state) {
+            if (typeof line.newLine === 'number' && line.newLine > 0) {
+                return String(line.newLine);
+            }
+            if (typeof line.lineNumber === 'number' && line.lineNumber > 0) {
+                return String(line.lineNumber);
+            }
+
+            const text = String(line.text || '');
+            const hunk = text.match(/@@\\s+-(\\d+)(?:,\\d+)?\\s+\\+(\\d+)(?:,\\d+)?\\s+@@/);
+            if (hunk) {
+                state.oldLine = Number(hunk[1]);
+                state.newLine = Number(hunk[2]);
+                return '';
+            }
+
+            if (line.type === 'add') {
+                const value = state.newLine;
+                state.newLine += 1;
+                return String(value);
+            }
+
+            if (line.type === 'del') {
+                const value = state.oldLine;
+                state.oldLine += 1;
+                return String(value);
+            }
+
+            if (line.type === 'context') {
+                const value = state.newLine;
+                state.oldLine += 1;
+                state.newLine += 1;
+                return String(value);
+            }
+
+            return '';
+        }
+
+        function formatDiffForCopy(file) {
+            const lines = ['--- ' + file.path, '+++ ' + file.path];
+            file.lines.forEach(line => {
+                const sign = line.type === 'add' ? '+' : line.type === 'del' ? '-' : line.type === 'meta' ? '' : ' ';
+                lines.push(sign + line.text);
+            });
+            return lines.join('\\n');
+        }
+
+        function copyTextToClipboard(text) {
+            if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+                navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
+                return;
+            }
+
+            copyTextFallback(text);
+        }
+
+        function copyTextFallback(text) {
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.setAttribute('readonly', 'true');
+            textarea.style.position = 'fixed';
+            textarea.style.opacity = '0';
+            textarea.style.pointerEvents = 'none';
+            document.body.appendChild(textarea);
+            textarea.select();
+            try {
+                document.execCommand('copy');
+            } catch (error) {
+                // Best effort only.
+            }
+            textarea.remove();
         }
 
         function createDetails(summaryText, bodyText, open) {
