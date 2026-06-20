@@ -23,6 +23,7 @@
   ],
   "files": [
     "dist/**",
+    "media/**",
     "resources/**",
     "package.json",
     "README.md",

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { SessionManager } from '../services/SessionManager';
-import { ChatWebviewController } from './ChatWebview';
+import { ChatWebviewController } from './ChatWebviewController';
 
 export class ChatPanel {
     public static currentPanel: ChatPanel | undefined;
@@ -10,16 +10,17 @@ export class ChatPanel {
 
     private constructor(
         private readonly panel: vscode.WebviewPanel,
-        sessionManager: SessionManager
+        sessionManager: SessionManager,
+        extensionUri: vscode.Uri
     ) {
-        this.controller = new ChatWebviewController(panel.webview, sessionManager);
+        this.controller = new ChatWebviewController(panel.webview, sessionManager, extensionUri);
 
         this.disposables.push(
             this.panel.onDidDispose(() => this.dispose())
         );
     }
 
-    public static createOrShow(sessionManager: SessionManager) {
+    public static createOrShow(sessionManager: SessionManager, extensionUri: vscode.Uri) {
         if (ChatPanel.currentPanel) {
             ChatPanel.currentPanel.panel.reveal(vscode.ViewColumn.Beside);
             return;
@@ -35,7 +36,7 @@ export class ChatPanel {
             }
         );
 
-        ChatPanel.currentPanel = new ChatPanel(panel, sessionManager);
+        ChatPanel.currentPanel = new ChatPanel(panel, sessionManager, extensionUri);
         void sessionManager.ensureStarted().catch((error) => {
             const message = error instanceof Error ? error.message : 'Unable to start NanoAgent.';
             vscode.window.showErrorMessage(message);

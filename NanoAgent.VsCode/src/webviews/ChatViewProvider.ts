@@ -1,18 +1,21 @@
 import * as vscode from 'vscode';
 import { SessionManager } from '../services/SessionManager';
-import { ChatWebviewController } from './ChatWebview';
+import { ChatWebviewController } from './ChatWebviewController';
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'nanoagent.chatView';
 
     private controller: ChatWebviewController | undefined;
 
-    constructor(private readonly sessionManager: SessionManager) {
+    constructor(
+        private readonly sessionManager: SessionManager,
+        private readonly extensionUri: vscode.Uri
+    ) {
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView) {
         this.controller?.dispose();
-        this.controller = new ChatWebviewController(webviewView.webview, this.sessionManager);
+        this.controller = new ChatWebviewController(webviewView.webview, this.sessionManager, this.extensionUri);
         void this.sessionManager.ensureStarted().catch((error) => {
             const message = error instanceof Error ? error.message : 'Unable to start NanoAgent.';
             vscode.window.showErrorMessage(message);

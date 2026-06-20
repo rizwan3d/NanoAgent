@@ -16,103 +16,7 @@ import {
 } from '../services/SessionManager';
 import { NanoAgentProcessStatus } from '../services/NanoAgentProcessManager';
 import { getChatWebviewContent, getNonce } from './ChatWebviewContent';
-
-type ChatMessage =
-    | SendMessage
-    | RunSessionCommandMessage
-    | SelectModelMessage
-    | ChangeModelMessage
-    | ChangeProfileMessage
-    | OpenVsCodeSettingsMessage
-    | ReadyMessage
-    | ResolveClientRequestMessage
-    | CancelPromptMessage
-    | OpenFileMessage
-    | SearchFilesMessage
-    | ListSessionsMessage
-    | ResumeSessionMessage
-    | LoadPluginsMessage
-    | PluginActionMessage
-    | WebviewLogMessage;
-
-type SendMessage = {
-    command: 'sendMessage';
-    text: string;
-};
-
-type RunSessionCommandMessage = {
-    command: 'runSessionCommand';
-    text: string;
-};
-
-type SelectModelMessage = {
-    command: 'selectModel';
-};
-
-type ChangeModelMessage = {
-    command: 'changeModel';
-    modelId: string;
-};
-
-type ChangeProfileMessage = {
-    command: 'changeProfile';
-    profileName: string;
-};
-
-type OpenVsCodeSettingsMessage = {
-    command: 'openVsCodeSettings';
-};
-
-type ReadyMessage = {
-    command: 'ready';
-};
-
-type ResolveClientRequestMessage = {
-    command: 'resolveClientRequest';
-    requestId: string;
-    resolution: ClientRequestResolution;
-};
-
-type CancelPromptMessage = {
-    command: 'cancelPrompt';
-};
-
-type OpenFileMessage = {
-    command: 'openFile';
-    filePath: string;
-    line?: number;
-    column?: number;
-};
-
-type SearchFilesMessage = {
-    command: 'searchFiles';
-    query: string;
-};
-
-type ListSessionsMessage = {
-    command: 'listSessions';
-};
-
-type ResumeSessionMessage = {
-    command: 'resumeSession';
-    sessionId: string;
-};
-
-type LoadPluginsMessage = {
-    command: 'loadPlugins';
-};
-
-type PluginActionMessage = {
-    command: 'pluginAction';
-    text: string;
-};
-
-type WebviewLogMessage = {
-    command: 'webviewLog';
-    level?: string;
-    message: string;
-    details?: string;
-};
+import type { ChatMessage } from './chatMessages';
 
 export class ChatWebviewController {
     private readonly disposables: vscode.Disposable[] = [];
@@ -127,11 +31,16 @@ export class ChatWebviewController {
 
     constructor(
         private readonly webview: vscode.Webview,
-        private readonly sessionManager: SessionManager
+        private readonly sessionManager: SessionManager,
+        private readonly extensionUri: vscode.Uri
     ) {
         this.currentSessionInfo = this.sessionManager.getSessionInfo();
         this.webview.options = {
-            enableScripts: true
+            enableScripts: true,
+            localResourceRoots: [
+                vscode.Uri.joinPath(extensionUri, 'media'),
+                vscode.Uri.joinPath(extensionUri, 'dist')
+            ]
         };
         LogService.getInstance().info('Chat webview controller created');
 
@@ -188,7 +97,7 @@ export class ChatWebviewController {
         );
 
         const nonce = getNonce();
-        this.webview.html = getChatWebviewContent(nonce);
+        this.webview.html = getChatWebviewContent(this.webview, this.extensionUri, nonce);
         this.scheduleBootstrap();
     }
 
