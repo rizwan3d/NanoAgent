@@ -63,6 +63,7 @@ export function getChatWebviewContent(nonce: string) {
     <style nonce="${nonce}">
         :root {
             color-scheme: dark;
+
             --app-bg: var(--vscode-editor-background, #1e1e1e);
             --panel-bg: var(--vscode-sideBar-background, #181818);
             --input-bg: var(--vscode-input-background, #252526);
@@ -77,6 +78,31 @@ export function getChatWebviewContent(nonce: string) {
             --danger: var(--vscode-errorForeground, #f48771);
             --warning: var(--vscode-charts-yellow, #cca700);
             --ok: var(--vscode-testing-iconPassed, #73c991);
+            --link: var(--vscode-textLink-foreground, #3794ff);
+
+            --surface-0: var(--app-bg);
+            --surface-1: color-mix(in srgb, var(--panel-bg) 92%, var(--app-bg));
+            --surface-2: color-mix(in srgb, var(--input-bg) 86%, var(--app-bg));
+            --surface-3: color-mix(in srgb, var(--input-bg) 72%, var(--fg) 4%);
+            --surface-hover: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--fg) 7%, transparent));
+            --surface-active: var(--vscode-list-activeSelectionBackground, color-mix(in srgb, var(--focus) 18%, transparent));
+            --border-subtle: color-mix(in srgb, var(--border) 72%, transparent);
+            --border-strong: color-mix(in srgb, var(--fg) 18%, var(--border));
+            --muted-soft: color-mix(in srgb, var(--muted) 82%, transparent);
+
+            --radius-xs: 5px;
+            --radius-sm: 7px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 18px;
+            --space-1: 4px;
+            --space-2: 6px;
+            --space-3: 8px;
+            --space-4: 10px;
+            --space-5: 12px;
+            --space-6: 14px;
+            --shadow-overlay: 0 18px 44px rgba(0, 0, 0, 0.38);
+            --shadow-soft: 0 10px 28px rgba(0, 0, 0, 0.24);
         }
 
         * {
@@ -92,8 +118,9 @@ export function getChatWebviewContent(nonce: string) {
             overflow: hidden;
             color: var(--fg);
             background: var(--app-bg);
-            font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+            font-family: var(--vscode-font-family, "Segoe UI", system-ui, sans-serif);
             font-size: var(--vscode-font-size, 13px);
+            line-height: 1.45;
             letter-spacing: 0;
         }
 
@@ -111,9 +138,28 @@ export function getChatWebviewContent(nonce: string) {
 
         button:disabled,
         input:disabled,
-        textarea:disabled {
+        textarea:disabled,
+        select:disabled {
             cursor: not-allowed;
-            opacity: 0.55;
+            opacity: 0.52;
+        }
+
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        textarea:focus-visible,
+        summary:focus-visible,
+        .file-link:focus-visible,
+        .agent-thread-item:focus-visible,
+        .modal-option:focus-visible,
+        .suggestion:focus-visible {
+            outline: 1px solid var(--focus);
+            outline-offset: 2px;
+        }
+
+        ::selection {
+            color: var(--vscode-editor-selectionForeground, var(--fg));
+            background: var(--vscode-editor-selectionBackground, color-mix(in srgb, var(--focus) 36%, transparent));
         }
 
         ::-webkit-scrollbar {
@@ -126,14 +172,14 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         ::-webkit-scrollbar-thumb {
-            border: 2px solid transparent;
-            border-radius: 6px;
-            background: color-mix(in srgb, var(--fg) 16%, transparent);
+            border: 3px solid transparent;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--fg) 17%, transparent);
             background-clip: padding-box;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: color-mix(in srgb, var(--fg) 28%, transparent);
+            background: color-mix(in srgb, var(--fg) 30%, transparent);
             background-clip: padding-box;
         }
 
@@ -142,14 +188,19 @@ export function getChatWebviewContent(nonce: string) {
         .danger-button,
         .primary-button,
         .model-pill,
-        .model-select,
         .profile-select,
         .modal-option,
         .settings-action,
         .suggestion,
         .agent-thread-item,
-        .file-link {
-            transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+        .file-link,
+        .composer-row {
+            transition:
+                background-color 0.14s ease,
+                border-color 0.14s ease,
+                color 0.14s ease,
+                opacity 0.14s ease,
+                transform 0.14s ease;
         }
 
         .workbench {
@@ -158,7 +209,9 @@ export function getChatWebviewContent(nonce: string) {
             width: 100%;
             height: 100vh;
             min-width: 0;
-            background: var(--app-bg);
+            background:
+                radial-gradient(circle at top right, color-mix(in srgb, var(--focus) 7%, transparent), transparent 34%),
+                var(--app-bg);
         }
 
         .top-rail,
@@ -174,34 +227,100 @@ export function getChatWebviewContent(nonce: string) {
 
         .chat-pane {
             display: grid;
-            grid-template-rows: minmax(0, 1fr) auto auto;
+            grid-template-rows: auto minmax(0, 1fr) auto auto;
             min-width: 0;
             min-height: 0;
         }
 
+        .chat-header {
+            grid-row: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--space-3);
+            min-width: 0;
+            min-height: 42px;
+            padding: 8px 14px 7px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: color-mix(in srgb, var(--app-bg) 94%, var(--panel-bg));
+        }
+
+        .chat-header-copy {
+            display: grid;
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .chat-kicker {
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.45px;
+            line-height: 1.1;
+            text-transform: uppercase;
+        }
+
+        .chat-section-title {
+            max-width: min(460px, 56vw);
+            color: var(--fg);
+            font-size: 12px;
+            font-weight: 650;
+            line-height: 1.25;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .chat-header-actions {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: var(--space-2);
+            flex: 0 0 auto;
+        }
+
+        .top-action {
+            border-color: var(--border-subtle);
+            background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+        }
+
+        .top-action:hover,
+        .top-action.active {
+            border-color: color-mix(in srgb, var(--focus) 45%, var(--border-subtle));
+            background: var(--surface-hover);
+        }
+
+        .top-action.active {
+            color: var(--focus);
+        }
+
         .messages,
         .settings-page {
-            grid-row: 1;
+            grid-row: 2;
         }
 
         .messages.hidden,
-        .settings-page.hidden {
+        .settings-page.hidden,
+        .suggestions.hidden,
+        .modal-backdrop.hidden,
+        .agent-menu.hidden {
             display: none;
         }
 
         .messages {
             display: flex;
             flex-direction: column;
-            gap: 12px;
+            gap: var(--space-5);
             min-height: 0;
-            padding: 14px 16px 10px;
+            padding: 16px 16px 10px;
             overflow-y: auto;
+            scroll-behavior: smooth;
         }
 
         .message-card {
             display: grid;
-            gap: 4px;
-            max-width: min(820px, 94%);
+            gap: var(--space-1);
+            max-width: min(860px, 94%);
             white-space: pre-wrap;
             word-break: break-word;
             overflow-wrap: anywhere;
@@ -209,57 +328,39 @@ export function getChatWebviewContent(nonce: string) {
 
         .message-card.user {
             align-self: flex-end;
-            max-width: min(560px, 86%);
-            padding: 8px 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            max-width: min(580px, 86%);
+            padding: 8px 11px;
+            border: 1px solid color-mix(in srgb, var(--focus) 22%, var(--border-subtle));
+            border-radius: 14px 14px 4px 14px;
             color: var(--input-fg);
-            background: color-mix(in srgb, var(--input-bg) 82%, var(--fg) 5%);
+            background: color-mix(in srgb, var(--input-bg) 76%, var(--focus) 8%);
         }
 
         .message-card.assistant {
             align-self: flex-start;
-            max-width: min(820px, 94%);
+            max-width: min(860px, 94%);
+            padding: 1px 0;
+        }
+
+        .message-card.reasoning,
+        .message-card.tool,
+        .message-card.metrics,
+        .message-card.system {
+            align-self: flex-start;
+            max-width: min(780px, 92%);
         }
 
         .message-card.reasoning {
-            align-self: flex-start;
-            max-width: min(760px, 92%);
             color: var(--muted);
-        }
-
-        .thinking-details {
-            padding: 7px 9px;
-            border-left: 2px solid var(--focus);
-            border-radius: 6px;
-            background: color-mix(in srgb, var(--input-bg) 58%, transparent);
-        }
-
-        .thinking-details summary {
-            color: var(--muted);
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
-        .thinking-details pre {
-            margin: 6px 0 0;
-            color: var(--muted);
-            font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 12px;
-            line-height: 1.45;
-            white-space: pre-wrap;
-            overflow-wrap: anywhere;
         }
 
         .message-card.tool {
-            align-self: flex-start;
-            max-width: min(760px, 92%);
-            padding: 7px 9px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-subtle);
             border-left: 2px solid var(--warning);
-            border-radius: 6px;
+            border-radius: var(--radius-md);
             color: var(--muted);
-            background: color-mix(in srgb, var(--input-bg) 60%, transparent);
+            background: color-mix(in srgb, var(--surface-2) 86%, transparent);
         }
 
         .message-card.tool.completed {
@@ -270,33 +371,96 @@ export function getChatWebviewContent(nonce: string) {
             border-left-color: var(--danger);
         }
 
+        .message-card.metrics {
+            color: var(--muted-soft);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 11px;
+            opacity: 0.9;
+        }
+
+        .message-card.system {
+            align-self: center;
+            max-width: 96%;
+            padding: 7px 10px;
+            border: 1px solid color-mix(in srgb, var(--warning) 34%, transparent);
+            border-radius: var(--radius-md);
+            color: color-mix(in srgb, var(--warning) 92%, var(--fg));
+            background: color-mix(in srgb, var(--warning) 10%, var(--app-bg));
+        }
+
+        .message-label {
+            display: none;
+        }
+
+        .message-text {
+            color: inherit;
+            font-size: 13px;
+            line-height: 1.52;
+        }
+
+        .assistant .message-text {
+            color: var(--fg);
+        }
+
+        .thinking-details {
+            padding: 8px 10px;
+            border: 1px solid var(--border-subtle);
+            border-left: 2px solid var(--focus);
+            border-radius: var(--radius-md);
+            background: color-mix(in srgb, var(--surface-2) 70%, transparent);
+        }
+
+        .thinking-details summary {
+            color: var(--muted);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+        }
+
+        .thinking-details pre {
+            margin: 7px 0 0;
+            color: var(--muted);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 12px;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            overflow-wrap: anywhere;
+        }
+
         .tool-message {
             display: grid;
-            gap: 8px;
+            gap: var(--space-3);
             min-width: 0;
         }
 
         .tool-message-header {
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: var(--space-3);
             min-width: 0;
         }
 
         .tool-message-status {
             flex: 0 0 auto;
+            padding: 1px 6px;
+            border-radius: 999px;
             color: var(--warning);
-            font-size: 10px;
+            background: color-mix(in srgb, var(--warning) 11%, transparent);
+            font-size: 9px;
             font-weight: 700;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
         }
 
         .message-card.tool.completed .tool-message-status {
             color: var(--ok);
+            background: color-mix(in srgb, var(--ok) 11%, transparent);
         }
 
         .message-card.tool.failed .tool-message-status {
             color: var(--danger);
+            background: color-mix(in srgb, var(--danger) 12%, transparent);
         }
 
         .tool-message-title {
@@ -316,15 +480,15 @@ export function getChatWebviewContent(nonce: string) {
         .tool-output-pre {
             max-height: 260px;
             margin: 0;
-            padding: 8px;
+            padding: 9px;
             overflow: auto;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
             color: var(--fg);
-            background: var(--app-bg);
+            background: color-mix(in srgb, var(--app-bg) 92%, #000000 8%);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
             font-size: 12px;
-            line-height: 1.45;
+            line-height: 1.48;
             white-space: pre;
             overflow-wrap: normal;
         }
@@ -338,19 +502,20 @@ export function getChatWebviewContent(nonce: string) {
         .diff-view {
             display: grid;
             gap: 0;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
             overflow: hidden;
+            background: var(--surface-1);
         }
 
         .diff-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
-            padding: 5px 8px;
-            background: color-mix(in srgb, var(--input-bg) 80%, transparent);
-            border-bottom: 1px solid var(--border);
+            gap: var(--space-3);
+            padding: 6px 9px;
+            border-bottom: 1px solid var(--border-subtle);
+            background: color-mix(in srgb, var(--surface-2) 88%, transparent);
             font-size: 11px;
         }
 
@@ -363,19 +528,19 @@ export function getChatWebviewContent(nonce: string) {
         .diff-body {
             max-height: 320px;
             margin: 0;
-            padding: 4px 0;
+            padding: 5px 0;
             overflow: auto;
             border: 0;
             border-radius: 0;
-            background: var(--app-bg);
+            background: color-mix(in srgb, var(--app-bg) 92%, #000000 8%);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
             font-size: 12px;
-            line-height: 1.4;
+            line-height: 1.45;
             white-space: pre;
         }
 
         .diff-line {
-            padding: 0 8px;
+            padding: 1px 9px;
             white-space: pre-wrap;
             overflow-wrap: anywhere;
         }
@@ -400,42 +565,10 @@ export function getChatWebviewContent(nonce: string) {
             font-size: 12px;
         }
 
-        .message-card.metrics {
-            align-self: flex-start;
-            max-width: min(760px, 92%);
-            color: var(--muted);
-            font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 11px;
-            opacity: 0.85;
-        }
-
-        .message-card.system {
-            align-self: center;
-            max-width: 96%;
-            padding: 7px 9px;
-            border: 1px solid color-mix(in srgb, var(--warning) 45%, transparent);
-            border-radius: 8px;
-            color: var(--warning);
-            background: color-mix(in srgb, var(--warning) 10%, var(--app-bg));
-        }
-
-        .message-label {
-            display: none;
-        }
-
-        .message-text {
-            color: inherit;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .assistant .message-text {
-            color: var(--fg);
-        }
-
         .file-link {
-            color: var(--vscode-textLink-foreground, #3794ff);
+            color: var(--link);
             text-decoration: none;
+            text-underline-offset: 2px;
             cursor: pointer;
         }
 
@@ -450,12 +583,12 @@ export function getChatWebviewContent(nonce: string) {
             z-index: 1;
             width: max-content;
             max-width: min(320px, 90%);
-            padding: 6px 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            padding: 7px 11px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
             color: var(--muted);
-            background: color-mix(in srgb, var(--panel-bg) 94%, transparent);
-            box-shadow: 0 -6px 12px color-mix(in srgb, var(--app-bg) 70%, transparent);
+            background: color-mix(in srgb, var(--surface-1) 96%, transparent);
+            box-shadow: 0 -8px 18px color-mix(in srgb, var(--app-bg) 76%, transparent);
         }
 
         .progress-dots {
@@ -480,7 +613,7 @@ export function getChatWebviewContent(nonce: string) {
             0%,
             80%,
             100% {
-                opacity: 0.25;
+                opacity: 0.22;
             }
 
             40% {
@@ -491,24 +624,28 @@ export function getChatWebviewContent(nonce: string) {
         .empty-state {
             display: flex;
             flex-direction: column;
-            gap: 8px;
+            gap: var(--space-3);
             align-items: center;
             margin: auto;
-            max-width: 420px;
-            padding: 20px;
+            max-width: 430px;
+            padding: 22px 20px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
             color: var(--muted);
             text-align: center;
             line-height: 1.5;
+            background: color-mix(in srgb, var(--surface-1) 76%, transparent);
         }
 
         .empty-title {
             color: var(--fg);
-            font-size: 18px;
-            font-weight: 600;
-            letter-spacing: 0.2px;
+            font-size: 19px;
+            font-weight: 650;
+            letter-spacing: 0.1px;
         }
 
         .empty-hint {
+            max-width: 320px;
             font-size: 13px;
         }
 
@@ -517,35 +654,37 @@ export function getChatWebviewContent(nonce: string) {
             flex-wrap: wrap;
             align-items: center;
             justify-content: center;
-            gap: 6px;
+            gap: var(--space-2);
             margin-top: 4px;
             font-size: 11px;
         }
 
         .empty-dot {
-            opacity: 0.5;
+            opacity: 0.45;
         }
 
         .empty-keys kbd {
-            padding: 1px 5px;
-            border: 1px solid var(--border);
-            border-radius: 5px;
-            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            min-width: 18px;
+            padding: 2px 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xs);
             color: var(--fg);
+            background: color-mix(in srgb, var(--surface-2) 86%, transparent);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
             font-size: 10px;
+            font-weight: 600;
         }
 
         .side-pane {
-            grid-row: 2;
+            grid-row: 3;
             display: none;
-            grid-template-columns: minmax(0, 1fr);
-            gap: 8px;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: var(--space-3);
             min-width: 0;
-            max-height: 180px;
+            max-height: 176px;
             padding: 0 14px 8px;
             overflow: hidden;
-            background: var(--app-bg);
+            background: transparent;
         }
 
         .side-pane.visible {
@@ -555,11 +694,11 @@ export function getChatWebviewContent(nonce: string) {
         .section {
             min-width: 0;
             min-height: 0;
-            padding: 8px;
+            padding: 9px;
             overflow: hidden;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--panel-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
+            background: color-mix(in srgb, var(--surface-1) 90%, transparent);
         }
 
         .section-scroll {
@@ -570,36 +709,38 @@ export function getChatWebviewContent(nonce: string) {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
-            margin-bottom: 7px;
+            gap: var(--space-3);
+            margin-bottom: 8px;
         }
 
         .section-header h2 {
             margin: 0;
             color: var(--fg);
-            font-size: 11px;
+            font-size: 10px;
             line-height: 1.2;
-            font-weight: 600;
+            font-weight: 700;
+            letter-spacing: 0.45px;
             text-transform: uppercase;
         }
 
         .section-count {
             color: var(--muted);
-            font-size: 11px;
+            font-size: 10px;
             white-space: nowrap;
         }
 
         .context-grid {
             display: grid;
             grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 6px;
+            gap: var(--space-2);
         }
 
         .context-item {
             min-width: 0;
-            padding: 6px;
-            border-radius: 6px;
-            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            padding: 7px;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            background: color-mix(in srgb, var(--surface-2) 78%, transparent);
         }
 
         .context-item.wide {
@@ -608,12 +749,13 @@ export function getChatWebviewContent(nonce: string) {
 
         .context-label {
             color: var(--muted);
-            font-size: 10px;
+            font-size: 9px;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
         }
 
         .context-value {
-            margin-top: 2px;
+            margin-top: 3px;
             color: var(--fg);
             font-size: 11px;
             line-height: 1.35;
@@ -621,25 +763,27 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         .plan-list,
-        .tool-list {
+        .tool-list,
+        .agent-thread-list {
             display: grid;
-            gap: 7px;
+            gap: var(--space-2);
         }
 
         .plan-item {
             display: grid;
             grid-template-columns: auto 1fr;
-            gap: 7px;
+            gap: var(--space-3);
             align-items: start;
-            padding: 6px;
-            border-radius: 6px;
-            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            padding: 7px;
+            border: 1px solid transparent;
+            border-radius: var(--radius-sm);
+            background: color-mix(in srgb, var(--surface-2) 78%, transparent);
         }
 
         .plan-dot {
-            width: 8px;
-            height: 8px;
-            margin-top: 4px;
+            width: 7px;
+            height: 7px;
+            margin-top: 5px;
             border-radius: 50%;
             background: var(--muted);
         }
@@ -650,6 +794,7 @@ export function getChatWebviewContent(nonce: string) {
 
         .plan-item.in_progress .plan-dot {
             background: var(--warning);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 12%, transparent);
         }
 
         .plan-content {
@@ -662,50 +807,51 @@ export function getChatWebviewContent(nonce: string) {
         .plan-status {
             margin-top: 2px;
             color: var(--muted);
-            font-size: 10px;
+            font-size: 9px;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
-        }
-
-        .agent-thread-list {
-            display: grid;
-            gap: 7px;
         }
 
         .agent-thread-item {
             width: 100%;
             display: grid;
-            gap: 4px;
+            gap: var(--space-1);
             padding: 7px;
             border: 1px solid transparent;
-            border-radius: 6px;
+            border-radius: var(--radius-sm);
             color: inherit;
             text-align: left;
-            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            background: color-mix(in srgb, var(--surface-2) 78%, transparent);
             cursor: pointer;
         }
 
         .agent-thread-item:hover,
         .agent-thread-item.active {
-            border-color: var(--focus);
-            background: var(--vscode-list-hoverBackground, color-mix(in srgb, var(--input-bg) 88%, transparent));
+            border-color: color-mix(in srgb, var(--focus) 44%, var(--border-subtle));
+            background: var(--surface-hover);
+        }
+
+        .agent-thread-item.active {
+            box-shadow: inset 2px 0 0 var(--focus);
         }
 
         .agent-thread-topline {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
+            gap: var(--space-3);
         }
 
         .agent-thread-name {
             color: var(--fg);
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 650;
         }
 
         .agent-thread-status {
             color: var(--muted);
-            font-size: 10px;
+            font-size: 9px;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
             white-space: nowrap;
         }
@@ -720,19 +866,20 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         .agent-thread-output {
-            padding-top: 4px;
+            padding-top: 5px;
             color: var(--fg);
-            border-top: 1px solid var(--border);
+            border-top: 1px solid var(--border-subtle);
             white-space: pre-wrap;
         }
 
         .tool-card {
             display: grid;
-            gap: 7px;
+            gap: var(--space-2);
             padding: 7px;
+            border: 1px solid transparent;
             border-left: 2px solid var(--warning);
-            border-radius: 6px;
-            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            border-radius: var(--radius-sm);
+            background: color-mix(in srgb, var(--surface-2) 78%, transparent);
         }
 
         .tool-card.completed {
@@ -747,14 +894,14 @@ export function getChatWebviewContent(nonce: string) {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
+            gap: var(--space-3);
         }
 
         .tool-title {
             min-width: 0;
             color: var(--fg);
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 650;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
@@ -763,8 +910,9 @@ export function getChatWebviewContent(nonce: string) {
         .tool-status {
             flex: 0 0 auto;
             color: var(--warning);
-            font-size: 10px;
-            font-weight: 600;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
         }
 
@@ -794,15 +942,15 @@ export function getChatWebviewContent(nonce: string) {
         pre {
             max-height: 180px;
             margin: 6px 0 0;
-            padding: 7px;
+            padding: 8px;
             overflow: auto;
-            border: 1px solid var(--border);
-            border-radius: 6px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
             color: var(--fg);
-            background: var(--app-bg);
+            background: color-mix(in srgb, var(--app-bg) 92%, #000000 8%);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
             font-size: 11px;
-            line-height: 1.45;
+            line-height: 1.5;
             white-space: pre-wrap;
             overflow-wrap: anywhere;
         }
@@ -815,17 +963,52 @@ export function getChatWebviewContent(nonce: string) {
 
         .settings-page {
             min-height: 0;
-            padding: 12px 14px 10px;
+            padding: 16px;
             overflow-y: auto;
-            background: var(--app-bg);
+            background:
+                radial-gradient(circle at top left, color-mix(in srgb, var(--focus) 10%, transparent), transparent 38%),
+                transparent;
+        }
+
+        .settings-shell {
+            display: grid;
+            gap: 14px;
+            width: min(980px, 100%);
+            margin: 0 auto;
+        }
+
+        .settings-hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: var(--space-5);
+            align-items: start;
+            padding: 16px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            background:
+                linear-gradient(135deg, color-mix(in srgb, var(--surface-2) 88%, transparent), color-mix(in srgb, var(--surface-1) 94%, transparent)),
+                var(--surface-1);
+            box-shadow: 0 12px 30px rgba(0, 0, 0, 0.16);
         }
 
         .settings-header {
-            display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
-            margin-bottom: 12px;
+            display: grid;
+            gap: var(--space-3);
+            min-width: 0;
+        }
+
+        .settings-kicker {
+            width: max-content;
+            max-width: 100%;
+            padding: 3px 8px;
+            border: 1px solid color-mix(in srgb, var(--focus) 28%, var(--border-subtle));
+            border-radius: 999px;
+            color: color-mix(in srgb, var(--focus) 70%, var(--fg));
+            background: color-mix(in srgb, var(--focus) 10%, transparent);
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: 0.45px;
+            text-transform: uppercase;
         }
 
         .settings-title {
@@ -835,67 +1018,167 @@ export function getChatWebviewContent(nonce: string) {
         .settings-title h1 {
             margin: 0;
             color: var(--fg);
-            font-size: 16px;
-            line-height: 1.25;
+            font-size: 20px;
+            line-height: 1.15;
+            font-weight: 700;
+            letter-spacing: -0.25px;
         }
 
         .settings-summary {
-            margin-top: 4px;
+            max-width: 720px;
+            margin-top: 6px;
             color: var(--muted);
             font-size: 12px;
             line-height: 1.45;
             overflow-wrap: anywhere;
         }
 
+        .settings-quick {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--space-2);
+            align-items: center;
+        }
+
+        .settings-chip {
+            display: inline-flex;
+            align-items: center;
+            min-height: 22px;
+            padding: 2px 8px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 999px;
+            color: var(--muted);
+            background: color-mix(in srgb, var(--surface-2) 72%, transparent);
+            font-size: 11px;
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .settings-hero-actions {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: var(--space-2);
+        }
+
         .settings-groups {
             display: grid;
+            grid-template-columns: repeat(2, minmax(260px, 1fr));
             gap: 12px;
-            max-width: 860px;
         }
 
         .settings-group {
             display: grid;
-            gap: 6px;
+            align-content: start;
+            gap: var(--space-2);
             min-width: 0;
+            padding: 12px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+        }
+
+        .settings-group.wide {
+            grid-column: 1 / -1;
+        }
+
+        .settings-group-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: var(--space-4);
+            margin-bottom: 2px;
         }
 
         .settings-group h2 {
             margin: 0;
+            color: var(--fg);
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+
+        .settings-group-hint {
+            margin: 3px 0 0;
             color: var(--muted);
             font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
+            line-height: 1.35;
+        }
+
+        .settings-group-count {
+            flex: 0 0 auto;
+            min-width: 22px;
+            padding: 2px 7px;
+            border-radius: 999px;
+            color: var(--muted);
+            background: color-mix(in srgb, var(--surface-2) 76%, transparent);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 10px;
+            text-align: center;
         }
 
         .settings-action {
+            position: relative;
             display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 8px;
+            grid-template-columns: 30px minmax(0, 1fr) auto 12px;
+            gap: var(--space-3);
             align-items: center;
             width: 100%;
-            min-height: 44px;
-            padding: 8px 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            min-height: 46px;
+            padding: 8px 9px;
+            border: 1px solid transparent;
+            border-radius: var(--radius-md);
             color: var(--fg);
             text-align: left;
-            background: var(--panel-bg);
+            background: color-mix(in srgb, var(--surface-2) 56%, transparent);
         }
 
-        .settings-action:hover {
-            border-color: var(--focus);
-            background: var(--vscode-list-hoverBackground, var(--panel-bg));
+        .settings-action::before {
+            content: attr(data-icon);
+            display: inline-grid;
+            place-items: center;
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-sm);
+            color: var(--fg);
+            background: color-mix(in srgb, var(--surface-3) 78%, transparent);
+            font-size: 11px;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .settings-action::after {
+            content: '›';
+            color: var(--muted-soft);
+            font-size: 18px;
+            line-height: 1;
+        }
+
+        .settings-action:hover,
+        .settings-action:focus-visible {
+            border-color: color-mix(in srgb, var(--focus) 42%, var(--border-subtle));
+            background: var(--surface-hover);
+            transform: translateY(-1px);
+        }
+
+        .settings-action:hover::before,
+        .settings-action:focus-visible::before {
+            border-color: color-mix(in srgb, var(--focus) 34%, var(--border-subtle));
+            color: color-mix(in srgb, var(--focus) 72%, var(--fg));
+            background: color-mix(in srgb, var(--focus) 12%, var(--surface-3));
         }
 
         .settings-action-main {
             display: grid;
-            gap: 3px;
+            gap: 2px;
             min-width: 0;
         }
 
         .settings-action-title {
+            color: var(--fg);
             font-size: 13px;
-            font-weight: 600;
+            font-weight: 650;
             overflow-wrap: anywhere;
         }
 
@@ -907,10 +1190,14 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         .settings-action-value {
-            max-width: min(240px, 34vw);
+            max-width: min(220px, 30vw);
+            padding: 3px 8px;
+            border: 1px solid color-mix(in srgb, var(--border-subtle) 84%, transparent);
+            border-radius: 999px;
             color: var(--muted);
+            background: color-mix(in srgb, var(--app-bg) 34%, transparent);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 11px;
+            font-size: 10px;
             overflow: hidden;
             text-align: right;
             text-overflow: ellipsis;
@@ -918,37 +1205,33 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         .composer {
-            grid-row: 3;
+            grid-row: 4;
             position: relative;
             display: grid;
-            gap: 8px;
-            padding: 8px 14px 12px;
-            background: var(--app-bg);
+            gap: var(--space-3);
+            padding: 8px 14px 14px;
+            background: linear-gradient(to top, var(--app-bg) 70%, transparent);
         }
 
         .suggestions {
             position: absolute;
             left: 14px;
             right: 14px;
-            bottom: 102px;
+            bottom: calc(100% - 8px);
             z-index: 4;
-            max-height: 240px;
+            max-height: min(280px, 45vh);
             overflow-y: auto;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--panel-bg);
-            box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
-        }
-
-        .suggestions.hidden {
-            display: none;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            background: color-mix(in srgb, var(--surface-1) 98%, #000000 2%);
+            box-shadow: var(--shadow-overlay);
         }
 
         .suggestion {
             display: grid;
-            gap: 3px;
-            padding: 8px 10px;
-            border-bottom: 1px solid var(--border);
+            gap: 2px;
+            padding: 9px 11px;
+            border-bottom: 1px solid var(--border-subtle);
             cursor: pointer;
         }
 
@@ -958,19 +1241,24 @@ export function getChatWebviewContent(nonce: string) {
 
         .suggestion.active,
         .suggestion:hover {
-            background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.06));
+            background: var(--surface-hover);
+        }
+
+        .suggestion.active {
+            box-shadow: inset 2px 0 0 var(--focus);
         }
 
         .suggestion-usage {
             color: var(--fg);
             font-size: 12px;
-            font-weight: 600;
+            font-weight: 650;
             overflow-wrap: anywhere;
         }
 
         .suggestion-description {
             color: var(--muted);
             font-size: 11px;
+            line-height: 1.35;
         }
 
         .composer-row {
@@ -978,36 +1266,41 @@ export function getChatWebviewContent(nonce: string) {
             grid-template-rows: auto auto;
             gap: 7px;
             padding: 8px;
-            border: 1px solid var(--border);
-            border-radius: 18px;
-            background: var(--input-bg);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-xl);
+            background: color-mix(in srgb, var(--input-bg) 92%, var(--app-bg));
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 2%, transparent);
         }
 
         .composer-row:focus-within {
-            border-color: var(--focus);
+            border-color: color-mix(in srgb, var(--focus) 70%, var(--border));
+            background: color-mix(in srgb, var(--input-bg) 96%, var(--app-bg));
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 12%, transparent);
         }
 
         .chat-input {
             width: 100%;
-            min-height: 38px;
-            max-height: 150px;
-            padding: 8px 8px 2px;
+            min-height: 34px;
+            max-height: 110px;
+            padding: 6px 8px 2px;
             resize: none;
             border: 0;
             outline: none;
             color: var(--input-fg);
             background: transparent;
+            line-height: 1.45;
+            overflow-y: auto;
         }
 
         .chat-input::placeholder {
-            color: var(--vscode-input-placeholderForeground, var(--muted));
+            color: color-mix(in srgb, var(--vscode-input-placeholderForeground, var(--muted)) 88%, transparent);
         }
 
         .composer-toolbar {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 8px;
+            gap: var(--space-2);
             min-width: 0;
         }
 
@@ -1016,21 +1309,23 @@ export function getChatWebviewContent(nonce: string) {
         .status-cluster {
             display: flex;
             align-items: center;
-            gap: 7px;
+            gap: var(--space-2);
             min-width: 0;
         }
 
         .toolbar-left {
-            flex: 1 1 auto;
+            flex: 0 1 auto;
+            flex-wrap: nowrap;
+            overflow: hidden;
         }
 
         .toolbar-right {
             flex: 0 0 auto;
+            justify-content: flex-end;
         }
 
         .status-pill,
         .model-pill,
-        .model-select,
         .profile-select,
         .ghost-button,
         .danger-button,
@@ -1038,43 +1333,43 @@ export function getChatWebviewContent(nonce: string) {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            gap: 6px;
-            min-height: 28px;
+            gap: var(--space-2);
+            min-height: 27px;
             border: 1px solid transparent;
-            border-radius: 7px;
+            border-radius: var(--radius-sm);
             padding: 4px 8px;
             color: var(--fg);
             background: transparent;
             white-space: nowrap;
         }
 
-        .model-select,
         .profile-select {
-            min-width: 0;
-            max-width: min(260px, 42vw);
+            min-width: 72px;
+            max-width: 132px;
+            color: color-mix(in srgb, var(--warning) 88%, var(--fg));
+            background: color-mix(in srgb, var(--warning) 8%, transparent);
+            font-weight: 650;
             outline: none;
             cursor: pointer;
         }
 
-        .profile-select {
-            max-width: min(190px, 32vw);
-            color: var(--warning);
-            font-weight: 600;
-        }
-
         .icon-button,
         .composer .primary-button {
-            width: 30px;
-            min-width: 30px;
-            height: 30px;
+            width: 29px;
+            min-width: 29px;
+            height: 29px;
             padding: 0;
-            border-radius: 50%;
-            font-size: 17px;
+            border-radius: 999px;
+            font-size: 16px;
             line-height: 1;
         }
 
         .model-pill {
-            max-width: min(260px, 42vw);
+            max-width: 210px;
+            min-width: 0;
+            border-color: color-mix(in srgb, var(--border-subtle) 70%, transparent);
+            background: color-mix(in srgb, var(--surface-2) 52%, transparent);
+            cursor: pointer;
         }
 
         .model-pill span {
@@ -1082,25 +1377,21 @@ export function getChatWebviewContent(nonce: string) {
             text-overflow: ellipsis;
         }
 
-        .model-pill {
-            cursor: pointer;
-        }
-
         .status-pill {
-            margin-left: auto;
+            margin-left: 0;
             color: var(--muted);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 11px;
+            font-size: 10px;
         }
 
         .context-meter {
             flex: 0 0 auto;
-            padding: 2px 7px;
-            border-radius: 7px;
+            padding: 3px 7px;
+            border-radius: 999px;
             color: var(--muted);
-            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            background: color-mix(in srgb, var(--surface-2) 70%, transparent);
             font-family: var(--vscode-editor-font-family, Consolas, monospace);
-            font-size: 11px;
+            font-size: 10px;
             white-space: nowrap;
         }
 
@@ -1111,15 +1402,15 @@ export function getChatWebviewContent(nonce: string) {
 
         .ghost-button:hover,
         .model-pill:hover,
-        .model-select:hover,
         .profile-select:hover,
         .icon-button:hover {
-            background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.08));
+            border-color: color-mix(in srgb, var(--fg) 12%, transparent);
+            background: var(--surface-hover);
         }
 
         .access-pill {
             color: var(--warning);
-            font-weight: 600;
+            font-weight: 650;
         }
 
         .danger-button {
@@ -1132,24 +1423,40 @@ export function getChatWebviewContent(nonce: string) {
 
         .primary-button {
             min-height: 32px;
-            border-radius: 7px;
+            border-radius: var(--radius-sm);
             padding: 0 12px;
             color: var(--button-fg);
-            font-weight: 600;
+            font-weight: 650;
             background: var(--button-bg);
         }
 
-        .primary-button:hover {
+        .primary-button:not(:disabled):hover {
             background: var(--button-hover);
         }
 
         .composer .primary-button {
-            color: var(--vscode-button-secondaryForeground, #ffffff);
-            background: var(--vscode-button-secondaryBackground, #3a3d41);
+            color: var(--button-fg);
+            background: var(--button-bg);
         }
 
         .composer .primary-button:not(:disabled):hover {
-            background: var(--vscode-button-secondaryHoverBackground, #45494e);
+            transform: translateY(-1px);
+            background: var(--button-hover);
+        }
+
+        .composer .primary-button.stop-mode {
+            color: var(--vscode-button-secondaryForeground, var(--fg));
+            background: color-mix(in srgb, var(--danger) 28%, var(--surface-2));
+            border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+            font-size: 12px;
+        }
+
+        .composer .primary-button.stop-mode:not(:disabled):hover {
+            background: color-mix(in srgb, var(--danger) 38%, var(--surface-2));
+        }
+
+        .toolbar-right #stop-button {
+            display: none;
         }
 
         .modal-backdrop {
@@ -1159,30 +1466,27 @@ export function getChatWebviewContent(nonce: string) {
             display: grid;
             place-items: center;
             padding: 18px;
-            background: rgba(0, 0, 0, 0.52);
-        }
-
-        .modal-backdrop.hidden {
-            display: none;
+            background: rgba(0, 0, 0, 0.54);
         }
 
         .modal {
-            width: min(560px, 100%);
+            width: min(580px, 100%);
             max-height: min(720px, 92vh);
             display: grid;
-            gap: 12px;
-            padding: 14px;
+            gap: 13px;
+            padding: 15px;
             overflow: hidden;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            background: var(--panel-bg);
-            box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42);
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            background: color-mix(in srgb, var(--surface-1) 98%, #000000 2%);
+            box-shadow: var(--shadow-overlay);
         }
 
         .modal h2 {
             margin: 0;
             color: var(--fg);
-            font-size: 15px;
+            font-size: 16px;
+            font-weight: 650;
         }
 
         .modal-description {
@@ -1195,7 +1499,7 @@ export function getChatWebviewContent(nonce: string) {
 
         .modal-options {
             display: grid;
-            gap: 8px;
+            gap: var(--space-2);
             max-height: 390px;
             overflow-y: auto;
         }
@@ -1203,18 +1507,22 @@ export function getChatWebviewContent(nonce: string) {
         .modal-option {
             display: grid;
             gap: 3px;
-            padding: 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            padding: 10px 11px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
             color: var(--fg);
             text-align: left;
-            background: var(--input-bg);
+            background: color-mix(in srgb, var(--surface-2) 82%, transparent);
         }
 
         .modal-option:hover,
         .modal-option.active {
-            border-color: var(--focus);
-            background: var(--vscode-list-hoverBackground, var(--input-bg));
+            border-color: color-mix(in srgb, var(--focus) 50%, var(--border-subtle));
+            background: var(--surface-hover);
+        }
+
+        .modal-option.active {
+            box-shadow: inset 2px 0 0 var(--focus);
         }
 
         .modal-option strong {
@@ -1224,7 +1532,8 @@ export function getChatWebviewContent(nonce: string) {
 
         .modal-option span {
             color: var(--muted);
-            font-size: 11px;
+            font-size: 10px;
+            letter-spacing: 0.35px;
             text-transform: uppercase;
         }
 
@@ -1239,8 +1548,8 @@ export function getChatWebviewContent(nonce: string) {
             width: 100%;
             min-height: 40px;
             padding: 9px 10px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-md);
             outline: none;
             color: var(--input-fg);
             background: var(--input-bg);
@@ -1248,6 +1557,7 @@ export function getChatWebviewContent(nonce: string) {
 
         .modal-input:focus {
             border-color: var(--focus);
+            box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 12%, transparent);
         }
 
         .plugin-panel {
@@ -1259,19 +1569,19 @@ export function getChatWebviewContent(nonce: string) {
 
         .plugin-section {
             display: grid;
-            gap: 6px;
+            gap: var(--space-2);
         }
 
         .plugin-form {
             display: grid;
             grid-template-columns: minmax(0, 1fr) auto;
-            gap: 6px;
+            gap: var(--space-2);
             align-items: center;
         }
 
         .plugin-row {
             display: flex;
-            gap: 8px;
+            gap: var(--space-3);
             align-items: stretch;
         }
 
@@ -1281,7 +1591,7 @@ export function getChatWebviewContent(nonce: string) {
 
         .plugin-check {
             display: flex;
-            gap: 6px;
+            gap: var(--space-2);
             align-items: center;
             color: var(--muted);
             font-size: 11px;
@@ -1290,43 +1600,39 @@ export function getChatWebviewContent(nonce: string) {
         .modal-actions {
             display: flex;
             justify-content: flex-end;
-            gap: 8px;
+            gap: var(--space-3);
         }
 
         .agent-menu {
             position: fixed;
             z-index: 30;
             display: grid;
-            gap: 1px;
-            min-width: 220px;
-            max-width: min(320px, 90vw);
-            padding: 6px;
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            background: var(--panel-bg);
-            box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
-        }
-
-        .agent-menu.hidden {
-            display: none;
+            gap: 2px;
+            min-width: 230px;
+            max-width: min(340px, 90vw);
+            padding: 7px;
+            border: 1px solid var(--border-subtle);
+            border-radius: var(--radius-lg);
+            background: color-mix(in srgb, var(--surface-1) 98%, #000000 2%);
+            box-shadow: var(--shadow-overlay);
         }
 
         .agent-menu-header {
-            padding: 8px 10px 3px;
+            padding: 8px 10px 4px;
             color: var(--muted);
             font-size: 10px;
             font-weight: 700;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.45px;
             text-transform: uppercase;
         }
 
         .agent-menu-item {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: var(--space-3);
             width: 100%;
-            padding: 6px 10px;
-            border-radius: 6px;
+            padding: 7px 10px;
+            border-radius: var(--radius-sm);
             color: var(--fg);
             text-align: left;
             background: transparent;
@@ -1334,7 +1640,7 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         .agent-menu-item:hover {
-            background: var(--vscode-list-hoverBackground, rgba(255, 255, 255, 0.08));
+            background: var(--surface-hover);
         }
 
         .agent-menu-check {
@@ -1354,47 +1660,124 @@ export function getChatWebviewContent(nonce: string) {
         .agent-menu-sep {
             height: 1px;
             margin: 5px 6px;
-            background: var(--border);
+            background: var(--border-subtle);
         }
 
         .agent-menu-models {
-            max-height: 200px;
+            max-height: 220px;
             overflow-y: auto;
         }
 
         @media (max-width: 760px) {
+            .chat-header {
+                min-height: 40px;
+                padding: 7px 12px 6px;
+            }
+
+            .chat-section-title {
+                max-width: 52vw;
+            }
+
             .messages {
                 padding: 12px;
             }
 
+            .message-card,
+            .message-card.assistant,
+            .message-card.reasoning,
+            .message-card.tool,
+            .message-card.metrics {
+                max-width: 100%;
+            }
+
+            .message-card.user {
+                max-width: 92%;
+            }
+
             .side-pane {
                 grid-template-columns: 1fr;
-                max-height: 220px;
+                max-height: 230px;
                 overflow-y: auto;
                 padding: 0 12px 8px;
+            }
+
+            .settings-page {
+                padding: 12px;
+            }
+
+            .settings-shell {
+                gap: 12px;
+            }
+
+            .settings-hero {
+                grid-template-columns: minmax(0, 1fr);
+                padding: 14px;
+            }
+
+            .settings-hero-actions {
+                justify-content: flex-start;
+            }
+
+            .settings-groups {
+                grid-template-columns: minmax(0, 1fr);
+                gap: 10px;
+            }
+
+            .settings-group,
+            .settings-group.wide {
+                grid-column: auto;
+                padding: 10px;
+            }
+
+            .settings-action {
+                grid-template-columns: 28px minmax(0, 1fr) auto 10px;
+                min-height: 42px;
+                padding: 7px 8px;
+            }
+
+            .settings-action::before {
+                width: 26px;
+                height: 26px;
+            }
+
+            .settings-action-value {
+                max-width: 30vw;
+                justify-self: end;
+                text-align: right;
             }
 
             .composer {
                 padding: 8px 12px 12px;
             }
 
+            .suggestions {
+                left: 12px;
+                right: 12px;
+            }
+
             .composer-toolbar {
-                align-items: stretch;
-                flex-direction: column;
+                align-items: center;
+                flex-wrap: nowrap;
             }
 
             .toolbar-left,
             .toolbar-right {
-                width: 100%;
-                flex-wrap: wrap;
+                width: auto;
+                flex-wrap: nowrap;
             }
 
-            .toolbar-right {
-                justify-content: flex-end;
+            .profile-select {
+                min-width: 64px;
+                max-width: 92px;
             }
 
             .model-pill {
-                max-width: 100%;
+                max-width: 128px;
+            }
+
+            .status-pill,
+            .context-meter {
+                display: none;
             }
         }
     </style>
@@ -1403,140 +1786,186 @@ export function getChatWebviewContent(nonce: string) {
     <div class="workbench">
         <main class="main-grid">
             <section class="chat-pane">
-                <span id="section-title" hidden>No active section</span>
+                <header class="chat-header">
+                    <div class="chat-header-copy">
+                        <span class="chat-kicker">NanoAgent</span>
+                        <span id="section-title" class="chat-section-title">No active section</span>
+                    </div>
+                    <div class="chat-header-actions">
+                        <button id="sessions-button" class="icon-button top-action" title="Sections" aria-label="Sections">&#9776;</button>
+                        <button id="settings-button" class="icon-button top-action" title="Settings" aria-label="Settings">&#9881;</button>
+                    </div>
+                </header>
                 <div id="messages" class="messages">
                     <div id="empty-state" class="empty-state">
                         <div class="empty-title">NanoAgent</div>
-                        <div class="empty-hint">Ask anything to get started.</div>
+                        <div class="empty-hint">A compact coding agent for edits, files, tools, and focused workspace help.</div>
                         <div class="empty-keys"><kbd>/</kbd> commands<span class="empty-dot">·</span><kbd>@</kbd> files<span class="empty-dot">·</span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</div>
                     </div>
                 </div>
                 <section id="settings-page" class="settings-page hidden" aria-label="NanoAgent settings">
-                    <div class="settings-header">
-                        <div class="settings-title">
-                            <h1>Settings</h1>
-                            <div id="settings-summary" class="settings-summary">No active session.</div>
+                    <div class="settings-shell">
+                        <div class="settings-hero">
+                            <div class="settings-header">
+                                <div class="settings-kicker">Control center</div>
+                                <div class="settings-title">
+                                    <h1>Settings</h1>
+                                    <div id="settings-summary" class="settings-summary">No active session.</div>
+                                </div>
+                                <div class="settings-quick" aria-label="Settings categories">
+                                    <span class="settings-chip">Session</span>
+                                    <span class="settings-chip">Provider</span>
+                                    <span class="settings-chip">Workspace</span>
+                                    <span class="settings-chip">Extension</span>
+                                </div>
+                            </div>
+                            <div class="settings-hero-actions">
+                                <button id="settings-close-button" class="ghost-button" title="Back to chat" aria-label="Back to chat">Chat</button>
+                            </div>
                         </div>
-                        <button id="settings-close-button" class="ghost-button">Chat</button>
-                    </div>
-                    <div class="settings-groups">
-                        <section class="settings-group">
-                            <h2>Session</h2>
-                            <button class="settings-action" data-action="model">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Model</span>
-                                    <span class="settings-action-description">Choose active model for this session.</span>
-                                </span>
-                                <span id="settings-model-value" class="settings-action-value">-</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting profile">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Profile</span>
-                                    <span class="settings-action-description">Switch build, plan, review, or subagent profile.</span>
-                                </span>
-                                <span id="settings-profile-value" class="settings-action-value">-</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting thinking">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Thinking</span>
-                                    <span class="settings-action-description">Set provider reasoning effort for later prompts.</span>
-                                </span>
-                                <span id="settings-thinking-value" class="settings-action-value">-</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting summary">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Summary</span>
-                                    <span class="settings-action-description">Show provider, model, profile, thinking, and session details.</span>
-                                </span>
-                                <span class="settings-action-value">open</span>
-                            </button>
-                            <button class="settings-action" data-action="sessions">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Sessions</span>
-                                    <span class="settings-action-description">Browse, resume, fork, or export saved sessions.</span>
-                                </span>
-                                <span class="settings-action-value">browse</span>
-                            </button>
-                        </section>
-                        <section class="settings-group">
-                            <h2>Provider</h2>
-                            <button class="settings-action" data-command="/setting provider">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Provider</span>
-                                    <span class="settings-action-description">Switch saved provider for this session.</span>
-                                </span>
-                                <span id="settings-provider-value" class="settings-action-value">-</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting onboarding">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Onboarding</span>
-                                    <span class="settings-action-description">Add or repair provider credentials.</span>
-                                </span>
-                                <span class="settings-action-value">setup</span>
-                            </button>
-                        </section>
-                        <section class="settings-group">
-                            <h2>Workspace</h2>
-                            <button class="settings-action" data-command="/setting workspace">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Workspace Files</span>
-                                    <span class="settings-action-description">Create or review .nanoagent project files.</span>
-                                </span>
-                                <span class="settings-action-value">init</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting budget">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Budget</span>
-                                    <span class="settings-action-description">Configure local or cloud budget controls.</span>
-                                </span>
-                                <span class="settings-action-value">open</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting permissions">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Permissions</span>
-                                    <span class="settings-action-description">Edit modes, sandbox, and session overrides.</span>
-                                </span>
-                                <span class="settings-action-value">policy</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting rules">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Rules</span>
-                                    <span class="settings-action-description">Inspect effective tool permission rules.</span>
-                                </span>
-                                <span class="settings-action-value">view</span>
-                            </button>
-                            <button class="settings-action" data-command="/setting tools">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Tools</span>
-                                    <span class="settings-action-description">Show MCP servers, custom tools, and dynamic tool status.</span>
-                                </span>
-                                <span class="settings-action-value">view</span>
-                            </button>
-                            <button class="settings-action" data-command="/terminals">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Background Terminals</span>
-                                    <span class="settings-action-description">List running terminals and stop them with /terminals stop.</span>
-                                </span>
-                                <span class="settings-action-value">view</span>
-                            </button>
-                            <button class="settings-action" data-action="plugins">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">Plugins</span>
-                                    <span class="settings-action-description">Browse marketplaces and install or remove plugins.</span>
-                                </span>
-                                <span class="settings-action-value">manage</span>
-                            </button>
-                        </section>
-                        <section class="settings-group">
-                            <h2>Extension</h2>
-                            <button class="settings-action" data-action="vscodeSettings">
-                                <span class="settings-action-main">
-                                    <span class="settings-action-title">VS Code Extension Settings</span>
-                                    <span class="settings-action-description">Edit command, args, working directory, auto-start, and log level.</span>
-                                </span>
-                                <span class="settings-action-value">vscode</span>
-                            </button>
-                        </section>
+                        <div class="settings-groups">
+                            <section class="settings-group">
+                                <div class="settings-group-header">
+                                    <div>
+                                        <h2>Session</h2>
+                                        <p class="settings-group-hint">Model, profile, reasoning, and saved chats.</p>
+                                    </div>
+                                    <span class="settings-group-count">5</span>
+                                </div>
+                                <button class="settings-action" data-icon="M" data-action="model">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Model</span>
+                                        <span class="settings-action-description">Choose active model for this session.</span>
+                                    </span>
+                                    <span id="settings-model-value" class="settings-action-value">-</span>
+                                </button>
+                                <button class="settings-action" data-icon="P" data-command="/setting profile">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Profile</span>
+                                        <span class="settings-action-description">Switch build, plan, review, or subagent profile.</span>
+                                    </span>
+                                    <span id="settings-profile-value" class="settings-action-value">-</span>
+                                </button>
+                                <button class="settings-action" data-icon="T" data-command="/setting thinking">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Thinking</span>
+                                        <span class="settings-action-description">Set provider reasoning effort for later prompts.</span>
+                                    </span>
+                                    <span id="settings-thinking-value" class="settings-action-value">-</span>
+                                </button>
+                                <button class="settings-action" data-icon="I" data-command="/setting summary">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Summary</span>
+                                        <span class="settings-action-description">Show provider, model, profile, thinking, and session details.</span>
+                                    </span>
+                                    <span class="settings-action-value">open</span>
+                                </button>
+                                <button class="settings-action" data-icon="S" data-action="sessions">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Sessions</span>
+                                        <span class="settings-action-description">Browse, resume, fork, or export saved sessions.</span>
+                                    </span>
+                                    <span class="settings-action-value">browse</span>
+                                </button>
+                            </section>
+                            <section class="settings-group">
+                                <div class="settings-group-header">
+                                    <div>
+                                        <h2>Provider</h2>
+                                        <p class="settings-group-hint">Switch providers or repair credentials.</p>
+                                    </div>
+                                    <span class="settings-group-count">2</span>
+                                </div>
+                                <button class="settings-action" data-icon="P" data-command="/setting provider">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Provider</span>
+                                        <span class="settings-action-description">Switch saved provider for this session.</span>
+                                    </span>
+                                    <span id="settings-provider-value" class="settings-action-value">-</span>
+                                </button>
+                                <button class="settings-action" data-icon="K" data-command="/setting onboarding">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Onboarding</span>
+                                        <span class="settings-action-description">Add or repair provider credentials.</span>
+                                    </span>
+                                    <span class="settings-action-value">setup</span>
+                                </button>
+                            </section>
+                            <section class="settings-group wide">
+                                <div class="settings-group-header">
+                                    <div>
+                                        <h2>Workspace</h2>
+                                        <p class="settings-group-hint">Project files, permissions, budget, tools, terminals, and plugins.</p>
+                                    </div>
+                                    <span class="settings-group-count">7</span>
+                                </div>
+                                <button class="settings-action" data-icon="W" data-command="/setting workspace">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Workspace Files</span>
+                                        <span class="settings-action-description">Create or review .nanoagent project files.</span>
+                                    </span>
+                                    <span class="settings-action-value">init</span>
+                                </button>
+                                <button class="settings-action" data-icon="$" data-command="/setting budget">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Budget</span>
+                                        <span class="settings-action-description">Configure local or cloud budget controls.</span>
+                                    </span>
+                                    <span class="settings-action-value">open</span>
+                                </button>
+                                <button class="settings-action" data-icon="L" data-command="/setting permissions">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Permissions</span>
+                                        <span class="settings-action-description">Edit modes, sandbox, and session overrides.</span>
+                                    </span>
+                                    <span class="settings-action-value">policy</span>
+                                </button>
+                                <button class="settings-action" data-icon="R" data-command="/setting rules">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Rules</span>
+                                        <span class="settings-action-description">Inspect effective tool permission rules.</span>
+                                    </span>
+                                    <span class="settings-action-value">view</span>
+                                </button>
+                                <button class="settings-action" data-icon="T" data-command="/setting tools">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Tools</span>
+                                        <span class="settings-action-description">Show MCP servers, custom tools, and dynamic tool status.</span>
+                                    </span>
+                                    <span class="settings-action-value">view</span>
+                                </button>
+                                <button class="settings-action" data-icon=">_" data-command="/terminals">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Background Terminals</span>
+                                        <span class="settings-action-description">List running terminals and stop them with /terminals stop.</span>
+                                    </span>
+                                    <span class="settings-action-value">view</span>
+                                </button>
+                                <button class="settings-action" data-icon="+" data-action="plugins">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">Plugins</span>
+                                        <span class="settings-action-description">Browse marketplaces and install or remove plugins.</span>
+                                    </span>
+                                    <span class="settings-action-value">manage</span>
+                                </button>
+                            </section>
+                            <section class="settings-group">
+                                <div class="settings-group-header">
+                                    <div>
+                                        <h2>Extension</h2>
+                                        <p class="settings-group-hint">Open the native VS Code extension settings.</p>
+                                    </div>
+                                    <span class="settings-group-count">1</span>
+                                </div>
+                                <button class="settings-action" data-icon="VS" data-action="vscodeSettings">
+                                    <span class="settings-action-main">
+                                        <span class="settings-action-title">VS Code Extension Settings</span>
+                                        <span class="settings-action-description">Edit command, args, working directory, auto-start, and log level.</span>
+                                    </span>
+                                    <span class="settings-action-value">vscode</span>
+                                </button>
+                            </section>
+                        </div>
                     </div>
                 </section>
                 <aside id="activity-pane" class="side-pane">
@@ -1558,12 +1987,10 @@ export function getChatWebviewContent(nonce: string) {
                 <div class="composer">
                     <div id="suggestions" class="suggestions hidden"></div>
                     <div class="composer-row">
-                        <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask anything / for commands / @ for files"></textarea>
+                        <textarea id="chat-input" class="chat-input" rows="1" placeholder="Message NanoAgent, type / for commands, or @ for files"></textarea>
                         <div class="composer-toolbar">
                             <div class="toolbar-left">
                                 <button id="add-context-button" class="icon-button" title="Read workspace file" aria-label="Read workspace file">+</button>
-                                <button id="settings-button" class="icon-button" title="Settings" aria-label="Settings">&#9881;</button>
-                                <button id="sessions-button" class="icon-button" title="Sessions" aria-label="Sessions">&#9776;</button>
                                 <select id="profile-select" class="profile-select" title="Profile" aria-label="Profile"></select>
                                 <button id="model-button" class="model-pill" title="Choose model" aria-label="Choose model"><span id="model-button-label">Model</span></button>
                                 <div class="status-pill" title="Process status">
@@ -1573,7 +2000,7 @@ export function getChatWebviewContent(nonce: string) {
                             </div>
                             <div class="toolbar-right">
                                 <button id="stop-button" class="danger-button" disabled>Stop</button>
-                                <button id="send-button" class="primary-button" title="Send" aria-label="Send">&#8593;</button>
+                                <button id="send-button" class="primary-button" title="Send message" aria-label="Send message">&#8593;</button>
                             </div>
                         </div>
                     </div>
@@ -1671,6 +2098,7 @@ export function getChatWebviewContent(nonce: string) {
         const profileSelect = document.getElementById('profile-select');
         const sectionTitle = document.getElementById('section-title');
         const statusText = document.getElementById('status-text');
+        const statusPill = statusText ? statusText.closest('.status-pill') : null;
         const contextMeter = document.getElementById('context-meter');
         const suggestionsDiv = document.getElementById('suggestions');
         const sidePane = document.getElementById('activity-pane');
@@ -1904,7 +2332,18 @@ export function getChatWebviewContent(nonce: string) {
             updateComposerState();
         }
 
-        sendButton.addEventListener('click', sendCurrentInput);
+        function handleSendButtonClick() {
+            if (promptState.isRunning === true) {
+                if (promptState.isCancelling !== true) {
+                    post({ command: 'cancelPrompt' });
+                }
+                return;
+            }
+
+            sendCurrentInput();
+        }
+
+        sendButton.addEventListener('click', handleSendButtonClick);
         addContextButton.addEventListener('click', () => {
             inputField.value = '/read ';
             inputField.focus();
@@ -1912,7 +2351,7 @@ export function getChatWebviewContent(nonce: string) {
             updateSuggestions();
             updateComposerState();
         });
-        settingsButton.addEventListener('click', showSettingsPage);
+        settingsButton.addEventListener('click', toggleSettingsPage);
         sessionsButton.addEventListener('click', () => post({ command: 'listSessions' }));
         settingsCloseButton.addEventListener('click', showChatPage);
         settingsPage.querySelectorAll('.settings-action').forEach(button => {
@@ -2054,10 +2493,22 @@ export function getChatWebviewContent(nonce: string) {
             }
         });
 
+        function toggleSettingsPage() {
+            if (activeView === 'settings') {
+                showChatPage();
+                return;
+            }
+
+            showSettingsPage();
+        }
+
         function showSettingsPage() {
             activeView = 'settings';
             messagesDiv.classList.add('hidden');
             settingsPage.classList.remove('hidden');
+            settingsButton.classList.add('active');
+            settingsButton.title = 'Back to chat';
+            settingsButton.setAttribute('aria-label', 'Back to chat');
             hideSuggestions();
             renderSettingsSummary();
             updateActivityVisibility();
@@ -2067,6 +2518,9 @@ export function getChatWebviewContent(nonce: string) {
             activeView = 'chat';
             settingsPage.classList.add('hidden');
             messagesDiv.classList.remove('hidden');
+            settingsButton.classList.remove('active');
+            settingsButton.title = 'Settings';
+            settingsButton.setAttribute('aria-label', 'Settings');
             updateActivityVisibility();
             inputField.focus();
         }
@@ -2105,8 +2559,13 @@ export function getChatWebviewContent(nonce: string) {
 
         function updateStatusRail() {
             const running = promptState.isRunning === true;
-            stopButton.disabled = !running || promptState.isCancelling;
-            statusText.textContent = formatStatusText(running);
+            const statusLabel = formatStatusText(running);
+            stopButton.disabled = true;
+            stopButton.hidden = true;
+            statusText.textContent = statusLabel;
+            if (statusPill) {
+                statusPill.hidden = statusLabel.length === 0;
+            }
             updateProgressIndicator();
             updateSettingsActionState();
         }
@@ -2125,7 +2584,7 @@ export function getChatWebviewContent(nonce: string) {
             }
 
             if (status === 'running') {
-                return 'Ready';
+                return '';
             }
 
             if (status === 'error') {
@@ -2186,11 +2645,23 @@ export function getChatWebviewContent(nonce: string) {
         }
 
         function updateComposerState() {
+            const running = promptState.isRunning === true;
+            const cancelling = promptState.isCancelling === true;
             const hasText = inputField.value.trim().length > 0;
-            inputField.disabled = promptState.isRunning === true;
-            sendButton.disabled = promptState.isRunning === true || !hasText;
-            modelButton.disabled = promptState.isRunning === true || !sessionInfo;
-            profileSelect.disabled = promptState.isRunning === true;
+            inputField.disabled = running;
+            sendButton.disabled = running ? cancelling : !hasText;
+            sendButton.classList.toggle('stop-mode', running);
+            sendButton.textContent = running ? '■' : '↑';
+            sendButton.title = running
+                ? cancelling ? 'Stopping response' : 'Stop response'
+                : 'Send message';
+            sendButton.setAttribute('aria-label', running
+                ? cancelling ? 'Stopping response' : 'Stop response'
+                : 'Send message');
+            stopButton.disabled = true;
+            stopButton.hidden = true;
+            modelButton.disabled = running || !sessionInfo;
+            profileSelect.disabled = running;
             updateSettingsActionState();
         }
 
@@ -2269,7 +2740,7 @@ export function getChatWebviewContent(nonce: string) {
             renderedProfiles.forEach(profile => {
                 const option = document.createElement('option');
                 option.value = profile.name;
-                option.textContent = profile.mode ? profile.name + ' (' + profile.mode + ')' : profile.name;
+                option.textContent = profile.name;
                 if (profile.description) {
                     option.title = profile.description;
                 }
