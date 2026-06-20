@@ -42,6 +42,7 @@ internal sealed class HelpCommandHandler : IReplCommandHandler
             "/new - Start a new session.\n" +
             "/onboard - Add a provider through onboarding and switch the active session to it.\n" +
             "/permissions - Show the current permission summary and override guidance.\n" +
+            "/plugin [marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]|install <pluginId>@<marketplaceAlias> [--force]|list|uninstall <pluginId>] - Manage data-only plugin marketplaces and installs.\n" +
             "/provider [list|name] - List saved providers or switch to another saved provider.\n" +
             "/profile <name> - Switch the active agent profile for subsequent prompts.\n" +
             "/redact [on|off] - Show or toggle secret redaction for session output.\n" +

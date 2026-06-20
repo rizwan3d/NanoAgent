@@ -73,6 +73,7 @@ public static partial class Program
         new("/new", "/new", "Start a new session.", false),
         new("/onboard", "/onboard", "Open provider onboarding menus.", false),
         new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
+        new("/plugin", "/plugin [marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]|install <pluginId>@<marketplaceAlias> [--force]|list|uninstall <pluginId>]", "Manage data-only plugin marketplaces and installs.", false),
         new("/provider", "/provider [list|name]", "List or switch saved providers.", false),
         new("/profile", "/profile <name>", "Switch the active agent profile.", true),
         new("/redact", "/redact [on|off]", "Show or toggle secret redaction.", false),
