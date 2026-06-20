@@ -875,6 +875,42 @@ function getChatWebviewContent(nonce: string) {
             opacity: 0.55;
         }
 
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            border: 2px solid transparent;
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--fg) 16%, transparent);
+            background-clip: padding-box;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: color-mix(in srgb, var(--fg) 28%, transparent);
+            background-clip: padding-box;
+        }
+
+        .icon-button,
+        .ghost-button,
+        .danger-button,
+        .primary-button,
+        .model-pill,
+        .model-select,
+        .profile-select,
+        .modal-option,
+        .settings-action,
+        .suggestion,
+        .agent-thread-item,
+        .file-link {
+            transition: background-color 0.12s ease, border-color 0.12s ease, color 0.12s ease;
+        }
+
         .workbench {
             display: grid;
             grid-template-rows: minmax(0, 1fr);
@@ -1212,12 +1248,51 @@ function getChatWebviewContent(nonce: string) {
         }
 
         .empty-state {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            align-items: center;
             margin: auto;
             max-width: 420px;
             padding: 20px;
             color: var(--muted);
             text-align: center;
             line-height: 1.5;
+        }
+
+        .empty-title {
+            color: var(--fg);
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: 0.2px;
+        }
+
+        .empty-hint {
+            font-size: 13px;
+        }
+
+        .empty-keys {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            margin-top: 4px;
+            font-size: 11px;
+        }
+
+        .empty-dot {
+            opacity: 0.5;
+        }
+
+        .empty-keys kbd {
+            padding: 1px 5px;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            background: color-mix(in srgb, var(--input-bg) 76%, transparent);
+            color: var(--fg);
+            font-family: var(--vscode-editor-font-family, Consolas, monospace);
+            font-size: 10px;
         }
 
         .side-pane {
@@ -1983,7 +2058,11 @@ function getChatWebviewContent(nonce: string) {
             <section class="chat-pane">
                 <span id="section-title" hidden>No active section</span>
                 <div id="messages" class="messages">
-                    <div id="empty-state" class="empty-state">Start a request or use slash commands from the composer.</div>
+                    <div id="empty-state" class="empty-state">
+                        <div class="empty-title">NanoAgent</div>
+                        <div class="empty-hint">Ask anything to get started.</div>
+                        <div class="empty-keys"><kbd>/</kbd> commands<span class="empty-dot">·</span><kbd>@</kbd> files<span class="empty-dot">·</span><kbd>Shift</kbd>+<kbd>Enter</kbd> newline</div>
+                    </div>
                 </div>
                 <section id="settings-page" class="settings-page hidden" aria-label="NanoAgent settings">
                     <div class="settings-header">
@@ -2130,6 +2209,7 @@ function getChatWebviewContent(nonce: string) {
                             <div class="toolbar-left">
                                 <button id="add-context-button" class="icon-button" title="Read workspace file" aria-label="Read workspace file">+</button>
                                 <button id="settings-button" class="icon-button" title="Settings" aria-label="Settings">&#9881;</button>
+                                <button id="sessions-button" class="icon-button" title="Sessions" aria-label="Sessions">&#9776;</button>
                                 <select id="profile-select" class="profile-select" title="Profile" aria-label="Profile"></select>
                                 <button id="model-button" class="model-pill" title="Choose model" aria-label="Choose model"><span id="model-button-label">Model</span></button>
                                 <div class="status-pill" title="Process status">
@@ -2173,6 +2253,7 @@ function getChatWebviewContent(nonce: string) {
         const inputField = document.getElementById('chat-input');
         const addContextButton = document.getElementById('add-context-button');
         const settingsButton = document.getElementById('settings-button');
+        const sessionsButton = document.getElementById('sessions-button');
         const sendButton = document.getElementById('send-button');
         const stopButton = document.getElementById('stop-button');
         const modelButton = document.getElementById('model-button');
@@ -2422,6 +2503,7 @@ function getChatWebviewContent(nonce: string) {
             updateComposerState();
         });
         settingsButton.addEventListener('click', showSettingsPage);
+        sessionsButton.addEventListener('click', () => post({ command: 'listSessions' }));
         settingsCloseButton.addEventListener('click', showChatPage);
         settingsPage.querySelectorAll('.settings-action').forEach(button => {
             button.addEventListener('click', () => runSettingsAction(button));
