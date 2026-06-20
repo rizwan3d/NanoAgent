@@ -1490,12 +1490,14 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
 
         if (normalizedTarget.StartsWith("/", StringComparison.Ordinal))
         {
-            normalizedTarget = normalizedTarget.TrimStart('/');
+            normalizedTarget = NormalizeWorkspaceRelativePath(normalizedTarget);
         }
         else
         {
-            string combined = Path.GetFullPath(Path.Combine("C:\\workspace", currentDirectory, normalizedTarget));
-            normalizedTarget = combined["C:\\workspace".Length..].Replace('\\', '/').TrimStart('/');
+            string combined = string.IsNullOrWhiteSpace(currentDirectory)
+                ? normalizedTarget
+                : $"{currentDirectory.Replace('\\', '/')}/{normalizedTarget}";
+            normalizedTarget = NormalizeWorkspaceRelativePath(combined);
         }
 
         List<string> candidates = [normalizedTarget];
@@ -1518,6 +1520,40 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Take(MaxResolvedPathsPerDependency)
             .ToArray();
+    }
+
+    private static string NormalizeWorkspaceRelativePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return string.Empty;
+        }
+
+        string[] segments = path.Replace('\\', '/')
+            .Split('/', StringSplitOptions.RemoveEmptyEntries);
+        List<string> normalizedSegments = [];
+
+        foreach (string segment in segments)
+        {
+            if (segment == ".")
+            {
+                continue;
+            }
+
+            if (segment == "..")
+            {
+                if (normalizedSegments.Count > 0)
+                {
+                    normalizedSegments.RemoveAt(normalizedSegments.Count - 1);
+                }
+
+                continue;
+            }
+
+            normalizedSegments.Add(segment);
+        }
+
+        return string.Join('/', normalizedSegments);
     }
 
     private static float[] CreateFileEmbedding(
