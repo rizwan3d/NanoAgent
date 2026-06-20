@@ -26,7 +26,8 @@ type ChatMessage =
     | ReadyMessage
     | ResolveClientRequestMessage
     | CancelPromptMessage
-    | OpenFileMessage;
+    | OpenFileMessage
+    | SearchFilesMessage;
 
 type SendMessage = {
     command: 'sendMessage';
@@ -75,6 +76,11 @@ type OpenFileMessage = {
     filePath: string;
     line?: number;
     column?: number;
+};
+
+type SearchFilesMessage = {
+    command: 'searchFiles';
+    query: string;
 };
 
 type ChatCommandSuggestion = {
@@ -166,6 +172,8 @@ export class ChatWebviewController {
                     this.sessionManager.cancelPrompt();
                 } else if (message.command === 'openFile') {
                     await this.openFileFromChat(message.filePath, message.line, message.column);
+                } else if (message.command === 'searchFiles') {
+                    await this.searchFileMentions(message.query);
                 } else if (message.command === 'ready') {
                     this.postInitialState();
                     await this.ensureSessionReady();
@@ -448,6 +456,35 @@ export class ChatWebviewController {
         } catch (error) {
             const message = error instanceof Error ? error.message : 'Unable to list files.';
             this.postSystemMessage(`Error listing files: ${message}`);
+        }
+    }
+
+    private async searchFileMentions(query: string) {
+        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+        if (!workspaceFolder) {
+            this.webview.postMessage({ command: 'fileMentions', query, files: [] });
+            return;
+        }
+
+        try {
+            // ponytail: re-scans (capped) per query. Cache the file list if it lags on huge repos.
+            const files = await vscode.workspace.findFiles(
+                new vscode.RelativePattern(workspaceFolder, '**/*'),
+                '{**/.git/**,**/node_modules/**,**/bin/**,**/obj/**,**/dist/**,**/out/**}',
+                2000
+            );
+
+            const normalizedQuery = query.trim().toLowerCase();
+            const relativeFiles = files
+                .map((file) => path.relative(workspaceFolder.uri.fsPath, file.fsPath).replace(/\\/g, '/'))
+                .filter((file) => !normalizedQuery || file.toLowerCase().includes(normalizedQuery))
+                .sort((left, right) => left.localeCompare(right))
+                .slice(0, 20);
+
+            this.webview.postMessage({ command: 'fileMentions', query, files: relativeFiles });
+        } catch (error) {
+            LogService.getInstance().error('File mention search failed', error);
+            this.webview.postMessage({ command: 'fileMentions', query, files: [] });
         }
     }
 
@@ -2050,7 +2087,7 @@ function getChatWebviewContent(nonce: string) {
                 <div class="composer">
                     <div id="suggestions" class="suggestions hidden"></div>
                     <div class="composer-row">
-                        <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask anything or type / for commands"></textarea>
+                        <textarea id="chat-input" class="chat-input" rows="1" placeholder="Ask anything · / for commands · @ for files"></textarea>
                         <div class="composer-toolbar">
                             <div class="toolbar-left">
                                 <button id="add-context-button" class="icon-button" title="Read workspace file" aria-label="Read workspace file">+</button>
@@ -2124,6 +2161,8 @@ function getChatWebviewContent(nonce: string) {
         let promptState = { isRunning: false, isCancelling: false };
         let visibleSuggestions = [];
         let activeSuggestionIndex = 0;
+        let fileMentionQuery = null;
+        let fileMentionResults = [];
         let activeAssistantMessage = null;
         let activeReasoningMessage = null;
         let activeView = 'chat';
@@ -2471,6 +2510,13 @@ function getChatWebviewContent(nonce: string) {
                 updateComposerState();
             } else if (message.command === 'showSettings') {
                 showSettingsPage();
+            } else if (message.command === 'fileMentions') {
+                if (message.query === fileMentionQuery) {
+                    fileMentionResults = Array.isArray(message.files) ? message.files : [];
+                    visibleSuggestions = buildFileSuggestions(fileMentionResults);
+                    activeSuggestionIndex = 0;
+                    renderSuggestions();
+                }
             }
         });
 
@@ -3458,9 +3504,39 @@ function getChatWebviewContent(nonce: string) {
 
         function updateSuggestions() {
             const value = inputField.value;
+            const mention = detectMentionQuery(value, inputField.selectionStart);
+            if (mention !== null) {
+                if (mention !== fileMentionQuery) {
+                    fileMentionQuery = mention;
+                    fileMentionResults = [];
+                    post({ command: 'searchFiles', query: mention });
+                }
+                visibleSuggestions = buildFileSuggestions(fileMentionResults);
+                activeSuggestionIndex = 0;
+                renderSuggestions();
+                return;
+            }
+
+            fileMentionQuery = null;
             visibleSuggestions = createSuggestions(value);
             activeSuggestionIndex = 0;
             renderSuggestions();
+        }
+
+        function detectMentionQuery(value, caret) {
+            const cursor = typeof caret === 'number' ? caret : value.length;
+            const before = value.slice(0, cursor);
+            const match = /(^|\\s)@([^\\s@]*)$/.exec(before);
+            return match ? match[2] : null;
+        }
+
+        function buildFileSuggestions(files) {
+            return files.map(file => ({
+                usage: file,
+                description: 'Insert file path',
+                insertText: file,
+                mention: true
+            }));
         }
 
         function createSuggestions(value) {
@@ -3539,6 +3615,21 @@ function getChatWebviewContent(nonce: string) {
         }
 
         function applySuggestion(suggestion) {
+            if (suggestion.mention) {
+                const caret = typeof inputField.selectionStart === 'number'
+                    ? inputField.selectionStart
+                    : inputField.value.length;
+                const before = inputField.value.slice(0, caret).replace(/@[^\\s@]*$/, suggestion.insertText + ' ');
+                const after = inputField.value.slice(caret);
+                inputField.value = before + after;
+                inputField.focus();
+                inputField.setSelectionRange(before.length, before.length);
+                fileMentionQuery = null;
+                hideSuggestions();
+                updateComposerState();
+                return;
+            }
+
             inputField.value = suggestion.insertText;
             inputField.focus();
             inputField.setSelectionRange(inputField.value.length, inputField.value.length);
