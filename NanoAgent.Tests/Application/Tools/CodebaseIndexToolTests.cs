@@ -76,7 +76,9 @@ public sealed class CodebaseIndexToolTests
                 RemovedFileCount: 0,
                 ReusedFileCount: 0,
                 SkippedFileCount: 0,
-                DurationMilliseconds: 1));
+                DurationMilliseconds: 1,
+                new CodebaseIndexStats(1, 1, 1, 1, 1),
+                []));
         }
 
         public Task<CodebaseIndexStatusResult> GetStatusAsync(CancellationToken cancellationToken)
@@ -92,6 +94,8 @@ public sealed class CodebaseIndexToolTests
                 ChangedFileCount: 0,
                 DeletedFileCount: 0,
                 SkippedFileCount: 0,
+                new CodebaseIndexStats(1, 1, 1, 1, 1),
+                [],
                 SampleNewFiles: [],
                 SampleChangedFiles: [],
                 SampleDeletedFiles: []));
@@ -110,6 +114,8 @@ public sealed class CodebaseIndexToolTests
                 ".nanoagent/cache/codebase-index.json",
                 IndexWasUpdated: false,
                 IndexedFileCount: 1,
+                new CodebaseIndexStats(1, 1, 1, 1, 1),
+                [],
                 Matches:
                 [
                     new CodebaseIndexSearchMatch(
@@ -117,6 +123,11 @@ public sealed class CodebaseIndexToolTests
                         "csharp",
                         12.5,
                         ["ServiceRegistry"],
+                        [new CodebaseIndexSemanticSymbol("ServiceRegistry", "class", null, "public sealed class ServiceRegistry", 1, 4)],
+                        [new CodebaseIndexDependency("using", "Sample", true, ["src/ServiceRegistry.cs"])],
+                        [new CodebaseIndexCallEdge("ConfigureServices", "src/ServiceRegistry.cs", "RegisterWidget", "src/ServiceRegistry.cs", 4, true)],
+                        [],
+                        ["@platform"],
                         [new CodebaseIndexSnippet(4, "public sealed class ServiceRegistry")])
                 ]));
         }
@@ -129,6 +140,8 @@ public sealed class CodebaseIndexToolTests
                 ".nanoagent/cache/codebase-index.json",
                 TotalIndexedFileCount: 1,
                 ReturnedFileCount: 1,
+                new CodebaseIndexStats(1, 1, 1, 1, 1),
+                [],
                 Files: ["src/ServiceRegistry.cs"]));
         }
     }

@@ -14,7 +14,7 @@ internal sealed class CodebaseIndexTool : ITool
         _codebaseIndexService = codebaseIndexService;
     }
 
-    public string Description => "Build, inspect, and search NanoAgent's local codebase index. The index is stored under .nanoagent/cache, persists lightweight file embeddings plus metadata, refreshes incrementally when searched or built, respects workspace ignore rules, and helps answer repository-wide code questions without copying another editor's implementation.";
+    public string Description => "Build, inspect, and search NanoAgent's local codebase index. The index is stored under .nanoagent/cache, persists local embeddings plus semantic symbols, dependency edges, call edges, ownership metadata, and stale-index warnings, refreshes incrementally when searched or built, respects workspace ignore rules, and helps answer repository-wide code questions without copying another editor's implementation.";
 
     public string Name => AgentToolNames.CodebaseIndex;
 
@@ -114,7 +114,7 @@ internal sealed class CodebaseIndexTool : ITool
             ToolJsonContext.Default.CodebaseIndexBuildResult,
             new ToolRenderPayload(
                 "Codebase index built",
-                $"Indexed {result.IndexedFileCount} files: +{result.AddedFileCount}, ~{result.UpdatedFileCount}, -{result.RemovedFileCount}, reused {result.ReusedFileCount}, skipped {result.SkippedFileCount}."));
+                FormatBuild(result)));
     }
 
     private async Task<ToolResult> SearchAsync(
@@ -161,9 +161,7 @@ internal sealed class CodebaseIndexTool : ITool
             ToolJsonContext.Default.CodebaseIndexListResult,
             new ToolRenderPayload(
                 "Indexed files",
-                result.Files.Count == 0
-                    ? "No files are indexed yet."
-                    : string.Join(Environment.NewLine, result.Files)));
+                FormatList(result)));
     }
 
     private static int GetLimit(
@@ -184,9 +182,11 @@ internal sealed class CodebaseIndexTool : ITool
             $"Indexed files: {result.IndexedFileCount}",
             $"Workspace files: {result.WorkspaceFileCount}",
             $"Skipped files: {result.SkippedFileCount}",
-            $"Stale: {result.IsStale}"
+            $"Stale: {result.IsStale}",
+            FormatStats(result.Stats)
         ];
 
+        AddWarnings(lines, result.Warnings);
         AddSamples(lines, "New", result.SampleNewFiles);
         AddSamples(lines, "Changed", result.SampleChangedFiles);
         AddSamples(lines, "Deleted", result.SampleDeletedFiles);
@@ -208,12 +208,40 @@ internal sealed class CodebaseIndexTool : ITool
             lines.Add("Index refreshed before search.");
         }
 
+        AddWarnings(lines, result.Warnings);
+        lines.Add(FormatStats(result.Stats));
+
         foreach (CodebaseIndexSearchMatch match in result.Matches)
         {
             lines.Add($"- {match.Path} [{match.Language}] score {match.Score:0.##}");
             if (match.Symbols.Count > 0)
             {
                 lines.Add($"  symbols: {string.Join(", ", match.Symbols.Take(5))}");
+            }
+
+            if (match.SemanticSymbols.Count > 0)
+            {
+                lines.Add($"  semantic: {string.Join(", ", match.SemanticSymbols.Take(3).Select(static symbol => $"{symbol.Kind} {symbol.Name}"))}");
+            }
+
+            if (match.Owners.Count > 0)
+            {
+                lines.Add($"  owners: {string.Join(", ", match.Owners)}");
+            }
+
+            if (match.Dependencies.Count > 0)
+            {
+                lines.Add($"  deps: {string.Join(", ", match.Dependencies.Take(3).Select(static dependency => dependency.Target))}");
+            }
+
+            if (match.OutgoingCalls.Count > 0)
+            {
+                lines.Add($"  calls: {string.Join(", ", match.OutgoingCalls.Take(3).Select(static call => call.CalleeSymbol))}");
+            }
+
+            if (match.IncomingCalls.Count > 0)
+            {
+                lines.Add($"  callers: {string.Join(", ", match.IncomingCalls.Take(3).Select(static call => $"{call.CallerSymbol} ({call.CallerPath})"))}");
             }
 
             foreach (CodebaseIndexSnippet snippet in match.Snippets.Take(2))
@@ -223,6 +251,43 @@ internal sealed class CodebaseIndexTool : ITool
         }
 
         return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatBuild(CodebaseIndexBuildResult result)
+    {
+        List<string> lines =
+        [
+            $"Indexed {result.IndexedFileCount} files: +{result.AddedFileCount}, ~{result.UpdatedFileCount}, -{result.RemovedFileCount}, reused {result.ReusedFileCount}, skipped {result.SkippedFileCount}.",
+            FormatStats(result.Stats)
+        ];
+
+        AddWarnings(lines, result.Warnings);
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatList(CodebaseIndexListResult result)
+    {
+        List<string> lines =
+        [
+            FormatStats(result.Stats)
+        ];
+
+        AddWarnings(lines, result.Warnings);
+        if (result.Files.Count == 0)
+        {
+            lines.Add("No files are indexed yet.");
+        }
+        else
+        {
+            lines.AddRange(result.Files);
+        }
+
+        return string.Join(Environment.NewLine, lines);
+    }
+
+    private static string FormatStats(CodebaseIndexStats stats)
+    {
+        return $"Graph stats: {stats.SemanticSymbolCount} semantic symbols, {stats.DependencyEdgeCount} dependencies, {stats.CallEdgeCount} calls, {stats.OwnedFileCount} owned files, {stats.OwnershipRuleCount} ownership rules";
     }
 
     private static void AddSamples(
@@ -236,6 +301,18 @@ internal sealed class CodebaseIndexTool : ITool
         }
 
         lines.Add($"{label}: {string.Join(", ", samples)}");
+    }
+
+    private static void AddWarnings(
+        List<string> lines,
+        IReadOnlyList<string> warnings)
+    {
+        if (warnings.Count == 0)
+        {
+            return;
+        }
+
+        lines.AddRange(warnings.Select(static warning => $"Warning: {warning}"));
     }
 
     private static ToolResult InvalidArguments(
