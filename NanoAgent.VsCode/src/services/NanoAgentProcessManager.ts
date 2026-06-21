@@ -12,6 +12,8 @@ export class NanoAgentProcessManager extends EventEmitter {
     private process: ChildProcess | null = null;
     private logService: LogService;
     private isRestarting = false;
+    private startPromise: Promise<void> | null = null;
+    private installPromise: Promise<string | null> | null = null;
     private status: NanoAgentProcessStatus = 'stopped';
     private static readonly UPDATE_CHECK_KEY = 'nanoagent.lastUpdateCheck';
     private static readonly UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
@@ -27,11 +29,26 @@ export class NanoAgentProcessManager extends EventEmitter {
             return;
         }
 
+        if (this.startPromise) {
+            this.logService.debug('NanoAgent start is already in progress; waiting for the existing attempt.');
+            await this.startPromise;
+            return;
+        }
+
+        this.startPromise = this.startCore();
+        try {
+            await this.startPromise;
+        } finally {
+            this.startPromise = null;
+        }
+    }
+
+    private async startCore(): Promise<void> {
         const config = vscode.workspace.getConfiguration('nanoagent');
         const configured = config.get<string>('command', 'nanoai');
         let command: string | null = this.resolveCommand(configured);
         if (configured === 'nanoai' && !this.isAvailable(command)) {
-            command = await this.ensureInstalled(command);
+            command = await this.ensureInstalled();
             if (!command) {
                 this.setStatus('error');
                 return; // user declined install or it failed; error already surfaced.
@@ -49,7 +66,7 @@ export class NanoAgentProcessManager extends EventEmitter {
         this.setStatus('starting');
 
         try {
-            this.process = spawn(command, args, {
+            this.process = spawn(this.prepareCommandForSpawn(command), args, {
                 cwd: cwd || undefined,
                 env: process.env,
                 shell: process.platform === 'win32' // Use shell on Windows for better path resolution
@@ -156,22 +173,8 @@ export class NanoAgentProcessManager extends EventEmitter {
             return command; // user gave an explicit path/command — trust it.
         }
 
-        const home = os.homedir();
-        const isWin = process.platform === 'win32';
-        const names = isWin ? ['nanoai.cmd', 'nanoai.exe', 'nanoai'] : ['nanoai'];
-
-        const dirs = [
-            process.env.PNPM_HOME,
-            process.env.BUN_INSTALL && path.join(process.env.BUN_INSTALL, 'bin'),
-            isWin && process.env.APPDATA && path.join(process.env.APPDATA, 'npm'),
-            isWin && process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'pnpm'),
-            path.join(home, '.bun', 'bin'),                 // bun default
-            path.join(home, 'Library', 'pnpm'),             // pnpm macOS
-            path.join(home, '.local', 'share', 'pnpm'),     // pnpm Linux
-            path.join(home, '.npm-global', 'bin'),          // common npm prefix
-            '/usr/local/bin',
-            '/opt/homebrew/bin',
-        ].filter(Boolean) as string[];
+        const names = this.getNanoAgentCommandNames();
+        const dirs = this.getGlobalCliSearchDirs();
 
         // debug() is off by default (logLevel=info) so this trace is dev-only.
         this.logService.debug('Resolving nanoai across npm/pnpm/bun bin dirs', { dirs, names });
@@ -201,7 +204,26 @@ export class NanoAgentProcessManager extends EventEmitter {
 
     // nanoai not found anywhere. Ask consent, then `npm install -g nanoai-cli`.
     // Returns the resolved command on success, or null if declined/failed.
-    private async ensureInstalled(command: string): Promise<string | null> {
+    private async ensureInstalled(): Promise<string | null> {
+        const existing = this.resolveCommand('nanoai');
+        if (this.isAvailable(existing)) {
+            return existing;
+        }
+
+        if (this.installPromise) {
+            this.logService.debug('nanoai installation is already in progress; waiting for the existing attempt.');
+            return this.installPromise;
+        }
+
+        this.installPromise = this.ensureInstalledCore();
+        try {
+            return await this.installPromise;
+        } finally {
+            this.installPromise = null;
+        }
+    }
+
+    private async ensureInstalledCore(): Promise<string | null> {
         const choice = await vscode.window.showWarningMessage(
             'NanoAgent CLI (nanoai) was not found. Install it globally via npm?',
             { modal: true, detail: 'Runs: npm install -g nanoai-cli' },
@@ -241,6 +263,72 @@ export class NanoAgentProcessManager extends EventEmitter {
         return resolved;
     }
 
+    private getNanoAgentCommandNames(): string[] {
+        return process.platform === 'win32'
+            ? ['nanoai.cmd', 'nanoai.exe', 'nanoai']
+            : ['nanoai'];
+    }
+
+    private getGlobalCliSearchDirs(): string[] {
+        const home = os.homedir();
+        const isWin = process.platform === 'win32';
+        const dirs = new Set<string>();
+        const npmPrefix = this.getNpmGlobalPrefix();
+
+        const addDir = (dir: string | undefined | null) => {
+            if (typeof dir === 'string' && dir.trim()) {
+                dirs.add(dir.trim());
+            }
+        };
+
+        addDir(process.env.PNPM_HOME);
+        addDir(process.env.BUN_INSTALL ? path.join(process.env.BUN_INSTALL, 'bin') : undefined);
+        addDir(isWin && process.env.APPDATA ? path.join(process.env.APPDATA, 'npm') : undefined);
+        addDir(isWin && process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'pnpm') : undefined);
+        addDir(path.join(home, '.bun', 'bin'));
+        addDir(path.join(home, 'Library', 'pnpm'));
+        addDir(path.join(home, '.local', 'share', 'pnpm'));
+        addDir(path.join(home, '.npm-global', 'bin'));
+        addDir('/usr/local/bin');
+        addDir('/opt/homebrew/bin');
+
+        if (npmPrefix) {
+            addDir(isWin ? npmPrefix : path.join(npmPrefix, 'bin'));
+        }
+
+        return Array.from(dirs);
+    }
+
+    private getNpmGlobalPrefix(): string | null {
+        const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+        try {
+            const result = spawnSync(npm, ['prefix', '-g'], {
+                shell: process.platform === 'win32'
+            });
+            if (result.status !== 0) {
+                this.logService.debug('Failed to read npm global prefix', result.stderr?.toString().trim());
+                return null;
+            }
+
+            const prefix = result.stdout?.toString().trim();
+            return prefix || null;
+        } catch (error) {
+            this.logService.debug('Unable to probe npm global prefix', error);
+            return null;
+        }
+    }
+
+    private prepareCommandForSpawn(command: string): string {
+        if (process.platform !== 'win32') {
+            return command;
+        }
+
+        // Quoting absolute Windows paths keeps cmd.exe from splitting at spaces.
+        return command.includes(path.sep) && !command.startsWith('"')
+            ? `"${command}"`
+            : command;
+    }
+
     // Background check: compare installed nanoai against npm latest, offer update on consent.
     private async checkForUpdate(command: string): Promise<void> {
         const last = this.globalState?.get<number>(NanoAgentProcessManager.UPDATE_CHECK_KEY, 0) ?? 0;
@@ -250,7 +338,7 @@ export class NanoAgentProcessManager extends EventEmitter {
         void this.globalState?.update(NanoAgentProcessManager.UPDATE_CHECK_KEY, Date.now());
 
         try {
-            const current = this.parseVersion(spawnSync(command, ['--version'], { shell: process.platform === 'win32' }).stdout?.toString());
+            const current = this.parseVersion(spawnSync(this.prepareCommandForSpawn(command), ['--version'], { shell: process.platform === 'win32' }).stdout?.toString());
             const latest = this.parseVersion(spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', 'nanoai-cli', 'version'], { shell: process.platform === 'win32' }).stdout?.toString());
             if (!current || !latest || this.compareVersions(latest, current) <= 0) {
                 return; // up to date, or couldn't determine — stay quiet.
