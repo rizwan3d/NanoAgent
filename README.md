@@ -180,6 +180,28 @@ $env:NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 nanoai -p "Say hello in one short line"
 ```
 
+Command Prompt (`cmd.exe`) for the current window:
+
+```bat
+set NANOAGENT_PROVIDER=openrouter
+set NANOAGENT_MODEL=poolside/laguna-m.1:free
+set NANOAGENT_THINKING=on
+set NANOAGENT_API_KEY=PASTE_NEW_ROTATED_KEY_HERE
+
+nanoai -p "Say hello in one short line"
+```
+
+To persist the same settings for future Command Prompt windows:
+
+```bat
+setx NANOAGENT_PROVIDER "openrouter"
+setx NANOAGENT_MODEL "poolside/laguna-m.1:free"
+setx NANOAGENT_THINKING "on"
+setx NANOAGENT_API_KEY "PASTE_NEW_ROTATED_KEY_HERE"
+```
+
+Close and reopen Command Prompt after running `setx`; the current window keeps its old environment until it is restarted.
+
 Bash:
 
 ```bash
