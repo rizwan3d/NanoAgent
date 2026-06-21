@@ -1,8 +1,12 @@
-name: PostHog GitHub release, NuGet and VS Code Marketplace install trend
+name: PostHog GitHub release, npm, NuGet and VS Code Marketplace install trend
 
 on:
   workflow_dispatch:
     inputs:
+      npm_package_ids:
+        description: 'Comma/newline-separated npm package names to track. Leave blank to use vars.NPM_PACKAGE_IDS.'
+        required: false
+        type: string
       nuget_package_ids:
         description: 'Comma/newline-separated NuGet package IDs to track. Leave blank to use vars.NUGET_PACKAGE_IDS.'
         required: false
@@ -25,6 +29,7 @@ jobs:
       POSTHOG_HOST: ${{ vars.POSTHOG_HOST || 'https://us.i.posthog.com' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPOSITORY: ${{ github.repository }}
+      NPM_PACKAGE_IDS: ${{ github.event.inputs.npm_package_ids || vars.NPM_PACKAGE_IDS || 'nanoai-cli' }}
       NUGET_PACKAGE_IDS: ${{ github.event.inputs.nuget_package_ids || vars.NUGET_PACKAGE_IDS || '' }}
       VSCODE_EXTENSION_IDS: ${{ github.event.inputs.vscode_extension_ids || vars.VSCODE_EXTENSION_IDS || 'rizwan3d.nanoagent,rizwan3d.nanoagent-vs' }}
     steps:
@@ -39,7 +44,7 @@ jobs:
           }
 
           // Shared identity fields so every event this workflow emits stays
-          // uniform (same $lib/CI fields) across the GitHub and NuGet steps.
+          // uniform (same $lib/CI fields) across the GitHub, npm, and NuGet steps.
           const commonProperties = {
             '$lib': 'nanoagent-release-trend',
             source: 'github-actions',
@@ -296,6 +301,184 @@ jobs:
           }, `nuget-packages:${REPOSITORY}`)
 
           console.log(`Sent NuGet snapshots for ${trackedPackages} packages, ${totalVersionEvents} versions, ${totalDownloads} total downloads to PostHog.`)
+          NODE
+
+      - name: Send npm package install/download snapshots to PostHog
+        if: ${{ env.NPM_PACKAGE_IDS != '' }}
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { POSTHOG_PROJECT_API_KEY, POSTHOG_HOST, REPOSITORY, NPM_PACKAGE_IDS } = process.env
+
+          if (!POSTHOG_PROJECT_API_KEY) {
+            throw new Error('Missing required secret: POSTHOG_PROJECT_API_KEY')
+          }
+
+          // Same identity shape as the GitHub release, NuGet, and VS Code steps
+          // so every event this workflow emits stays uniform (same $lib/CI fields).
+          const commonProperties = {
+            '$lib': 'nanoagent-release-trend',
+            source: 'github-actions',
+            app_surface: 'github_actions',
+            execution_environment: 'ci',
+            is_ci: true,
+            ci_provider: 'github_actions',
+          }
+
+          const packageIds = (NPM_PACKAGE_IDS || '')
+            .split(/[\n,]/)
+            .map((value) => value.trim())
+            .filter(Boolean)
+
+          if (packageIds.length === 0) {
+            console.log('No npm package IDs configured; skipping npm trend capture.')
+            process.exit(0)
+          }
+
+          async function json(url, options = {}) {
+            const res = await fetch(url, options)
+            if (!res.ok) {
+              throw new Error(`Request failed ${res.status} for ${url}: ${await res.text()}`)
+            }
+            return res.json()
+          }
+
+          async function posthogCapture(event, properties, distinctId) {
+            const endpoint = `${POSTHOG_HOST.replace(/\/$/, '')}/i/v0/e/`
+            const res = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                api_key: POSTHOG_PROJECT_API_KEY,
+                event,
+                distinct_id: distinctId,
+                properties: {
+                  ...commonProperties,
+                  ...properties,
+                  '$process_person_profile': false,
+                },
+              }),
+            })
+            if (!res.ok) {
+              throw new Error(`PostHog capture failed ${res.status}: ${await res.text()}`)
+            }
+          }
+
+          async function npmRegistryPackage(packageId) {
+            return json(`https://registry.npmjs.org/${encodeURIComponent(packageId)}`, {
+              headers: {
+                Accept: 'application/json',
+                'User-Agent': 'posthog-release-and-nuget-trend',
+              },
+            })
+          }
+
+          async function npmDownloads(packageId, period) {
+            return json(`https://api.npmjs.org/downloads/point/${period}/${encodeURIComponent(packageId)}`, {
+              headers: {
+                Accept: 'application/json',
+                'User-Agent': 'posthog-release-and-nuget-trend',
+              },
+            })
+          }
+
+          function isoDate(value) {
+            return new Date(value).toISOString().slice(0, 10)
+          }
+
+          const collectedAt = new Date().toISOString()
+          const collectedDate = isoDate(collectedAt)
+
+          let trackedPackages = 0
+          let totalDownloads = 0
+          let totalLastDayDownloads = 0
+          let totalLastWeekDownloads = 0
+          let totalLastMonthDownloads = 0
+
+          for (const configuredPackageId of packageIds) {
+            let metadata
+            try {
+              metadata = await npmRegistryPackage(configuredPackageId)
+            } catch (error) {
+              await posthogCapture('nanoagent npm package lookup failed', {
+                repository: REPOSITORY,
+                package_id: configuredPackageId,
+                collected_at: collectedAt,
+                snapshot_type: 'lookup_failed',
+                lookup_error: error.message,
+              }, `npm-package:${configuredPackageId.toLowerCase()}`)
+              console.warn(`npm package was not found: ${configuredPackageId}`)
+              continue
+            }
+
+            const packageId = metadata.name || configuredPackageId
+            const latestVersion = metadata['dist-tags'] && metadata['dist-tags'].latest
+            const latestManifest = latestVersion && metadata.versions ? metadata.versions[latestVersion] : null
+            const createdAt = metadata.time && metadata.time.created ? metadata.time.created : collectedAt
+            const modifiedAt = metadata.time && metadata.time.modified ? metadata.time.modified : createdAt
+            const publishedAt =
+              latestVersion && metadata.time && metadata.time[latestVersion]
+                ? metadata.time[latestVersion]
+                : createdAt
+
+            const totalDownloadsResult = await npmDownloads(packageId, `${isoDate(createdAt)}:${collectedDate}`)
+            const lastDayDownloadsResult = await npmDownloads(packageId, 'last-day')
+            const lastWeekDownloadsResult = await npmDownloads(packageId, 'last-week')
+            const lastMonthDownloadsResult = await npmDownloads(packageId, 'last-month')
+
+            const packageTotalDownloads = Number(totalDownloadsResult.downloads || 0)
+            const packageLastDayDownloads = Number(lastDayDownloadsResult.downloads || 0)
+            const packageLastWeekDownloads = Number(lastWeekDownloadsResult.downloads || 0)
+            const packageLastMonthDownloads = Number(lastMonthDownloadsResult.downloads || 0)
+
+            trackedPackages += 1
+            totalDownloads += packageTotalDownloads
+            totalLastDayDownloads += packageLastDayDownloads
+            totalLastWeekDownloads += packageLastWeekDownloads
+            totalLastMonthDownloads += packageLastMonthDownloads
+
+            await posthogCapture('nanoagent npm package install snapshot', {
+              repository: REPOSITORY,
+              package_id: packageId,
+              package_description: latestManifest && latestManifest.description ? latestManifest.description : null,
+              package_homepage: latestManifest && latestManifest.homepage ? latestManifest.homepage : null,
+              package_license: latestManifest && latestManifest.license ? latestManifest.license : null,
+              package_keywords: latestManifest && Array.isArray(latestManifest.keywords) ? latestManifest.keywords : [],
+              package_repository_url:
+                latestManifest && latestManifest.repository && latestManifest.repository.url
+                  ? latestManifest.repository.url
+                  : null,
+              package_maintainers: Array.isArray(metadata.maintainers)
+                ? metadata.maintainers.map((maintainer) => maintainer.name).filter(Boolean)
+                : [],
+              latest_version: latestVersion || null,
+              published_at: publishedAt,
+              created_at: createdAt,
+              modified_at: modifiedAt,
+              package_total_downloads: packageTotalDownloads,
+              package_total_downloads_start: totalDownloadsResult.start || isoDate(createdAt),
+              package_total_downloads_end: totalDownloadsResult.end || collectedDate,
+              downloads_last_day: packageLastDayDownloads,
+              downloads_last_week: packageLastWeekDownloads,
+              downloads_last_month: packageLastMonthDownloads,
+              collected_at: collectedAt,
+              snapshot_type: 'package_total',
+            }, `npm-package:${packageId.toLowerCase()}`)
+          }
+
+          await posthogCapture('nanoagent npm tracked packages install snapshot', {
+            repository: REPOSITORY,
+            package_ids: packageIds,
+            tracked_package_count: trackedPackages,
+            package_total_downloads: totalDownloads,
+            downloads_last_day: totalLastDayDownloads,
+            downloads_last_week: totalLastWeekDownloads,
+            downloads_last_month: totalLastMonthDownloads,
+            collected_at: collectedAt,
+            snapshot_type: 'tracked_packages_total',
+          }, `npm-packages:${REPOSITORY}`)
+
+          console.log(`Sent npm snapshots for ${trackedPackages} packages, ${totalDownloads} total downloads, ${totalLastWeekDownloads} last-week downloads to PostHog.`)
           NODE
 
       - name: Send VS Code Marketplace extension install snapshots to PostHog
