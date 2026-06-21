@@ -1,12 +1,8 @@
 using System;
-using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
-using System.Text.RegularExpressions;
-using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Data;
 
 namespace NanoAgent.VS.ToolWindows
@@ -26,20 +22,39 @@ namespace NanoAgent.VS.ToolWindows
 
         public event PropertyChangedEventHandler? PropertyChanged;
 
-        /// <summary>Internal so derived types and the control can trigger property changed notifications.</summary>
         internal void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
 
     public sealed class UserMessage : ChatMessage { }
     public sealed class AssistantMessage : ChatMessage { }
-    public sealed class ReasoningMessage : ChatMessage { }
     public sealed class ToolMessage : ChatMessage { }
     public sealed class SystemMessage : ChatMessage { }
 
-    /// <summary>
-    /// A tool-call status card shown while tools execute.
-    /// </summary>
+    /// <summary>Collapsible reasoning/thinking block.</summary>
+    public sealed class ReasoningMessage : ChatMessage
+    {
+        public int LineCount
+        {
+            get
+            {
+                if (string.IsNullOrEmpty(Text)) return 0;
+                int n = 1;
+                foreach (char c in Text) if (c == '\n') n++;
+                return n;
+            }
+        }
+
+        public string Summary => $"Thinking ({LineCount} line{(LineCount == 1 ? "" : "s")})";
+
+        internal void NotifyDerived()
+        {
+            OnPropertyChanged(nameof(LineCount));
+            OnPropertyChanged(nameof(Summary));
+        }
+    }
+
+    /// <summary>A tool-call status card shown while tools execute.</summary>
     public sealed class ToolCallStatusMessage : ChatMessage
     {
         private string _toolCallId = string.Empty;
@@ -57,19 +72,26 @@ namespace NanoAgent.VS.ToolWindows
         public string Title
         {
             get => _title;
-            set { _title = value; OnPropertyChanged(); }
+            set { _title = value; OnPropertyChanged(); OnPropertyChanged(nameof(HeaderText)); }
         }
 
         public string Kind
         {
             get => _kind;
-            set { _kind = value; OnPropertyChanged(); }
+            set { _kind = value; OnPropertyChanged(); OnPropertyChanged(nameof(MetaText)); }
         }
 
         public string Status
         {
             get => _status;
-            set { _status = value; OnPropertyChanged(); OnPropertyChanged(nameof(StatusPrefix)); OnPropertyChanged(nameof(DisplayText)); }
+            set
+            {
+                _status = value;
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(StatusPrefix));
+                OnPropertyChanged(nameof(HeaderText));
+                OnPropertyChanged(nameof(MetaText));
+            }
         }
 
         public string RawInput
@@ -82,102 +104,29 @@ namespace NanoAgent.VS.ToolWindows
 
         public string StatusPrefix => Status switch
         {
-            "running" => "\u25B6",    // ▶
-            "completed" => "\u2713",  // ✓
-            "failed" => "\u2717",     // ✗
-            _ => "\u25CB"             // ○
+            "running" => "▶",    // ▶
+            "completed" => "✓",  // ✓
+            "failed" => "✗",     // ✗
+            _ => "○"             // ○
         };
 
-        public string DisplayText
+        public string HeaderText => $"{StatusPrefix}  {Title}";
+
+        public string MetaText
         {
             get
             {
-                string result = $"{StatusPrefix} {Title}";
-                if (ContentLines.Count > 0)
+                string meta = Kind;
+                if (!string.IsNullOrEmpty(Status) && Status != "running")
                 {
-                    result += $"\n{string.Join("\n", ContentLines)}";
+                    meta = string.IsNullOrEmpty(meta) ? Status : $"{meta} · {Status}";
                 }
-                return result;
+                return meta;
             }
         }
     }
 
-    /// <summary>
-    /// A segment of parsed message text (plain or code block).
-    /// </summary>
-    public sealed class MessageSegment
-    {
-        public string Text { get; init; } = string.Empty;
-        public bool IsCode { get; init; }
-    }
-
-    /// <summary>
-    /// Splits message text into plain and code-block segments.
-    /// Uses Substring for .NET Framework 4.7.2 compatibility (no System.Range).
-    /// </summary>
-    public static class MessageParser
-    {
-        private static readonly Regex CodeBlockRegex = new(
-            @"```(\w*)\n?(.*?)```",
-            RegexOptions.Singleline | RegexOptions.Compiled);
-
-        public static List<MessageSegment> Parse(string text)
-        {
-            var segments = new List<MessageSegment>();
-            if (string.IsNullOrEmpty(text))
-            {
-                segments.Add(new MessageSegment { Text = "", IsCode = false });
-                return segments;
-            }
-
-            int last = 0;
-            foreach (Match match in CodeBlockRegex.Matches(text))
-            {
-                if (match.Index > last)
-                {
-                    string plain = text.Substring(last, match.Index - last);
-                    if (!string.IsNullOrEmpty(plain))
-                        segments.Add(new MessageSegment { Text = plain, IsCode = false });
-                }
-
-                string code = match.Groups[2].Value;
-                segments.Add(new MessageSegment { Text = code, IsCode = true });
-                last = match.Index + match.Length;
-            }
-
-            if (last < text.Length)
-            {
-                string remaining = text.Substring(last);
-                if (!string.IsNullOrEmpty(remaining))
-                    segments.Add(new MessageSegment { Text = remaining, IsCode = false });
-            }
-
-            if (segments.Count == 0)
-                segments.Add(new MessageSegment { Text = text, IsCode = false });
-
-            return segments;
-        }
-    }
-
-    /// <summary>
-    /// Converts message text string into a list of <see cref="MessageSegment"/> for template rendering.
-    /// </summary>
-    public sealed class MessageToSegmentsConverter : IValueConverter
-    {
-        public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
-        {
-            if (value is string text)
-                return MessageParser.Parse(text);
-            return new List<MessageSegment> { new() { Text = value?.ToString() ?? "", IsCode = false } };
-        }
-
-        public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
-            => throw new NotSupportedException();
-    }
-
-    /// <summary>
-    /// Converts an available width into a fractional maximum width for message cards.
-    /// </summary>
+    /// <summary>Converts an available width into a fractional maximum width for message cards.</summary>
     public sealed class WidthFractionConverter : IValueConverter
     {
         public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
@@ -189,11 +138,7 @@ namespace NanoAgent.VS.ToolWindows
             double fraction = 1.0;
             if (parameter != null)
             {
-                _ = double.TryParse(
-                    parameter.ToString(),
-                    NumberStyles.Float,
-                    CultureInfo.InvariantCulture,
-                    out fraction);
+                _ = double.TryParse(parameter.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out fraction);
             }
 
             return Math.Max(0, width * fraction);
@@ -201,21 +146,5 @@ namespace NanoAgent.VS.ToolWindows
 
         public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
             => throw new NotSupportedException();
-    }
-
-    /// <summary>
-    /// Selects between code and text DataTemplates based on <see cref="MessageSegment.IsCode"/>.
-    /// </summary>
-    public sealed class SegmentTemplateSelector : DataTemplateSelector
-    {
-        public DataTemplate? CodeTemplate { get; set; }
-        public DataTemplate? TextTemplate { get; set; }
-
-        public override DataTemplate? SelectTemplate(object item, DependencyObject container)
-        {
-            if (item is MessageSegment seg)
-                return seg.IsCode ? CodeTemplate : TextTemplate;
-            return TextTemplate;
-        }
     }
 }

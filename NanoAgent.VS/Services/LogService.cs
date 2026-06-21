@@ -40,6 +40,17 @@ namespace NanoAgent.VS.Services
 
         public static LogService Instance => _instance.Value;
 
+        /// <summary>Minimum level to emit: debug, info, warn, error. Set from the options page.</summary>
+        public string MinLevel { get; set; } = "info";
+
+        private static int Rank(string level) => level switch
+        {
+            "DEBUG" or "debug" => 0,
+            "INFO" or "info" => 1,
+            "WARN" or "warn" => 2,
+            _ => 3
+        };
+
         public void Info(string message)
         {
             Write("INFO", message);
@@ -62,6 +73,8 @@ namespace NanoAgent.VS.Services
 
         private void Write(string level, string message, Exception? ex = null)
         {
+            if (Rank(level) < Rank(MinLevel)) return;
+
             string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
             string logLine = $"[{timestamp} {level}] {message}";
 
