@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -41,27 +42,66 @@ namespace NanoAgent.VS.Services
 
         public string? SessionId => _sessionId;
 
-        public void Start(string executablePath)
+        public void Start(string executablePath, params string[] extraArgs)
         {
             if (_disposed)
             {
                 throw new ObjectDisposedException(nameof(VsAgentService));
             }
 
-            _processManager.Start(executablePath, "--acp", "--surface", "visual_studio");
+            var args = new List<string> { "--acp", "--surface", "visual_studio" };
+            if (extraArgs != null)
+            {
+                args.AddRange(extraArgs.Where(static a => !string.IsNullOrWhiteSpace(a)));
+            }
+
+            _processManager.Start(executablePath, args.ToArray());
             _loopCts = new CancellationTokenSource();
             _readLoop = Task.Run(() => ReadLoopAsync(_loopCts.Token));
         }
 
-        public async Task InitializeAsync(string workingDirectory)
+        public async Task InitializeAsync(string workingDirectory, string? authToken = null)
         {
-            await SendRequestAsync<JsonElement>("initialize", new Dictionary<string, object?>
+            JsonElement initResult = await SendRequestAsync("initialize", new Dictionary<string, object?>
             {
                 ["protocolVersion"] = 1
             });
 
+            if (RequiresTokenAuth(initResult))
+            {
+                string? token = !string.IsNullOrWhiteSpace(authToken)
+                    ? authToken
+                    : Environment.GetEnvironmentVariable("NANOAGENT_ACP_AUTH_TOKEN");
+                if (!string.IsNullOrWhiteSpace(token))
+                {
+                    await SendRequestAsync<JsonElement>("authenticate", new Dictionary<string, object?> { ["token"] = token });
+                }
+                else
+                {
+                    _log.Warn("ACP server requested token authentication but no token is configured.");
+                }
+            }
+
             await NewSessionAsync(workingDirectory);
             NotificationReceived?.Invoke(VsProtocol.Ready, null);
+        }
+
+        private static bool RequiresTokenAuth(JsonElement initResult)
+        {
+            if (initResult.ValueKind != JsonValueKind.Object ||
+                !initResult.TryGetProperty("authMethods", out JsonElement methods) ||
+                methods.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (JsonElement m in methods.EnumerateArray())
+            {
+                if (m.ValueKind == JsonValueKind.String && m.GetString() == "token") return true;
+                if (m.ValueKind == JsonValueKind.Object && m.TryGetProperty("id", out JsonElement id) &&
+                    id.ValueKind == JsonValueKind.String && id.GetString() == "token") return true;
+            }
+            return false;
         }
 
         public async Task NewSessionAsync(string workingDirectory)
@@ -151,6 +191,32 @@ namespace NanoAgent.VS.Services
                         }
                     }
                 });
+        }
+
+        public async Task<List<SessionSummary>> ListSessionsAsync()
+        {
+            JsonElement result = await SendRequestAsync("session/list", new Dictionary<string, object?>());
+            var sessions = new List<SessionSummary>();
+            if (result.ValueKind == JsonValueKind.Object &&
+                result.TryGetProperty("sessions", out JsonElement arr) &&
+                arr.ValueKind == JsonValueKind.Array)
+            {
+                foreach (JsonElement s in arr.EnumerateArray())
+                {
+                    if (s.ValueKind != JsonValueKind.Object) continue;
+                    sessions.Add(new SessionSummary
+                    {
+                        SessionId = TryGetString(s, "sessionId") ?? string.Empty,
+                        Title = TryGetString(s, "title") ?? "(untitled)",
+                        ModelId = TryGetString(s, "modelId"),
+                        ProfileName = TryGetString(s, "profileName"),
+                        UpdatedAtUtc = TryGetString(s, "updatedAtUtc"),
+                        ParentSessionId = TryGetString(s, "parentSessionId"),
+                        TurnCount = s.TryGetProperty("turnCount", out JsonElement tc) && tc.TryGetInt32(out int n) ? n : (int?)null,
+                    });
+                }
+            }
+            return sessions;
         }
 
         public Task CancelPromptAsync()
@@ -597,6 +663,28 @@ namespace NanoAgent.VS.Services
         internal sealed class SessionPromptResponse
         {
             public string? StopReason { get; set; }
+            public TurnMetrics? Metrics { get; set; }
+        }
+
+        internal sealed class TurnMetrics
+        {
+            // double? — the CLI emits these as fractional numbers (e.g. 66.7ms), which won't parse as long/int.
+            public double? ElapsedMilliseconds { get; set; }
+            public double? EstimatedOutputTokens { get; set; }
+            public double? EstimatedTotalTokens { get; set; }
+            public double? ToolRoundCount { get; set; }
+            public double? ProviderRetryCount { get; set; }
+        }
+
+        internal sealed class SessionSummary
+        {
+            public string SessionId { get; set; } = string.Empty;
+            public string Title { get; set; } = string.Empty;
+            public string? ModelId { get; set; }
+            public string? ProfileName { get; set; }
+            public string? UpdatedAtUtc { get; set; }
+            public string? ParentSessionId { get; set; }
+            public int? TurnCount { get; set; }
         }
 
         private sealed class SessionNewResponse

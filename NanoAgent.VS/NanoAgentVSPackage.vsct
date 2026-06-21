@@ -13,11 +13,35 @@
       <IDSymbol name="OtherWindowsGroup" value="0x1000" />
       <IDSymbol name="ViewMenuGroup" value="0x1001" />
       <IDSymbol name="ToolsMenuGroup" value="0x1002" />
+      <IDSymbol name="EditorContextGroup" value="0x1003" />
+      <IDSymbol name="NanoAgentSubMenu" value="0x1100" />
+      <IDSymbol name="NanoAgentSubMenuGroup" value="0x1101" />
+
       <IDSymbol name="cmdidShowChatWindow" value="0x0100" />
+      <IDSymbol name="cmdidNewChat" value="0x0101" />
+      <IDSymbol name="cmdidSendSelection" value="0x0102" />
+      <IDSymbol name="cmdidExplainSelection" value="0x0103" />
+      <IDSymbol name="cmdidSendCurrentFile" value="0x0104" />
+      <IDSymbol name="cmdidReviewCurrentFile" value="0x0105" />
+      <IDSymbol name="cmdidReviewGitDiff" value="0x0106" />
+      <IDSymbol name="cmdidPlanChanges" value="0x0107" />
+      <IDSymbol name="cmdidApplySuggestedChanges" value="0x0108" />
+      <IDSymbol name="cmdidShowTerminals" value="0x0109" />
     </GuidSymbol>
   </Symbols>
 
   <Commands package="guidNanoAgentVsPkg">
+    <Menus>
+      <!-- "NanoAgent" submenu shown in the editor context menu. -->
+      <Menu guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenu" priority="0x0500" type="Menu">
+        <Parent guid="guidNanoAgentVsCmdSet" id="EditorContextGroup"/>
+        <Strings>
+          <ButtonText>NanoAgent</ButtonText>
+          <CommandName>NanoAgent</CommandName>
+        </Strings>
+      </Menu>
+    </Menus>
+
     <Groups>
       <!-- Primary location: View -> Other Windows. -->
       <Group guid="guidNanoAgentVsCmdSet" id="OtherWindowsGroup" priority="0x0100">
@@ -29,9 +53,19 @@
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW"/>
       </Group>
 
-      <!-- Diagnostic fallback: Tools menu. If neither View nor Tools appears, the package/VSIX registration is not being picked up. -->
+      <!-- Tools menu. -->
       <Group guid="guidNanoAgentVsCmdSet" id="ToolsMenuGroup" priority="0x7000">
         <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+      </Group>
+
+      <!-- Editor context menu: holds the NanoAgent submenu. -->
+      <Group guid="guidNanoAgentVsCmdSet" id="EditorContextGroup" priority="0x0500">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN"/>
+      </Group>
+
+      <!-- Commands inside the NanoAgent submenu. -->
+      <Group guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup" priority="0x0100">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenu"/>
       </Group>
     </Groups>
 
@@ -43,6 +77,43 @@
           <CommandName>NanoAgent.Chat.Show</CommandName>
         </Strings>
       </Button>
+
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidNewChat" priority="0x0101" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>New Chat</ButtonText><CommandName>NanoAgent.NewChat</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidSendSelection" priority="0x0102" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Send Selection to NanoAgent</ButtonText><CommandName>NanoAgent.SendSelection</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidExplainSelection" priority="0x0103" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Explain Selection</ButtonText><CommandName>NanoAgent.ExplainSelection</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidSendCurrentFile" priority="0x0104" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Send Current File</ButtonText><CommandName>NanoAgent.SendCurrentFile</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidReviewCurrentFile" priority="0x0105" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Review Current File</ButtonText><CommandName>NanoAgent.ReviewCurrentFile</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidReviewGitDiff" priority="0x0106" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Review Git Diff</ButtonText><CommandName>NanoAgent.ReviewGitDiff</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidPlanChanges" priority="0x0107" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Plan Changes</ButtonText><CommandName>NanoAgent.PlanChanges</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidApplySuggestedChanges" priority="0x0108" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Apply Suggested Changes</ButtonText><CommandName>NanoAgent.ApplySuggestedChanges</CommandName></Strings>
+      </Button>
+      <Button guid="guidNanoAgentVsCmdSet" id="cmdidShowTerminals" priority="0x0109" type="Button">
+        <Parent guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenuGroup"/>
+        <Strings><ButtonText>Show Background Terminals</ButtonText><CommandName>NanoAgent.ShowTerminals</CommandName></Strings>
+      </Button>
     </Buttons>
   </Commands>
 
@@ -51,6 +122,10 @@
       <Parent guid="guidNanoAgentVsCmdSet" id="ViewMenuGroup"/>
     </CommandPlacement>
     <CommandPlacement guid="guidNanoAgentVsCmdSet" id="cmdidShowChatWindow" priority="0x0100">
+      <Parent guid="guidNanoAgentVsCmdSet" id="ToolsMenuGroup"/>
+    </CommandPlacement>
+    <!-- Also surface the NanoAgent submenu under the Tools menu. -->
+    <CommandPlacement guid="guidNanoAgentVsCmdSet" id="NanoAgentSubMenu" priority="0x0600">
       <Parent guid="guidNanoAgentVsCmdSet" id="ToolsMenuGroup"/>
     </CommandPlacement>
   </CommandPlacements>
