@@ -8,75 +8,75 @@
              FontSize="13"
              TextElement.Foreground="#FFCCCCCC">
     <UserControl.Resources>
-        <!-- 1. Segment code template -->
-        <DataTemplate x:Key="SegmentCodeTemplate">
-            <Border Background="#FF2D2D30" BorderBrush="#FF3C3C3C"
-                    BorderThickness="1" Padding="10,6" CornerRadius="4" Margin="0,2,0,4">
-                <TextBlock Text="{Binding Text}" FontFamily="Consolas"
-                           Foreground="#FFD4D4D4" TextWrapping="Wrap"
-                           FontSize="12" LineHeight="18" />
-            </Border>
-        </DataTemplate>
-
-        <!-- 2. Segment plain text template -->
-        <DataTemplate x:Key="SegmentTextTemplate">
-            <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
-                       Foreground="#FFCCCCCC" LineHeight="20"
-                       Margin="0,0,0,2" />
-        </DataTemplate>
-
-        <!-- 3. Segment template selector -->
-        <local:SegmentTemplateSelector x:Key="SegmentTemplateSelector"
-            CodeTemplate="{StaticResource SegmentCodeTemplate}"
-            TextTemplate="{StaticResource SegmentTextTemplate}" />
-
-        <!-- 4. Message text to segment list converter -->
-        <local:MessageToSegmentsConverter x:Key="MessageToSegments" />
         <local:WidthFractionConverter x:Key="WidthFractionConverter" />
 
-        <!-- 5. DataTemplate for UserMessage -->
+        <!-- Toolbar icon-button style -->
+        <Style x:Key="ToolbarButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#FFCCCCCC" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#FF3C3C3C" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="Margin" Value="0,0,4,0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FF2D2D30" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- UserMessage -->
         <DataTemplate DataType="{x:Type local:UserMessage}">
             <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.86}"
                     HorizontalAlignment="Right"
                     Background="#FF2D2D30" BorderBrush="#FF3C3C3C"
-                    BorderThickness="1" CornerRadius="8" Padding="10,8"
+                    BorderThickness="1" CornerRadius="8" Padding="10,6"
                     Margin="0,0,0,8">
-                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
-                           Foreground="#FFCCCCCC" LineHeight="20" />
+                <local:MarkdownPresenter Markdown="{Binding Text}" />
             </Border>
         </DataTemplate>
 
-        <!-- 6. DataTemplate for AssistantMessage (with code block support) -->
+        <!-- AssistantMessage -->
         <DataTemplate DataType="{x:Type local:AssistantMessage}">
-            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.94}"
+            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.96}"
                     HorizontalAlignment="Left"
                     Background="Transparent" Padding="0,0,0,8">
-                <ItemsControl ItemsSource="{Binding Text, Converter={StaticResource MessageToSegments}}"
-                              Focusable="False"
-                              ItemTemplateSelector="{StaticResource SegmentTemplateSelector}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                </ItemsControl>
+                <local:MarkdownPresenter Markdown="{Binding Text}" />
             </Border>
         </DataTemplate>
 
-        <!-- 7. DataTemplate for ReasoningMessage -->
+        <!-- ReasoningMessage (collapsible) -->
         <DataTemplate DataType="{x:Type local:ReasoningMessage}">
-            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.94}"
-                    HorizontalAlignment="Left"
-                    Background="Transparent" Padding="0,0,0,4">
-                <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
-                           Foreground="#FF8F8F8F" FontStyle="Italic"
-                           LineHeight="18" FontSize="12" />
+            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.96}"
+                    HorizontalAlignment="Left" Padding="0,0,0,6">
+                <Expander Header="{Binding Summary}" Foreground="#FF8F8F8F" FontSize="12">
+                    <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                               Foreground="#FF8F8F8F" FontStyle="Italic"
+                               LineHeight="18" FontSize="12" Margin="6,4,0,0" />
+                </Expander>
             </Border>
         </DataTemplate>
 
-        <!-- 8. DataTemplate for ToolMessage -->
+        <!-- ToolMessage (plain) -->
         <DataTemplate DataType="{x:Type local:ToolMessage}">
-            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.94}"
+            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.96}"
                     HorizontalAlignment="Left"
                     BorderBrush="#FFCCA700" BorderThickness="2,0,0,0"
                     Background="#FF252526" CornerRadius="0,4,4,0"
@@ -87,7 +87,7 @@
             </Border>
         </DataTemplate>
 
-        <!-- 9. DataTemplate for SystemMessage -->
+        <!-- SystemMessage -->
         <DataTemplate DataType="{x:Type local:SystemMessage}">
             <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.96}"
                     HorizontalAlignment="Center"
@@ -100,16 +100,24 @@
             </Border>
         </DataTemplate>
 
-        <!-- 10. DataTemplate for ToolCallStatusMessage -->
+        <!-- ToolCallStatusMessage (collapsible card with diff/output) -->
         <DataTemplate DataType="{x:Type local:ToolCallStatusMessage}">
-            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.94}"
+            <Border MaxWidth="{Binding RelativeSource={RelativeSource AncestorType=ScrollViewer}, Path=ActualWidth, Converter={StaticResource WidthFractionConverter}, ConverterParameter=0.96}"
                     HorizontalAlignment="Left"
                     BorderBrush="#FF3C3C3C" BorderThickness="1"
-                    CornerRadius="6" Padding="10,8" Margin="0,0,0,6"
+                    CornerRadius="6" Padding="8,4" Margin="0,0,0,6"
                     Background="#FF252526">
-                <TextBlock Text="{Binding DisplayText}" TextWrapping="Wrap"
-                           Foreground="#FFCCCCCC" FontSize="12"
-                           FontFamily="Consolas" LineHeight="18" />
+                <Expander IsExpanded="True">
+                    <Expander.Header>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding HeaderText}" Foreground="#FFCCCCCC"
+                                       FontSize="12" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding MetaText}" Foreground="#FF8F8F8F"
+                                       FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Expander.Header>
+                    <local:ToolCallContentPresenter Message="{Binding}" Margin="0,4,0,0" />
+                </Expander>
             </Border>
         </DataTemplate>
     </UserControl.Resources>
@@ -136,8 +144,9 @@
                                FontSize="11" FontFamily="Consolas" />
                 </Border>
                 <TextBlock Grid.Column="1" x:Name="ModelText" Text="" Foreground="#FF8F8F8F"
-                           FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
-                <TextBlock Grid.Column="3" x:Name="ProfileText" Text="" Foreground="#FF8F8F8F"
+                           FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
+                           TextTrimming="CharacterEllipsis" MaxWidth="220" />
+                <TextBlock Grid.Column="3" x:Name="ContextText" Text="" Foreground="#FF8F8F8F"
                            FontSize="11" VerticalAlignment="Center" />
             </Grid>
         </Border>
@@ -150,15 +159,13 @@
                       Padding="14,10,14,4"
                       PanningMode="VerticalOnly">
             <Grid>
-                <!-- Empty state -->
                 <TextBlock x:Name="EmptyStateText"
-                           Text="Welcome to NanoAgent for Visual Studio.&#x0a;&#x0a;Start typing a message or use / commands."
+                           Text="Welcome to NanoAgent for Visual Studio.&#x0a;&#x0a;Start typing a message or use / commands. Try the editor context menu to send a selection, review a file, or review the git diff."
                            Foreground="#FF8F8F8F" FontSize="14"
                            HorizontalAlignment="Center" VerticalAlignment="Center"
                            TextWrapping="Wrap" TextAlignment="Center"
-                           MaxWidth="420" LineHeight="22" />
+                           MaxWidth="460" LineHeight="22" />
 
-                <!-- Message list -->
                 <ItemsControl x:Name="MessagesList" Focusable="False">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -172,64 +179,110 @@
         <!-- Input Area -->
         <Border Grid.Row="2" Background="#FF252526" Padding="10,6,10,10"
                 BorderBrush="#FF3C3C3C" BorderThickness="0,1,0,0">
-            <Border BorderBrush="#FF3C3C3C" BorderThickness="1" CornerRadius="8"
-                    Background="#FF1E1E1E">
-                <Grid Margin="8,4,8,6">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <TextBox Grid.Row="0" x:Name="InputTextBox"
-                             TextWrapping="Wrap"
-                             AcceptsReturn="False"
-                             MinHeight="28" MaxHeight="100"
-                             BorderThickness="0"
-                             Background="Transparent"
-                             Foreground="#FFCCCCCC"
-                             FontFamily="Segoe UI"
-                             FontSize="13"
-                             CaretBrush="#FFCCCCCC"
-                             VerticalContentAlignment="Center"
-                             KeyDown="OnInputKeyDown" />
-                    <Grid Grid.Row="1" Margin="0,4,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="3" x:Name="SendButton"
-                                Content="Send"
-                                MinWidth="60" MinHeight="26"
-                                Margin="6,0,0,0"
-                                Padding="14,0"
-                                Background="#FF0E639C"
-                                Foreground="White"
-                                BorderThickness="0"
-                                FontWeight="SemiBold"
-                                FontSize="12"
-                                Click="OnSendClick" />
-                        <Button Grid.Column="2" x:Name="CancelButton"
-                                Content="Stop"
-                                MinWidth="50" MinHeight="26"
-                                Margin="0,0,6,0"
-                                Padding="8,0"
-                                Background="#33F48771"
-                                Foreground="#FFF48771"
-                                BorderThickness="1"
-                                BorderBrush="#66F48771"
-                                FontSize="12"
-                                Visibility="Collapsed"
-                                Click="OnCancelClick" />
+            <StackPanel>
+                <!-- Composer toolbar -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <Button x:Name="NewChatButton" Style="{StaticResource ToolbarButton}"
+                            Content="＋ New" ToolTip="Start a new chat session" Click="OnNewChatClick" />
+                    <Button x:Name="SessionsButton" Style="{StaticResource ToolbarButton}"
+                            Content="Sessions" ToolTip="Browse saved sessions" Click="OnSessionsClick" />
+                    <Button x:Name="ModelButton" Style="{StaticResource ToolbarButton}"
+                            Content="Model" ToolTip="Pick model / reasoning / thinking" Click="OnModelClick" />
+                    <Button x:Name="AddContextButton" Style="{StaticResource ToolbarButton}"
+                            Content="@ Context" ToolTip="Reference a file (/read)" Click="OnAddContextClick" />
+                    <Button x:Name="SettingsButton" Style="{StaticResource ToolbarButton}"
+                            Content="Settings" ToolTip="Settings" Click="OnSettingsClick" />
+                    <TextBlock x:Name="MetricsText" Text="" Foreground="#FF8F8F8F" FontSize="10"
+                               VerticalAlignment="Center" Margin="6,0,0,0" />
+                </StackPanel>
+
+                <Border BorderBrush="#FF3C3C3C" BorderThickness="1" CornerRadius="8"
+                        Background="#FF1E1E1E">
+                    <Grid Margin="8,4,8,6">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBox Grid.Row="0" x:Name="InputTextBox"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 MinHeight="28" MaxHeight="120"
+                                 VerticalScrollBarVisibility="Auto"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Foreground="#FFCCCCCC"
+                                 FontFamily="Segoe UI"
+                                 FontSize="13"
+                                 CaretBrush="#FFCCCCCC"
+                                 VerticalContentAlignment="Center"
+                                 PreviewKeyDown="OnInputKeyDown" />
+                        <Grid Grid.Row="1" Margin="0,4,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="2" x:Name="SendButton"
+                                    Content="Send"
+                                    MinWidth="60" MinHeight="26"
+                                    Margin="6,0,0,0"
+                                    Padding="14,0"
+                                    Background="#FF0E639C"
+                                    Foreground="White"
+                                    BorderThickness="0"
+                                    FontWeight="SemiBold"
+                                    FontSize="12"
+                                    Cursor="Hand"
+                                    Click="OnSendClick" />
+                            <Button Grid.Column="1" x:Name="CancelButton"
+                                    Content="Stop"
+                                    MinWidth="50" MinHeight="26"
+                                    Padding="8,0"
+                                    Background="#33F48771"
+                                    Foreground="#FFF48771"
+                                    BorderThickness="1"
+                                    BorderBrush="#66F48771"
+                                    FontSize="12"
+                                    Cursor="Hand"
+                                    Visibility="Collapsed"
+                                    Click="OnCancelClick" />
+                        </Grid>
                     </Grid>
-                </Grid>
-            </Border>
+                </Border>
+            </StackPanel>
         </Border>
 
-        <!-- Modal Overlay for permission/text requests -->
+        <!-- Slash-command / mention autocomplete -->
+        <Popup x:Name="SuggestionPopup" Placement="Top" PlacementTarget="{Binding ElementName=InputTextBox}"
+               AllowsTransparency="True" StaysOpen="False" IsOpen="False"
+               MaxHeight="240" Width="{Binding ElementName=InputTextBox, Path=ActualWidth}">
+            <Border Background="#FF252526" BorderBrush="#FF3C3C3C" BorderThickness="1" CornerRadius="6">
+                <ListBox x:Name="SuggestionList" Background="Transparent" BorderThickness="0"
+                         Foreground="#FFCCCCCC" MaxHeight="238"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         PreviewMouseLeftButtonUp="OnSuggestionClick">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="2">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Command}" FontFamily="Consolas"
+                                               Foreground="#FF4DAAFC" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Usage}" Foreground="#FF8F8F8F"
+                                               FontSize="10" Margin="8,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding Description}" Foreground="#FF8F8F8F"
+                                           FontSize="11" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+        </Popup>
+
+        <!-- Modal Overlay for permission/text/model/session requests -->
         <Border Grid.RowSpan="3" x:Name="ModalOverlay" Visibility="Collapsed"
                 Background="#88000000" Panel.ZIndex="100">
-            <Border MaxWidth="520" MaxHeight="520"
+            <Border MaxWidth="560" MaxHeight="560"
                     Background="#FF252526" BorderBrush="#FF3C3C3C"
                     BorderThickness="1" CornerRadius="8" Padding="18"
                     VerticalAlignment="Center" HorizontalAlignment="Center">
@@ -247,7 +300,7 @@
                                FontSize="12" Foreground="#FF8F8F8F"
                                Margin="0,8,0,12" TextWrapping="Wrap" />
                     <ScrollViewer Grid.Row="2" x:Name="ModalBodyScroll"
-                                  VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
+                                  VerticalScrollBarVisibility="Auto" Margin="0,0,0,8" MinWidth="360">
                         <StackPanel x:Name="ModalBodyPanel" />
                     </ScrollViewer>
                     <StackPanel Grid.Row="3" x:Name="ModalActionsPanel"
