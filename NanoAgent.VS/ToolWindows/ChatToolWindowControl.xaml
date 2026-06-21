@@ -220,32 +220,41 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Button Grid.Column="2" x:Name="SendButton"
-                                    Content="Send"
-                                    MinWidth="60" MinHeight="26"
-                                    Margin="6,0,0,0"
-                                    Padding="14,0"
+                            <!-- ponytail: one button — arrow to send, square to stop. -->
+                            <Button Grid.Column="1" x:Name="SendButton"
+                                    Content="&#x2191;"
+                                    Width="28" Height="28"
                                     Background="#FF0E639C"
                                     Foreground="White"
                                     BorderThickness="0"
-                                    FontWeight="SemiBold"
-                                    FontSize="12"
+                                    FontWeight="Bold"
+                                    FontSize="15"
                                     Cursor="Hand"
-                                    Click="OnSendClick" />
-                            <Button Grid.Column="1" x:Name="CancelButton"
-                                    Content="Stop"
-                                    MinWidth="50" MinHeight="26"
-                                    Padding="8,0"
-                                    Background="#33F48771"
-                                    Foreground="#FFF48771"
-                                    BorderThickness="1"
-                                    BorderBrush="#66F48771"
-                                    FontSize="12"
-                                    Cursor="Hand"
-                                    Visibility="Collapsed"
-                                    Click="OnCancelClick" />
+                                    Click="OnSendClick">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Grid>
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="14" />
+                                            <!-- ponytail: white-tint overlay so hover/press read on top of the dynamic blue/red background. -->
+                                            <Border x:Name="Overlay" CornerRadius="14" Background="White" Opacity="0" />
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Grid>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Overlay" Property="Opacity" Value="0.15" />
+                                            </Trigger>
+                                            <Trigger Property="IsPressed" Value="True">
+                                                <Setter TargetName="Overlay" Property="Opacity" Value="0.3" />
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Opacity" Value="0.5" />
+                                                <Setter Property="Cursor" Value="Arrow" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
                         </Grid>
                     </Grid>
                 </Border>
