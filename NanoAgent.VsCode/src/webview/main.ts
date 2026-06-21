@@ -60,6 +60,8 @@ const commandSuggestions = CHAT_COMMANDS;
         const statusPill = statusText ? statusText.closest('.status-pill') : null;
         const contextMeter = document.getElementById('context-meter');
         const suggestionsDiv = document.getElementById('suggestions');
+        const promptQueueDiv = document.getElementById('prompt-queue');
+        const promptQueue = [];
         const sidePane = document.getElementById('activity-pane');
         const planList = document.getElementById('plan-list');
         const planCount = document.getElementById('plan-count');
@@ -540,14 +542,59 @@ const commandSuggestions = CHAT_COMMANDS;
 
         function sendCurrentInput() {
             const text = inputField.value.trim();
-            if (!text || promptState.isRunning) {
+            if (!text) {
                 return;
             }
 
-            post({ command: 'sendMessage', text });
+            // Busy? queue it; the queue drains automatically when the turn ends.
+            if (promptState.isRunning) {
+                promptQueue.push(text);
+                renderPromptQueue();
+            } else {
+                post({ command: 'sendMessage', text });
+            }
+
             inputField.value = '';
             hideSuggestions();
             updateComposerState();
+        }
+
+        function renderPromptQueue() {
+            promptQueueDiv.textContent = '';
+            promptQueueDiv.classList.toggle('hidden', promptQueue.length === 0);
+            promptQueue.forEach((text, index) => {
+                const item = document.createElement('div');
+                item.className = 'prompt-queue-item';
+
+                const label = document.createElement('span');
+                label.className = 'prompt-queue-text';
+                label.textContent = text;
+                label.title = text;
+
+                const remove = document.createElement('button');
+                remove.className = 'prompt-queue-remove';
+                remove.textContent = '×';
+                remove.title = 'Remove from queue';
+                remove.setAttribute('aria-label', 'Remove from queue');
+                remove.addEventListener('click', () => {
+                    promptQueue.splice(index, 1);
+                    renderPromptQueue();
+                });
+
+                item.appendChild(label);
+                item.appendChild(remove);
+                promptQueueDiv.appendChild(item);
+            });
+        }
+
+        function drainPromptQueue() {
+            if (promptState.isRunning || promptQueue.length === 0) {
+                return;
+            }
+
+            const next = promptQueue.shift();
+            renderPromptQueue();
+            post({ command: 'sendMessage', text: next });
         }
 
         function handleSendButtonClick() {
@@ -673,6 +720,9 @@ const commandSuggestions = CHAT_COMMANDS;
                 }
                 updateStatusRail();
                 updateComposerState();
+                if (!promptState.isRunning && wasRunning) {
+                    drainPromptQueue();
+                }
             } else if (message.command === 'setToolCall') {
                 setToolCall(message.toolCall);
             } else if (message.command === 'clearToolCalls') {
@@ -866,7 +916,8 @@ const commandSuggestions = CHAT_COMMANDS;
             const running = promptState.isRunning === true;
             const cancelling = promptState.isCancelling === true;
             const hasText = inputField.value.trim().length > 0;
-            inputField.disabled = running;
+            inputField.disabled = false; // keep editable so prompts can be queued while busy
+            // While running the button stops the turn; Enter queues. Idle: needs text to send.
             sendButton.disabled = running ? cancelling : !hasText;
             sendButton.classList.toggle('stop-mode', running);
             sendButton.textContent = running ? '■' : '↑';
