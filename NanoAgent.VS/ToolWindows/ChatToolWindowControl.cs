@@ -28,6 +28,7 @@ namespace NanoAgent.VS.ToolWindows
         private readonly VsAgentService _agentService;
         private readonly NanoAgentProcessManager _processManager;
         private readonly System.Collections.ObjectModel.ObservableCollection<ChatMessage> _messages = new();
+        private readonly System.Collections.ObjectModel.ObservableCollection<string> _promptQueue = new(); // prompts typed while a turn runs
         private bool _disposed;
         private CancellationTokenSource? _turnCts;
         private bool _promptRunning;
@@ -70,6 +71,9 @@ namespace NanoAgent.VS.ToolWindows
             _agentService.NotificationReceived += OnNotificationReceived;
 
             MessagesList.ItemsSource = _messages;
+            PromptQueueList.ItemsSource = _promptQueue;
+            _promptQueue.CollectionChanged += (_, _) =>
+                PromptQueueList.Visibility = _promptQueue.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
 
             InputTextBox.TextChanged += (_, _) => { UpdateInputState(); UpdateSuggestions(); };
             SendButton.IsEnabled = false;
@@ -468,9 +472,35 @@ namespace NanoAgent.VS.ToolWindows
         {
             SuggestionPopup.IsOpen = false;
             string text = InputTextBox.Text.Trim();
-            if (string.IsNullOrEmpty(text) || _promptRunning) return;
+            if (string.IsNullOrEmpty(text)) return;
+
+            // Busy? queue it; the queue drains automatically when the turn ends.
+            if (_promptRunning)
+            {
+                _promptQueue.Add(text);
+                InputTextBox.Clear();
+                return;
+            }
 
             InputTextBox.Clear();
+            _messages.Add(new UserMessage { Text = text });
+            ScrollToBottom();
+
+            if (text.StartsWith("/")) await HandleSlashCommand(text);
+            else await HandleUserPromptAsync(text);
+        }
+
+        private void OnRemoveQueuedClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is FrameworkElement { Tag: string queued }) _promptQueue.Remove(queued);
+        }
+
+        private async Task DrainPromptQueueAsync()
+        {
+            if (_promptRunning || _promptQueue.Count == 0) return;
+
+            string text = _promptQueue[0];
+            _promptQueue.RemoveAt(0);
             _messages.Add(new UserMessage { Text = text });
             ScrollToBottom();
 
@@ -542,6 +572,7 @@ namespace NanoAgent.VS.ToolWindows
                 _streamingAssistant = null;
                 _streamingReasoning = null;
                 UpdateInputState();
+                _ = DrainPromptQueueAsync();
             }
         }
 
@@ -575,6 +606,7 @@ namespace NanoAgent.VS.ToolWindows
             {
                 _promptRunning = false;
                 UpdateInputState();
+                _ = DrainPromptQueueAsync();
             }
         }
 
@@ -1336,7 +1368,7 @@ namespace NanoAgent.VS.ToolWindows
             bool hasText = InputTextBox.Text.Trim().Length > 0;
             // Running: square = stop (always enabled). Idle: arrow = send (needs text).
             SendButton.IsEnabled = _promptRunning || hasText;
-            InputTextBox.IsEnabled = !_promptRunning;
+            InputTextBox.IsEnabled = true; // keep editable so prompts can be queued while busy
             SendButton.Content = _promptRunning ? "■" : "↑";
             SendButton.Background = new SolidColorBrush(_promptRunning
                 ? Color.FromRgb(0xF4, 0x87, 0x71)
