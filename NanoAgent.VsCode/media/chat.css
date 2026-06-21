@@ -1,3 +1,49 @@
+        .prompt-queue {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 6px;
+        }
+
+        .prompt-queue.hidden {
+            display: none;
+        }
+
+        .prompt-queue-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 8px;
+            border: 1px solid var(--border, #2b2b2b);
+            border-left: 2px solid var(--button-bg, #0e639c);
+            border-radius: 6px;
+            background: var(--input-bg, #252526);
+            font-size: 12px;
+            color: var(--muted, #8f8f8f);
+        }
+
+        .prompt-queue-text {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .prompt-queue-remove {
+            flex: none;
+            border: none;
+            background: transparent;
+            color: var(--muted, #8f8f8f);
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            padding: 0 2px;
+        }
+
+        .prompt-queue-remove:hover {
+            color: var(--fg, #cccccc);
+        }
+
         :root {
             color-scheme: dark;
 

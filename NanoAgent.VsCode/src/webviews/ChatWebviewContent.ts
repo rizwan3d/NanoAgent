@@ -217,6 +217,7 @@ export function getChatWebviewContent(webview: vscode.Webview, extensionUri: vsc
                     </section>
                 </aside>
                 <div class="composer">
+                    <div id="prompt-queue" class="prompt-queue hidden"></div>
                     <div id="suggestions" class="suggestions hidden"></div>
                     <div class="composer-row">
                         <textarea id="chat-input" class="chat-input" rows="1" placeholder="Message NanoAgent, type / for commands, or @ for files"></textarea>

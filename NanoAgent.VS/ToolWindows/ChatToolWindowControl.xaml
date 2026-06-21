@@ -180,6 +180,31 @@
         <Border Grid.Row="2" Background="#FF252526" Padding="10,6,10,10"
                 BorderBrush="#FF3C3C3C" BorderThickness="0,1,0,0">
             <StackPanel>
+                <!-- Prompt queue: messages typed while a turn is running, drained in order. -->
+                <ItemsControl x:Name="PromptQueueList" Margin="0,0,0,6" Visibility="Collapsed">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Background="#FF1E1E1E" BorderBrush="#FF0E639C" BorderThickness="2,1,1,1"
+                                    CornerRadius="6" Padding="8,4" Margin="0,0,0,4">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding}" Foreground="#FF8F8F8F"
+                                               FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding}"
+                                               VerticalAlignment="Center" />
+                                    <Button Grid.Column="1" Content="&#x00D7;" Tag="{Binding}"
+                                            Width="18" Height="18" Margin="6,0,0,0"
+                                            Background="Transparent" BorderThickness="0"
+                                            Foreground="#FF8F8F8F" Cursor="Hand"
+                                            ToolTip="Remove from queue" Click="OnRemoveQueuedClick" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
                 <!-- Composer toolbar -->
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                     <Button x:Name="NewChatButton" Style="{StaticResource ToolbarButton}"
