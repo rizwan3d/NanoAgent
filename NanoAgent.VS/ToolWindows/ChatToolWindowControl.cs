@@ -13,8 +13,10 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Navigation;
 using EnvDTE;
+using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Workspace.VSIntegration.Contracts;
 using NanoAgent.VS.Services;
 using Process = System.Diagnostics.Process;
 
@@ -38,6 +40,7 @@ namespace NanoAgent.VS.ToolWindows
         private string? _sessionWorkingDirectory; // cwd the live ACP session was created with.
         private bool _syncingWorkingDirectory;
         private SolutionEvents? _solutionEvents; // kept alive; GC'd events stop firing.
+        private IVsFolderWorkspaceService? _folderWorkspaceService; // kept alive for unsubscribe.
         private string? _pendingExternalPrompt;
         private string? _authToken;
         private string[] _extraArgs = Array.Empty<string>();
@@ -111,6 +114,16 @@ namespace NanoAgent.VS.ToolWindows
             {
                 _solutionEvents = dte.Events.SolutionEvents;
                 _solutionEvents.Opened += OnSolutionOpened;
+            }
+
+            // Open Folder/CMake mode fires no SolutionEvents; the workspace can load after the
+            // tool window restores, leaving _workingDirectory at the process cwd. Re-resolve when it changes.
+            if (_folderWorkspaceService is null &&
+                Package.GetGlobalService(typeof(SComponentModel)) is IComponentModel cm &&
+                cm.GetService<IVsFolderWorkspaceService>() is IVsFolderWorkspaceService fws)
+            {
+                _folderWorkspaceService = fws;
+                _folderWorkspaceService.OnActiveWorkspaceChanged += OnActiveWorkspaceChanged;
             }
 
             string? cliExePath = await ResolveOrInstallCliAsync(options);
@@ -1329,7 +1342,12 @@ namespace NanoAgent.VS.ToolWindows
             if (MessagesScrollViewer.ViewportHeight > 0) MessagesScrollViewer.ScrollToBottom();
         }
 
-        private async void OnSolutionOpened()
+        private async void OnSolutionOpened() => await ReResolveWorkingDirectoryAsync();
+
+        // IVsFolderWorkspaceService.OnActiveWorkspaceChanged is an AsyncEventHandler (returns Task).
+        private async Task OnActiveWorkspaceChanged(object sender, EventArgs e) => await ReResolveWorkingDirectoryAsync();
+
+        private async Task ReResolveWorkingDirectoryAsync()
         {
             try
             {
@@ -1344,7 +1362,7 @@ namespace NanoAgent.VS.ToolWindows
             }
             catch (Exception ex)
             {
-                _log.Error("Failed to update working directory after solution open", ex);
+                _log.Error("Failed to update working directory after workspace change", ex);
             }
         }
 
@@ -1362,7 +1380,6 @@ namespace NanoAgent.VS.ToolWindows
                 await _agentService.NewSessionAsync(dir);
                 _sessionWorkingDirectory = dir;
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                AddSystemMessage($"Working directory set to {dir}");
             }
             finally { _syncingWorkingDirectory = false; }
         }
@@ -1647,6 +1664,7 @@ namespace NanoAgent.VS.ToolWindows
             if (_disposed) return;
             _disposed = true;
             if (_solutionEvents != null) _solutionEvents.Opened -= OnSolutionOpened;
+            if (_folderWorkspaceService != null) _folderWorkspaceService.OnActiveWorkspaceChanged -= OnActiveWorkspaceChanged;
             _turnCts?.Cancel();
             _turnCts?.Dispose();
             _agentService.HostExited -= OnHostExited;
