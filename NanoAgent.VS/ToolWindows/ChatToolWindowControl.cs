@@ -420,7 +420,11 @@ namespace NanoAgent.VS.ToolWindows
 
         // ───── Composer ─────
 
-        private async void OnSendClick(object sender, RoutedEventArgs e) => await SendCurrentInput();
+        private async void OnSendClick(object sender, RoutedEventArgs e)
+        {
+            if (_promptRunning) await CancelTurnAsync();
+            else await SendCurrentInput();
+        }
 
         private async void OnInputKeyDown(object sender, KeyEventArgs e)
         {
@@ -574,7 +578,7 @@ namespace NanoAgent.VS.ToolWindows
             }
         }
 
-        private async void OnCancelClick(object sender, RoutedEventArgs e)
+        private async Task CancelTurnAsync()
         {
             _turnCts?.Cancel();
             await _agentService.CancelPromptAsync();
@@ -1330,10 +1334,13 @@ namespace NanoAgent.VS.ToolWindows
         private void UpdateInputState()
         {
             bool hasText = InputTextBox.Text.Trim().Length > 0;
-            SendButton.IsEnabled = !_promptRunning && hasText;
+            // Running: square = stop (always enabled). Idle: arrow = send (needs text).
+            SendButton.IsEnabled = _promptRunning || hasText;
             InputTextBox.IsEnabled = !_promptRunning;
-            CancelButton.Visibility = _promptRunning ? Visibility.Visible : Visibility.Collapsed;
-            SendButton.Content = _promptRunning ? "…" : "Send";
+            SendButton.Content = _promptRunning ? "■" : "↑";
+            SendButton.Background = new SolidColorBrush(_promptRunning
+                ? Color.FromRgb(0xF4, 0x87, 0x71)
+                : Color.FromRgb(0x0E, 0x63, 0x9C));
         }
 
         private void ScrollToBottom()
