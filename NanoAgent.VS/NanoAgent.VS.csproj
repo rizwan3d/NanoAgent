@@ -66,6 +66,7 @@
     <Compile Include="ToolWindows\DiffModel.cs" />
     <Compile Include="ToolWindows\ChatPresenters.cs" />
     <Compile Include="ToolWindows\MarkdownPresenter.cs" />
+    <Compile Include="ToolWindows\SelectableTextBlock.cs" />
   </ItemGroup>
   <ItemGroup>
     <Page Include="ToolWindows\ChatToolWindowControl.xaml">
