@@ -100,6 +100,7 @@ namespace NanoAgent.VS.ToolWindows
             pathBlock.Inlines.Add(link);
             pathBlock.FontFamily = ChatBrushes.Mono;
             pathBlock.FontSize = 11;
+            SelectableTextBlock.SetIsEnabled(pathBlock, true);
             Grid.SetColumn(pathBlock, 0);
             header.Children.Add(pathBlock);
 
@@ -112,6 +113,7 @@ namespace NanoAgent.VS.ToolWindows
                 VerticalAlignment = VerticalAlignment.Center,
                 Foreground = ChatBrushes.Dim
             };
+            SelectableTextBlock.SetIsEnabled(stats, true);
             Grid.SetColumn(stats, 1);
             header.Children.Add(stats);
 
@@ -146,18 +148,20 @@ namespace NanoAgent.VS.ToolWindows
                 _ => (Brushes.Transparent, ChatBrushes.Code, " ")
             };
 
+            var tb = new TextBlock
+            {
+                Text = (line.Type == DiffLineType.Meta ? string.Empty : gutter) + line.Text,
+                FontFamily = ChatBrushes.Mono,
+                FontSize = 12,
+                Foreground = fg,
+                TextWrapping = TextWrapping.Wrap
+            };
+            SelectableTextBlock.SetIsEnabled(tb, true);
             return new Border
             {
                 Background = bg,
                 Padding = new Thickness(8, 0, 8, 0),
-                Child = new TextBlock
-                {
-                    Text = (line.Type == DiffLineType.Meta ? string.Empty : gutter) + line.Text,
-                    FontFamily = ChatBrushes.Mono,
-                    FontSize = 12,
-                    Foreground = fg,
-                    TextWrapping = TextWrapping.Wrap
-                }
+                Child = tb
             };
         }
     }
@@ -276,6 +280,7 @@ namespace NanoAgent.VS.ToolWindows
                 Foreground = ChatBrushes.Code,
                 TextWrapping = TextWrapping.Wrap
             };
+            SelectableTextBlock.SetIsEnabled(tb, true);
             Grid.SetColumn(tb, 0);
             grid.Children.Add(tb);
 

@@ -68,6 +68,7 @@
                     HorizontalAlignment="Left" Padding="0,0,0,6">
                 <Expander Header="{Binding Summary}" Foreground="#FF8F8F8F" FontSize="12">
                     <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                               local:SelectableTextBlock.IsEnabled="True"
                                Foreground="#FF8F8F8F" FontStyle="Italic"
                                LineHeight="18" FontSize="12" Margin="6,4,0,0" />
                 </Expander>
@@ -82,6 +83,7 @@
                     Background="#FF252526" CornerRadius="0,4,4,0"
                     Padding="10,6" Margin="0,0,0,4">
                 <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                           local:SelectableTextBlock.IsEnabled="True"
                            Foreground="#FF8F8F8F" FontFamily="Consolas"
                            FontSize="12" LineHeight="18" />
             </Border>
@@ -95,6 +97,7 @@
                     Background="#1ACCA700" CornerRadius="8"
                     Padding="8,6" Margin="0,0,0,6">
                 <TextBlock Text="{Binding Text}" TextWrapping="Wrap"
+                           local:SelectableTextBlock.IsEnabled="True"
                            Foreground="#FFCCA700" FontSize="12"
                            TextAlignment="Center" />
             </Border>
@@ -111,8 +114,10 @@
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="{Binding HeaderText}" Foreground="#FFCCCCCC"
+                                       local:SelectableTextBlock.IsEnabled="True"
                                        FontSize="12" FontWeight="SemiBold" />
                             <TextBlock Text="{Binding MetaText}" Foreground="#FF8F8F8F"
+                                       local:SelectableTextBlock.IsEnabled="True"
                                        FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </Expander.Header>
@@ -141,12 +146,15 @@
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" CornerRadius="3" Padding="8,2" Background="#FF0E639C" Margin="0,0,8,0">
                     <TextBlock x:Name="StatusText" Text="Starting..." Foreground="White"
+                               local:SelectableTextBlock.IsEnabled="True"
                                FontSize="11" FontFamily="Consolas" />
                 </Border>
                 <TextBlock Grid.Column="1" x:Name="ModelText" Text="" Foreground="#FF8F8F8F"
+                           local:SelectableTextBlock.IsEnabled="True"
                            FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"
                            TextTrimming="CharacterEllipsis" MaxWidth="220" />
                 <TextBlock Grid.Column="3" x:Name="ContextText" Text="" Foreground="#FF8F8F8F"
+                           local:SelectableTextBlock.IsEnabled="True"
                            FontSize="11" VerticalAlignment="Center" />
             </Grid>
         </Border>
@@ -218,6 +226,7 @@
                     <Button x:Name="SettingsButton" Style="{StaticResource ToolbarButton}"
                             Content="Settings" ToolTip="Settings" Click="OnSettingsClick" />
                     <TextBlock x:Name="MetricsText" Text="" Foreground="#FF8F8F8F" FontSize="10"
+                               local:SelectableTextBlock.IsEnabled="True"
                                VerticalAlignment="Center" Margin="6,0,0,0" />
                 </StackPanel>
 
