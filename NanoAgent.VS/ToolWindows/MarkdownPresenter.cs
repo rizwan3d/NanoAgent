@@ -165,6 +165,7 @@ namespace NanoAgent.VS.ToolWindows
                 if (j > 0) tb.Inlines.Add(new LineBreak());
                 AddInlines(tb.Inlines, lines[j]);
             }
+            SelectableTextBlock.SetIsEnabled(tb, true);
             return tb;
         }
 
@@ -179,6 +180,7 @@ namespace NanoAgent.VS.ToolWindows
                 Margin = new Thickness(0, level <= 2 ? 8 : 4, 0, 4)
             };
             AddInlines(tb.Inlines, content);
+            SelectableTextBlock.SetIsEnabled(tb, true);
             return tb;
         }
 
@@ -215,6 +217,7 @@ namespace NanoAgent.VS.ToolWindows
 
                 var body = new TextBlock { TextWrapping = TextWrapping.Wrap, Foreground = ChatBrushes.Text, LineHeight = 20 };
                 AddInlines(body.Inlines, content);
+                SelectableTextBlock.SetIsEnabled(body, true);
                 Grid.SetColumn(body, 1);
                 row.Children.Add(body);
 
@@ -247,6 +250,7 @@ namespace NanoAgent.VS.ToolWindows
                 TextWrapping = TextWrapping.Wrap,
                 LineHeight = 18
             };
+            SelectableTextBlock.SetIsEnabled(tb, true);
             Grid.SetColumn(tb, 0);
             grid.Children.Add(tb);
 
