@@ -389,11 +389,22 @@ const commandSuggestions = CHAT_COMMANDS;
                 return createFileReferenceLink(label || fileTarget, fileTarget);
             }
 
+            // ponytail: URL parser is the sanitizer (CodeQL recognizes it); allowlist scheme.
+            let safeHref = '';
+            try {
+                const parsed = new URL(cleanTarget);
+                if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'mailto:') {
+                    safeHref = parsed.href;
+                }
+            } catch {
+                safeHref = '';
+            }
+
             const link = document.createElement('a');
-            link.href = /^(https?:|mailto:)/i.test(cleanTarget) ? cleanTarget : '#';
+            link.href = safeHref || '#';
             link.textContent = label || cleanTarget;
             link.title = cleanTarget;
-            if (/^(https?:|mailto:)/i.test(cleanTarget)) {
+            if (safeHref) {
                 link.target = '_blank';
                 link.rel = 'noopener noreferrer';
             } else {
