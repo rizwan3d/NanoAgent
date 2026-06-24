@@ -10,14 +10,14 @@ namespace NanoAgent.Application.Services;
 
 internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 {
-    private const string NanoAgentEnterpriseBaseUrl = "https://localhost:7180/v1";
+    private const string NanoAgentEnterpriseBaseUrl = "https://app.getnanoai.com/v1";
 
     private static readonly SelectionPromptOption<OnboardingProviderSetupChoice>[] ProviderSetupOptions =
     [
         new(
             "NanoAgent Enterprise",
             OnboardingProviderSetupChoice.NanoAgentEnterprise,
-            "Use your NanoAgent Enterprise deployment directly without opening a provider subpage. (Underdevelopment)"),
+            "Use your NanoAgent Enterprise deployment directly without opening a provider subpage."),
         new(
             "Subscription accounts",
             OnboardingProviderSetupChoice.SubscriptionAccount,
