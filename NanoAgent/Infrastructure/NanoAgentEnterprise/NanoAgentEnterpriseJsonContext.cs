@@ -12,7 +12,7 @@ internal sealed record NanoAgentEnterpriseCredentials(
     [property: JsonPropertyName("type")] string Type,
     [property: JsonPropertyName("providerBaseUrl")] string ProviderBaseUrl,
     [property: JsonPropertyName("access_token")] string AccessToken,
-    [property: JsonPropertyName("refresh_token")] string RefreshToken,
+    [property: JsonPropertyName("refresh_token")] string? RefreshToken,
     [property: JsonPropertyName("expires")] long ExpiresAtUnixTimeMilliseconds);
 
 internal sealed record NanoAgentEnterpriseTokenResponse(
