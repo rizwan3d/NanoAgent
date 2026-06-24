@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -24,19 +25,22 @@ internal sealed class NanoAgentEnterpriseCredentialService :
     private readonly IApiKeySecretStore _secretStore;
     private readonly IStatusMessageWriter _statusMessageWriter;
     private readonly ILogger<NanoAgentEnterpriseCredentialService> _logger;
+    private readonly Func<string, bool> _browserOpener;
 
     public NanoAgentEnterpriseCredentialService(
         HttpClient httpClient,
         IAgentConfigurationStore configurationStore,
         IApiKeySecretStore secretStore,
         IStatusMessageWriter statusMessageWriter,
-        ILogger<NanoAgentEnterpriseCredentialService> logger)
+        ILogger<NanoAgentEnterpriseCredentialService> logger,
+        Func<string, bool>? browserOpener = null)
     {
         _httpClient = httpClient;
         _configurationStore = configurationStore;
         _secretStore = secretStore;
         _statusMessageWriter = statusMessageWriter;
         _logger = logger;
+        _browserOpener = browserOpener ?? TryOpenBrowser;
     }
 
     public bool CanResolve(string storedCredentials)
@@ -85,7 +89,7 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             $"If the browser does not open, visit: {authorizationUrl}",
             cancellationToken);
 
-        if (!TryOpenBrowser(authorizationUrl))
+        if (!_browserOpener(authorizationUrl))
         {
             _logger.LogInformation("Unable to open the system browser for NanoAgent Enterprise sign-in.");
         }
@@ -94,12 +98,20 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             listener,
             state,
             timeoutSource.Token);
-        NanoAgentEnterpriseCredentials credentials = await ExchangeCodeForCredentialsAsync(
-            providerBaseUrl,
-            callback.Code,
-            redirectUri,
-            codeVerifier,
-            cancellationToken);
+        NanoAgentEnterpriseCredentials credentials = callback switch
+        {
+            { AccessToken: not null } => CreateAccessTokenCredentials(
+                providerBaseUrl,
+                callback.AccessToken,
+                callback.ExpiresAtUnixTimeMilliseconds),
+            { Code: not null } => await ExchangeCodeForCredentialsAsync(
+                providerBaseUrl,
+                callback.Code,
+                redirectUri,
+                codeVerifier,
+                cancellationToken),
+            _ => throw new InvalidOperationException("NanoAgent Enterprise authentication callback was incomplete.")
+        };
         await SaveCredentialsAsync(credentials, cancellationToken);
 
         await _statusMessageWriter.ShowSuccessAsync(
@@ -125,8 +137,18 @@ internal sealed class NanoAgentEnterpriseCredentialService :
         NanoAgentEnterpriseCredentials credentials = DeserializeCredentials(credentialsJson);
         if (forceRefresh || IsExpired(credentials))
         {
-            credentials = await RefreshCredentialsAsync(credentials, cancellationToken);
-            await SaveCredentialsAsync(credentials, cancellationToken);
+            if (string.IsNullOrWhiteSpace(credentials.RefreshToken))
+            {
+                string reauthenticatedCredentials = await AuthenticateAsync(
+                    credentials.ProviderBaseUrl,
+                    cancellationToken);
+                credentials = DeserializeCredentials(reauthenticatedCredentials);
+            }
+            else
+            {
+                credentials = await RefreshCredentialsAsync(credentials, cancellationToken);
+                await SaveCredentialsAsync(credentials, cancellationToken);
+            }
         }
 
         return new NanoAgentEnterpriseResolvedCredential(credentials.AccessToken);
@@ -179,7 +201,7 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             parameters.Select(static pair =>
                 $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value)}"));
 
-        return $"{GetControlPlaneBaseUrl(providerBaseUrl)}/oauth/authorize?{query}";
+        return $"{GetNativeAuthApiBaseUrl(providerBaseUrl)}/oauth/authorize?{query}";
     }
 
     private async Task<NanoAgentEnterpriseAuthorizationCallback> WaitForCallbackAsync(
@@ -215,10 +237,6 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             return null;
         }
 
-        while (!string.IsNullOrEmpty(await reader.ReadLineAsync(cancellationToken)))
-        {
-        }
-
         string[] requestParts = requestLine.Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
         if (requestParts.Length < 2 ||
             !Uri.TryCreate(new Uri("http://127.0.0.1"), requestParts[1], out Uri? requestUri) ||
@@ -228,10 +246,38 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             return null;
         }
 
+        Dictionary<string, string> headers = await ReadHeadersAsync(reader, cancellationToken);
+        string requestMethod = requestParts[0];
+        string requestBody = await ReadRequestBodyAsync(reader, headers, cancellationToken);
+
         if (!string.Equals(requestUri.AbsolutePath, CallbackPath, StringComparison.Ordinal))
         {
             await WriteHttpResponseAsync(stream, HttpStatusCode.NotFound, "Not Found", cancellationToken);
             return null;
+        }
+
+        if (TryReadBearerTokenCallback(
+                requestMethod,
+                headers,
+                requestBody,
+                out NanoAgentEnterpriseAuthorizationCallback? bearerCallback))
+        {
+            await WriteHttpResponseAsync(
+                stream,
+                HttpStatusCode.OK,
+                """
+                <!doctype html>
+                <html lang="en">
+                <head><meta charset="utf-8"><title>Authentication complete</title></head>
+                <body style="font-family: sans-serif; margin: 3rem;">
+                <h1>Authentication complete</h1>
+                <p>You can close this window and return to NanoAgent.</p>
+                </body>
+                </html>
+                """,
+                cancellationToken);
+
+            return bearerCallback;
         }
 
         Dictionary<string, string?> query = ParseQuery(requestUri.Query);
@@ -274,7 +320,7 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             """,
             cancellationToken);
 
-        return new NanoAgentEnterpriseAuthorizationCallback(code);
+        return NanoAgentEnterpriseAuthorizationCallback.FromCode(code);
     }
 
     private async Task<NanoAgentEnterpriseCredentials> ExchangeCodeForCredentialsAsync(
@@ -292,7 +338,7 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             new KeyValuePair<string, string>("code_verifier", codeVerifier)
         ]);
 
-        using HttpRequestMessage request = new(HttpMethod.Post, $"{GetControlPlaneBaseUrl(providerBaseUrl)}/oauth/token")
+        using HttpRequestMessage request = new(HttpMethod.Post, $"{GetNativeAuthApiBaseUrl(providerBaseUrl)}/oauth/token")
         {
             Content = form
         };
@@ -327,13 +373,18 @@ internal sealed class NanoAgentEnterpriseCredentialService :
         NanoAgentEnterpriseCredentials credentials,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(credentials.RefreshToken))
+        {
+            throw new InvalidOperationException("NanoAgent Enterprise credentials do not include a refresh token.");
+        }
+
         using FormUrlEncodedContent form = new(
         [
             new KeyValuePair<string, string>("grant_type", "refresh_token"),
             new KeyValuePair<string, string>("refresh_token", credentials.RefreshToken)
         ]);
 
-        using HttpRequestMessage request = new(HttpMethod.Post, $"{GetControlPlaneBaseUrl(credentials.ProviderBaseUrl)}/oauth/token")
+        using HttpRequestMessage request = new(HttpMethod.Post, $"{GetNativeAuthApiBaseUrl(credentials.ProviderBaseUrl)}/oauth/token")
         {
             Content = form
         };
@@ -370,6 +421,26 @@ internal sealed class NanoAgentEnterpriseCredentialService :
         return trimmed.EndsWith("/v1", StringComparison.OrdinalIgnoreCase)
             ? trimmed[..^3]
             : trimmed;
+    }
+
+    private static string GetNativeAuthApiBaseUrl(string providerBaseUrl)
+    {
+        return $"{GetControlPlaneBaseUrl(providerBaseUrl)}/api/v1/auth";
+    }
+
+    private static NanoAgentEnterpriseCredentials CreateAccessTokenCredentials(
+        string providerBaseUrl,
+        string accessToken,
+        long? expiresAtUnixTimeMilliseconds)
+    {
+        long expires = expiresAtUnixTimeMilliseconds ?? DateTimeOffset.UtcNow.AddHours(1).ToUnixTimeMilliseconds();
+
+        return new NanoAgentEnterpriseCredentials(
+            CredentialType,
+            providerBaseUrl,
+            accessToken,
+            RefreshToken: null,
+            expires);
     }
 
     private async Task SaveCredentialsAsync(
@@ -434,6 +505,137 @@ internal sealed class NanoAgentEnterpriseCredentialService :
         return values;
     }
 
+    private static async Task<Dictionary<string, string>> ReadHeadersAsync(
+        StreamReader reader,
+        CancellationToken cancellationToken)
+    {
+        Dictionary<string, string> headers = new(StringComparer.OrdinalIgnoreCase);
+
+        while (true)
+        {
+            string? line = await reader.ReadLineAsync(cancellationToken);
+            if (string.IsNullOrEmpty(line))
+            {
+                break;
+            }
+
+            int separatorIndex = line.IndexOf(':');
+            if (separatorIndex <= 0)
+            {
+                continue;
+            }
+
+            string name = line[..separatorIndex].Trim();
+            string value = line[(separatorIndex + 1)..].Trim();
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                headers[name] = value;
+            }
+        }
+
+        return headers;
+    }
+
+    private static async Task<string> ReadRequestBodyAsync(
+        StreamReader reader,
+        IReadOnlyDictionary<string, string> headers,
+        CancellationToken cancellationToken)
+    {
+        if (!headers.TryGetValue("Content-Length", out string? contentLengthValue) ||
+            !int.TryParse(contentLengthValue, out int contentLength) ||
+            contentLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        char[] buffer = new char[contentLength];
+        int totalRead = 0;
+
+        while (totalRead < contentLength)
+        {
+            int read = await reader.ReadAsync(
+                buffer.AsMemory(totalRead, contentLength - totalRead),
+                cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            totalRead += read;
+        }
+
+        return new string(buffer, 0, totalRead);
+    }
+
+    private static bool TryReadBearerTokenCallback(
+        string requestMethod,
+        IReadOnlyDictionary<string, string> headers,
+        string requestBody,
+        out NanoAgentEnterpriseAuthorizationCallback? callback)
+    {
+        callback = null;
+
+        if (!string.Equals(requestMethod, "POST", StringComparison.OrdinalIgnoreCase) ||
+            !headers.TryGetValue("Authorization", out string? authorizationValue) ||
+            !AuthenticationHeaderValue.TryParse(authorizationValue, out AuthenticationHeaderValue? authorizationHeader) ||
+            !string.Equals(authorizationHeader.Scheme, "Bearer", StringComparison.OrdinalIgnoreCase) ||
+            string.IsNullOrWhiteSpace(authorizationHeader.Parameter))
+        {
+            return false;
+        }
+
+        long? expiresAtUnixTimeMilliseconds = ParseExpiryHeader(headers.GetValueOrDefault("X-NanoAgent-Token-Expires-At")) ??
+            ParseExpiryBody(requestBody);
+
+        callback = NanoAgentEnterpriseAuthorizationCallback.FromAccessToken(
+            authorizationHeader.Parameter.Trim(),
+            expiresAtUnixTimeMilliseconds);
+        return true;
+    }
+
+    private static long? ParseExpiryHeader(string? value)
+    {
+        return TryParseUnixTimeMilliseconds(value) ??
+            (DateTimeOffset.TryParse(value, out DateTimeOffset parsed)
+                ? parsed.ToUnixTimeMilliseconds()
+                : null);
+    }
+
+    private static long? ParseExpiryBody(string requestBody)
+    {
+        if (string.IsNullOrWhiteSpace(requestBody))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(requestBody);
+            if (!document.RootElement.TryGetProperty("expiresAtUtc", out JsonElement expiresElement))
+            {
+                return null;
+            }
+
+            return expiresElement.ValueKind switch
+            {
+                JsonValueKind.Number when expiresElement.TryGetInt64(out long numericValue) => numericValue,
+                JsonValueKind.String => ParseExpiryHeader(expiresElement.GetString()),
+                _ => null
+            };
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static long? TryParseUnixTimeMilliseconds(string? value)
+    {
+        return long.TryParse(value, out long parsed)
+            ? parsed
+            : null;
+    }
+
     private static async Task WriteHttpResponseAsync(
         NetworkStream stream,
         HttpStatusCode statusCode,
@@ -489,5 +691,22 @@ internal sealed class NanoAgentEnterpriseCredentialService :
             return false;
         }
     }
-    private sealed record NanoAgentEnterpriseAuthorizationCallback(string Code);
+
+    private sealed record NanoAgentEnterpriseAuthorizationCallback(
+        string? Code,
+        string? AccessToken,
+        long? ExpiresAtUnixTimeMilliseconds)
+    {
+        public static NanoAgentEnterpriseAuthorizationCallback FromCode(string code)
+        {
+            return new(code, AccessToken: null, ExpiresAtUnixTimeMilliseconds: null);
+        }
+
+        public static NanoAgentEnterpriseAuthorizationCallback FromAccessToken(
+            string accessToken,
+            long? expiresAtUnixTimeMilliseconds)
+        {
+            return new(Code: null, accessToken, expiresAtUnixTimeMilliseconds);
+        }
+    }
 }
