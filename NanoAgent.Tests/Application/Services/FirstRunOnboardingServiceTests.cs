@@ -276,7 +276,7 @@ public sealed class FirstRunOnboardingServiceTests
     [Fact]
     public async Task EnsureOnboardedAsync_Should_SaveNanoAgentEnterpriseConfiguration_When_Selected()
     {
-        AgentProviderProfile enterpriseProfile = new(ProviderKind.OpenAiCompatible, "https://localhost:7180/v1");
+        AgentProviderProfile enterpriseProfile = new(ProviderKind.OpenAiCompatible, "https://app.getnanoai.com/v1");
 
         Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
         SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.NanoAgentEnterprise);
@@ -316,12 +316,12 @@ public sealed class FirstRunOnboardingServiceTests
 
         Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
         profileFactory
-            .Setup(factory => factory.CreateCompatible("https://localhost:7180/v1"))
+            .Setup(factory => factory.CreateCompatible("https://app.getnanoai.com/v1"))
             .Returns(enterpriseProfile);
 
         Mock<INanoAgentEnterpriseAuthenticator> authenticator = new(MockBehavior.Strict);
         authenticator
-            .Setup(service => service.AuthenticateAsync("https://localhost:7180/v1", It.IsAny<CancellationToken>()))
+            .Setup(service => service.AuthenticateAsync("https://app.getnanoai.com/v1", It.IsAny<CancellationToken>()))
             .ReturnsAsync("enterprise-credential-json");
 
         FirstRunOnboardingService sut = CreateSut(
@@ -342,8 +342,8 @@ public sealed class FirstRunOnboardingServiceTests
             enterpriseProfile,
             true,
             ActiveProviderName: "NanoAgent Enterprise"));
-        profileFactory.Verify(factory => factory.CreateCompatible("https://localhost:7180/v1"), Times.Once);
-        authenticator.Verify(service => service.AuthenticateAsync("https://localhost:7180/v1", It.IsAny<CancellationToken>()), Times.Once);
+        profileFactory.Verify(factory => factory.CreateCompatible("https://app.getnanoai.com/v1"), Times.Once);
+        authenticator.Verify(service => service.AuthenticateAsync("https://app.getnanoai.com/v1", It.IsAny<CancellationToken>()), Times.Once);
         configurationStore.VerifyAll();
         secretStore.VerifyAll();
         statusMessageWriter.VerifyAll();
