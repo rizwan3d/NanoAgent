@@ -151,6 +151,31 @@ public sealed class AppState
 
     public string RootDirectory { get; } = Directory.GetCurrentDirectory();
 
+    // Git sidebar (F7): a VS Code-style left panel listing recent commits and
+    // staged/changed files. File rows are clickable to open in an editor.
+    public bool IsGitSidebarVisible { get; set; }
+
+    public IReadOnlyList<GitSidebarLine>? GitSidebarCache { get; set; }
+
+    public DateTimeOffset GitSidebarCacheTime { get; set; }
+
+    // Click mapping from the last sidebar render: terminal row of the first
+    // content line (-1 when hidden), panel width in columns, and the file path
+    // (if any) at each content row.
+    public int GitSidebarContentTopRow { get; set; } = -1;
+
+    public int GitSidebarWidth { get; set; }
+
+    public int GitSidebarScrollOffset { get; set; }
+
+    // Captured on the last sidebar render so the scroll handler can clamp without
+    // re-running git.
+    public int GitSidebarTotalLineCount { get; set; }
+
+    public int GitSidebarViewportHeight { get; set; }
+
+    public string?[] VisibleGitSidebarFilePaths { get; set; } = [];
+
     public string? SectionResumeCommand { get; set; }
 
     public string? SessionId { get; set; }
