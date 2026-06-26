@@ -15,6 +15,8 @@ import type {
     ToolCallUpdate,
     PlanEntry,
     PlanUpdate,
+    FileEditSummaryItem,
+    FileEditsSummary,
     ClientRequest,
     PermissionClientRequest,
     TextClientRequest,
@@ -44,6 +46,7 @@ export class SessionManager extends EventEmitter {
 
     private acpClient: AcpClient | null = null;
     private currentSessionInfo: SessionInfo | null = null;
+    private currentFileEditsSummary: FileEditsSummary | null = null;
     private currentPromptState: PromptState = {
         isRunning: false,
         isCancelling: false
@@ -320,6 +323,7 @@ export class SessionManager extends EventEmitter {
             this.acpClient.removeAllListeners();
             this.acpClient = null;
             this.currentSessionInfo = null;
+            this.currentFileEditsSummary = null;
             this.initializePromise = null;
             this.promptTail = Promise.resolve();
             this.sessionId = null;
@@ -439,6 +443,7 @@ export class SessionManager extends EventEmitter {
         this.sessionId = null;
         this.sessionPromise = null;
         this.currentSessionInfo = null;
+        this.currentFileEditsSummary = null;
         this.currentPromptState = {
             isRunning: false,
             isCancelling: false
@@ -501,6 +506,59 @@ export class SessionManager extends EventEmitter {
         if (plan) {
             this.emit('planUpdated', plan);
         }
+
+        const fileEdits = this.tryReadFileEditsSummary(message);
+        if (fileEdits) {
+            this.currentFileEditsSummary = fileEdits;
+            this.emit('fileEditsSummaryChanged', fileEdits);
+        }
+    }
+
+    public getFileEditsSummary(): FileEditsSummary | null {
+        return this.currentFileEditsSummary;
+    }
+
+    private tryReadFileEditsSummary(message: AcpNotification): FileEditsSummary | null {
+        const sessionUpdate = this.tryReadSessionUpdate(message);
+        if (!sessionUpdate ||
+            this.optionalString(sessionUpdate.update.sessionUpdate) !== 'file_edits_summary' ||
+            !Array.isArray(sessionUpdate.update.files)) {
+            return null;
+        }
+
+        const files = sessionUpdate.update.files
+            .map((file) => this.readFileEditSummaryItem(file))
+            .filter((file): file is FileEditSummaryItem => file !== null);
+
+        return { sessionId: sessionUpdate.sessionId, files };
+    }
+
+    private readFileEditSummaryItem(value: unknown): FileEditSummaryItem | null {
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+
+        const item = value as {
+            displayPath?: unknown;
+            absolutePath?: unknown;
+            addedLineCount?: unknown;
+            removedLineCount?: unknown;
+            editCount?: unknown;
+            action?: unknown;
+        };
+        const displayPath = this.optionalString(item.displayPath);
+        if (!displayPath) {
+            return null;
+        }
+
+        return {
+            displayPath,
+            absolutePath: this.optionalString(item.absolutePath) ?? displayPath,
+            addedLineCount: this.optionalNonNegativeNumber(item.addedLineCount) ?? 0,
+            removedLineCount: this.optionalNonNegativeNumber(item.removedLineCount) ?? 0,
+            editCount: this.optionalNonNegativeNumber(item.editCount) ?? 0,
+            action: this.optionalString(item.action) ?? 'Edited'
+        };
     }
 
     private async handlePermissionRequest(client: AcpClient, message: AcpRequest): Promise<void> {

@@ -48,7 +48,7 @@ namespace NanoAgent.VS.ToolWindows
     /// <summary>
     /// Parses a NanoAgent tool-call's raw input into renderable file diffs.
     /// C# port of the VS Code extension's diffModel.ts.
-    /// ponytail: naive per-line classifier, no intra-line word diff. Add LCS only if asked.
+    /// naive per-line classifier, no intra-line word diff. Add LCS only if asked.
     /// </summary>
     public static class DiffModel
     {

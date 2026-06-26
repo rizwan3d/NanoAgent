@@ -1,5 +1,7 @@
+using NanoAgent.Application.Models;
 using Spectre.Console;
 using System.Globalization;
+using System.Text;
 
 namespace NanoAgent.CLI;
 
@@ -341,6 +343,164 @@ public static partial class Program
         return pad
             ? normalized.PadRight(safeWidth)
             : normalized;
+    }
+
+    // Renders the running "files modified" tally as a pipe-bordered table: Action, +added (green),
+    // -removed (red), and the file name as a clickable link (opens in VS Code when it's on PATH,
+    // otherwise the OS default editor for the extension). A title line and totals row bookend it.
+    private static void AddFileEditsSummaryLines(
+        List<ConversationLine> lines,
+        IReadOnlyList<FileEditSummary> files,
+        ref bool firstLine,
+        string roleName,
+        string roleColor,
+        int contentWidth)
+    {
+        int totalAdded = files.Sum(static f => f.AddedLineCount);
+        int totalRemoved = files.Sum(static f => f.RemovedLineCount);
+        bool vscode = IsVsCodeAvailable();
+
+        // Each cell carries plain text (for width/alignment) and markup (for color/links).
+        string[] headers = ["Action", "Added", "Removed", "File"];
+        List<(string Markup, string Plain)[]> rows =
+        [
+            [.. headers.Select(h => ($"[bold]{h}[/]", h))],
+        ];
+
+        foreach (FileEditSummary file in files)
+        {
+            string added = "+" + file.AddedLineCount;
+            string removed = "-" + file.RemovedLineCount;
+            string actionColor = file.Action switch
+            {
+                "Created" => "green",
+                "Deleted" => "red",
+                _ => "yellow",
+            };
+            string? link = BuildEditorLink(file.AbsolutePath, vscode);
+            string escapedPath = Markup.Escape(file.DisplayPath);
+
+            rows.Add(
+            [
+                ($"[{actionColor}]{file.Action}[/]", file.Action),
+                ($"[green]{added}[/]", added),
+                ($"[red]{removed}[/]", removed),
+                (link is null ? escapedPath : $"[link={link}]{escapedPath}[/]", file.DisplayPath),
+            ]);
+        }
+
+        string totalAddedText = "+" + totalAdded;
+        string totalRemovedText = "-" + totalRemoved;
+        rows.Add(
+        [
+            ("[grey]Total[/]", "Total"),
+            ($"[green]{totalAddedText}[/]", totalAddedText),
+            ($"[red]{totalRemovedText}[/]", totalRemovedText),
+            ("[grey]" + files.Count + " file(s)[/]", files.Count + " file(s)"),
+        ]);
+
+        int columns = headers.Length;
+        int[] widths = new int[columns];
+        foreach ((string, string Plain)[] row in rows)
+        {
+            for (int c = 0; c < columns; c++)
+            {
+                widths[c] = Math.Max(widths[c], row[c].Plain.Length);
+            }
+        }
+
+        // Right-align the two numeric columns; left-align Action and File.
+        bool[] rightAlign = [false, true, true, false];
+
+        AddConversationContentLine(
+            lines,
+            $"[bold]Files modified ({files.Count})[/]",
+            $"Files modified ({files.Count})",
+            ref firstLine,
+            roleName,
+            roleColor);
+
+        for (int r = 0; r < rows.Count; r++)
+        {
+            AddSummaryTableRow(lines, rows[r], widths, rightAlign, ref firstLine, roleName, roleColor);
+            if (r == 0)
+            {
+                AddSummaryTableSeparator(lines, widths, ref firstLine, roleName, roleColor);
+            }
+        }
+    }
+
+    private static void AddSummaryTableRow(
+        List<ConversationLine> lines,
+        (string Markup, string Plain)[] cells,
+        int[] widths,
+        bool[] rightAlign,
+        ref bool firstLine,
+        string roleName,
+        string roleColor)
+    {
+        StringBuilder markup = new("[grey]|[/]");
+        StringBuilder plain = new("|");
+
+        for (int c = 0; c < widths.Length; c++)
+        {
+            string pad = new(' ', Math.Max(0, widths[c] - cells[c].Plain.Length));
+            string cellMarkup = rightAlign[c] ? pad + cells[c].Markup : cells[c].Markup + pad;
+            string cellPlain = rightAlign[c] ? pad + cells[c].Plain : cells[c].Plain + pad;
+
+            markup.Append(' ').Append(cellMarkup).Append(' ').Append("[grey]|[/]");
+            plain.Append(' ').Append(cellPlain).Append(' ').Append('|');
+        }
+
+        AddConversationContentLine(lines, markup.ToString(), plain.ToString(), ref firstLine, roleName, roleColor);
+    }
+
+    private static void AddSummaryTableSeparator(
+        List<ConversationLine> lines,
+        int[] widths,
+        ref bool firstLine,
+        string roleName,
+        string roleColor)
+    {
+        StringBuilder markup = new("[grey]|[/]");
+        StringBuilder plain = new("|");
+
+        foreach (int width in widths)
+        {
+            string dashes = new('-', width);
+            markup.Append("[grey] ").Append(dashes).Append(" |[/]");
+            plain.Append(' ').Append(dashes).Append(" |");
+        }
+
+        AddConversationContentLine(lines, markup.ToString(), plain.ToString(), ref firstLine, roleName, roleColor);
+    }
+
+    // Returns null when the path can't form a valid file URI (e.g. relative/odd paths), so
+    // the caller renders the file name without a clickable link instead of crashing.
+    private static string? BuildEditorLink(string absolutePath, bool vscode)
+    {
+        if (string.IsNullOrWhiteSpace(absolutePath) ||
+            !Uri.TryCreate(absolutePath, UriKind.Absolute, out Uri? uri) ||
+            !uri.IsFile)
+        {
+            return null;
+        }
+
+        string fileUri = uri.AbsoluteUri; // file:///F:/path/file.cs
+        return vscode
+            ? "vscode://file/" + fileUri["file:///".Length..]
+            : fileUri;
+    }
+
+    private static bool IsVsCodeAvailable()
+    {
+        string path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
+        return path.Split(Path.PathSeparator)
+            .Where(static dir => !string.IsNullOrWhiteSpace(dir))
+            .Any(static dir =>
+                File.Exists(Path.Combine(dir, "code.cmd")) ||
+                File.Exists(Path.Combine(dir, "code.exe")) ||
+                File.Exists(Path.Combine(dir, "code")));
     }
 
     private static bool TryParseFileEditHeader(
