@@ -135,6 +135,7 @@ public static partial class Program
                     appState.ResetTurnCancellation();
                     appState.IsTurnInterruptPending = false;
                     appState.ActivityText = appState.IsReady ? "Ready" : "Idle";
+                    AppendTurnEditSummary(appState);
                     TryStartNextPendingSubmission(appState);
                 });
             }
@@ -229,6 +230,7 @@ public static partial class Program
         if (command == "/clear")
         {
             state.Messages.Clear();
+            state.FileEditsSummaryMessage = null;
             state.ResetConversationViewport();
             state.CurrentTurnStartedAt = null;
             state.PendingCompletionNote = null;
@@ -663,6 +665,34 @@ public static partial class Program
             : normalized[..firstSpaceIndex];
     }
 
+    // Running tally of files touched this conversation, updated in place after every turn
+    // (one message, not a fresh one each turn — matches the VS surface). Rendered as a table
+    // (action, clickable file, +/-) by AddFileEditsSummaryLines.
+    private static void AppendTurnEditSummary(AppState state)
+    {
+        IReadOnlyList<FileEditSummary> files = state.Backend.GetFileEditSummary();
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        int totalAdded = files.Sum(static f => f.AddedLineCount);
+        int totalRemoved = files.Sum(static f => f.RemovedLineCount);
+        // Plain text is the copy/fallback form; FileEdits drives the rich table render.
+        string text = $"Files modified ({files.Count}) — +{totalAdded} / -{totalRemoved}";
+
+        if (state.FileEditsSummaryMessage is null)
+        {
+            state.FileEditsSummaryMessage = state.AddMessage(Role.System, text);
+        }
+        else
+        {
+            state.FileEditsSummaryMessage.Text = text;
+        }
+
+        state.FileEditsSummaryMessage.FileEdits = files;
+    }
+
     private static void UpdateStreaming(AppState state)
     {
         state.SpinnerFrame++;
@@ -694,6 +724,7 @@ public static partial class Program
                 state.ResetTurnCancellation();
                 state.IsTurnInterruptPending = false;
                 state.ActivityText = state.IsReady ? "Ready" : "Idle";
+                AppendTurnEditSummary(state);
                 TryStartNextPendingSubmission(state);
             }
 

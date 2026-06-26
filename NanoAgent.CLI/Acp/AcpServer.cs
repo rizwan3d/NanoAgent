@@ -78,7 +78,7 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
-            // ponytail: factory runs inside CreateSessionAsync right after
+            // factory runs inside CreateSessionAsync right after
             // SetCurrentDirectory(cwd), so GetCurrentDirectory() == the session cwd.
             // Pinning it here makes the session's tools workspace-independent of
             // global cwd, which is what lets prompts run concurrently.
@@ -703,6 +703,8 @@ internal sealed class AcpServer : IAsyncDisposable
                 await SendAgentMessageChunkAsync(session.SessionId, responseText, cancellationToken);
             }
 
+            await SendFileEditsSummaryAsync(session, cancellationToken);
+
             await SendResultAsync(
                 id,
                 writer =>
@@ -995,6 +997,44 @@ internal sealed class AcpServer : IAsyncDisposable
                 writer.WriteString("sessionUpdate", "session_info_update");
                 writer.WriteString("updatedAt", DateTimeOffset.UtcNow.ToString("O"));
                 WriteSessionInfo(writer, session.SessionInfo);
+                writer.WriteEndObject();
+                writer.WriteEndObject();
+            },
+            cancellationToken);
+    }
+
+    private async Task SendFileEditsSummaryAsync(AcpSession session, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<FileEditSummary> files = session.Backend.GetFileEditSummary();
+        if (files.Count == 0)
+        {
+            return;
+        }
+
+        await SendNotificationAsync(
+            "session/update",
+            writer =>
+            {
+                writer.WriteStartObject();
+                writer.WriteString("sessionId", session.SessionId);
+                writer.WritePropertyName("update");
+                writer.WriteStartObject();
+                writer.WriteString("sessionUpdate", "file_edits_summary");
+                writer.WritePropertyName("files");
+                writer.WriteStartArray();
+                foreach (FileEditSummary file in files)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("displayPath", file.DisplayPath);
+                    writer.WriteString("absolutePath", file.AbsolutePath);
+                    writer.WriteNumber("addedLineCount", file.AddedLineCount);
+                    writer.WriteNumber("removedLineCount", file.RemovedLineCount);
+                    writer.WriteNumber("editCount", file.EditCount);
+                    writer.WriteString("action", file.Action);
+                    writer.WriteEndObject();
+                }
+
+                writer.WriteEndArray();
                 writer.WriteEndObject();
                 writer.WriteEndObject();
             },

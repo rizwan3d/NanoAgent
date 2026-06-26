@@ -255,7 +255,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <!-- ponytail: one button — arrow to send, square to stop. -->
+                            <!-- one button — arrow to send, square to stop. -->
                             <Button Grid.Column="1" x:Name="SendButton"
                                     Content="&#x2191;"
                                     Width="28" Height="28"
@@ -270,7 +270,7 @@
                                     <ControlTemplate TargetType="Button">
                                         <Grid>
                                             <Border Background="{TemplateBinding Background}" CornerRadius="14" />
-                                            <!-- ponytail: white-tint overlay so hover/press read on top of the dynamic blue/red background. -->
+                                            <!-- white-tint overlay so hover/press read on top of the dynamic blue/red background. -->
                                             <Border x:Name="Overlay" CornerRadius="14" Background="White" Opacity="0" />
                                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Grid>

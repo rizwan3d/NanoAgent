@@ -7,7 +7,7 @@ namespace NanoAgent.VS.ToolWindows
 {
     /// <summary>
     /// Makes a TextBlock's text selectable + copyable (Ctrl+C / right-click).
-    /// ponytail: WPF has no selectable TextBlock, so reflect into the internal TextEditor that
+    /// WPF has no selectable TextBlock, so reflect into the internal TextEditor that
     /// RichTextBox/TextBox already use and attach it read-only. No rendering rewrite, formatting
     /// and hyperlinks survive. Ceiling: selection is per-TextBlock, not contiguous across blocks —
     /// switch the whole conversation to a read-only RichTextBox/FlowDocument if that's needed.

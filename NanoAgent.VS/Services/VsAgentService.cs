@@ -544,6 +544,10 @@ namespace NanoAgent.VS.Services
                 case "plan":
                     NotificationReceived?.Invoke(VsProtocol.PlanUpdate, ToDictionary(update));
                     break;
+
+                case "file_edits_summary":
+                    NotificationReceived?.Invoke(VsProtocol.FileEditsSummary, ToDictionary(update));
+                    break;
             }
         }
 
