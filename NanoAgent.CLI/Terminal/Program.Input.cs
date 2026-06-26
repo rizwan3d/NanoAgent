@@ -70,6 +70,17 @@ public static partial class Program
                 return;
             }
 
+            if (key.Key == ConsoleKey.F7)
+            {
+                ToggleGitSidebar(state);
+                return;
+            }
+
+            if (state.IsGitSidebarVisible && TryHandleGitSidebarScrollKey(state, key))
+            {
+                continue;
+            }
+
             if (key.Key == ConsoleKey.V &&
                 key.Modifiers.HasFlag(ConsoleModifiers.Control))
             {
@@ -587,15 +598,35 @@ public static partial class Program
         int normalizedButtonCode = buttonCode & ~0b1_1100;
         if (normalizedButtonCode is 64 or 65)
         {
+            // Scroll the git sidebar when the pointer is over its columns; otherwise the
+            // conversation. 64 = wheel up (earlier lines), 65 = wheel down.
+            if (state.IsGitSidebarVisible &&
+                int.TryParse(parts[1], out int wheelColumn) &&
+                wheelColumn <= state.GitSidebarWidth)
+            {
+                ScrollGitSidebar(state, normalizedButtonCode == 64 ? -MouseWheelScrollLineCount : MouseWheelScrollLineCount);
+                return;
+            }
+
             HandleMouseButtonCode(state, buttonCode);
             return;
         }
 
-        // A left-button press (code 0) toggles the thinking block under the pointer.
+        // A left-button press (code 0) clicks a sidebar file (when the pointer is over
+        // the git sidebar columns) or toggles the thinking block under the pointer.
         if (isPress &&
             normalizedButtonCode == 0 &&
+            int.TryParse(parts[1], out int column) &&
             int.TryParse(parts[2], out int row))
         {
+            if (state.IsGitSidebarVisible &&
+                state.GitSidebarContentTopRow > 0 &&
+                column <= state.GitSidebarWidth)
+            {
+                HandleGitSidebarClick(state, row);
+                return;
+            }
+
             HandleConversationClick(state, row);
         }
     }
@@ -715,6 +746,28 @@ public static partial class Program
             case "S":
             case "14~":
                 RemovePendingInputItem(state);
+                return;
+
+            case "18~":
+                ToggleGitSidebar(state);
+                return;
+
+            // Ctrl+Up / Ctrl+Down / Ctrl+PgUp / Ctrl+PgDn scroll the git sidebar.
+            // ScrollGitSidebar clamps to 0 when the sidebar is hidden, so no guard needed.
+            case "1;5A":
+                ScrollGitSidebar(state, -MouseWheelScrollLineCount);
+                return;
+
+            case "1;5B":
+                ScrollGitSidebar(state, MouseWheelScrollLineCount);
+                return;
+
+            case "5;5~":
+                ScrollGitSidebar(state, -Math.Max(1, state.GitSidebarViewportHeight - 1));
+                return;
+
+            case "6;5~":
+                ScrollGitSidebar(state, Math.Max(1, state.GitSidebarViewportHeight - 1));
                 return;
 
             case "5~":
