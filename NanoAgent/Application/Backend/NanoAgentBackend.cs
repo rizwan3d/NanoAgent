@@ -385,7 +385,9 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             ? []
             : SessionEditSummary.Build(
                 session.SessionState.Edits,
-                session.ResolvePathFromWorkingDirectory);
+                path => NanoAgent.Application.Utilities.WorkspacePath.Resolve(
+                    session.WorkspacePath,
+                    session.ResolvePathFromWorkingDirectory(path)));
     }
 
     public async ValueTask DisposeAsync()
