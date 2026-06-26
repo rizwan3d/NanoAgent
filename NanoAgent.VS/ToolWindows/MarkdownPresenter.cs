@@ -13,7 +13,7 @@ namespace NanoAgent.VS.ToolWindows
     /// inline code, links, bullet/numbered lists, blockquotes, horizontal rules, fenced code
     /// blocks (with ```diff rendered as a colored diff), and clickable file/URL autolinks.
     /// File links navigate via the "nanofile" scheme; the host handles Hyperlink.RequestNavigate.
-    /// ponytail: single-pass inline parser, no nested emphasis. Covers virtually all agent output;
+    /// single-pass inline parser, no nested emphasis. Covers virtually all agent output;
     /// upgrade to a full CommonMark lib only if real messages break it.
     /// </summary>
     public sealed class MarkdownPresenter : ContentControl
@@ -44,7 +44,8 @@ namespace NanoAgent.VS.ToolWindows
 
         private static readonly Regex InlineCode = new(@"`([^`]+)`", RegexOptions.Compiled);
         private static readonly Regex InlineToken = new(
-            @"(?<bold>\*\*(?<b>.+?)\*\*|__(?<b2>.+?)__)" +
+            @"(?<color>\{c:(?<cn>red|green|yellow)\}(?<ct>.+?)\{/c\})" +
+            @"|(?<bold>\*\*(?<b>.+?)\*\*|__(?<b2>.+?)__)" +
             @"|(?<italic>\*(?<i>[^*\s].*?)\*|_(?<i2>[^_\s].*?)_)" +
             @"|(?<link>\[(?<lt>[^\]]+)\]\((?<lu>[^)\s]+)\))",
             RegexOptions.Compiled);
@@ -292,7 +293,17 @@ namespace NanoAgent.VS.ToolWindows
             {
                 if (m.Index > last) AddAutoLinked(target, text.Substring(last, m.Index - last));
 
-                if (m.Groups["bold"].Success)
+                if (m.Groups["color"].Success)
+                {
+                    Brush brush = m.Groups["cn"].Value switch
+                    {
+                        "green" => ChatBrushes.AddFg,
+                        "red" => ChatBrushes.DelFg,
+                        _ => ChatBrushes.WarnFg,
+                    };
+                    target.Add(new Run(m.Groups["ct"].Value) { Foreground = brush });
+                }
+                else if (m.Groups["bold"].Success)
                 {
                     string content = m.Groups["b"].Success ? m.Groups["b"].Value : m.Groups["b2"].Value;
                     target.Add(new Bold(new Run(content)));

@@ -36,4 +36,7 @@ public interface INanoAgentBackend : IAsyncDisposable
         string terminalId,
         CancellationToken cancellationToken)
         => throw new NotSupportedException("This backend does not support background terminals.");
+
+    /// <summary>Per-file added/removed line totals for the current conversation, for the end-of-conversation summary.</summary>
+    IReadOnlyList<FileEditSummary> GetFileEditSummary() => [];
 }

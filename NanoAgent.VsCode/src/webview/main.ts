@@ -65,6 +65,8 @@ const commandSuggestions = CHAT_COMMANDS;
         const sidePane = document.getElementById('activity-pane');
         const planList = document.getElementById('plan-list');
         const planCount = document.getElementById('plan-count');
+        const changedFilesList = document.getElementById('changed-files-list');
+        const changedFilesCount = document.getElementById('changed-files-count');
         const agentThreadList = document.getElementById('agent-thread-list');
         const agentCount = document.getElementById('agent-count');
         const modalBackdrop = document.getElementById('modal-backdrop');
@@ -88,6 +90,7 @@ const commandSuggestions = CHAT_COMMANDS;
         let activeAutoSelectTimer = null;
         let progressIndicator = null;
         let hasPlanActivity = false;
+        let hasChangedFiles = false;
         let activeAgentThreadId = '';
         const queuedClientRequests = [];
         const toolCalls = new Map();
@@ -389,7 +392,7 @@ const commandSuggestions = CHAT_COMMANDS;
                 return createFileReferenceLink(label || fileTarget, fileTarget);
             }
 
-            // ponytail: URL parser is the sanitizer (CodeQL recognizes it); allowlist scheme.
+            // URL parser is the sanitizer (CodeQL recognizes it); allowlist scheme.
             let safeHref = '';
             try {
                 const parsed = new URL(cleanTarget);
@@ -464,7 +467,7 @@ const commandSuggestions = CHAT_COMMANDS;
             return candidate.includes('.') || candidate.includes('/') || candidate.includes('\\');
         }
 
-        function createFileReferenceLink(displayText, filePath, line, column) {
+        function createFileReferenceLink(displayText, filePath, line?: number, column?: number) {
             const link = document.createElement('a');
             link.href = '#';
             link.className = 'file-link';
@@ -705,6 +708,7 @@ const commandSuggestions = CHAT_COMMANDS;
                 agentThreads.clear();
                 activeAgentThreadId = '';
                 renderPlan(null);
+                renderFileEditsSummary(null);
                 renderAgentThreads();
                 updateStatusRail();
             } else if (message.command === 'setSessionInfo') {
@@ -745,6 +749,8 @@ const commandSuggestions = CHAT_COMMANDS;
                 renderAgentThreads();
             } else if (message.command === 'setPlan') {
                 renderPlan(message.plan);
+            } else if (message.command === 'setFileEditsSummary') {
+                renderFileEditsSummary(message.summary);
             } else if (message.command === 'showClientRequest') {
                 showClientRequest(message.request);
             } else if (message.command === 'resolveClientRequest') {
@@ -1210,6 +1216,86 @@ const commandSuggestions = CHAT_COMMANDS;
                 item.appendChild(content);
                 planList.appendChild(item);
             });
+        }
+
+        function renderFileEditsSummary(summary) {
+            const files = summary && Array.isArray(summary.files) ? summary.files : [];
+            hasChangedFiles = files.length > 0;
+            updateActivityVisibility();
+            if (!changedFilesList) {
+                return;
+            }
+            changedFilesList.textContent = '';
+            changedFilesCount.textContent = files.length + (files.length === 1 ? ' file' : ' files');
+            if (files.length === 0) {
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'changed-files-table';
+
+            const head = document.createElement('tr');
+            ['Action', '+', '-', 'File'].forEach((label, index) => {
+                const th = document.createElement('th');
+                th.textContent = label;
+                if (index === 1 || index === 2) {
+                    th.className = 'changed-file-num';
+                }
+                head.appendChild(th);
+            });
+            table.appendChild(head);
+
+            let totalAdded = 0;
+            let totalRemoved = 0;
+            files.forEach(file => {
+                const added = file.addedLineCount || 0;
+                const removed = file.removedLineCount || 0;
+                totalAdded += added;
+                totalRemoved += removed;
+
+                const row = document.createElement('tr');
+
+                const action = file.action || 'Edited';
+                const actionCell = document.createElement('td');
+                actionCell.className = 'changed-file-action changed-file-action-' + action.toLowerCase();
+                actionCell.textContent = action;
+                row.appendChild(actionCell);
+
+                const addedCell = document.createElement('td');
+                addedCell.className = 'changed-file-num changed-file-added';
+                addedCell.textContent = '+' + added;
+                row.appendChild(addedCell);
+
+                const removedCell = document.createElement('td');
+                removedCell.className = 'changed-file-num changed-file-removed';
+                removedCell.textContent = '-' + removed;
+                row.appendChild(removedCell);
+
+                const fileCell = document.createElement('td');
+                fileCell.className = 'changed-file-name';
+                fileCell.appendChild(createFileReferenceLink(file.displayPath, file.absolutePath || file.displayPath));
+                row.appendChild(fileCell);
+
+                table.appendChild(row);
+            });
+
+            const totalRow = document.createElement('tr');
+            totalRow.className = 'changed-files-total';
+            const totalLabel = document.createElement('td');
+            totalLabel.textContent = 'Total';
+            totalRow.appendChild(totalLabel);
+            const totalAddedCell = document.createElement('td');
+            totalAddedCell.className = 'changed-file-num changed-file-added';
+            totalAddedCell.textContent = '+' + totalAdded;
+            totalRow.appendChild(totalAddedCell);
+            const totalRemovedCell = document.createElement('td');
+            totalRemovedCell.className = 'changed-file-num changed-file-removed';
+            totalRemovedCell.textContent = '-' + totalRemoved;
+            totalRow.appendChild(totalRemovedCell);
+            totalRow.appendChild(document.createElement('td'));
+            table.appendChild(totalRow);
+
+            changedFilesList.appendChild(table);
         }
 
         function setToolCall(toolCall) {
@@ -2540,7 +2626,7 @@ const commandSuggestions = CHAT_COMMANDS;
         function updateActivityVisibility() {
             sidePane.classList.toggle(
                 'visible',
-                activeView === 'chat' && (hasPlanActivity || agentThreads.size > 0));
+                activeView === 'chat' && (hasPlanActivity || agentThreads.size > 0 || hasChangedFiles));
         }
 
         function trackAgentThreads(call) {

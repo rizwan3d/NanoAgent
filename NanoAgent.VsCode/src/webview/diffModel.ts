@@ -1,6 +1,6 @@
 // Parses NanoAgent tool-call input into a renderable diff model.
 // Pure (no node deps) so it can be imported by both the extension and the webview bundle.
-// ponytail: naive per-line classifier, no word-level intra-line diff. Upgrade to a
+// naive per-line classifier, no word-level intra-line diff. Upgrade to a
 // proper LCS/word-diff only if reviewers ask for inline highlighting.
 
 export type DiffLine = { type: 'add' | 'del' | 'ctx' | 'meta'; text: string };

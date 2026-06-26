@@ -378,6 +378,16 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             cancellationToken);
     }
 
+    public IReadOnlyList<FileEditSummary> GetFileEditSummary()
+    {
+        ReplSessionContext? session = _session;
+        return session is null
+            ? []
+            : SessionEditSummary.Build(
+                session.SessionState.Edits,
+                session.ResolvePathFromWorkingDirectory);
+    }
+
     public async ValueTask DisposeAsync()
     {
         _telemetry?.TrackAppStopped();

@@ -35,6 +35,7 @@ namespace NanoAgent.VS.ToolWindows
         private bool _hostInitialized;
         private AssistantMessage? _streamingAssistant;
         private ReasoningMessage? _streamingReasoning;
+        private SystemMessage? _fileEditsSummaryMessage; // single running "files changed" tally, updated in place.
         private readonly Dictionary<string, ToolCallStatusMessage> _toolCallMessages = new();
         private string? _activeModalRequestId;
         private string _workingDirectory = string.Empty;
@@ -81,7 +82,7 @@ namespace NanoAgent.VS.ToolWindows
             // Route all chat hyperlink clicks (file refs + URLs) here.
             AddHandler(Hyperlink.RequestNavigateEvent, new RequestNavigateEventHandler(OnRequestNavigate));
 
-            // ponytail: only Loaded — Unloaded fires on every dock/tab/auto-hide change,
+            // only Loaded — Unloaded fires on every dock/tab/auto-hide change,
             // not just close. Disposal is owned by ChatToolWindow.OnClose/Dispose.
             Loaded += OnLoadedAsync;
         }
@@ -113,7 +114,7 @@ namespace NanoAgent.VS.ToolWindows
 
             // Tool window can restore before the solution loads (package auto-loads on NoSolution),
             // leaving _workingDirectory at the process cwd. Re-resolve when a solution opens.
-            // ponytail: DTE SolutionEvents over IVsSolutionEvents COM advise — fires on the UI thread.
+            // DTE SolutionEvents over IVsSolutionEvents COM advise — fires on the UI thread.
             if (_solutionEvents is null && Package.GetGlobalService(typeof(SDTE)) is DTE dte)
             {
                 _solutionEvents = dte.Events.SolutionEvents;
@@ -329,6 +330,10 @@ namespace NanoAgent.VS.ToolWindows
                         break;
                     }
 
+                case VsProtocol.FileEditsSummary:
+                    UpdateFileEditsSummary(parameters);
+                    break;
+
                 case VsProtocol.RequestPermission:
                     ShowModalRequest(parameters, "permission");
                     break;
@@ -540,6 +545,7 @@ namespace NanoAgent.VS.ToolWindows
             _toolCallMessages.Clear();
             _streamingAssistant = null;
             _streamingReasoning = null;
+            _fileEditsSummaryMessage = null;
             EmptyStateText.Visibility = Visibility.Visible;
         }
 
@@ -1093,7 +1099,7 @@ namespace NanoAgent.VS.ToolWindows
 
         private TextBox ModalInput(string placeholder) => new()
         {
-            // ponytail: no placeholder watermark; Tag holds the hint, kept minimal.
+            // no placeholder watermark; Tag holds the hint, kept minimal.
             Tag = placeholder,
             MinWidth = 240, MinHeight = 28,
             Margin = new Thickness(0, 0, 0, 6),
@@ -1525,6 +1531,57 @@ namespace NanoAgent.VS.ToolWindows
         }
 
         // ───── Parsing helpers ─────
+
+        // Renders the running per-file change tally as a single chat message, updated in place
+        // each turn. File names are markdown links (nanofile scheme) so clicks open the editor.
+        private void UpdateFileEditsSummary(Dictionary<string, object?>? parameters)
+        {
+            if (parameters?.TryGetValue("files", out object? value) != true ||
+                value is not JsonElement files ||
+                files.ValueKind != JsonValueKind.Array ||
+                files.GetArrayLength() == 0)
+            {
+                return;
+            }
+
+            var lines = new List<string>();
+            int totalAdded = 0;
+            int totalRemoved = 0;
+            foreach (JsonElement file in files.EnumerateArray())
+            {
+                string? path = TryGetJsonString(file, "displayPath");
+                if (string.IsNullOrWhiteSpace(path)) continue;
+                int added = file.TryGetProperty("addedLineCount", out JsonElement a) && a.TryGetInt32(out int ai) ? ai : 0;
+                int removed = file.TryGetProperty("removedLineCount", out JsonElement r) && r.TryGetInt32(out int ri) ? ri : 0;
+                string action = TryGetJsonString(file, "action") ?? "Edited";
+                string actionColor = action switch
+                {
+                    "Created" => "green",
+                    "Deleted" => "red",
+                    _ => "yellow",
+                };
+                totalAdded += added;
+                totalRemoved += removed;
+                lines.Add($"- {{c:{actionColor}}}{action}{{/c}} · [{path}]({path}) ({{c:green}}+{added}{{/c}} {{c:red}}-{removed}{{/c}})");
+            }
+
+            if (lines.Count == 0) return;
+
+            string text = $"**Files changed ({lines.Count})**  ·  +{totalAdded} -{totalRemoved}"
+                + Environment.NewLine + Environment.NewLine
+                + string.Join(Environment.NewLine, lines);
+
+            if (_fileEditsSummaryMessage is null)
+            {
+                _fileEditsSummaryMessage = new SystemMessage { Text = text };
+                _messages.Add(_fileEditsSummaryMessage);
+            }
+            else
+            {
+                _fileEditsSummaryMessage.Text = text;
+            }
+            ScrollToBottom();
+        }
 
         private static string? FormatPlanUpdate(Dictionary<string, object?>? parameters)
         {

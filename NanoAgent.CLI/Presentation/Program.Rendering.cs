@@ -462,6 +462,14 @@ public static partial class Program
 
         int thinkingStartIndex = lines.Count;
 
+        if (message.FileEdits is { Count: > 0 } fileEdits)
+        {
+            bool firstSummaryLine = true;
+            AddFileEditsSummaryLines(lines, fileEdits, ref firstSummaryLine, roleName, roleColor, contentWidth);
+            lines.Add(new ConversationLine(string.Empty, string.Empty));
+            return;
+        }
+
         if (message.Role == Role.Thinking && !expandThinking)
         {
             AddCollapsedThinkingLine(lines, message, roleName, roleColor, contentWidth);

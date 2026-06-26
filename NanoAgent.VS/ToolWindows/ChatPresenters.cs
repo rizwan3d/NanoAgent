@@ -22,6 +22,7 @@ namespace NanoAgent.VS.ToolWindows
         public static readonly Brush Link = Frozen(0x4D, 0xAA, 0xFC);
         public static readonly Brush AddFg = Frozen(0x9C, 0xDC, 0xAA);
         public static readonly Brush DelFg = Frozen(0xF4, 0x87, 0x71);
+        public static readonly Brush WarnFg = Frozen(0xE2, 0xC0, 0x8D);
         public static readonly Brush MetaFg = Frozen(0x6A, 0x95, 0xD6);
         public static readonly Brush AddBg = new SolidColorBrush(Color.FromArgb(0x33, 0x2E, 0xA0, 0x43)) { };
         public static readonly Brush DelBg = new SolidColorBrush(Color.FromArgb(0x33, 0xF4, 0x87, 0x71)) { };

@@ -128,7 +128,7 @@ internal static class SessionStateToolRecorder
 
         session.RecordEditContext(new SessionEditContext(
             DateTimeOffset.UtcNow,
-            $"file_write ({result.Path})",
+            $"file_write {action} ({result.Path})",
             [result.Path],
             result.AddedLineCount,
             result.RemovedLineCount));
@@ -165,15 +165,15 @@ internal static class SessionStateToolRecorder
         ArgumentNullException.ThrowIfNull(session);
         ArgumentNullException.ThrowIfNull(result);
 
-        List<string> paths = [];
         DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
 
+        // record one edit per file so the per-file change table stays accurate;
+        // a single aggregate entry would lose which file got which +/- counts.
         foreach (WorkspaceApplyPatchFileResult file in result.Files)
         {
             string path = file.PreviousPath is null
                 ? file.Path
                 : $"{file.PreviousPath} -> {file.Path}";
-            paths.Add(path);
 
             string preview = FormatPreview(file.PreviewLines, file.RemainingPreviewLineCount);
             session.RecordFileContext(new SessionFileContext(
@@ -181,19 +181,14 @@ internal static class SessionStateToolRecorder
                 "edited",
                 observedAtUtc,
                 $"{file.Operation} by apply_patch (+{file.AddedLineCount} -{file.RemovedLineCount}). Preview: {preview}"));
-        }
 
-        if (paths.Count == 0)
-        {
-            return;
+            session.RecordEditContext(new SessionEditContext(
+                observedAtUtc,
+                $"apply_patch ({file.Operation} {path})",
+                [path],
+                file.AddedLineCount,
+                file.RemovedLineCount));
         }
-
-        session.RecordEditContext(new SessionEditContext(
-            observedAtUtc,
-            $"apply_patch ({result.FileCount} {(result.FileCount == 1 ? "file" : "files")})",
-            paths,
-            result.AddedLineCount,
-            result.RemovedLineCount));
     }
 
     public static void RecordShellCommand(
