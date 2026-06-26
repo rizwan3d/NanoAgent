@@ -140,7 +140,7 @@ public static partial class Program
             ExitReaderView(state);
         }
 
-        int lineCount = BuildConversationLines(state, GetMessageContentWidth()).Count;
+        int lineCount = BuildConversationLines(state, GetMessageContentWidth(state)).Count;
         state.IsCopyModeActive = true;
         state.CopyAnchorLine = null;
         state.CopyCursorLine = Math.Max(0, lineCount - 1);
@@ -154,7 +154,7 @@ public static partial class Program
 
     private static void MoveCopyCursor(AppState state, int delta, bool extend)
     {
-        int lineCount = BuildConversationLines(state, GetMessageContentWidth()).Count;
+        int lineCount = BuildConversationLines(state, GetMessageContentWidth(state)).Count;
         if (lineCount == 0)
         {
             return;
@@ -170,7 +170,7 @@ public static partial class Program
 
     private static void MoveCopyCursorTo(AppState state, int target, bool extend)
     {
-        int lineCount = BuildConversationLines(state, GetMessageContentWidth()).Count;
+        int lineCount = BuildConversationLines(state, GetMessageContentWidth(state)).Count;
         if (lineCount == 0)
         {
             return;
@@ -193,7 +193,7 @@ public static partial class Program
 
     private static void SelectAllCopy(AppState state)
     {
-        int lineCount = BuildConversationLines(state, GetMessageContentWidth()).Count;
+        int lineCount = BuildConversationLines(state, GetMessageContentWidth(state)).Count;
         if (lineCount == 0)
         {
             return;
@@ -205,7 +205,7 @@ public static partial class Program
 
     private static void ExecuteCopySelection(AppState state)
     {
-        List<ConversationLine> lines = BuildConversationLines(state, GetMessageContentWidth());
+        List<ConversationLine> lines = BuildConversationLines(state, GetMessageContentWidth(state));
         string text = BuildCopySelectionText(state, lines);
 
         ExitCopyMode(state);
