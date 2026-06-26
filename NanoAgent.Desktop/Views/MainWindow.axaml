@@ -2,7 +2,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:NanoAgent.Desktop.ViewModels"
         xmlns:models="using:NanoAgent.Desktop.Models"
+        xmlns:appmodels="using:NanoAgent.Application.Models"
         xmlns:controls="using:NanoAgent.Desktop.Controls"
+        xmlns:conv="using:NanoAgent.Desktop.Converters"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -395,6 +397,69 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+
+            <Border Grid.Row="1"
+                    IsVisible="{Binding Chat.HasChangedFiles}"
+                    Background="#0E1116"
+                    BorderBrush="#1F2630"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Padding="10"
+                    Margin="0,0,18,16"
+                    MaxWidth="360"
+                    MaxHeight="260"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top"
+                               Text="Changed files"
+                               Foreground="#8B949E"
+                               FontSize="11"
+                               FontWeight="SemiBold"
+                               Margin="0,0,0,6"/>
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <ItemsControl ItemsSource="{Binding Chat.ChangedFiles}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="appmodels:FileEditSummary">
+                                    <Grid ColumnDefinitions="Auto,*,Auto"
+                                          ColumnSpacing="8"
+                                          Margin="0,0,0,3">
+                                        <TextBlock Text="{Binding Action}"
+                                                   Foreground="{Binding Action, Converter={x:Static conv:EditActionToBrushConverter.Instance}}"
+                                                   FontSize="10"
+                                                   MinWidth="48"
+                                                   VerticalAlignment="Center"
+                                                   ToolTip.Tip="{Binding Action}"/>
+                                        <Button Grid.Column="1"
+                                                Classes="ghost"
+                                                Command="{Binding ((vm:MainWindowViewModel)DataContext).Chat.OpenChangedFileCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                CommandParameter="{Binding}"
+                                                HorizontalContentAlignment="Left"
+                                                Padding="0"
+                                                ToolTip.Tip="{Binding AbsolutePath}">
+                                            <TextBlock Text="{Binding DisplayPath}"
+                                                       Foreground="#7DB7FF"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"/>
+                                        </Button>
+                                        <StackPanel Grid.Column="2"
+                                                    Orientation="Horizontal"
+                                                    Spacing="6"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding AddedLineCount, StringFormat='+{0}'}"
+                                                       Foreground="#86EFAC"
+                                                       FontSize="11"/>
+                                            <TextBlock Text="{Binding RemovedLineCount, StringFormat='-{0}'}"
+                                                       Foreground="#F4A6A6"
+                                                       FontSize="11"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
 
             <Border Grid.Row="1"
                     IsVisible="{Binding Chat.HasFloatingSelectionPrompt}"

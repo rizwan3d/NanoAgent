@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using NanoAgent.Application.Backend;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
+using NanoAgent.Desktop.Controls;
 using NanoAgent.Desktop.Models;
 using NanoAgent.Desktop.Services;
 using System.Collections.ObjectModel;
@@ -142,6 +143,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         AllowPermissionCommand = new AsyncRelayCommand<ProjectInfo?>(AllowPermissionAsync, CanApplyPermissionOverride);
         DenyPermissionCommand = new AsyncRelayCommand<ProjectInfo?>(DenyPermissionAsync, CanApplyPermissionOverride);
         ConfigureBudgetControlsCommand = new AsyncRelayCommand<ProjectInfo?>(ConfigureBudgetControlsAsync, CanConfigureBudgetControls);
+        OpenChangedFileCommand = new RelayCommand<FileEditSummary?>(OpenChangedFile);
         _progressTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(1)
@@ -189,6 +191,10 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
 
     public ObservableCollection<AgentEvent> Activity { get; } = new();
 
+    public ObservableCollection<FileEditSummary> ChangedFiles { get; } = new();
+
+    public bool HasChangedFiles => ChangedFiles.Count > 0;
+
     public ObservableCollection<string> AvailableModels { get; } = new();
 
     public ObservableCollection<DesktopCommandSuggestion> PromptCommandSuggestions { get; } = new();
@@ -234,6 +240,8 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
     public IAsyncRelayCommand<ProjectInfo?> DenyPermissionCommand { get; }
 
     public IAsyncRelayCommand<ProjectInfo?> ConfigureBudgetControlsCommand { get; }
+
+    public IRelayCommand<FileEditSummary?> OpenChangedFileCommand { get; }
 
     public event EventHandler? RunCompleted;
 
@@ -906,6 +914,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
             }
 
             Activity.Add(new AgentEvent("done", "Task finished.", project.Path));
+            RefreshChangedFiles();
             RunCompleted?.Invoke(this, EventArgs.Empty);
         }
         catch (Exception ex)
@@ -1004,6 +1013,7 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
                     Activity.Add(new AgentEvent("command", activity, project.Path));
                 }
 
+                RefreshChangedFiles();
                 RunCompleted?.Invoke(this, EventArgs.Empty);
             });
     }
@@ -1250,6 +1260,25 @@ public partial class ChatViewModel : ViewModelBase, IAsyncDisposable
         string trimmed = prompt.Trim();
         return string.Equals(trimmed, "/onboard", StringComparison.OrdinalIgnoreCase) ||
             trimmed.StartsWith("/onboard ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void RefreshChangedFiles()
+    {
+        ChangedFiles.Clear();
+        foreach (FileEditSummary file in _agentRunner.GetFileEditSummary())
+        {
+            ChangedFiles.Add(file);
+        }
+
+        OnPropertyChanged(nameof(HasChangedFiles));
+    }
+
+    private static void OpenChangedFile(FileEditSummary? file)
+    {
+        if (file is not null && !string.IsNullOrWhiteSpace(file.AbsolutePath))
+        {
+            MarkdownMessageView.OpenPath(file.AbsolutePath);
+        }
     }
 
     private void ApplyRunResult(AgentRunResult result, string? workspacePath)
