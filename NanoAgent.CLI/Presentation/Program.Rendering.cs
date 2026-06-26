@@ -42,6 +42,10 @@ public static partial class Program
             return BuildCompactUi(state, windowWidth, windowHeight);
         }
 
+        state.GitSidebarWidth = TryGetGitSidebarWidth(state, windowWidth, out int sidebarWidth)
+            ? sidebarWidth
+            : 0;
+
         int footerSize = FooterPanelSize;
         int inputSize =Math.Max(MinimumPanelHeight, GetInputPanelSize(state));
         int headerSize = GetHeaderPanelSize(state);
@@ -95,6 +99,20 @@ public static partial class Program
 
         root["footer"].Update(new Markup(BuildFooterMarkup(state)));
 
+        if (state.GitSidebarWidth > 0)
+        {
+            state.GitSidebarContentTopRow = 2; // first row below the panel's top border
+
+            Layout shell = new Layout("shell").SplitColumns(
+                new Layout("sidebar").Size(state.GitSidebarWidth),
+                new Layout("main").Ratio(1));
+            shell["sidebar"].Update(BuildGitSidebarPanel(state, windowHeight));
+            shell["main"].Update(root);
+            return shell;
+        }
+
+        state.GitSidebarContentTopRow = -1;
+        state.GitSidebarWidth = 0;
         return root;
     }
 
@@ -172,20 +190,21 @@ public static partial class Program
     private static string BuildMessagesPanelHeaderMarkup(AppState state)
     {
         const string leftPrefix = "Session ── Working: ";
-        int headerWidth = Math.Max(20, GetWindowWidth() - 6);
+        int headerWidth = GetPanelHeaderWidth(state);
         int leftBudget = Math.Max(0, headerWidth - MessagesPanelScrollHint.Length - 1);
         string rootDirectory = state.RootDirectory ?? string.Empty;
         string displayRootDirectory = rootDirectory;
         string? gitBranch = GetGitBranchName(rootDirectory);
+        string plainGitSuffix = gitBranch is not null ? $" ({gitBranch})" : string.Empty;
         string gitSuffix = gitBranch is not null ? $" [yellow]({Markup.Escape(gitBranch)})[/]" : string.Empty;
 
-        if (leftPrefix.Length + displayRootDirectory.Length + gitSuffix.Length > leftBudget)
+        if (leftPrefix.Length + displayRootDirectory.Length + plainGitSuffix.Length > leftBudget)
         {
-            int rootBudget = Math.Max(0, leftBudget - leftPrefix.Length - gitSuffix.Length);
+            int rootBudget = Math.Max(0, leftBudget - leftPrefix.Length - plainGitSuffix.Length);
             displayRootDirectory = TruncateFromLeft(rootDirectory, rootBudget);
         }
 
-        string leftPlain = leftPrefix + displayRootDirectory + gitSuffix;
+        string leftPlain = leftPrefix + displayRootDirectory + plainGitSuffix;
         int spacerLength = Math.Max(1, headerWidth - leftPlain.Length - MessagesPanelScrollHint.Length);
 
         return $"[bold]Session[/] ──[grey] Working: {Markup.Escape(displayRootDirectory)}[/]{gitSuffix}" +
@@ -259,7 +278,7 @@ public static partial class Program
     private static string BuildPinnedPlanPanelHeaderMarkup(AppState state)
     {
         const string leftPlain = "Plan ";
-        int headerWidth = Math.Max(20, GetWindowWidth() - 6);
+        int headerWidth = GetPanelHeaderWidth(state);
         string rightPlain = BuildPinnedPlanPanelHeaderInfo(state);
         int rightBudget = Math.Max(0, headerWidth - leftPlain.Length - 1);
         string displayRight = TruncateFromRight(rightPlain, rightBudget);
@@ -313,37 +332,32 @@ public static partial class Program
         const string plainPrefix = "Input -- Model: ";
         const int minimumNoteLength = 16;
         const int minimumSeparatorLength = 3;
-        int headerBudget = Math.Max(24, GetWindowWidth() - 8);
+        int headerBudget = Math.Max(24, GetMainPaneWidth(state) - 8);
         int modelBudget = Math.Max(
             3,
             headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
 
         string plainModel = modelName;
-        string markupModel = Markup.Escape(modelName);
         if (!string.IsNullOrWhiteSpace(state.ProviderName))
         {
             string plainProvider = $" ({state.ProviderName})";
-            string markupProvider = $" [grey]{Markup.Escape(state.ProviderName)}[/]";
             if (plainModel.Length + plainProvider.Length <= modelBudget)
             {
                 plainModel += plainProvider;
-                markupModel += markupProvider;
             }
         }
 
         if (!string.IsNullOrWhiteSpace(state.ReasoningEffort))
         {
             string plainEffort = $" ·{state.ReasoningEffort}";
-            string markupEffort = $" ·[green]{Markup.Escape(state.ReasoningEffort)}[/]";
             if (plainModel.Length + plainEffort.Length <= modelBudget)
             {
                 plainModel += plainEffort;
-                markupModel += markupEffort;
             }
         }
 
         string displayPlainModel = TruncateFromRight(plainModel, modelBudget);
-        string displayMarkupModel = TruncateFromRight(markupModel, modelBudget);
+        string displayMarkupModel = Markup.Escape(displayPlainModel);
         int noteBudget = headerBudget -
             plainPrefix.Length -
             displayPlainModel.Length -
@@ -366,7 +380,7 @@ public static partial class Program
     private static string BuildMessagesMarkup(AppState state)
     {
         int viewportLineCount = GetMessageViewportLineCount(state);
-        int contentWidth = GetMessageContentWidth();
+        int contentWidth = GetMessageContentWidth(state);
         List<ConversationLine> lines = BuildConversationLines(state, contentWidth);
 
         if (lines.Count == 0)
@@ -672,9 +686,9 @@ public static partial class Program
         return string.Join('\n', renderedLines);
     }
 
-    private static int GetMessageContentWidth()
+    private static int GetMessageContentWidth(AppState state)
     {
-        return Math.Max(20, GetWindowWidth() - 8 - MessageScrollbarColumnWidth);
+        return Math.Max(20, GetMainPaneContentWidth(state) - MessageScrollbarColumnWidth);
     }
 
     private static int GetMessageViewportLineCount(AppState state)
@@ -691,7 +705,7 @@ public static partial class Program
 
     private static int GetMaxConversationScrollOffset(AppState state)
     {
-        int lineCount = BuildConversationLines(state, GetMessageContentWidth()).Count;
+        int lineCount = BuildConversationLines(state, GetMessageContentWidth(state)).Count;
         return Math.Max(0, lineCount - GetMessageViewportLineCount(state));
     }
 
@@ -739,7 +753,7 @@ public static partial class Program
 
     private static int GetPinnedPlanPanelSize(AppState state)
     {
-        int contentWidth = GetPinnedPlanContentWidth();
+        int contentWidth = GetPinnedPlanContentWidth(state);
         int bodyLineCount = GetPinnedPlanLines(state)
             .Sum(line => WrapText(line, contentWidth).Count);
         int inputSize = GetInputPanelSize(state);
@@ -814,9 +828,9 @@ public static partial class Program
             : $"{BusyStatusText} · {queued} queued {(queued == 1 ? "prompt" : "prompts")} — F4 removes newest";
     }
 
-    private static int GetPinnedPlanContentWidth()
+    private static int GetPinnedPlanContentWidth(AppState state)
     {
-        return Math.Max(20, GetWindowWidth() - 8);
+        return GetMainPaneContentWidth(state);
     }
 
     private static int GetPinnedPlanViewportLineCount(AppState state)
@@ -828,7 +842,7 @@ public static partial class Program
     {
         return BuildPinnedPlanRenderableLines(
             state,
-            GetPinnedPlanContentWidth()).Count;
+            GetPinnedPlanContentWidth(state)).Count;
     }
 
     private static int GetMaxPinnedPlanScrollOffset(AppState state)
@@ -854,7 +868,7 @@ public static partial class Program
     private static string BuildPinnedPlanMarkup(AppState state)
     {
 
-        int contentWidth = GetPinnedPlanContentWidth();
+        int contentWidth = GetPinnedPlanContentWidth(state);
         int viewportLineCount = GetPinnedPlanViewportLineCount(state);
         List<ConversationLine> renderedLines = BuildPinnedPlanRenderableLines(
             state,
@@ -980,6 +994,7 @@ public static partial class Program
         bool isBusy)
     {
         string inputMarkup = BuildInputLineMarkup(
+            state,
             input,
             cursorIndex,
             selectionAnchorIndex,
@@ -1073,7 +1088,7 @@ public static partial class Program
             ? $"1 file pasted/attached: {FormatAttachmentNames(state.InputAttachments)}"
             : $"{count} files pasted/attached: {FormatAttachmentNames(state.InputAttachments)}";
         string hint = " - F4 choose file";
-        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
+        int contentWidth = GetInputContentWidth(state);
         summary = TruncateFromRight(label, Math.Max(1, contentWidth - hint.Length)) + hint;
         return true;
     }
@@ -1117,10 +1132,11 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "[grey]Shift+Enter: Newline[/]  [grey]|[/] [grey]Shift+drag: select text[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/][grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+            "[grey]Shift+Enter: Newline[/]  [grey]|[/] [grey]Shift+drag: select text[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]F7: Git[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
 
     private static string BuildInputLineMarkup(
+        AppState state,
         string input,
         int cursorIndex,
         int? selectionAnchorIndex,
@@ -1137,7 +1153,7 @@ public static partial class Program
             return $"{promptMarkup}{BuildInputCursorMarkup()}[grey]{Markup.Escape(placeholder)}[/]";
         }
 
-        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
+        int contentWidth = GetInputContentWidth(state);
         int maxInputLength = Math.Max(
             1,
             contentWidth - promptPlain.Length - InputCursorColumnWidth);
@@ -1211,8 +1227,8 @@ public static partial class Program
                 ? 1
                 : WrapInputText(
                         visibleInput,
-                        GetInputFirstLineTextWidth(),
-                        GetInputContinuationLineTextWidth()).Count;
+                        GetInputFirstLineTextWidth(state),
+                        GetInputContinuationLineTextWidth(state)).Count;
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -1454,20 +1470,43 @@ public static partial class Program
         return countableInput.Count(static character => character == '\n') + 1;
     }
 
-    private static int GetInputFirstLineTextWidth()
+    private static int GetInputFirstLineTextWidth(AppState state)
     {
         const string promptPlain = "❯ ";
-        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
+        int contentWidth = GetInputContentWidth(state);
 
         return Math.Max(
             1,
             contentWidth - promptPlain.Length - InputCursorColumnWidth);
     }
 
-    private static int GetInputContinuationLineTextWidth()
+    private static int GetInputContinuationLineTextWidth(AppState state)
     {
-        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
+        int contentWidth = GetInputContentWidth(state);
         return Math.Max(1, contentWidth - 2 - InputCursorColumnWidth);
+    }
+
+    private static int GetMainPaneWidth(AppState state)
+    {
+        int windowWidth = GetWindowWidth();
+        return state.GitSidebarWidth > 0
+            ? Math.Max(20, windowWidth - state.GitSidebarWidth)
+            : windowWidth;
+    }
+
+    private static int GetPanelHeaderWidth(AppState state)
+    {
+        return Math.Max(20, GetMainPaneWidth(state) - 6);
+    }
+
+    private static int GetMainPaneContentWidth(AppState state)
+    {
+        return Math.Max(20, GetMainPaneWidth(state) - 8);
+    }
+
+    private static int GetInputContentWidth(AppState state)
+    {
+        return Math.Max(20, GetMainPaneWidth(state) - 10);
     }
 
     private static int GetWindowWidth()

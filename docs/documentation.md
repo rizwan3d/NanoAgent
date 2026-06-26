@@ -427,6 +427,19 @@ While a turn is running, the footer shows `Esc: interrupt` and `Esc again: aband
 
 After a `!` or `!!` shell command and a space, Tab completes file and directory paths from the workspace, the same way a normal terminal does. For example, `!cat ./sr` then Tab completes the typed path component while preserving the directory portion exactly as you typed it. Because shell commands usually take more arguments after a path, completing a path does not submit the command — it only fills in the path so you can keep typing. Completing a directory appends a trailing `/` so you can drill in further.
 
+#### Git sidebar
+
+Press F7 to toggle a VS Code-style left panel with the workspace's git state. It shows:
+
+- The current branch.
+- Any queued prompts or commands (mirrors the busy-line `… - N queued` count) while NanoAgent is busy.
+- The last 10 commits as `short-hash · message`.
+- Staged and changed files, grouped and colored by status (`M`, `A`, `D`, `?` untracked).
+
+Click a file row to open it in VS Code (`code`); if VS Code is not installed, it opens in the operating system's default editor for that file type. The git state refreshes automatically about every two seconds while the panel is open.
+
+Scroll the sidebar when its lists are longer than the window with the mouse wheel over the panel, or with Ctrl+Up/Ctrl+Down (Ctrl+PgUp/Ctrl+PgDn for a page). The header shows the visible line range, for example `12-31/48`. The panel is hidden automatically on very narrow terminals.
+
 ### Tool Runtime Settings
 
 Workspace `agent-profile.json` can tune tool timeouts and background terminal retention:
