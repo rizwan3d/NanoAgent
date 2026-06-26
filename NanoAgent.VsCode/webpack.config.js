@@ -52,7 +52,7 @@ const webviewConfig = {
       {
         test: /\.ts$/,
         exclude: /node_modules/,
-        // ponytail: transpileOnly — the legacy UI body in main.ts isn't fully typed yet.
+        // transpileOnly — the legacy UI body in main.ts isn't fully typed yet.
         // Shared modules (diffModel/chatCommands) are still strict-checked by `tsc -p .` in pretest.
         // Type the body incrementally, then run `npx tsc --noEmit -p tsconfig.webview.json` to verify.
         use: [{ loader: 'ts-loader', options: { configFile: 'tsconfig.webview.json', transpileOnly: true } }]

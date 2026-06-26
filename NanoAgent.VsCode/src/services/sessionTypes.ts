@@ -70,6 +70,20 @@ export type ToolCallUpdate = {
     content?: string[];
 };
 
+export type FileEditSummaryItem = {
+    displayPath: string;
+    absolutePath: string;
+    addedLineCount: number;
+    removedLineCount: number;
+    editCount: number;
+    action: string;
+};
+
+export type FileEditsSummary = {
+    sessionId: string;
+    files: FileEditSummaryItem[];
+};
+
 export type PlanEntry = {
     content: string;
     status: string;

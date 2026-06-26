@@ -1203,6 +1203,9 @@ public sealed class MarkdownMessageView : UserControl
         }
     }
 
+    /// <summary>Opens a file in the configured editor (VS Code if present), else the OS default.</summary>
+    public static void OpenPath(string path) => OpenFile(path, null);
+
     private static void OpenFile(
         string path,
         int? lineNumber)

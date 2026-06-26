@@ -160,6 +160,10 @@ public sealed class AgentRunner : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Per-file added/removed line totals for the current conversation (empty before init).</summary>
+    public IReadOnlyList<FileEditSummary> GetFileEditSummary()
+        => _backend?.GetFileEditSummary() ?? [];
+
     public async ValueTask DisposeAsync()
     {
         if (_backend is not null)

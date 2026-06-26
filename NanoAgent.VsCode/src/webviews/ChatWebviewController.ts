@@ -4,6 +4,7 @@ import { LogService } from '../services/LogService';
 import {
     ClientRequest,
     ClientRequestResolution,
+    FileEditsSummary,
     PermissionClientRequest,
     PlanUpdate,
     PromptState,
@@ -23,6 +24,7 @@ export class ChatWebviewController {
     private readonly localRequestResolvers = new Map<string, (resolution: ClientRequestResolution) => void>();
     private readonly toolCalls = new Map<string, ToolCallUpdate>();
     private currentPlan: PlanUpdate | null = null;
+    private currentFileEditsSummary: FileEditsSummary | null = null;
     private currentSessionInfo: SessionInfo | null;
     private localRequestCounter = 0;
     private bootstrapTimer: NodeJS.Timeout | null = null;
@@ -159,6 +161,10 @@ export class ChatWebviewController {
             this.currentPlan = plan;
             this.webview.postMessage({ command: 'setPlan', plan });
         };
+        const fileEditsSummaryListener = (summary: FileEditsSummary) => {
+            this.currentFileEditsSummary = summary;
+            this.webview.postMessage({ command: 'setFileEditsSummary', summary });
+        };
         const clientRequestListener = (request: ClientRequest) => {
             this.postClientRequest(request);
         };
@@ -172,6 +178,7 @@ export class ChatWebviewController {
         this.sessionManager.on('messageChunk', messageChunkListener);
         this.sessionManager.on('toolCallUpdated', toolCallListener);
         this.sessionManager.on('planUpdated', planListener);
+        this.sessionManager.on('fileEditsSummaryChanged', fileEditsSummaryListener);
         this.sessionManager.on('clientRequest', clientRequestListener);
         this.sessionManager.on('clientRequestResolved', clientRequestResolvedListener);
 
@@ -182,6 +189,7 @@ export class ChatWebviewController {
             new vscode.Disposable(() => this.sessionManager.off('messageChunk', messageChunkListener)),
             new vscode.Disposable(() => this.sessionManager.off('toolCallUpdated', toolCallListener)),
             new vscode.Disposable(() => this.sessionManager.off('planUpdated', planListener)),
+            new vscode.Disposable(() => this.sessionManager.off('fileEditsSummaryChanged', fileEditsSummaryListener)),
             new vscode.Disposable(() => this.sessionManager.off('clientRequest', clientRequestListener)),
             new vscode.Disposable(() => this.sessionManager.off('clientRequestResolved', clientRequestResolvedListener))
         );
@@ -199,6 +207,12 @@ export class ChatWebviewController {
 
         if (this.currentPlan) {
             void this.postToWebview({ command: 'setPlan', plan: this.currentPlan }, 'plan');
+        }
+
+        const summary = this.currentFileEditsSummary ?? this.sessionManager.getFileEditsSummary();
+        if (summary) {
+            this.currentFileEditsSummary = summary;
+            void this.postToWebview({ command: 'setFileEditsSummary', summary }, 'file edits summary');
         }
 
         for (const toolCall of this.toolCalls.values()) {
@@ -554,9 +568,11 @@ export class ChatWebviewController {
 
     private clearSessionActivity() {
         this.currentPlan = null;
+        this.currentFileEditsSummary = null;
         this.toolCalls.clear();
         this.webview.postMessage({ command: 'setPlan', plan: null });
         this.webview.postMessage({ command: 'clearToolCalls' });
+        this.webview.postMessage({ command: 'setFileEditsSummary', summary: null });
     }
 
     private async readWorkspaceFile(requestedPath: string) {
