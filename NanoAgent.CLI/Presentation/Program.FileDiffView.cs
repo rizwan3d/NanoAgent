@@ -479,9 +479,23 @@ public static partial class Program
     // the caller renders the file name without a clickable link instead of crashing.
     private static string? BuildEditorLink(string absolutePath, bool vscode)
     {
-        if (string.IsNullOrWhiteSpace(absolutePath) ||
-            !Uri.TryCreate(absolutePath, UriKind.Absolute, out Uri? uri) ||
-            !uri.IsFile)
+        if (string.IsNullOrWhiteSpace(absolutePath))
+        {
+            return null;
+        }
+
+        string normalizedPath;
+        try
+        {
+            normalizedPath = Path.GetFullPath(absolutePath);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return null;
+        }
+
+        Uri uri = new(normalizedPath);
+        if (!uri.IsFile)
         {
             return null;
         }
