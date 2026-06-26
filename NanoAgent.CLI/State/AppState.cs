@@ -161,6 +161,9 @@ public sealed class AppState
 
     public int? StreamingMessageId { get; set; }
 
+    // Single running "files modified" tally, updated in place each turn (matches the VS surface).
+    public ChatMessage? FileEditsSummaryMessage { get; set; }
+
     public Queue<char> StreamQueue { get; } = new();
 
     public long CurrentOperationId { get; private set; }

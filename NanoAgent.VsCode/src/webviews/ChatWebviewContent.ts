@@ -215,6 +215,13 @@ export function getChatWebviewContent(webview: vscode.Webview, extensionUri: vsc
                         </div>
                         <div id="agent-thread-list" class="agent-thread-list"></div>
                     </section>
+                    <section class="section section-scroll">
+                        <div class="section-header">
+                            <h2>Changed files</h2>
+                            <span id="changed-files-count" class="section-count">0 files</span>
+                        </div>
+                        <div id="changed-files-list" class="changed-files-list"></div>
+                    </section>
                 </aside>
                 <div class="composer">
                     <div id="prompt-queue" class="prompt-queue hidden"></div>

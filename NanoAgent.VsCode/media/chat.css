@@ -1129,9 +1129,72 @@
 
         .plan-list,
         .tool-list,
-        .agent-thread-list {
+        .agent-thread-list,
+        .changed-files-list {
             display: grid;
             gap: var(--space-2);
+        }
+
+        .changed-files-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85em;
+        }
+
+        .changed-files-table th,
+        .changed-files-table td {
+            padding: 2px var(--space-2);
+            text-align: left;
+            border-bottom: 1px solid color-mix(in srgb, var(--border, #30363d) 60%, transparent);
+            white-space: nowrap;
+        }
+
+        .changed-files-table th {
+            font-weight: 600;
+            opacity: 0.7;
+        }
+
+        .changed-files-table .changed-file-num {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .changed-files-table .changed-file-name {
+            width: 100%;
+            max-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .changed-files-total td {
+            border-bottom: none;
+            opacity: 0.8;
+        }
+
+        .changed-file-action {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .changed-file-action-created {
+            color: var(--success, #3fb950);
+        }
+
+        .changed-file-action-deleted {
+            color: var(--danger, #f85149);
+        }
+
+        .changed-file-action-edited {
+            color: var(--warning, #d29922);
+        }
+
+        .changed-file-added {
+            color: var(--success, #3fb950);
+        }
+
+        .changed-file-removed {
+            color: var(--danger, #f85149);
         }
 
         .plan-item {
