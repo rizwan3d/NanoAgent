@@ -259,7 +259,7 @@ public static partial class Program
         AppState state,
         IReadOnlyList<SlashCommandSuggestion> suggestions)
     {
-        int contentWidth = Math.Max(20, GetWindowWidth() - 10);
+        int contentWidth = GetInputContentWidth(state);
         IReadOnlyList<SlashCommandSuggestion> visibleSuggestions = GetVisibleSlashCommandSuggestions(
             state,
             suggestions);
