@@ -808,9 +808,10 @@ public static partial class Program
 
     private static string BuildBusyStatusText(AppState state)
     {
-        return state.PendingSubmissions.Count == 0
+        int queued = state.PendingSubmissions.Count;
+        return queued == 0
             ? BusyStatusText
-            : $"{BusyStatusText} - {state.PendingSubmissions.Count} queued";
+            : $"{BusyStatusText} · {queued} queued {(queued == 1 ? "prompt" : "prompts")} — F4 removes newest";
     }
 
     private static int GetPinnedPlanContentWidth()
@@ -981,7 +982,8 @@ public static partial class Program
         string inputMarkup = BuildInputLineMarkup(
             input,
             cursorIndex,
-            selectionAnchorIndex);
+            selectionAnchorIndex,
+            isBusy ? "Type to queue a prompt for the next turn" : "Enter a prompt and press Enter");
 
         if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
         {
@@ -1007,11 +1009,6 @@ public static partial class Program
         if (TryBuildInputAttachmentSummary(state, out string attachmentSummary))
         {
             lines.Add($"[grey]{Markup.Escape(attachmentSummary)}[/]");
-        }
-
-        if (TryBuildPendingSubmissionSummary(state, out string pendingSubmissionSummary))
-        {
-            lines.Add($"[grey]{Markup.Escape(pendingSubmissionSummary)}[/]");
         }
 
         return string.Join('\n', lines);
@@ -1081,23 +1078,6 @@ public static partial class Program
         return true;
     }
 
-    private static bool TryBuildPendingSubmissionSummary(
-        AppState state,
-        out string summary)
-    {
-        if (state.PendingSubmissions.Count == 0)
-        {
-            summary = string.Empty;
-            return false;
-        }
-
-        int queuedCount = state.PendingSubmissions.Count;
-        summary = queuedCount == 1
-            ? "1 queued prompt - F4 removes newest"
-            : $"{queuedCount} queued prompts - F4 removes newest";
-        return true;
-    }
-
     private static string BuildFooterMarkup(AppState state)
     {
         if (state.ActiveModal is not null)
@@ -1127,7 +1107,7 @@ public static partial class Program
         if (state.IsBusy || state.IsStreaming)
         {
             return BuildFooterLineMarkup(
-                "[grey]Enter: queue prompt[/]  [grey]|[/]  [grey]F4: remove queued[/]  [grey]|[/]  [grey]Esc: interrupt[/]  [grey]|[/]  [grey]Esc again: abandon[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+                "[grey]Esc: interrupt[/]  [grey]|[/]  [grey]Esc again: abandon[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
         }
 
         if (TryGetSlashCommandSuggestions(state, out _))
@@ -1137,18 +1117,26 @@ public static partial class Program
         }
 
         return BuildFooterLineMarkup(
-            "[grey]Enter: Send[/]  [grey]|[/]  [grey]Shift+Enter: Newline[/]  [grey]|[/]  [grey]Ctrl+A: select all[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+            "[grey]Shift+Enter: Newline[/]  [grey]|[/] [grey]Shift+drag: select text[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/][grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
 
     private static string BuildInputLineMarkup(
         string input,
         int cursorIndex,
-        int? selectionAnchorIndex)
+        int? selectionAnchorIndex,
+        string? placeholder = null)
     {
         string normalizedInput = input ?? string.Empty;
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
         const string promptPlain = "> ";
         const string promptMarkup = "[bold green]❯[/] ";
+
+        // Empty input + a placeholder (e.g. while busy): show the cursor then a grey hint.
+        if (normalizedInput.Length == 0 && !string.IsNullOrEmpty(placeholder))
+        {
+            return $"{promptMarkup}{BuildInputCursorMarkup()}[grey]{Markup.Escape(placeholder)}[/]";
+        }
+
         int contentWidth = Math.Max(20, GetWindowWidth() - 10);
         int maxInputLength = Math.Max(
             1,
@@ -1246,11 +1234,6 @@ public static partial class Program
         }
 
         if (state.InputAttachments.Count > 0)
-        {
-            lineCount++;
-        }
-
-        if (state.PendingSubmissions.Count > 0)
         {
             lineCount++;
         }
