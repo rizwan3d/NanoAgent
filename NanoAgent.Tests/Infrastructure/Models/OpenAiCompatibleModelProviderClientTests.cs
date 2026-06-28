@@ -243,6 +243,30 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_SendConfiguredTitleHeader_When_TitleEnvironmentVariableIsSet()
+    {
+        using EnvironmentVariableScope title = new(
+            ProviderRequestProjectHeaderProvider.TitleEnvironmentVariableName,
+            "Customer Portal");
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "gpt-5" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenRouter, null),
+            "test-key",
+            CancellationToken.None);
+
+        handler.OpenRouterTitleHeader.Should().Be("Customer Portal");
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_ReauthenticateNanoAgentEnterprise_When_RefreshedCredentialIsStillUnauthorized()
     {
         SequencedHandler handler = new(

@@ -359,6 +359,42 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_SendConfiguredTitleHeader_When_TitleEnvironmentVariableIsSet()
+    {
+        using EnvironmentVariableScope title = new(
+            ProviderRequestProjectHeaderProvider.TitleEnvironmentVariableName,
+            "Customer Portal");
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_title_header",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenRouter, null),
+                "test-key",
+                "openai/gpt-4o",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.OpenRouterTitleHeader.Should().Be("Customer Portal");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToOpenRouterEndpointWithAppHeaders_When_OpenRouterProviderIsSelected()
     {
         RecordingHandler handler = new("""
