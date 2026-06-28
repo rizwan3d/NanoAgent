@@ -54,6 +54,7 @@ internal sealed record BackendRuntimeArguments(
 
     internal sealed class Builder
     {
+        private const string SandboxModeConfigKey = "--Application:Permissions:SandboxMode";
         private readonly bool _includePassthroughArgs;
         private readonly List<string> _rawArgs = [];
         private string? _appSurface;
@@ -127,7 +128,26 @@ internal sealed record BackendRuntimeArguments(
                 return true;
             }
 
+            if (TryReadOptionValue(args, ref index, "--sandbox-mode", out string? sandboxMode))
+            {
+                _rawArgs.Add($"{SandboxModeConfigKey}={NormalizeSandboxMode(sandboxMode)}");
+                return true;
+            }
+
             return false;
+        }
+
+        private static string NormalizeSandboxMode(string? value)
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            return normalized.ToLowerInvariant() switch
+            {
+                "read-only" or "readonly" => "ReadOnly",
+                "workspace-write" or "workspacewrite" => "WorkspaceWrite",
+                "danger-full-access" or "dangerfullaccess" => "DangerFullAccess",
+                _ => throw new ArgumentException(
+                    "Invalid value for --sandbox-mode. Expected one of: read-only, workspace-write, danger-full-access.")
+            };
         }
 
         private bool TryConsumeFlag(
