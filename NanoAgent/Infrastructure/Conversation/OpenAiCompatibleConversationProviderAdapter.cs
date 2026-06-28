@@ -9,7 +9,6 @@ namespace NanoAgent.Infrastructure.Conversation;
 
 internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversationProviderAdapter
 {
-    private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
     private const string KiloCodeEditorName = "NanoAgent";
     private const string KiloCodeUserAgent = "nanoagent-kilo-provider";
@@ -97,10 +96,13 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
     {
         HttpRequestMessage httpRequest = new(HttpMethod.Post, new Uri(baseUri, "chat/completions"));
         httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        string requestTitle =
+            ProviderRequestProjectHeaderProvider.GetConfiguredTitle() ??
+            ProviderRequestProjectHeaderProvider.DefaultRequestTitle;
         if (providerKind == ProviderKind.OpenRouter)
         {
             httpRequest.Headers.TryAddWithoutValidation("HTTP-Referer", OpenRouterApplicationUrl);
-            httpRequest.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            httpRequest.Headers.TryAddWithoutValidation("X-Title", requestTitle);
         }
         else if (providerKind == ProviderKind.KiloCode)
         {
@@ -111,7 +113,7 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
         string? configuredProjectName = ProviderRequestProjectHeaderProvider.GetConfiguredProjectName();
         if (usesNanoAgentEnterpriseCredentials)
         {
-            httpRequest.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            httpRequest.Headers.TryAddWithoutValidation("X-Title", requestTitle);
         }
 
         if (usesNanoAgentEnterpriseCredentials || configuredProjectName is not null)
