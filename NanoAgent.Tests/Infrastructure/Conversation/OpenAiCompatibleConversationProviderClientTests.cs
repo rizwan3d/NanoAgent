@@ -323,6 +323,42 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
     }
 
     [Fact]
+    public async Task SendAsync_Should_SendConfiguredProjectHeader_When_ProjectNameEnvironmentVariableIsSet()
+    {
+        using EnvironmentVariableScope projectName = new(
+            ProviderRequestProjectHeaderProvider.ProjectNameEnvironmentVariableName,
+            "customer-portal");
+        RecordingHandler handler = new("""
+            {
+              "id": "resp_project_header",
+              "choices": [
+                {
+                  "message": {
+                    "content": "Hello."
+                  }
+                }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleConversationProviderClient sut = CreateSut(httpClient);
+
+        await sut.SendAsync(
+            new ConversationProviderRequest(
+                new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+                "test-key",
+                "gpt-5",
+                [
+                    ConversationRequestMessage.User("Say hello.")
+                ],
+                "You are helpful.",
+                []),
+            CancellationToken.None);
+
+        handler.ProjectHeader.Should().Be("customer-portal");
+    }
+
+    [Fact]
     public async Task SendAsync_Should_PostChatCompletionsToOpenRouterEndpointWithAppHeaders_When_OpenRouterProviderIsSelected()
     {
         RecordingHandler handler = new("""
@@ -1796,6 +1832,24 @@ public sealed class OpenAiCompatibleConversationProviderClientTests
         public string GetWorkspaceRoot()
         {
             return _workspaceRoot;
+        }
+    }
+
+    private sealed class EnvironmentVariableScope : IDisposable
+    {
+        private readonly string _name;
+        private readonly string? _previousValue;
+
+        public EnvironmentVariableScope(string name, string? value)
+        {
+            _name = name;
+            _previousValue = Environment.GetEnvironmentVariable(name);
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        public void Dispose()
+        {
+            Environment.SetEnvironmentVariable(_name, _previousValue);
         }
     }
 }
