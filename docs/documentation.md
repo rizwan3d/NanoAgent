@@ -297,6 +297,12 @@ Interactive mode opens the terminal UI with conversation history, live activity,
 nanoai "Find risky changes in this branch"
 ```
 
+To override the sandbox policy for a specific run, pass `--sandbox-mode`:
+
+```bash
+nanoai --sandbox-mode danger-full-access "Apply the requested refactor"
+```
+
 ### Prompt From Standard Input
 
 ```bash
@@ -321,6 +327,7 @@ nanoai --session <session-guid>
 | `--json` | Write one-shot prompt or command output as a JSON object. |
 | `-y, --yes` | Approve promptable tool requests for this run while preserving explicit deny rules. |
 | `-p, --prompt <text>` | Run one prompt and print the response. |
+| `--sandbox-mode <mode>` | Override sandbox mode for this run. Values: `read-only`, `workspace-write`, `danger-full-access`. |
 | `--provider-auth-key <key>` | Use this key when provider API-key onboarding asks for a credential. |
 | `--session <id>` | Resume an existing session. |
 | `--section <id>` | Compatibility alias for `--session`. |

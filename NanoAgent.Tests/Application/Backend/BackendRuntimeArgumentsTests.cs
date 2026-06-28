@@ -14,7 +14,8 @@ public sealed class BackendRuntimeArgumentsTests
                 "--section=section-1",
                 "--thinking", "off",
                 "--surface", "VSCode",
-                "--no-update-check"
+                "--no-update-check",
+                "--sandbox-mode", "danger-full-access"
             ]);
 
         arguments.RawArgs.Should().Equal(
@@ -22,7 +23,8 @@ public sealed class BackendRuntimeArgumentsTests
             "--section=section-1",
             "--thinking", "off",
             "--surface", "VSCode",
-            "--no-update-check");
+            "--no-update-check",
+            "--Application:Permissions:SandboxMode=DangerFullAccess");
         arguments.SectionId.Should().Be("section-1");
         arguments.ProfileName.Should().Be("review");
         arguments.ThinkingMode.Should().Be("off");
@@ -64,5 +66,14 @@ public sealed class BackendRuntimeArgumentsTests
 
         act.Should().Throw<ArgumentException>()
             .WithMessage("Missing value for --thinking.");
+    }
+
+    [Fact]
+    public void Parse_Should_RejectInvalidSandboxModeValue()
+    {
+        Action act = () => BackendRuntimeArguments.Parse(["--sandbox-mode", "unsafe"]);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("Invalid value for --sandbox-mode. Expected one of: read-only, workspace-write, danger-full-access.");
     }
 }
