@@ -607,12 +607,18 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             return;
         }
 
+        string? configuredProjectName = ProviderRequestProjectHeaderProvider.GetConfiguredProjectName();
         if (usesNanoAgentEnterpriseCredentials)
         {
             request.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+        }
+
+        if (usesNanoAgentEnterpriseCredentials || configuredProjectName is not null)
+        {
             request.Headers.TryAddWithoutValidation(
                 "X-Project",
                 _providerRequestProjectHeaderProvider?.GetProjectName() ??
+                configuredProjectName ??
                 ProviderRequestProjectHeaderProvider.ResolveProjectName(Directory.GetCurrentDirectory()));
         }
     }
