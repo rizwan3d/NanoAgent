@@ -19,7 +19,6 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
     private const string AnthropicClaudeAccountUserAgent = "claude-cli/2.1.75";
     private const string AccountHeaderName = "Chat" + "G" + "P" + "T-Account-Id";
     private const string Originator = "nanoagent";
-    private const string OpenRouterApplicationTitle = "NanoAgent";
     private const string OpenRouterApplicationUrl = "https://github.com/rizwan3d/NanoAgent";
     private const string KiloCodeEditorName = "NanoAgent";
     private const string KiloCodeUserAgent = "nanoagent-kilo-provider";
@@ -592,11 +591,14 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        string requestTitle =
+            ProviderRequestProjectHeaderProvider.GetConfiguredTitle() ??
+            ProviderRequestProjectHeaderProvider.DefaultRequestTitle;
 
         if (providerKind == ProviderKind.OpenRouter)
         {
             request.Headers.TryAddWithoutValidation("HTTP-Referer", OpenRouterApplicationUrl);
-            request.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            request.Headers.TryAddWithoutValidation("X-Title", requestTitle);
             return;
         }
 
@@ -610,7 +612,7 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         string? configuredProjectName = ProviderRequestProjectHeaderProvider.GetConfiguredProjectName();
         if (usesNanoAgentEnterpriseCredentials)
         {
-            request.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+            request.Headers.TryAddWithoutValidation("X-Title", requestTitle);
         }
 
         if (usesNanoAgentEnterpriseCredentials || configuredProjectName is not null)
