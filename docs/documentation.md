@@ -111,7 +111,7 @@ NanoAgent will guide you through provider setup:
 
 In terminal runs, `--provider-auth-key <key>` can supply the provider API key when onboarding asks for it.
 
-If you already know the provider settings you want, you can skip the interactive onboarding prompts by setting `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_THINKING`, optional `NANOAGENT_REASONING`, and `NANOAGENT_API_KEY` before the first run. NanoAgent treats that as a complete headless setup and saves it as the active provider profile.
+If you already know the provider settings you want, you can skip the interactive onboarding prompts by setting `NANOAGENT_PROVIDER`, `NANOAGENT_MODEL`, `NANOAGENT_THINKING`, optional `NANOAGENT_REASONING`, optional `NANOAGENT_PROJECT_NAME`, and `NANOAGENT_API_KEY` before the first run. NanoAgent treats that as a complete headless setup and saves it as the active provider profile. When `NANOAGENT_PROJECT_NAME` is set, NanoAgent sends that value as the `X-Project` header on provider requests.
 
 PowerShell example:
 
@@ -120,6 +120,7 @@ $env:NANOAGENT_PROVIDER="openrouter"
 $env:NANOAGENT_MODEL="poolside/laguna-m.1:free"
 $env:NANOAGENT_THINKING="on"
 $env:NANOAGENT_REASONING="high"
+$env:NANOAGENT_PROJECT_NAME="customer-portal"
 $env:NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 
 nanoai -p "Say hello in one short line"
@@ -132,6 +133,7 @@ export NANOAGENT_PROVIDER="openrouter"
 export NANOAGENT_MODEL="poolside/laguna-m.1:free"
 export NANOAGENT_THINKING="on"
 export NANOAGENT_REASONING="high"
+export NANOAGENT_PROJECT_NAME="customer-portal"
 export NANOAGENT_API_KEY="PASTE_NEW_ROTATED_KEY_HERE"
 
 nanoai -p "Say hello in one short line"
@@ -683,6 +685,7 @@ Optional repository variables:
 | `NANOAGENT_BASE_URL` | empty | Required only when `NANOAGENT_PROVIDER` is `openai-compatible`. |
 | `NANOAGENT_THINKING` | `off` | `on` or `off`. |
 | `NANOAGENT_REASONING` | empty | Reasoning effort: `none`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. |
+| `NANOAGENT_PROJECT_NAME` | empty | Optional override for the `X-Project` header NanoAgent sends on provider requests. |
 
 The GitHub workflow uses `pull_request_target` so it can comment with the repository token. It checks out the trusted base branch version of NanoAgent, fetches the PR head only to compute a diff, and runs the CLI from trusted code. GitLab and Bitbucket examples run in their native merge request or pull request pipeline contexts and post comments through their REST APIs.
 

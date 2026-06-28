@@ -107,12 +107,19 @@ internal sealed class OpenAiCompatibleConversationProviderAdapter : IConversatio
             httpRequest.Headers.TryAddWithoutValidation("X-KILOCODE-EDITORNAME", KiloCodeEditorName);
             httpRequest.Headers.TryAddWithoutValidation("User-Agent", KiloCodeUserAgent);
         }
-        else if (usesNanoAgentEnterpriseCredentials)
+
+        string? configuredProjectName = ProviderRequestProjectHeaderProvider.GetConfiguredProjectName();
+        if (usesNanoAgentEnterpriseCredentials)
         {
             httpRequest.Headers.TryAddWithoutValidation("X-Title", OpenRouterApplicationTitle);
+        }
+
+        if (usesNanoAgentEnterpriseCredentials || configuredProjectName is not null)
+        {
             httpRequest.Headers.TryAddWithoutValidation(
                 "X-Project",
                 _providerRequestProjectHeaderProvider?.GetProjectName() ??
+                configuredProjectName ??
                 ProviderRequestProjectHeaderProvider.ResolveProjectName(Directory.GetCurrentDirectory()));
         }
 
