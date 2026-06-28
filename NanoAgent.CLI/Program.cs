@@ -577,6 +577,8 @@ public static partial class Program
               --json               Write one-shot result as a JSON object
               -y, --yes            Approve promptable tool requests for this run
               -p, --prompt <text>  One-shot prompt text
+              --sandbox-mode <mode>
+                                   Override sandbox mode: read-only, workspace-write, or danger-full-access
               --provider-auth-key <key>
                                    Use this key for provider API-key onboarding
               --section <id>       Resume an existing section

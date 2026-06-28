@@ -114,7 +114,8 @@ public sealed class CliInvocationTests
                 "--section", "section-1",
                 "--session", "section-2",
                 "--profile", "review",
-                "--thinking", "on"
+                "--thinking", "on",
+                "--sandbox-mode", "danger-full-access"
             ],
             stdinRedirected: false,
             () => throw new InvalidOperationException());
@@ -125,7 +126,8 @@ public sealed class CliInvocationTests
             "--section", "section-1",
             "--session", "section-2",
             "--profile", "review",
-            "--thinking", "on");
+            "--thinking", "on",
+            "--Application:Permissions:SandboxMode=DangerFullAccess");
         invocation.RuntimeArguments.SectionId.Should().Be("section-2");
         invocation.RuntimeArguments.ProfileName.Should().Be("review");
         invocation.RuntimeArguments.ThinkingMode.Should().Be("on");
