@@ -4,6 +4,7 @@ namespace NanoAgent.Infrastructure;
 
 internal sealed class ProviderRequestProjectHeaderProvider
 {
+    internal const string ProjectNameEnvironmentVariableName = "NANOAGENT_PROJECT_NAME";
     private const string GitMetadataDirectoryName = ".git";
     private const string FallbackProjectName = "workspace";
 
@@ -16,7 +17,12 @@ internal sealed class ProviderRequestProjectHeaderProvider
 
     public string GetProjectName()
     {
-        return ResolveProjectName(_workspaceRootProvider.GetWorkspaceRoot());
+        return GetConfiguredProjectName() ?? ResolveProjectName(_workspaceRootProvider.GetWorkspaceRoot());
+    }
+
+    public static string? GetConfiguredProjectName()
+    {
+        return NormalizeProjectName(Environment.GetEnvironmentVariable(ProjectNameEnvironmentVariableName));
     }
 
     internal static string ResolveProjectName(string workspaceRoot)
@@ -57,5 +63,23 @@ internal sealed class ProviderRequestProjectHeaderProvider
         return string.IsNullOrWhiteSpace(name)
             ? FallbackProjectName
             : name;
+    }
+
+    private static string? NormalizeProjectName(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        string normalized = new(
+            value
+                .Trim()
+                .Where(static character => !char.IsControl(character))
+                .ToArray());
+
+        return string.IsNullOrWhiteSpace(normalized)
+            ? null
+            : normalized;
     }
 }
