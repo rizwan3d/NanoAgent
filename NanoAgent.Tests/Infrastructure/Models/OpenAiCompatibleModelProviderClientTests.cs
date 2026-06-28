@@ -219,6 +219,30 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_SendConfiguredProjectHeader_When_ProjectNameEnvironmentVariableIsSet()
+    {
+        using EnvironmentVariableScope projectName = new(
+            ProviderRequestProjectHeaderProvider.ProjectNameEnvironmentVariableName,
+            "customer-portal");
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "gpt-5" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "test-key",
+            CancellationToken.None);
+
+        handler.ProjectHeader.Should().Be("customer-portal");
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_ReauthenticateNanoAgentEnterprise_When_RefreshedCredentialIsStillUnauthorized()
     {
         SequencedHandler handler = new(
@@ -847,6 +871,24 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         public string GetWorkspaceRoot()
         {
             return _workspaceRoot;
+        }
+    }
+
+    private sealed class EnvironmentVariableScope : IDisposable
+    {
+        private readonly string _name;
+        private readonly string? _previousValue;
+
+        public EnvironmentVariableScope(string name, string? value)
+        {
+            _name = name;
+            _previousValue = Environment.GetEnvironmentVariable(name);
+            Environment.SetEnvironmentVariable(name, value);
+        }
+
+        public void Dispose()
+        {
+            Environment.SetEnvironmentVariable(_name, _previousValue);
         }
     }
 }
