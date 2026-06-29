@@ -610,6 +610,39 @@ public sealed class ProgramTests
         markupLines.Should().Contain(line => line.Contains("[deepskyblue1]var"));
     }
 
+    [Fact]
+    public void SafeHeaderMarkup_Should_EscapeInvalidMarkup()
+    {
+        MethodInfo safeHeaderMarkup = typeof(Program).GetMethod(
+            "SafeHeaderMarkup",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        string result = (string)safeHeaderMarkup.Invoke(null, ["[bold]Session[/] [oops"])!;
+
+        result.Should().Be("[[bold]]Session[[/]] [[oops");
+    }
+
+    [Fact]
+    public void BuildInputPanel_Should_NotThrow_WhenProviderContainsMarkupBrackets()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object)
+        {
+            ActiveModelId = "gpt-5",
+            ProviderName = "Provider [beta",
+            HasMadeFirstLlmCall = true
+        };
+
+        MethodInfo buildInputPanel = typeof(Program).GetMethod(
+            "BuildInputPanel",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        Action act = () => buildInputPanel.Invoke(null, [state]);
+
+        act.Should().NotThrow();
+    }
+
     private static string[] RenderConversationMarkup(AppState state)
     {
         MethodInfo buildConversationLines = typeof(Program).GetMethod(

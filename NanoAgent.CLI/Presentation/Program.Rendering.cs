@@ -153,7 +153,7 @@ public static partial class Program
         if (!state.HasMadeFirstLlmCall)
         {
             return new Panel(new Markup(CliBranding.BuildHeaderBodyMarkup()))
-                .Header(CliBranding.BuildStatusHeaderMarkup())
+                .Header(SafeHeaderMarkup(CliBranding.BuildStatusHeaderMarkup()))
                 .Border(BoxBorder.Square)
                 .Expand();
         }
@@ -166,7 +166,7 @@ public static partial class Program
     private static IRenderable BuildMessagesPanel(AppState state)
     {
         return new Panel(BuildMessagesPanelContent(state))
-            .Header(BuildMessagesPanelHeaderMarkup(state))
+            .Header(SafeHeaderMarkup(BuildMessagesPanelHeaderMarkup(state)))
             .Border(BoxBorder.Square)
             .Expand();
     }
@@ -269,8 +269,7 @@ public static partial class Program
     private static IRenderable BuildPinnedPlanPanel(AppState state)
     {
         return new Panel(new Markup(BuildPinnedPlanMarkup(state)))
-            .Header($"[bold cyan]Plan[/] [grey]({PlanPanelHideHint})[/]")
-            .Header(BuildPinnedPlanPanelHeaderMarkup(state))
+            .Header(SafeHeaderMarkup(BuildPinnedPlanPanelHeaderMarkup(state)))
             .Border(BoxBorder.Square)
             .Expand();
     }
@@ -311,7 +310,7 @@ public static partial class Program
     private static IRenderable BuildPromptPanel(UiModalState modal)
     {
         return new Panel(new Markup(modal.BuildBodyMarkup()))
-            .Header("[bold yellow]Action Required[/]")
+            .Header(SafeHeaderMarkup("[bold yellow]Action Required[/]"))
             .Border(BoxBorder.Double)
             .Expand();
     }
@@ -319,9 +318,27 @@ public static partial class Program
     private static IRenderable BuildInputPanel(AppState state)
     {
         return new Panel(new Markup(BuildInputMarkup(state)))
-            .Header(BuildInputPanelHeaderMarkup(state))
+            .Header(SafeHeaderMarkup(BuildInputPanelHeaderMarkup(state)))
             .Border(BoxBorder.Square)
             .Expand();
+    }
+
+    private static string SafeHeaderMarkup(string markup)
+    {
+        if (string.IsNullOrEmpty(markup))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            _ = Markup.Remove(markup);
+            return markup;
+        }
+        catch (InvalidOperationException)
+        {
+            return Markup.Escape(markup);
+        }
     }
 
     private static string BuildInputPanelHeaderMarkup(AppState state)
