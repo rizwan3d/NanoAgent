@@ -66,7 +66,7 @@ public static partial class Program
             : string.Empty;
 
         return new Panel(new Markup(string.Join('\n', markup)))
-            .Header($"[bold]Git[/] [grey](F7)[/]{scrollHint}")
+            .Header(SafeHeaderMarkup($"[bold]Git[/] [grey](F7)[/]{scrollHint}"))
             .Border(BoxBorder.Square)
             .Expand();
     }
