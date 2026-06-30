@@ -158,6 +158,7 @@ public static partial class Program
         await RunInteractiveAsync(
             invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface),
             invocation.ProviderAuthKey,
+            invocation.NoOldReader,
             invocation.AutoApproveAllTools);
         return 0;
     }
@@ -325,6 +326,7 @@ public static partial class Program
     private static async Task RunInteractiveAsync(
         BackendRuntimeArguments runtimeArguments,
         string? providerAuthKey,
+        bool noOldReader,
         bool autoApproveAllTools)
     {
         ConsoleCancelEventHandler? cancelKeyPressHandler = null;
@@ -354,7 +356,7 @@ public static partial class Program
             };
 
             Console.CancelKeyPress += cancelKeyPressHandler;
-            StartInitialization(state);
+            StartInitialization(state, noOldReader);
 
             await AnsiConsole
                 .Live(BuildUi(state))
@@ -583,6 +585,7 @@ public static partial class Program
                                    Use this key for provider API-key onboarding
               --section <id>       Resume an existing section
               --session <id>       Alias for --section
+              --no-old-reader      Resume a section without replaying old messages to the screen
               --profile <name>     Use an agent profile
               --thinking <on|off>  Override thinking mode
               -v, --version        Show version
@@ -627,7 +630,9 @@ public static partial class Program
         return state.HasMadeFirstLlmCall ? 3 : 9;
     }
 
-    private static void StartInitialization(AppState state)
+    private static void StartInitialization(
+        AppState state,
+        bool noOldReader = false)
     {
         state.IsBusy = true;
         state.ActivityText = "Loading NanoAgent services";
@@ -647,7 +652,10 @@ public static partial class Program
                     appState.HasFatalError = false;
                     appState.ActivityText = "Ready";
                     ApplySessionInfo(appState, sessionInfo);
-                    RenderResumedSection(appState, sessionInfo);
+                    if (!noOldReader)
+                    {
+                        RenderResumedSection(appState, sessionInfo);
+                    }
                 });
             }
             catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
