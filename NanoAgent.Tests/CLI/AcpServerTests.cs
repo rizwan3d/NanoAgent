@@ -373,6 +373,66 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_OnlyForwardNoUpdateCheck_WhenRequested()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/new\",\"params\":{\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        string[]? argsWithoutSkip = null;
+        using (StringReader reader = new(input))
+        using (StringWriter output = new())
+        using (StringWriter error = new())
+        {
+            AcpServer sut = new(
+                reader,
+                output,
+                error,
+                backendArgs: ["--profile", "review"],
+                providerAuthKey: null,
+                (args, _) =>
+                {
+                    argsWithoutSkip = args;
+                    return new FakeBackend();
+                });
+
+            await sut.RunAsync(CancellationToken.None);
+        }
+
+        argsWithoutSkip.Should().NotBeNull();
+        argsWithoutSkip!.Should().Equal("--profile", "review");
+
+        string[]? argsWithSkip = null;
+        using (StringReader reader = new(input))
+        using (StringWriter output = new())
+        using (StringWriter error = new())
+        {
+            AcpServer sut = new(
+                reader,
+                output,
+                error,
+                backendArgs: ["--profile", "review", "--no-update-check"],
+                providerAuthKey: null,
+                (args, _) =>
+                {
+                    argsWithSkip = args;
+                    return new FakeBackend();
+                });
+
+            await sut.RunAsync(CancellationToken.None);
+        }
+
+        argsWithSkip.Should().NotBeNull();
+        argsWithSkip!.Should().Equal("--profile", "review", "--no-update-check");
+    }
+
+    [Fact]
     public async Task RunAsync_Should_AllowMultipleActiveSessions()
     {
         string cwd = Directory.GetCurrentDirectory();
