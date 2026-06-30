@@ -1552,6 +1552,7 @@ internal sealed class AcpServer : IAsyncDisposable
     private string[] CreateBackendArgs(string? sectionId)
     {
         List<string> args = [];
+        bool skipUpdateCheck = false;
         for (int index = 0; index < _backendArgs.Length; index++)
         {
             string arg = _backendArgs[index];
@@ -1569,6 +1570,7 @@ internal sealed class AcpServer : IAsyncDisposable
 
             if (string.Equals(arg, "--no-update-check", StringComparison.OrdinalIgnoreCase))
             {
+                skipUpdateCheck = true;
                 continue;
             }
 
@@ -1586,7 +1588,11 @@ internal sealed class AcpServer : IAsyncDisposable
             args.Add(sectionId.Trim());
         }
 
-        args.Add("--no-update-check");
+        if (skipUpdateCheck)
+        {
+            args.Add("--no-update-check");
+        }
+
         return args.ToArray();
     }
 
