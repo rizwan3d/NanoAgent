@@ -273,7 +273,7 @@ public sealed class ProgramTests
             "StartInitialization",
             BindingFlags.NonPublic | BindingFlags.Static)!;
 
-        startInitialization.Invoke(null, [state]);
+        startInitialization.Invoke(null, [state, false]);
         await state.ActiveOperation!;
         state.UiBridge.ApplyPending(state);
 
@@ -283,6 +283,48 @@ public sealed class ProgramTests
         state.Messages.Should().ContainSingle(message =>
             message.Role == Role.System &&
             message.Text == "Failed to start NanoAgent: boom");
+    }
+
+    [Fact]
+    public async Task StartInitialization_Should_SkipRenderingResumedSection_WhenNoOldReaderIsEnabled()
+    {
+        Mock<INanoAgentBackend> backend = new(MockBehavior.Strict);
+        backend
+            .Setup(static value => value.InitializeAsync(
+                It.IsAny<NanoAgent.Application.UI.IUiBridge>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackendSessionInfo(
+                SessionId: "session-id",
+                SectionResumeCommand: "/resume session-id",
+                ProviderName: "provider",
+                ModelId: "model",
+                ActiveModelContextWindowTokens: 1234,
+                AvailableModelIds: [],
+                ThinkingMode: "default",
+                ReasoningEffort: null,
+                ShowThinking: false,
+                AgentProfileName: "agent",
+                SectionTitle: "title",
+                IsResumedSection: true,
+                ConversationHistory:
+                [
+                    new BackendConversationMessage("user", "hello"),
+                    new BackendConversationMessage("assistant", "world")
+                ]));
+
+        AppState state = new(new UiBridge(), backend.Object);
+
+        MethodInfo startInitialization = typeof(Program).GetMethod(
+            "StartInitialization",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        startInitialization.Invoke(null, [state, true]);
+        await state.ActiveOperation!;
+        state.UiBridge.ApplyPending(state);
+
+        state.IsReady.Should().BeTrue();
+        state.SessionId.Should().Be("session-id");
+        state.Messages.Should().BeEmpty();
     }
 
     [Fact]
