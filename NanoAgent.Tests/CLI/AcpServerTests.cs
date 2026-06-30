@@ -748,6 +748,46 @@ public sealed class AcpServerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_SkipHistoryReplay_WhenNoOldReaderIsEnabled()
+    {
+        string cwd = Directory.GetCurrentDirectory();
+        string sectionId = Guid.NewGuid().ToString("D");
+        HistoryBackend backend = new();
+        string input = string.Join(
+            Environment.NewLine,
+            """
+            {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}
+            """,
+            "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"session/load\",\"params\":{\"sessionId\":\"" +
+                sectionId +
+                "\",\"cwd\":" +
+                JsonSerializer.Serialize(cwd) +
+                "}}");
+
+        using StringReader reader = new(input);
+        using StringWriter output = new();
+        using StringWriter error = new();
+        AcpServer sut = new(
+            reader,
+            output,
+            error,
+            backendArgs: [],
+            providerAuthKey: null,
+            replayLoadedSessionHistory: false,
+            autoApproveAllTools: false,
+            _ => backend);
+
+        await sut.RunAsync(CancellationToken.None);
+
+        IReadOnlyList<JsonElement> messages = ParseJsonLines(output.ToString());
+        messages.Should().NotContain(message =>
+            IsSessionUpdate(message, "agent_reasoning_chunk") ||
+            IsSessionUpdate(message, "agent_message_chunk") ||
+            IsSessionUpdate(message, "user_message_chunk"));
+        FindResponse(messages, 2).GetProperty("result").ValueKind.Should().Be(JsonValueKind.Null);
+    }
+
+    [Fact]
     public async Task RunAsync_Should_RejectSessionLoad_WhenSessionIdIsNotGuid()
     {
         string cwd = Directory.GetCurrentDirectory();
