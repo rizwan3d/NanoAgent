@@ -178,18 +178,13 @@ internal sealed record CliInvocation(
                 throw new ArgumentException("--acp uses stdin for Agent Client Protocol messages and cannot accept a one-shot prompt.");
             }
 
-            if (noOldReader)
-            {
-                throw new ArgumentException("--no-old-reader requires --session or --section in interactive mode.");
-            }
-
             return new CliInvocation(
                 CliMode.Acp,
                 runtimeArgumentsBuilder.Build(),
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
-                NoOldReader: false,
+                NoOldReader: noOldReader,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
                 ShowVersion: false,

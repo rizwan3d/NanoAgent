@@ -152,6 +152,7 @@ public static partial class Program
             return await RunAcpAsync(
                 invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface).RawArgs,
                 invocation.ProviderAuthKey,
+                invocation.NoOldReader,
                 invocation.AutoApproveAllTools);
         }
 
@@ -283,6 +284,7 @@ public static partial class Program
     private static async Task<int> RunAcpAsync(
         string[] args,
         string? providerAuthKey,
+        bool noOldReader,
         bool autoApproveAllTools)
     {
         AcpServer server = new(
@@ -291,6 +293,7 @@ public static partial class Program
             Console.Error,
             args,
             providerAuthKey,
+            noOldReader,
             autoApproveAllTools);
 
         using CancellationTokenSource cancellation = new();
