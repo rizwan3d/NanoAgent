@@ -115,6 +115,7 @@ public sealed class CliInvocationTests
                 "--session", "section-2",
                 "--profile", "review",
                 "--thinking", "on",
+                "--no-update-check",
                 "--sandbox-mode", "danger-full-access"
             ],
             stdinRedirected: false,
@@ -127,11 +128,13 @@ public sealed class CliInvocationTests
             "--session", "section-2",
             "--profile", "review",
             "--thinking", "on",
+            "--no-update-check",
             "--Application:Permissions:SandboxMode=DangerFullAccess");
         invocation.RuntimeArguments.SectionId.Should().Be("section-2");
         invocation.RuntimeArguments.ProfileName.Should().Be("review");
         invocation.RuntimeArguments.ThinkingMode.Should().Be("on");
         invocation.RuntimeArguments.AppSurface.Should().Be("desktop");
+        invocation.RuntimeArguments.SkipUpdateCheck.Should().BeTrue();
     }
 
     [Fact]

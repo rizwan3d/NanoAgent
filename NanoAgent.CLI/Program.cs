@@ -139,8 +139,7 @@ public static partial class Program
         {
             return await RunSingleTurnAsync(
                 invocation.RuntimeArguments.WithDefaults(
-                    BackendRuntimeOptions.CliSurface,
-                    skipUpdateCheck: true),
+                    BackendRuntimeOptions.CliSurface),
                 invocation.ProviderAuthKey,
                 invocation.Prompt ?? string.Empty,
                 invocation.JsonOutput,
@@ -588,6 +587,7 @@ public static partial class Program
                                    Use this key for provider API-key onboarding
               --section <id>       Resume an existing section
               --session <id>       Alias for --section
+              --no-update-check    Skip checking for application updates on startup
               --no-old-reader      Resume a section without replaying old messages to the screen
               --profile <name>     Use an agent profile
               --thinking <on|off>  Override thinking mode
