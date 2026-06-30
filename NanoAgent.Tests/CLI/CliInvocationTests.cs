@@ -147,6 +147,18 @@ public sealed class CliInvocationTests
     }
 
     [Fact]
+    public void Parse_Should_EnableNoOldReader_ForAcpMode()
+    {
+        CliInvocation invocation = CliInvocation.Parse(
+            ["--acp", "--no-old-reader"],
+            stdinRedirected: false,
+            () => throw new InvalidOperationException());
+
+        invocation.Mode.Should().Be(CliMode.Acp);
+        invocation.NoOldReader.Should().BeTrue();
+    }
+
+    [Fact]
     public void Parse_Should_ParseProviderAuthKey()
     {
         CliInvocation invocation = CliInvocation.Parse(
