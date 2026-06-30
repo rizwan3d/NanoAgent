@@ -41,6 +41,7 @@ internal sealed class AcpServer : IAsyncDisposable
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _pendingRequests = new(StringComparer.Ordinal);
     private readonly Channel<JsonElement> _requestQueue;
     private readonly SlidingWindowRequestLimiter _requestRateLimiter;
+    private readonly bool _replayLoadedSessionHistory;
     private readonly SemaphoreSlim _outputLock = new(1, 1);
     private readonly string? _providerAuthKey;
     private readonly string _startupDirectory;
@@ -61,6 +62,7 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false)
     {
     }
@@ -71,6 +73,7 @@ internal sealed class AcpServer : IAsyncDisposable
         TextWriter error,
         string[] backendArgs,
         string? providerAuthKey,
+        bool replayLoadedSessionHistory,
         bool autoApproveAllTools)
         : this(
             input,
@@ -78,6 +81,8 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            replayLoadedSessionHistory,
+            autoApproveAllTools,
             // factory runs inside CreateSessionAsync right after
             // SetCurrentDirectory(cwd), so GetCurrentDirectory() == the session cwd.
             // Pinning it here makes the session's tools workspace-independent of
@@ -103,6 +108,7 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory)
     {
@@ -114,6 +120,7 @@ internal sealed class AcpServer : IAsyncDisposable
         TextWriter error,
         string[] backendArgs,
         string? providerAuthKey,
+        bool replayLoadedSessionHistory,
         bool autoApproveAllTools,
         Func<string[], INanoAgentBackend> backendFactory)
         : this(
@@ -122,6 +129,7 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            replayLoadedSessionHistory,
             autoApproveAllTools,
             (args, _) => (backendFactory ?? throw new ArgumentNullException(nameof(backendFactory)))(args))
     {
@@ -140,6 +148,7 @@ internal sealed class AcpServer : IAsyncDisposable
             error,
             backendArgs,
             providerAuthKey,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory)
     {
@@ -158,6 +167,37 @@ internal sealed class AcpServer : IAsyncDisposable
         int maxRequestQueueDepth = DefaultMaxRequestQueueDepth,
         int maxRequestsPerWindow = DefaultMaxRequestsPerWindow,
         TimeSpan? requestRateLimitWindow = null)
+        : this(
+            input,
+            output,
+            error,
+            backendArgs,
+            providerAuthKey,
+            replayLoadedSessionHistory: true,
+            autoApproveAllTools,
+            backendFactory,
+            acpAuthenticationToken,
+            maxIncomingLineLength,
+            maxRequestQueueDepth,
+            maxRequestsPerWindow,
+            requestRateLimitWindow)
+    {
+    }
+
+    internal AcpServer(
+        TextReader input,
+        TextWriter output,
+        TextWriter error,
+        string[] backendArgs,
+        string? providerAuthKey,
+        bool replayLoadedSessionHistory,
+        bool autoApproveAllTools,
+        Func<string[], IReadOnlyList<BackendMcpServerConfiguration>, INanoAgentBackend> backendFactory,
+        string? acpAuthenticationToken = null,
+        int maxIncomingLineLength = DefaultMaxIncomingLineLength,
+        int maxRequestQueueDepth = DefaultMaxRequestQueueDepth,
+        int maxRequestsPerWindow = DefaultMaxRequestsPerWindow,
+        TimeSpan? requestRateLimitWindow = null)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(maxIncomingLineLength, 1);
         ArgumentOutOfRangeException.ThrowIfLessThan(maxRequestQueueDepth, 1);
@@ -168,6 +208,7 @@ internal sealed class AcpServer : IAsyncDisposable
         _error = error ?? throw new ArgumentNullException(nameof(error));
         _backendArgs = backendArgs ?? throw new ArgumentNullException(nameof(backendArgs));
         _providerAuthKey = NormalizeOrNull(providerAuthKey);
+        _replayLoadedSessionHistory = replayLoadedSessionHistory;
         _backendFactory = backendFactory ?? throw new ArgumentNullException(nameof(backendFactory));
         _maxIncomingLineLength = maxIncomingLineLength;
         _requestQueue = Channel.CreateBounded<JsonElement>(
@@ -607,7 +648,7 @@ internal sealed class AcpServer : IAsyncDisposable
         AcpSession session = await CreateSessionAsync(
             cwd,
             sessionId,
-            replayHistory: true,
+            replayHistory: _replayLoadedSessionHistory,
             sessionMcpServers,
             cancellationToken);
 
@@ -1527,6 +1568,11 @@ internal sealed class AcpServer : IAsyncDisposable
             }
 
             if (string.Equals(arg, "--no-update-check", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (string.Equals(arg, "--no-old-reader", StringComparison.OrdinalIgnoreCase))
             {
                 continue;
             }
