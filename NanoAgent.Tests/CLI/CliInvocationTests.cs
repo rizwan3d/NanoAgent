@@ -135,6 +135,18 @@ public sealed class CliInvocationTests
     }
 
     [Fact]
+    public void Parse_Should_EnableNoOldReader_ForInteractiveSessionResume()
+    {
+        CliInvocation invocation = CliInvocation.Parse(
+            ["--session", "section-1", "--no-old-reader"],
+            stdinRedirected: false,
+            () => throw new InvalidOperationException());
+
+        invocation.Mode.Should().Be(CliMode.Interactive);
+        invocation.NoOldReader.Should().BeTrue();
+    }
+
+    [Fact]
     public void Parse_Should_ParseProviderAuthKey()
     {
         CliInvocation invocation = CliInvocation.Parse(
@@ -228,5 +240,29 @@ public sealed class CliInvocationTests
 
         act.Should().Throw<ArgumentException>()
             .WithMessage("Missing value for --profile.");
+    }
+
+    [Fact]
+    public void Parse_Should_RejectNoOldReaderWithoutSessionResume()
+    {
+        Action act = () => CliInvocation.Parse(
+            ["--no-old-reader"],
+            stdinRedirected: false,
+            () => throw new InvalidOperationException());
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("--no-old-reader requires --session or --section in interactive mode.");
+    }
+
+    [Fact]
+    public void Parse_Should_RejectNoOldReaderForOneShotPrompt()
+    {
+        Action act = () => CliInvocation.Parse(
+            ["--session", "section-1", "--no-old-reader", "--prompt", "hello"],
+            stdinRedirected: false,
+            () => throw new InvalidOperationException());
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("--no-old-reader requires --session or --section in interactive mode.");
     }
 }
