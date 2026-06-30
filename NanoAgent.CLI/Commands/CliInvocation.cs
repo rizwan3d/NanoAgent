@@ -15,6 +15,7 @@ internal sealed record CliInvocation(
     string? ProviderAuthKey,
     string? Prompt,
     bool JsonOutput,
+    bool NoOldReader,
     bool AutoApproveAllTools,
     bool ShowHelp,
     bool ShowVersion,
@@ -28,6 +29,7 @@ internal sealed record CliInvocation(
         ProviderAuthKey: null,
         Prompt: null,
         JsonOutput: false,
+        NoOldReader: false,
         AutoApproveAllTools: false,
         ShowHelp: true,
         ShowVersion: false,
@@ -39,6 +41,7 @@ internal sealed record CliInvocation(
         ProviderAuthKey: null,
         Prompt: null,
         JsonOutput: false,
+        NoOldReader: false,
         AutoApproveAllTools: false,
         ShowHelp: false,
         ShowVersion: true,
@@ -58,6 +61,7 @@ internal sealed record CliInvocation(
         bool forceAcp = false;
         bool forceInteractive = false;
         bool jsonOutput = false;
+        bool noOldReader = false;
         bool autoApproveAllTools = false;
         bool readPromptFromStandardInput = false;
 
@@ -89,6 +93,7 @@ internal sealed record CliInvocation(
                     providerAuthKey,
                     Prompt: "/doctor",
                     JsonOutput: false,
+                    NoOldReader: false,
                     AutoApproveAllTools: autoApproveAllTools,
                     ShowHelp: false,
                     ShowVersion: false,
@@ -110,6 +115,12 @@ internal sealed record CliInvocation(
             if (string.Equals(arg, "--json", StringComparison.OrdinalIgnoreCase))
             {
                 jsonOutput = true;
+                continue;
+            }
+
+            if (string.Equals(arg, "--no-old-reader", StringComparison.OrdinalIgnoreCase))
+            {
+                noOldReader = true;
                 continue;
             }
 
@@ -167,12 +178,18 @@ internal sealed record CliInvocation(
                 throw new ArgumentException("--acp uses stdin for Agent Client Protocol messages and cannot accept a one-shot prompt.");
             }
 
+            if (noOldReader)
+            {
+                throw new ArgumentException("--no-old-reader requires --session or --section in interactive mode.");
+            }
+
             return new CliInvocation(
                 CliMode.Acp,
                 runtimeArgumentsBuilder.Build(),
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
+                NoOldReader: false,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
                 ShowVersion: false,
@@ -186,6 +203,12 @@ internal sealed record CliInvocation(
                 throw new ArgumentException("--json requires a one-shot prompt.");
             }
 
+            if (noOldReader &&
+                string.IsNullOrWhiteSpace(runtimeArgumentsBuilder.SectionId))
+            {
+                throw new ArgumentException("--no-old-reader requires --session or --section in interactive mode.");
+            }
+
             if (stdinRedirected)
             {
                 throw new ArgumentException("--interactive requires terminal input.");
@@ -197,6 +220,7 @@ internal sealed record CliInvocation(
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
+                NoOldReader: noOldReader,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
                 ShowVersion: false,
@@ -220,6 +244,12 @@ internal sealed record CliInvocation(
         string prompt = string.Join(' ', promptParts).Trim();
         if (string.IsNullOrWhiteSpace(prompt))
         {
+            if (noOldReader &&
+                string.IsNullOrWhiteSpace(runtimeArgumentsBuilder.SectionId))
+            {
+                throw new ArgumentException("--no-old-reader requires --session or --section in interactive mode.");
+            }
+
             if (jsonOutput)
             {
                 throw new ArgumentException("--json requires a one-shot prompt.");
@@ -236,10 +266,16 @@ internal sealed record CliInvocation(
                 providerAuthKey,
                 Prompt: null,
                 JsonOutput: false,
+                NoOldReader: noOldReader,
                 AutoApproveAllTools: autoApproveAllTools,
                 ShowHelp: false,
                 ShowVersion: false,
                 ShowDoctor: false);
+        }
+
+        if (noOldReader)
+        {
+            throw new ArgumentException("--no-old-reader requires --session or --section in interactive mode.");
         }
 
         return new CliInvocation(
@@ -248,6 +284,7 @@ internal sealed record CliInvocation(
             providerAuthKey,
             prompt,
             jsonOutput,
+            NoOldReader: false,
             autoApproveAllTools,
             ShowHelp: false,
             ShowVersion: false,
