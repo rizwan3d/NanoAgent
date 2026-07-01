@@ -9,7 +9,7 @@ using NanoAgent.Application.Utilities;
 
 namespace NanoAgent.Application.Services;
 
-internal sealed class AgentTurnService : IAgentTurnService
+internal sealed class AgentTurnService
 {
     private const string DirectShellPrefix = "!";
     private const string DirectShellBackgroundPrefix = "!!";
