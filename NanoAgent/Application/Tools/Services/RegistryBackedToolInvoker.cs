@@ -1,6 +1,7 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Permissions;
 using NanoAgent.Application.Tools.Serialization;
 using System.Globalization;
 using System.Text.Json;
@@ -15,13 +16,13 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
     private readonly TimeSpan _defaultTimeout;
     private readonly ILifecycleHookService _lifecycleHookService;
     private readonly IPermissionApprovalPrompt _permissionApprovalPrompt;
-    private readonly IPermissionEvaluator _permissionEvaluator;
+    private readonly ToolPermissionEvaluator _permissionEvaluator;
     private readonly SemaphoreSlim _permissionApprovalSemaphore = new(1, 1);
     private readonly IToolRegistry _toolRegistry;
 
     public RegistryBackedToolInvoker(
         IToolRegistry toolRegistry,
-        IPermissionEvaluator permissionEvaluator,
+        ToolPermissionEvaluator permissionEvaluator,
         IPermissionApprovalPrompt permissionApprovalPrompt,
         TimeSpan? defaultTimeout = null,
         ILifecycleHookService? lifecycleHookService = null,
