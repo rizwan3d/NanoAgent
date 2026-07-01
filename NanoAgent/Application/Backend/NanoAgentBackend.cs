@@ -4,6 +4,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Sdk.Internal;
 using NanoAgent.Application.Commands;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Services;
 using NanoAgent.Application.Telemetry;
 using NanoAgent.Application.UI;
 using NanoAgent.Application.Tools;
@@ -20,7 +21,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private readonly bool _autoApproveAllTools;
     private readonly IReadOnlyList<BackendMcpServerConfiguration> _sessionMcpServers;
     private readonly Action<IServiceCollection>? _configureServices;
-    private IAgentTurnService? _agentTurnService;
+    private AgentTurnService? _agentTurnService;
     private IAgentProfileResolver? _profileResolver;
     private IHost? _host;
     private IProviderSetupService? _providerSetupService;
@@ -130,7 +131,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         _shellCommandService = _host.Services.GetRequiredService<IShellCommandService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _sessionEventLogService = _host.Services.GetRequiredService<ISessionEventLogService>();
-        _agentTurnService = _host.Services.GetRequiredService<IAgentTurnService>();
+        _agentTurnService = _host.Services.GetRequiredService<AgentTurnService>();
         _profileResolver = _host.Services.GetRequiredService<IAgentProfileResolver>();
         _commandParser = _host.Services.GetRequiredService<IReplCommandParser>();
         _commandDispatcher = _host.Services.GetRequiredService<IReplCommandDispatcher>();
