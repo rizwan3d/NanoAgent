@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Permissions;
 using System.Text.Json;
 
 namespace NanoAgent.Application.Tools.Services;
@@ -11,7 +12,7 @@ internal sealed class ToolRegistry : IToolRegistry
 
     public ToolRegistry(
         IEnumerable<ITool> tools,
-        IPermissionParser permissionParser,
+        ToolPermissionParser permissionParser,
         IEnumerable<IDynamicToolProvider>? dynamicToolProviders = null)
     {
         ArgumentNullException.ThrowIfNull(tools);
