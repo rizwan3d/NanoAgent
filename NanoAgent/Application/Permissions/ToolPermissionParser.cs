@@ -4,7 +4,7 @@ using System.Text.Json;
 
 namespace NanoAgent.Application.Permissions;
 
-internal sealed class ToolPermissionParser : IPermissionParser
+internal sealed class ToolPermissionParser
 {
     public ToolPermissionPolicy Parse(
         string toolName,

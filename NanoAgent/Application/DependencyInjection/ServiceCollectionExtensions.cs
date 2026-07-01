@@ -20,13 +20,13 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton<IAgentProfileResolver, BuiltInAgentProfileResolver>();
         services.AddSingleton<IProductTelemetry, NoOpProductTelemetry>();
-        services.AddSingleton<IAgentTurnService, AgentTurnService>();
+        services.AddSingleton<AgentTurnService>();
         services.AddSingleton<ISessionAppService, SessionAppService>();
         services.AddSingleton<IConversationPipeline, AgentConversationPipeline>();
         services.AddSingleton<IToolOutputFormatter, ToolOutputFormatter>();
         services.AddSingleton<ILifecycleHookService, NoOpLifecycleHookService>();
-        services.AddSingleton<IPermissionParser, ToolPermissionParser>();
-        services.AddSingleton<IPermissionEvaluator, ToolPermissionEvaluator>();
+        services.AddSingleton<ToolPermissionParser>();
+        services.AddSingleton<ToolPermissionEvaluator>();
         services.AddSingleton<IPermissionApprovalPrompt, SelectionPermissionApprovalPrompt>();
         services.AddSingleton<IToolRegistry, ToolRegistry>();
         services.AddSingleton<IToolInvoker, RegistryBackedToolInvoker>();

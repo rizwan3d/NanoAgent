@@ -9,7 +9,7 @@ using System.Text.RegularExpressions;
 
 namespace NanoAgent.Application.Permissions;
 
-internal sealed class ToolPermissionEvaluator : IPermissionEvaluator
+internal sealed class ToolPermissionEvaluator
 {
     private static readonly HashSet<string> MemoryWriteActions = new(
         ["save", "edit", "delete", "write", "update", "append"],
