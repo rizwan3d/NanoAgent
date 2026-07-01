@@ -25,7 +25,6 @@ public static partial class Program
     private const string DisableAlternateScreenSequence = "\u001b[?1049l";
     private const string EnableBracketedPasteSequence = "\u001b[?2004h";
     private const string DisableBracketedPasteSequence = "\u001b[?2004l";
-    private const string EnableWheelScrollingSequence = "\u001b[?1007h";
     private const string DisableWheelScrollingSequence = "\u001b[?1007l";
     // Normal button tracking (?1000h) plus SGR extended coordinates (?1006h): reports
     // clicks and wheel events with row/column so we can hit-test the conversation. This
