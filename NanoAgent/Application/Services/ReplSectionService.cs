@@ -10,32 +10,11 @@ namespace NanoAgent.Application.Services;
 
 internal sealed class ReplSectionService : IReplSectionService
 {
-    private const string SectionTitlePrompt =
-        """
-        You are generating a short title for a coding session from the user's first prompt.
-        Capture the main engineering task, bug, feature, or subsystem in a human-readable way.
-        Prefer specific nouns and verbs from the request; avoid generic fillers like Help, Task, Request, or Session.
-        Requirements:
-        - 2 to 6 words
-        - plain text only
-        - no quotes
-        - no trailing punctuation
-        - no markdown, labels, or explanations
-        Respond with the title only.
-        """;
-
-    private static readonly TimeSpan TitleGenerationTimeout = TimeSpan.FromSeconds(30);
-
     private readonly IConversationSectionStore _sectionStore;
     private readonly ISessionStore _sessionStore;
-    private readonly IApiKeySecretStore _secretStore;
-    private readonly IConversationProviderClient _providerClient;
-    private readonly IConversationResponseMapper _responseMapper;
     private readonly IAgentProfileResolver _profileResolver;
     private readonly TimeProvider _timeProvider;
-    private readonly ILogger<ReplSectionService> _logger;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sectionLocks = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, Task> _pendingTitleTasks = new(StringComparer.Ordinal);
 
     public ReplSectionService(
         IConversationSectionStore sectionStore,
@@ -52,12 +31,8 @@ internal sealed class ReplSectionService : IReplSectionService
 
         _sectionStore = sectionStore;
         _sessionStore = sessionStore;
-        _secretStore = secretStore;
-        _providerClient = providerClient;
-        _responseMapper = responseMapper;
         _profileResolver = profileResolver;
         _timeProvider = timeProvider;
-        _logger = logger;
 
         // Establish the configured tool-output default from agent-profile.json
         // (Application.Tools.toolOutput). The /tooloutput command and per-agent
@@ -203,20 +178,9 @@ internal sealed class ReplSectionService : IReplSectionService
             return;
         }
 
-        Task task = GenerateAndPersistTitleAsync(
-            session,
-            firstUserPrompt.Trim());
-
-        if (!_pendingTitleTasks.TryAdd(session.SectionId, task))
-        {
-            return;
-        }
-
-        _ = task.ContinueWith(
-            _ => _pendingTitleTasks.TryRemove(session.SectionId, out Task? _),
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        session.RenameSection(
+            CreateSectionTitleFromPrompt(firstUserPrompt),
+            _timeProvider.GetUtcNow());
     }
 
     public async Task<ReplSessionContext> ResumeAsync(
@@ -338,128 +302,9 @@ internal sealed class ReplSectionService : IReplSectionService
     {
         ArgumentNullException.ThrowIfNull(session);
 
-        if (_pendingTitleTasks.TryGetValue(session.SectionId, out Task? pendingTitleTask))
-        {
-            try
-            {
-                await pendingTitleTask.WaitAsync(TitleGenerationTimeout, cancellationToken);
-            }
-            catch (TimeoutException)
-            {
-                _logger.LogDebug(
-                    "Timed out while waiting for background section title generation for section {SectionId}.",
-                    session.SectionId);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-        }
-
         await SaveIfDirtyAsync(session, cancellationToken);
         session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Turn);
         session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Session);
-    }
-
-    private async Task GenerateAndPersistTitleAsync(
-        ReplSessionContext session,
-        string firstUserPrompt)
-    {
-        try
-        {
-            string? title = await GenerateTitleAsync(
-                session,
-                firstUserPrompt,
-                CancellationToken.None);
-
-            if (string.IsNullOrWhiteSpace(title))
-            {
-                return;
-            }
-
-            SemaphoreSlim sync = GetSectionLock(session.SectionId);
-            await sync.WaitAsync(CancellationToken.None);
-
-            try
-            {
-                if (session.HasGeneratedSectionTitle)
-                {
-                    return;
-                }
-
-                DateTimeOffset updatedAtUtc = _timeProvider.GetUtcNow();
-                session.RenameSection(title, updatedAtUtc);
-
-                await _sectionStore.SaveAsync(
-                    session.CreateSectionSnapshot(updatedAtUtc),
-                    CancellationToken.None);
-
-                session.MarkSectionPersisted(updatedAtUtc);
-            }
-            finally
-            {
-                sync.Release();
-            }
-        }
-        catch (Exception exception)
-        {
-            _logger.LogDebug(
-                exception,
-                "Failed to generate a background title for section {SectionId}.",
-                session.SectionId);
-        }
-    }
-
-    private async Task<string?> GenerateTitleAsync(
-        ReplSessionContext session,
-        string firstUserPrompt,
-        CancellationToken cancellationToken)
-    {
-        string? apiKey = await LoadProviderSecretAsync(session, cancellationToken);
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            return null;
-        }
-
-        using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutSource.CancelAfter(TitleGenerationTimeout);
-
-        ConversationProviderPayload payload = await _providerClient.SendAsync(
-            new ConversationProviderRequest(
-                session.ProviderProfile,
-                apiKey,
-                session.ActiveModelId,
-                [ConversationRequestMessage.User(firstUserPrompt)],
-                SectionTitlePrompt,
-                []),
-            timeoutSource.Token);
-
-        ConversationResponse response = _responseMapper.Map(payload);
-        if (response.HasToolCalls || string.IsNullOrWhiteSpace(response.AssistantMessage))
-        {
-            return null;
-        }
-
-        return NormalizeGeneratedTitle(response.AssistantMessage);
-    }
-
-    private async Task<string?> LoadProviderSecretAsync(
-        ReplSessionContext session,
-        CancellationToken cancellationToken)
-    {
-        if (!string.IsNullOrWhiteSpace(session.ActiveProviderName))
-        {
-            string? providerSecret = await _secretStore.LoadAsync(
-                session.ActiveProviderName,
-                cancellationToken);
-            if (!string.IsNullOrWhiteSpace(providerSecret))
-            {
-                return providerSecret;
-            }
-        }
-
-        return await _secretStore.LoadAsync(cancellationToken) ??
-            session.ProviderProfile.ProviderKind.GetDefaultApiKey();
     }
 
     private SemaphoreSlim GetSectionLock(string sectionId)
@@ -469,20 +314,14 @@ internal sealed class ReplSectionService : IReplSectionService
             static _ => new SemaphoreSlim(1, 1));
     }
 
-    private static string? NormalizeGeneratedTitle(string title)
+    private static string CreateSectionTitleFromPrompt(string title)
     {
         string normalizedTitle = title
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .FirstOrDefault()?
             .Trim()
-            .Trim('"', '\'', '.', '!', '?', ':', ';')
             ?? string.Empty;
-
-        if (string.IsNullOrWhiteSpace(normalizedTitle))
-        {
-            return null;
-        }
 
         normalizedTitle = string.Join(
             " ",
@@ -490,7 +329,7 @@ internal sealed class ReplSectionService : IReplSectionService
 
         return normalizedTitle.Length <= 80
             ? normalizedTitle
-            : normalizedTitle[..80].TrimEnd();
+            : normalizedTitle[..77].TrimEnd() + "...";
     }
 
     private static string NormalizeWorkspacePath(string path)
