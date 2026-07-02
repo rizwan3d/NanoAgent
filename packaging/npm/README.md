@@ -10,7 +10,7 @@ NanoAgent is a local AI coding agent for terminal workflows, ACP-compatible edit
 - Download the correct native binary for the current platform automatically.
 - Verify release archives before extraction with published SHA-256 checksums.
 - Recover automatically on first run if `postinstall` was skipped or the binary is missing.
-- Toggle a built-in git sidebar (F7) showing branch, queued prompts, recent commits, and changed files — click a file to open it in your editor.
+- Toggle a built-in git sidebar (F7) showing branch, queued prompts, recent commits, and changed files as `filename (relative/path)` — click a file to open it in your editor, and use `Alt+S`/`Alt+P`/`Alt+O`/`Alt+D`/`Alt+C`/`Alt+B` for stage, pull, push, discard, commit, and branch actions.
 
 ## Install
 
