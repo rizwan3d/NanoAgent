@@ -174,6 +174,12 @@ public static partial class Program
             case ConsoleKey.S when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
                 ToggleGitSidebarStageSelection(state);
                 return true;
+            case ConsoleKey.O when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
+                RunGitPushFromSidebar(state);
+                return true;
+            case ConsoleKey.P when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
+                RunGitPullFromSidebar(state);
+                return true;
             case ConsoleKey.D when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
                 PromptDiscardGitSidebarSelection(state);
                 return true;
@@ -824,6 +830,30 @@ public static partial class Program
                 }
             },
             onCancelled: _ => state.AddSystemMessage("Branch creation cancelled."));
+    }
+
+    private static void RunGitPushFromSidebar(AppState state)
+    {
+        if (TryRunGitCommand(
+            state,
+            "Git push completed.",
+            "Failed to push",
+            "push"))
+        {
+            InvalidateGitSidebar(state);
+        }
+    }
+
+    private static void RunGitPullFromSidebar(AppState state)
+    {
+        if (TryRunGitCommand(
+            state,
+            "Git pull completed.",
+            "Failed to pull",
+            "pull"))
+        {
+            InvalidateGitSidebar(state);
+        }
     }
 
     private static bool TryRunGitCommand(
