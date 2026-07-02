@@ -443,11 +443,20 @@ Press F7 to toggle a VS Code-style left panel with the workspace's git state. It
 - The current branch.
 - Any queued prompts or commands (mirrors the busy-line `… - N queued` count) while NanoAgent is busy.
 - The last 10 commits as `short-hash · message`.
-- Staged and changed files, grouped and colored by status (`M`, `A`, `D`, `?` untracked).
+- Staged and changed files, grouped and colored by status (`M`, `A`, `D`, `?` untracked), rendered as `filename (relative/path)`.
 
 Click a file row to open it in VS Code (`code`); if VS Code is not installed, it opens in the operating system's default editor for that file type. The git state refreshes automatically about every two seconds while the panel is open.
 
 Scroll the sidebar when its lists are longer than the window with the mouse wheel over the panel, or with Ctrl+Up/Ctrl+Down (Ctrl+PgUp/Ctrl+PgDn for a page). The header shows the visible line range, for example `12-31/48`. The panel is hidden automatically on very narrow terminals.
+
+When the sidebar is focused, use Up/Down to move the selection and Enter to open the selected file. Git actions are available directly from the keyboard:
+
+- `Alt+S` stages or unstages the selected file.
+- `Alt+P` runs `git pull`.
+- `Alt+O` runs `git push`.
+- `Alt+D` discards the selected file's worktree changes.
+- `Alt+C` commits staged changes after prompting for a commit message.
+- `Alt+B` opens branch actions to switch branches or create a new one.
 
 ### Tool Runtime Settings
 
