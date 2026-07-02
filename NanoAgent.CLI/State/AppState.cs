@@ -166,6 +166,8 @@ public sealed class AppState
 
     public int GitSidebarWidth { get; set; }
 
+    public int GitSidebarSelectedIndex { get; set; } = -1;
+
     public int GitSidebarScrollOffset { get; set; }
 
     // Captured on the last sidebar render so the scroll handler can clamp without
@@ -174,7 +176,7 @@ public sealed class AppState
 
     public int GitSidebarViewportHeight { get; set; }
 
-    public string?[] VisibleGitSidebarFilePaths { get; set; } = [];
+    public GitSidebarLine[] VisibleGitSidebarLines { get; set; } = [];
 
     public string? SectionResumeCommand { get; set; }
 

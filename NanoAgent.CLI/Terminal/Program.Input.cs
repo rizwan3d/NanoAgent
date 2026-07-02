@@ -81,6 +81,11 @@ public static partial class Program
                 continue;
             }
 
+            if (TryHandleGitSidebarKey(state, key))
+            {
+                continue;
+            }
+
             if (key.Key == ConsoleKey.V &&
                 key.Modifiers.HasFlag(ConsoleModifiers.Control))
             {
@@ -513,8 +518,41 @@ public static partial class Program
             return true;
         }
 
+        if (TryHandleAltModifiedKey(state, prefixKey))
+        {
+            return true;
+        }
+
         state.PendingInputKeys.Enqueue(prefixKey);
         return false;
+    }
+
+    private static bool TryHandleAltModifiedKey(AppState state, ConsoleKeyInfo key)
+    {
+        ConsoleKeyInfo? altKey = TryCreateAltModifiedKey(key);
+        return altKey is ConsoleKeyInfo normalizedKey &&
+            TryHandleGitSidebarKey(state, normalizedKey);
+    }
+
+    private static ConsoleKeyInfo? TryCreateAltModifiedKey(ConsoleKeyInfo key)
+    {
+        if (key.KeyChar == ' ')
+        {
+            return new ConsoleKeyInfo(' ', ConsoleKey.Spacebar, shift: false, alt: true, control: false);
+        }
+
+        if (!char.IsLetter(key.KeyChar))
+        {
+            return null;
+        }
+
+        char normalizedChar = char.ToUpperInvariant(key.KeyChar);
+        if (!Enum.TryParse(normalizedChar.ToString(), ignoreCase: true, out ConsoleKey consoleKey))
+        {
+            return null;
+        }
+
+        return new ConsoleKeyInfo(key.KeyChar, consoleKey, shift: false, alt: true, control: false);
     }
 
     private static bool ConsumeCsiInput(AppState state)
@@ -707,6 +745,11 @@ public static partial class Program
             return;
         }
 
+        if (TryHandleGitSidebarTerminalSequence(state, sequence))
+        {
+            return;
+        }
+
         if (IsMultilineEnterTerminalSequence(sequence))
         {
             AppendInputLineBreak(state);
@@ -788,6 +831,44 @@ public static partial class Program
             case "4~":
                 state.JumpConversationToBottom();
                 return;
+        }
+    }
+
+    private static bool TryHandleGitSidebarTerminalSequence(AppState state, string sequence)
+    {
+        if (!state.IsGitSidebarVisible || state.ActiveModal is not null || state.IsReaderViewActive || state.IsCopyModeActive)
+        {
+            return false;
+        }
+
+        IReadOnlyList<GitSidebarLine> lines = GetGitSidebarLines(state);
+        EnsureGitSidebarSelection(state, lines);
+        int pageSize = Math.Max(1, state.GitSidebarViewportHeight - 1);
+
+        switch (sequence)
+        {
+            case "A":
+                MoveGitSidebarSelection(state, lines, -1);
+                return true;
+            case "B":
+                MoveGitSidebarSelection(state, lines, 1);
+                return true;
+            case "H":
+            case "1~":
+                MoveGitSidebarSelectionToEdge(state, lines, forward: true);
+                return true;
+            case "F":
+            case "4~":
+                MoveGitSidebarSelectionToEdge(state, lines, forward: false);
+                return true;
+            case "5~":
+                MoveGitSidebarSelectionByPage(state, lines, -pageSize);
+                return true;
+            case "6~":
+                MoveGitSidebarSelectionByPage(state, lines, pageSize);
+                return true;
+            default:
+                return false;
         }
     }
 
