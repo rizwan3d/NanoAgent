@@ -1148,6 +1148,12 @@ public static partial class Program
                 "[grey]Up/Down: select command[/]  [grey]|[/]  [grey]Enter: choose[/]  [grey]|[/]  [grey]Tab: complete[/]  [grey]|[/]  [grey]Esc: close[/]");
         }
 
+        if (state.IsGitSidebarVisible)
+        {
+            return BuildFooterLineMarkup(
+                "[grey]Git: Up/Down move[/]  [grey]|[/]  [grey]Enter: open[/]  [grey]|[/]  [grey]Alt+S: stage or unstage[/]  [grey]|[/]  [grey]Alt+D: discard[/]  [grey]|[/]  [grey]Alt+C: commit[/]  [grey]|[/]  [grey]Alt+B: branch[/]  [grey]|[/]  [grey]F7: hide[/]");
+        }
+
         return BuildFooterLineMarkup(
             "[grey]Shift+Enter: Newline[/]  [grey]|[/] [grey]Shift+drag: select text[/]  [grey]|[/]  [grey]F2: Model[/]  [grey]|[/]  [grey]F3: Plan[/]  [grey]|[/]  [grey]F4: Files[/]  [grey]|[/]  [grey]F5: Reader[/]  [grey]|[/]  [grey]F6: Copy[/]  [grey]|[/]  [grey]F7: Git[/]  [grey]|[/]  [grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
     }
