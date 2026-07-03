@@ -231,21 +231,17 @@ public static partial class Program
         string repoRoot = Directory.GetParent(gitDir.TrimEnd('\\', '/'))?.FullName ?? root;
         string? branch = GetGitBranchName(root);
 
-        lines.Add(new GitSidebarLine(
-            SectionSidebarMarkup($"branch {branch ?? "(detached)"}", contentWidth),
-            TruncateFromRight($"branch {branch ?? "(detached)"}", contentWidth),
-            null,
-            GitSidebarLineKind.Branch));
+        lines.Add(BuildBranchSidebarLine(branch, contentWidth));
 
         AddQueuedPromptLines(lines, state, contentWidth);
-
-        lines.Add(new GitSidebarLine(string.Empty, string.Empty, null));
-        lines.Add(SectionSidebarLine("Recent commits", contentWidth));
-        AddCommitLines(lines, root, contentWidth);
 
         (List<(string Code, string Rel)> staged, List<(string Code, string Rel)> changes) = ReadGitStatus(root);
         AddFileLines(lines, "Staged", staged, repoRoot, contentWidth, GitSidebarLineKind.StagedFile);
         AddFileLines(lines, "Changes", changes, repoRoot, contentWidth, GitSidebarLineKind.ChangedFile);
+
+        lines.Add(new GitSidebarLine(string.Empty, string.Empty, null));
+        lines.Add(SectionSidebarLine("Recent commits", contentWidth));
+        AddCommitLines(lines, root, contentWidth);
 
         return lines;
     }
@@ -272,6 +268,7 @@ public static partial class Program
 
     private static void AddCommitLines(List<GitSidebarLine> lines, string root, int contentWidth)
     {
+        HashSet<string> localOnlyCommits = GetLocalOnlyCommitHashes(root);
         string? log = RunGit(root, "log", "-10", "--pretty=format:%h%x09%H%x09%s");
         if (string.IsNullOrEmpty(log))
         {
@@ -292,7 +289,8 @@ public static partial class Program
             string message = parts.Length > 2 ? parts[2] : string.Empty;
             string messageTrunc = TruncateFromRight(message, Math.Max(0, contentWidth - shortHash.Length - 2));
             string plain = $" {shortHash} {messageTrunc}";
-            string markup = $" [yellow]{Markup.Escape(shortHash)}[/] [underline][grey]{Markup.Escape(messageTrunc)}[/][/]";
+            string hashColor = localOnlyCommits.Contains(fullHash) ? "blue" : "yellow";
+            string markup = $" [{hashColor}]{Markup.Escape(shortHash)}[/] [underline][grey]{Markup.Escape(messageTrunc)}[/][/]";
             lines.Add(new GitSidebarLine(
                 markup,
                 plain,
@@ -301,6 +299,29 @@ public static partial class Program
                 CommitHash: fullHash,
                 CommitMessage: message));
         }
+    }
+
+    private static GitSidebarLine BuildBranchSidebarLine(string? branch, int contentWidth)
+    {
+        string branchName = branch ?? "(detached)";
+        string plain = TruncateFromRight($"branch {branchName}", contentWidth);
+        string branchNameTrunc = TruncateFromRight(branchName, Math.Max(0, contentWidth - "branch ".Length));
+        string markup = $"[bold][grey]branch[/] [green]{Markup.Escape(branchNameTrunc)}[/][/]";
+        return new GitSidebarLine(markup, plain, null, GitSidebarLineKind.Branch);
+    }
+
+    private static HashSet<string> GetLocalOnlyCommitHashes(string root)
+    {
+        string? output = RunGit(root, "log", "HEAD", "--not", "--remotes", "--pretty=format:%H");
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return [];
+        }
+
+        return output
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     private static void AddFileLines(
