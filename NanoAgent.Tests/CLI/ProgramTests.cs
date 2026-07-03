@@ -685,6 +685,37 @@ public sealed class ProgramTests
         act.Should().NotThrow();
     }
 
+    [Fact]
+    public void SanitizeCommitMessageSuggestion_Should_KeepSingleCleanSubjectLine()
+    {
+        MethodInfo sanitizeCommitMessageSuggestion = typeof(Program).GetMethod(
+            "SanitizeCommitMessageSuggestion",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        string result = (string)sanitizeCommitMessageSuggestion.Invoke(
+            null,
+            ["```text\n- feat: add AI generated commit message\n\nextra details\n```"])!;
+
+        result.Should().Be("feat: add AI generated commit message");
+    }
+
+    [Fact]
+    public void ShowCommitMessagePrompt_Should_PrefillExistingCommitModalWithSuggestion()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        MethodInfo showCommitMessagePrompt = typeof(Program).GetMethod(
+            "ShowCommitMessagePrompt",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        showCommitMessagePrompt.Invoke(null, [state, "feat: add AI commit suggestions"]);
+
+        state.ActiveModal.Should().BeOfType<TextModalState>();
+        TextModalState modal = (TextModalState)state.ActiveModal!;
+        modal.Value.ToString().Should().Be("feat: add AI commit suggestions");
+    }
+
     private static string[] RenderConversationMarkup(AppState state)
     {
         MethodInfo buildConversationLines = typeof(Program).GetMethod(
