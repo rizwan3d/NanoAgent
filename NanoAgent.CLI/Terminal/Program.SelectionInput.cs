@@ -16,14 +16,47 @@ public static partial class Program
             ExitCopyMode(state);
         }
 
+        state.ReaderViewTitle = null;
+        state.ReaderViewInstructions = null;
+        state.ReaderViewLines = null;
         state.IsReaderViewActive = true;
         state.ReaderScrollOffset = GetMaxReaderScrollOffset(state);
+        state.ReaderViewDirty = true;
+    }
+
+    private static void EnterReaderView(
+        AppState state,
+        IReadOnlyList<string> lines,
+        string title,
+        string? instructions = null,
+        bool startAtBottom = false)
+    {
+        if (state.ActiveModal is not null)
+        {
+            return;
+        }
+
+        if (state.IsCopyModeActive)
+        {
+            ExitCopyMode(state);
+        }
+
+        state.ReaderViewTitle = title;
+        state.ReaderViewInstructions = instructions;
+        state.ReaderViewLines = lines;
+        state.IsReaderViewActive = true;
+        state.ReaderScrollOffset = startAtBottom
+            ? GetMaxReaderScrollOffset(state)
+            : 0;
         state.ReaderViewDirty = true;
     }
 
     private static void ExitReaderView(AppState state)
     {
         state.IsReaderViewActive = false;
+        state.ReaderViewTitle = null;
+        state.ReaderViewInstructions = null;
+        state.ReaderViewLines = null;
         state.ReaderViewDirty = true;
     }
 
