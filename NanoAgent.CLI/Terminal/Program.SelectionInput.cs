@@ -19,6 +19,7 @@ public static partial class Program
         state.ReaderViewTitle = null;
         state.ReaderViewInstructions = null;
         state.ReaderViewLines = null;
+        state.ReaderViewStyledLines = null;
         state.IsReaderViewActive = true;
         state.ReaderScrollOffset = GetMaxReaderScrollOffset(state);
         state.ReaderViewDirty = true;
@@ -44,6 +45,35 @@ public static partial class Program
         state.ReaderViewTitle = title;
         state.ReaderViewInstructions = instructions;
         state.ReaderViewLines = lines;
+        state.ReaderViewStyledLines = null;
+        state.IsReaderViewActive = true;
+        state.ReaderScrollOffset = startAtBottom
+            ? GetMaxReaderScrollOffset(state)
+            : 0;
+        state.ReaderViewDirty = true;
+    }
+
+    private static void EnterReaderView(
+        AppState state,
+        IReadOnlyList<ReaderViewLine> lines,
+        string title,
+        string? instructions = null,
+        bool startAtBottom = false)
+    {
+        if (state.ActiveModal is not null)
+        {
+            return;
+        }
+
+        if (state.IsCopyModeActive)
+        {
+            ExitCopyMode(state);
+        }
+
+        state.ReaderViewTitle = title;
+        state.ReaderViewInstructions = instructions;
+        state.ReaderViewLines = null;
+        state.ReaderViewStyledLines = lines;
         state.IsReaderViewActive = true;
         state.ReaderScrollOffset = startAtBottom
             ? GetMaxReaderScrollOffset(state)
@@ -57,6 +87,7 @@ public static partial class Program
         state.ReaderViewTitle = null;
         state.ReaderViewInstructions = null;
         state.ReaderViewLines = null;
+        state.ReaderViewStyledLines = null;
         state.ReaderViewDirty = true;
     }
 
