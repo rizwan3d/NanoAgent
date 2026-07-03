@@ -1151,7 +1151,7 @@ public static partial class Program
         if (state.IsGitSidebarVisible)
         {
             return BuildFooterLineMarkup(
-                "[grey]Git: Up/Down move[/]  [grey]|[/]  [grey]Enter: open[/]  [grey]|[/]  [grey]Alt+S: stage or unstage[/]  [grey]|[/]  [grey]Alt+P: pull[/]  [grey]|[/]  [grey]Alt+O: push[/]  [grey]|[/]  [grey]Alt+D: discard[/]  [grey]|[/]  [grey]Alt+C: commit[/]  [grey]|[/]  [grey]Alt+B: branch[/]  [grey]|[/]  [grey]F7: hide[/]");
+                "[grey]Git: Up/Down move[/]  [grey]|[/]  [grey]Alt+A: open actions[/]  [grey]|[/]  [grey]Enter: open[/]  [grey]|[/]  [grey]Alt+S: stage or unstage[/]  [grey]|[/]  [grey]Alt+P: pull[/]  [grey]|[/]  [grey]Alt+O: push[/]  [grey]|[/]  [grey]Alt+D: discard[/]  [grey]|[/]  [grey]Alt+C: commit[/]  [grey]|[/]  [grey]Alt+B: branch[/]  [grey]|[/]  [grey]F7: hide[/]");
         }
 
         return BuildFooterLineMarkup(

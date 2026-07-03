@@ -9,18 +9,22 @@ public enum GitSidebarLineKind
 {
     Text,
     Branch,
+    Commit,
     StagedFile,
     ChangedFile
 }
 
-// One rendered row of the git sidebar. File rows are clickable and keyboard actionable.
+// One rendered row of the git sidebar. Actionable rows can carry either a file path
+// or commit metadata depending on their kind.
 public sealed record GitSidebarLine(
     string Markup,
     string Plain,
     string? FilePath,
     GitSidebarLineKind Kind = GitSidebarLineKind.Text,
     string? RelativePath = null,
-    string? StatusCode = null);
+    string? StatusCode = null,
+    string? CommitHash = null,
+    string? CommitMessage = null);
 
 public static partial class Program
 {
@@ -171,6 +175,9 @@ public static partial class Program
             case ConsoleKey.Enter:
                 ActivateGitSidebarSelection(state);
                 return true;
+            case ConsoleKey.A when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
+                ActivateGitSidebarSelection(state);
+                return true;
             case ConsoleKey.S when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
                 ToggleGitSidebarStageSelection(state);
                 return true;
@@ -265,7 +272,7 @@ public static partial class Program
 
     private static void AddCommitLines(List<GitSidebarLine> lines, string root, int contentWidth)
     {
-        string? log = RunGit(root, "log", "-10", "--pretty=format:%h%x09%s");
+        string? log = RunGit(root, "log", "-10", "--pretty=format:%h%x09%H%x09%s");
         if (string.IsNullOrEmpty(log))
         {
             lines.Add(PlainSidebarLine("  (none)", contentWidth, "grey"));
@@ -279,13 +286,20 @@ public static partial class Program
                 continue;
             }
 
-            int tab = raw.IndexOf('\t');
-            string hash = tab >= 0 ? raw[..tab] : raw;
-            string message = tab >= 0 ? raw[(tab + 1)..] : string.Empty;
-            string messageTrunc = TruncateFromRight(message, Math.Max(0, contentWidth - hash.Length - 2));
-            string plain = $" {hash} {messageTrunc}";
-            string markup = $" [yellow]{Markup.Escape(hash)}[/] [grey]{Markup.Escape(messageTrunc)}[/]";
-            lines.Add(new GitSidebarLine(markup, plain, null));
+            string[] parts = raw.Split('\t', 3);
+            string shortHash = parts.Length > 0 ? parts[0] : raw;
+            string fullHash = parts.Length > 1 ? parts[1] : shortHash;
+            string message = parts.Length > 2 ? parts[2] : string.Empty;
+            string messageTrunc = TruncateFromRight(message, Math.Max(0, contentWidth - shortHash.Length - 2));
+            string plain = $" {shortHash} {messageTrunc}";
+            string markup = $" [yellow]{Markup.Escape(shortHash)}[/] [underline][grey]{Markup.Escape(messageTrunc)}[/][/]";
+            lines.Add(new GitSidebarLine(
+                markup,
+                plain,
+                null,
+                GitSidebarLineKind.Commit,
+                CommitHash: fullHash,
+                CommitMessage: message));
         }
     }
 
@@ -438,7 +452,7 @@ public static partial class Program
     {
         return index >= 0 &&
             index < lines.Count &&
-            lines[index].Kind is GitSidebarLineKind.Branch or GitSidebarLineKind.StagedFile or GitSidebarLineKind.ChangedFile;
+            lines[index].Kind is GitSidebarLineKind.Branch or GitSidebarLineKind.Commit or GitSidebarLineKind.StagedFile or GitSidebarLineKind.ChangedFile;
     }
 
     private static int FindNextGitSidebarActionableIndex(
@@ -559,6 +573,12 @@ public static partial class Program
             return;
         }
 
+        if (selected.Kind == GitSidebarLineKind.Commit)
+        {
+            PromptCommitActionFromGitSidebar(state, selected);
+            return;
+        }
+
         if (selected.FilePath is string path)
         {
             OpenFileInEditor(state, path);
@@ -576,6 +596,12 @@ public static partial class Program
         if (selected.Kind == GitSidebarLineKind.Branch)
         {
             PromptBranchActionFromGitSidebar(state);
+            return;
+        }
+
+        if (selected.Kind == GitSidebarLineKind.Commit)
+        {
+            PromptCommitActionFromGitSidebar(state, selected);
             return;
         }
 
@@ -608,6 +634,163 @@ public static partial class Program
         {
             InvalidateGitSidebar(state);
         }
+    }
+
+    private static void PromptCommitActionFromGitSidebar(AppState state, GitSidebarLine selected)
+    {
+        if (string.IsNullOrWhiteSpace(selected.CommitHash))
+        {
+            state.AddSystemMessage("Select a commit row first.");
+            return;
+        }
+
+        string shortHash = selected.CommitHash!.Length > 8
+            ? selected.CommitHash[..8]
+            : selected.CommitHash;
+        string message = string.IsNullOrWhiteSpace(selected.CommitMessage)
+            ? "(no message)"
+            : selected.CommitMessage!;
+
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                $"Commit {shortHash}",
+                [
+                    new SelectionPromptOption<string>("Open changes", "diff", "Show this commit diff inside the CLI reader view."),
+                    new SelectionPromptOption<string>("Copy hash", "copy-hash", "Copy the selected commit hash to the clipboard."),
+                    new SelectionPromptOption<string>("Copy message", "copy-message", "Copy the selected commit message to the clipboard."),
+                    new SelectionPromptOption<string>("Cherry-pick", "cherry-pick", "Apply this commit onto the current branch."),
+                    new SelectionPromptOption<string>("Create branch", "create-branch", "Create and switch to a new branch from this commit."),
+                    new SelectionPromptOption<string>("Create tag", "create-tag", "Create a tag that points at this commit.")
+                ],
+                TruncateFromRight(message, 80),
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "diff":
+                        OpenCommitDiffInReaderView(state, selected);
+                        break;
+                    case "copy-hash":
+                        CopyGitSidebarCommitText(state, selected.CommitHash!, "commit hash");
+                        break;
+                    case "copy-message":
+                        CopyGitSidebarCommitText(state, selected.CommitMessage ?? string.Empty, "commit message");
+                        break;
+                    case "cherry-pick":
+                        PromptCherryPickCommitFromGitSidebar(state, selected);
+                        break;
+                    case "create-branch":
+                        PromptCreateBranchFromGitSidebar(
+                            state,
+                            selected.CommitHash,
+                            "New branch from commit",
+                            "Create and switch to a new git branch from the selected commit. Enter submits, Esc cancels.");
+                        break;
+                    case "create-tag":
+                        PromptCreateTagFromGitSidebar(state, selected);
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Commit action cancelled."));
+    }
+
+    private static void CopyGitSidebarCommitText(AppState state, string text, string description)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            state.AddSystemMessage($"Could not copy {description}: value is empty.");
+            return;
+        }
+
+        state.AddSystemMessage(TryWriteClipboardText(text)
+            ? $"Copied {description} to the clipboard."
+            : $"Could not copy {description}: no clipboard tool was found.");
+    }
+
+    private static void PromptCherryPickCommitFromGitSidebar(AppState state, GitSidebarLine selected)
+    {
+        if (string.IsNullOrWhiteSpace(selected.CommitHash))
+        {
+            return;
+        }
+
+        string shortHash = selected.CommitHash!.Length > 8
+            ? selected.CommitHash[..8]
+            : selected.CommitHash;
+
+        state.ActiveModal = SelectionModalState<bool>.Create(
+            new SelectionPromptRequest<bool>(
+                $"Cherry-pick {shortHash}",
+                [
+                    new SelectionPromptOption<bool>("Yes", true, "Apply this commit to the current branch."),
+                    new SelectionPromptOption<bool>("No", false, "Cancel without changing git history.")
+                ],
+                "Cherry-pick the selected commit onto the current branch? Esc cancels.",
+                DefaultIndex: 1,
+                AllowCancellation: true),
+            new object(),
+            onSelected: confirmed =>
+            {
+                if (!confirmed)
+                {
+                    state.AddSystemMessage("Cherry-pick cancelled.");
+                    return;
+                }
+
+                if (TryRunGitCommand(
+                    state,
+                    $"Cherry-picked {shortHash}.",
+                    "Failed to cherry-pick commit",
+                    "cherry-pick",
+                    selected.CommitHash!))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Cherry-pick cancelled."));
+    }
+
+    private static void OpenCommitDiffInReaderView(AppState state, GitSidebarLine selected)
+    {
+        if (string.IsNullOrWhiteSpace(selected.CommitHash))
+        {
+            return;
+        }
+
+        string? output = RunGit(
+            state.RootDirectory,
+            "show",
+            "--stat",
+            "--patch",
+            "--decorate=short",
+            "--color=never",
+            selected.CommitHash!);
+
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            state.AddSystemMessage("Could not load commit changes.");
+            return;
+        }
+
+        string shortHash = selected.CommitHash!.Length > 8
+            ? selected.CommitHash[..8]
+            : selected.CommitHash;
+        string title = string.IsNullOrWhiteSpace(selected.CommitMessage)
+            ? $"COMMIT {shortHash}"
+            : $"COMMIT {shortHash} {selected.CommitMessage}";
+        string[] lines = output
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n');
+
+        EnterReaderView(
+            state,
+            lines,
+            title,
+            "commit diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            startAtBottom: false);
     }
 
     private static void PromptDiscardGitSidebarSelection(AppState state)
@@ -739,7 +922,11 @@ public static partial class Program
                     return;
                 }
 
-                PromptCreateBranchFromGitSidebar(state);
+                PromptCreateBranchFromGitSidebar(
+                    state,
+                    startPoint: null,
+                    "New branch name",
+                    "Create and switch to a new git branch. Enter submits, Esc cancels.");
             },
             onCancelled: _ => state.AddSystemMessage("Branch action cancelled."));
     }
@@ -797,12 +984,16 @@ public static partial class Program
             onCancelled: _ => state.AddSystemMessage("Branch switch cancelled."));
     }
 
-    private static void PromptCreateBranchFromGitSidebar(AppState state)
+    private static void PromptCreateBranchFromGitSidebar(
+        AppState state,
+        string? startPoint,
+        string title,
+        string description)
     {
         state.ActiveModal = TextModalState.Create(
             new TextPromptRequest(
-                "New branch name",
-                "Create and switch to a new git branch. Enter submits, Esc cancels.",
+                title,
+                description,
                 DefaultValue: null,
                 AllowCancellation: true),
             isSecret: false,
@@ -816,13 +1007,17 @@ public static partial class Program
                     return;
                 }
 
+                List<string> arguments = ["switch", "-c", trimmed];
+                if (!string.IsNullOrWhiteSpace(startPoint))
+                {
+                    arguments.Add(startPoint!);
+                }
+
                 bool success = TryRunGitCommand(
                     state,
                     $"Created and switched to branch {trimmed}.",
                     "Failed to create branch",
-                    "switch",
-                    "-c",
-                    trimmed);
+                    [.. arguments]);
 
                 if (success)
                 {
@@ -830,6 +1025,46 @@ public static partial class Program
                 }
             },
             onCancelled: _ => state.AddSystemMessage("Branch creation cancelled."));
+    }
+
+    private static void PromptCreateTagFromGitSidebar(AppState state, GitSidebarLine selected)
+    {
+        if (string.IsNullOrWhiteSpace(selected.CommitHash))
+        {
+            return;
+        }
+
+        state.ActiveModal = TextModalState.Create(
+            new TextPromptRequest(
+                "New tag name",
+                "Create a git tag that points to the selected commit. Enter submits, Esc cancels.",
+                DefaultValue: null,
+                AllowCancellation: true),
+            isSecret: false,
+            completionToken: new object(),
+            onSubmitted: tagName =>
+            {
+                string trimmed = tagName.Trim();
+                if (trimmed.Length == 0)
+                {
+                    state.AddSystemMessage("Tag creation cancelled: name cannot be empty.");
+                    return;
+                }
+
+                bool success = TryRunGitCommand(
+                    state,
+                    $"Created tag {trimmed}.",
+                    "Failed to create tag",
+                    "tag",
+                    trimmed,
+                    selected.CommitHash!);
+
+                if (success)
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Tag creation cancelled."));
     }
 
     private static void RunGitPushFromSidebar(AppState state)
