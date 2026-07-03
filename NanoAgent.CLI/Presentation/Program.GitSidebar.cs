@@ -176,7 +176,7 @@ public static partial class Program
                 ActivateGitSidebarSelection(state);
                 return true;
             case ConsoleKey.A when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
-                ActivateGitSidebarSelection(state);
+                OpenGitSidebarActionMenu(state);
                 return true;
             case ConsoleKey.S when key.Modifiers.HasFlag(ConsoleModifiers.Alt):
                 ToggleGitSidebarStageSelection(state);
@@ -581,7 +581,36 @@ public static partial class Program
 
         if (selected.FilePath is string path)
         {
-            OpenFileInEditor(state, path);
+            if (File.Exists(path))
+            {
+                OpenFileInEditor(state, path);
+                return;
+            }
+
+            OpenGitSidebarFileChanges(state, selected);
+        }
+    }
+
+    private static void OpenGitSidebarActionMenu(AppState state)
+    {
+        GitSidebarLine? selected = GetSelectedGitSidebarLine(state);
+        if (selected is null)
+        {
+            return;
+        }
+
+        switch (selected.Kind)
+        {
+            case GitSidebarLineKind.Branch:
+                PromptBranchActionFromGitSidebar(state);
+                return;
+            case GitSidebarLineKind.Commit:
+                PromptCommitActionFromGitSidebar(state, selected);
+                return;
+            case GitSidebarLineKind.StagedFile:
+            case GitSidebarLineKind.ChangedFile:
+                PromptFileActionFromGitSidebar(state, selected);
+                return;
         }
     }
 
@@ -697,6 +726,89 @@ public static partial class Program
             onCancelled: _ => state.AddSystemMessage("Commit action cancelled."));
     }
 
+    private static void PromptFileActionFromGitSidebar(AppState state, GitSidebarLine selected)
+    {
+        if (string.IsNullOrWhiteSpace(selected.RelativePath))
+        {
+            state.AddSystemMessage("Select a git file row first.");
+            return;
+        }
+
+        string relativePath = selected.RelativePath!;
+        List<SelectionPromptOption<string>> options =
+        [
+            new("Open", "open", "Open the selected file in your editor or system opener."),
+            new("Open changes", "open-changes", "Show the selected file patch inside the CLI reader view."),
+            new(
+                selected.Kind == GitSidebarLineKind.StagedFile ? "Unstage" : "Stage",
+                "toggle-stage",
+                selected.Kind == GitSidebarLineKind.StagedFile
+                    ? "Remove this file from the git index."
+                    : "Add this file to the git index."),
+            new("Add to .gitignore", "gitignore", "Append this relative path to the workspace .gitignore."),
+            new("Add to .nanoignore", "nanoignore", "Append this relative path to the workspace .nanoignore."),
+            new("Reveal in Explorer", "reveal", "Reveal the selected file in the system file manager."),
+            new("Copy patch", "copy-patch", "Copy the selected file patch to the clipboard."),
+            new("Copy relative path", "copy-relative-path", "Copy the repository-relative path to the clipboard.")
+        ];
+
+        if (selected.Kind == GitSidebarLineKind.ChangedFile)
+        {
+            options.Insert(
+                3,
+                new SelectionPromptOption<string>(
+                    "Discard",
+                    "discard",
+                    "Discard this file's worktree edits or delete it if it is untracked."));
+        }
+
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                $"File {TruncateFromRight(relativePath, 80)}",
+                [.. options],
+                "Choose an action for the selected git file. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "open":
+                        if (selected.FilePath is string path)
+                        {
+                            OpenFileInEditor(state, path);
+                        }
+                        break;
+                    case "open-changes":
+                        OpenGitSidebarFileChanges(state, selected);
+                        break;
+                    case "toggle-stage":
+                        ToggleGitSidebarStageSelection(state);
+                        break;
+                    case "discard":
+                        PromptDiscardGitSidebarSelection(state);
+                        break;
+                    case "gitignore":
+                        AddGitSidebarFileToIgnoreFile(state, selected, ".gitignore");
+                        break;
+                    case "nanoignore":
+                        AddGitSidebarFileToIgnoreFile(state, selected, ".nanoignore");
+                        break;
+                    case "reveal":
+                        RevealGitSidebarFileInExplorer(state, selected);
+                        break;
+                    case "copy-patch":
+                        CopyGitSidebarFilePatch(state, selected);
+                        break;
+                    case "copy-relative-path":
+                        CopyGitSidebarCommitText(state, relativePath, "relative path");
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("File action cancelled."));
+    }
+
     private static void CopyGitSidebarCommitText(AppState state, string text, string description)
     {
         if (string.IsNullOrEmpty(text))
@@ -791,6 +903,258 @@ public static partial class Program
             title,
             "commit diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
             startAtBottom: false);
+    }
+
+    private static void OpenGitSidebarFileChanges(AppState state, GitSidebarLine selected)
+    {
+        if (!TryGetGitSidebarFilePatch(state, selected, out string patch))
+        {
+            state.AddSystemMessage("Could not load file changes.");
+            return;
+        }
+
+        string relativePath = selected.RelativePath ?? selected.FilePath ?? "file";
+        string titlePrefix = selected.Kind == GitSidebarLineKind.StagedFile ? "STAGED" : "CHANGES";
+        string[] lines = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n');
+
+        EnterReaderView(
+            state,
+            lines,
+            $"{titlePrefix} {relativePath}",
+            "file diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            startAtBottom: false);
+    }
+
+    private static void CopyGitSidebarFilePatch(AppState state, GitSidebarLine selected)
+    {
+        if (!TryGetGitSidebarFilePatch(state, selected, out string patch))
+        {
+            state.AddSystemMessage("Could not copy patch: no diff was available.");
+            return;
+        }
+
+        state.AddSystemMessage(TryWriteClipboardText(patch)
+            ? "Copied file patch to the clipboard."
+            : "Could not copy file patch: no clipboard tool was found.");
+    }
+
+    private static bool TryGetGitSidebarFilePatch(AppState state, GitSidebarLine selected, out string patch)
+    {
+        patch = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(selected.RelativePath))
+        {
+            return false;
+        }
+
+        string relativePath = selected.RelativePath!;
+        string[] arguments = selected.Kind == GitSidebarLineKind.StagedFile
+            ? ["diff", "--cached", "--no-ext-diff", "--color=never", "--", relativePath]
+            : ["diff", "--no-ext-diff", "--color=never", "--", relativePath];
+        (bool succeeded, string? output, string? error) = RunGitWithResult(state.RootDirectory, arguments);
+
+        if (succeeded && !string.IsNullOrWhiteSpace(output))
+        {
+            patch = output;
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(output))
+        {
+            patch = output;
+            return true;
+        }
+
+        if (selected.Kind == GitSidebarLineKind.ChangedFile &&
+            string.Equals(selected.StatusCode, "?", StringComparison.Ordinal) &&
+            selected.FilePath is string filePath &&
+            File.Exists(filePath) &&
+            TryBuildUntrackedGitSidebarPatch(relativePath, filePath, out patch))
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(error))
+        {
+            patch = error!;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryBuildUntrackedGitSidebarPatch(string relativePath, string filePath, out string patch)
+    {
+        patch = string.Empty;
+
+        string temporaryFile = Path.GetTempFileName();
+        try
+        {
+            string? output = RunGitAllowingDiffExitCode(
+                Path.GetDirectoryName(filePath) ?? Directory.GetCurrentDirectory(),
+                1,
+                "diff",
+                "--no-index",
+                "--no-ext-diff",
+                "--color=never",
+                "--label",
+                $"a/{relativePath}",
+                "--label",
+                $"b/{relativePath}",
+                "--",
+                temporaryFile,
+                filePath);
+
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                return false;
+            }
+
+            patch = output
+                .Replace(temporaryFile, $"/dev/null", StringComparison.Ordinal)
+                .Replace(Path.GetFileName(temporaryFile), "dev-null", StringComparison.Ordinal);
+            return true;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryFile);
+            }
+            catch
+            {
+                // Best effort cleanup only.
+            }
+        }
+    }
+
+    private static string? RunGitAllowingDiffExitCode(
+        string workingDirectory,
+        int allowedExitCode,
+        params string[] arguments)
+    {
+        try
+        {
+            ProcessStartInfo startInfo = new()
+            {
+                FileName = "git",
+                WorkingDirectory = workingDirectory,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            foreach (string argument in arguments)
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            using Process? process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return null;
+            }
+
+            Task<string> outputTask = process.StandardOutput.ReadToEndAsync();
+            Task<string> errorTask = process.StandardError.ReadToEndAsync();
+
+            if (!TryWaitForProcessExit(process, 4000))
+            {
+                return null;
+            }
+
+            string output = outputTask.GetAwaiter().GetResult().Trim();
+            string error = errorTask.GetAwaiter().GetResult().Trim();
+            return process.ExitCode is 0 || process.ExitCode == allowedExitCode
+                ? (!string.IsNullOrWhiteSpace(output) ? output : error)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static void AddGitSidebarFileToIgnoreFile(AppState state, GitSidebarLine selected, string ignoreFileName)
+    {
+        if (string.IsNullOrWhiteSpace(selected.RelativePath))
+        {
+            state.AddSystemMessage($"Could not update {ignoreFileName}: file path was empty.");
+            return;
+        }
+
+        string relativePath = selected.RelativePath!.Replace('\\', '/');
+        string ignoreFilePath = Path.Combine(state.RootDirectory, ignoreFileName);
+
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ignoreFilePath) ?? state.RootDirectory);
+
+            string normalizedLine = relativePath.Trim();
+            string existing = File.Exists(ignoreFilePath)
+                ? File.ReadAllText(ignoreFilePath)
+                : string.Empty;
+            string[] existingLines = existing
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n')
+                .Split('\n');
+
+            if (existingLines.Any(line => NormalizeIgnoreEntry(line) == NormalizeIgnoreEntry(normalizedLine)))
+            {
+                state.AddSystemMessage($"{relativePath} is already listed in {ignoreFileName}.");
+                return;
+            }
+
+            string prefix = existing.Length == 0 || existing.EndsWith('\n')
+                ? string.Empty
+                : Environment.NewLine;
+            File.AppendAllText(ignoreFilePath, $"{prefix}{normalizedLine}{Environment.NewLine}");
+            state.AddSystemMessage($"Added {relativePath} to {ignoreFileName}.");
+        }
+        catch (Exception exception)
+        {
+            state.AddSystemMessage($"Could not update {ignoreFileName}: {exception.Message}");
+        }
+    }
+
+    private static string NormalizeIgnoreEntry(string line)
+    {
+        return line
+            .Trim()
+            .TrimStart('.', '/', '\\')
+            .Replace('\\', '/');
+    }
+
+    private static void RevealGitSidebarFileInExplorer(AppState state, GitSidebarLine selected)
+    {
+        string? filePath = selected.FilePath;
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            state.AddSystemMessage("Could not reveal file: path was empty.");
+            return;
+        }
+
+        string targetDirectory = File.Exists(filePath)
+            ? Path.GetDirectoryName(filePath) ?? state.RootDirectory
+            : Directory.Exists(filePath)
+                ? filePath
+                : Path.GetDirectoryName(filePath) ?? state.RootDirectory;
+
+        bool opened = OperatingSystem.IsWindows()
+            ? TryStartProcess("explorer.exe", $"/select,\"{filePath}\"", useShell: false) ||
+                TryStartProcess("explorer.exe", $"\"{targetDirectory}\"", useShell: false)
+            : OperatingSystem.IsMacOS()
+                ? TryStartProcess("open", $"-R \"{filePath}\"", useShell: false) ||
+                    TryStartProcess("open", $"\"{targetDirectory}\"", useShell: false)
+                : TryStartProcess("xdg-open", $"\"{targetDirectory}\"", useShell: false);
+
+        if (!opened)
+        {
+            state.AddSystemMessage($"Could not reveal {filePath}.");
+        }
     }
 
     private static void PromptDiscardGitSidebarSelection(AppState state)
