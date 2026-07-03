@@ -2,6 +2,7 @@ using NanoAgent.Application.Models;
 using Spectre.Console;
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace NanoAgent.CLI;
 
@@ -610,4 +611,318 @@ public static partial class Program
     private readonly record struct FileEditRow(
         FileEditPreviewEntry? Left,
         FileEditPreviewEntry? Right);
+
+    private readonly record struct GitPatchFile(
+        string DisplayPath,
+        string? Language,
+        IReadOnlyList<GitPatchHunk> Hunks);
+
+    private readonly record struct GitPatchHunk(
+        string Header,
+        IReadOnlyList<FileEditPreviewEntry> Entries);
+
+    private static bool TryBuildGitPatchReaderLines(
+        string patch,
+        int width,
+        out IReadOnlyList<ReaderViewLine> lines)
+    {
+        lines = [];
+
+        string[] rawLines = patch
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n');
+        List<GitPatchFile> files = ParseGitPatchFiles(rawLines);
+        if (files.Count == 0)
+        {
+            return false;
+        }
+
+        int contentWidth = Math.Max(12, width);
+        List<ReaderViewLine> rendered = [];
+
+        foreach (GitPatchFile file in files)
+        {
+            if (rendered.Count > 0)
+            {
+                rendered.Add(new ReaderViewLine(string.Empty, string.Empty));
+            }
+
+            string headerPlain = file.DisplayPath;
+            string headerMarkup = $"[bold]{Markup.Escape(headerPlain)}[/]";
+            rendered.Add(new ReaderViewLine(headerMarkup, headerPlain));
+
+            rendered.Add(BuildReaderDiffColumnHeader(contentWidth));
+
+            foreach (GitPatchHunk hunk in file.Hunks)
+            {
+                string hunkPlain = hunk.Header;
+                string hunkMarkup = $"[grey]{Markup.Escape(hunkPlain)}[/]";
+                rendered.Add(new ReaderViewLine(hunkMarkup, hunkPlain));
+
+                foreach (FileEditRow row in BuildFileEditRows(hunk.Entries))
+                {
+                    rendered.Add(BuildReaderDiffRow(row, contentWidth, file.Language));
+                }
+            }
+        }
+
+        lines = rendered;
+        return rendered.Count > 0;
+    }
+
+    private static List<GitPatchFile> ParseGitPatchFiles(IReadOnlyList<string> rawLines)
+    {
+        List<GitPatchFile> files = [];
+        string? pendingOldPath = null;
+        string? pendingNewPath = null;
+        string? currentPath = null;
+        string? currentLanguage = null;
+        List<GitPatchHunk> currentHunks = [];
+        string? currentHunkHeader = null;
+        List<FileEditPreviewEntry>? currentEntries = null;
+        int oldLineNumber = 0;
+        int newLineNumber = 0;
+
+        void FinalizeHunk()
+        {
+            if (currentHunkHeader is null || currentEntries is null)
+            {
+                return;
+            }
+
+            currentHunks.Add(new GitPatchHunk(currentHunkHeader, [.. currentEntries]));
+            currentHunkHeader = null;
+            currentEntries = null;
+        }
+
+        void FinalizeFile()
+        {
+            FinalizeHunk();
+            if (string.IsNullOrWhiteSpace(currentPath) || currentHunks.Count == 0)
+            {
+                currentPath = null;
+                currentLanguage = null;
+                currentHunks = [];
+                return;
+            }
+
+            files.Add(new GitPatchFile(currentPath, currentLanguage, [.. currentHunks]));
+            currentPath = null;
+            currentLanguage = null;
+            currentHunks = [];
+        }
+
+        foreach (string rawLine in rawLines)
+        {
+            if (rawLine.StartsWith("diff --git ", StringComparison.Ordinal))
+            {
+                FinalizeFile();
+                pendingOldPath = null;
+                pendingNewPath = null;
+                continue;
+            }
+
+            if (rawLine.StartsWith("--- ", StringComparison.Ordinal))
+            {
+                pendingOldPath = NormalizeGitPatchPath(rawLine[4..]);
+                continue;
+            }
+
+            if (rawLine.StartsWith("+++ ", StringComparison.Ordinal))
+            {
+                pendingNewPath = NormalizeGitPatchPath(rawLine[4..]);
+                currentPath = pendingNewPath ?? pendingOldPath;
+                currentLanguage = GuessCodeLanguageFromPath(currentPath);
+                continue;
+            }
+
+            if (rawLine.StartsWith("@@ ", StringComparison.Ordinal))
+            {
+                if (string.IsNullOrWhiteSpace(currentPath))
+                {
+                    continue;
+                }
+
+                FinalizeHunk();
+                currentHunkHeader = rawLine;
+                currentEntries = [];
+                ParseGitPatchHunkHeader(rawLine, out oldLineNumber, out newLineNumber);
+                continue;
+            }
+
+            if (currentEntries is null || rawLine.Length == 0)
+            {
+                continue;
+            }
+
+            char indicator = rawLine[0];
+            string text = rawLine.Length > 1 ? rawLine[1..] : string.Empty;
+            switch (indicator)
+            {
+                case ' ':
+                    currentEntries.Add(new FileEditPreviewEntry(oldLineNumber, ' ', text));
+                    oldLineNumber++;
+                    newLineNumber++;
+                    break;
+                case '-':
+                    currentEntries.Add(new FileEditPreviewEntry(oldLineNumber, '-', text));
+                    oldLineNumber++;
+                    break;
+                case '+':
+                    currentEntries.Add(new FileEditPreviewEntry(newLineNumber, '+', text));
+                    newLineNumber++;
+                    break;
+            }
+        }
+
+        FinalizeFile();
+        return files;
+    }
+
+    private static ReaderViewLine BuildReaderDiffColumnHeader(int width)
+    {
+        GetFileDiffColumnWidths(width, out int leftWidth, out int rightWidth);
+        string leftText = FitDiffCell("before", leftWidth, pad: true);
+        string rightText = FitDiffCell("after", rightWidth, pad: true);
+        string plain = leftText + FileDiffSeparatorPlain + rightText;
+        string markup = $"[grey]{Markup.Escape(leftText)}[/][grey]{Markup.Escape(FileDiffSeparatorPlain)}[/][grey]{Markup.Escape(rightText)}[/]";
+        return new ReaderViewLine(markup, plain);
+    }
+
+    private static ReaderViewLine BuildReaderDiffRow(
+        FileEditRow row,
+        int width,
+        string? language)
+    {
+        GetFileDiffColumnWidths(width, out int leftWidth, out int rightWidth);
+        InlineRenderResult left = BuildReaderDiffCell(row.Left, leftWidth, language);
+        InlineRenderResult right = BuildReaderDiffCell(row.Right, rightWidth, language);
+        return new ReaderViewLine(
+            left.Markup + "[grey] | [/]" + right.Markup,
+            left.Plain + FileDiffSeparatorPlain + right.Plain);
+    }
+
+    private static InlineRenderResult BuildReaderDiffCell(
+        FileEditPreviewEntry? entry,
+        int width,
+        string? language)
+    {
+        if (entry is null)
+        {
+            string blank = new string(' ', Math.Max(1, width));
+            return new InlineRenderResult(Markup.Escape(blank), blank);
+        }
+
+        string prefix = $"{entry.Value.LineNumber.ToString(CultureInfo.InvariantCulture).PadLeft(FileDiffLineNumberWidth)} {(entry.Value.Indicator == ' ' ? " " : entry.Value.Indicator.ToString(CultureInfo.InvariantCulture))} ";
+        string codeText = entry.Value.Text;
+        string combinedPlain = FitDiffCell(prefix + codeText, width, pad: true);
+
+        if (entry.Value.Indicator == ' ')
+        {
+            return new InlineRenderResult($"[grey]{Markup.Escape(combinedPlain)}[/]", combinedPlain);
+        }
+
+        List<MarkdownFragment> fragments = [new MarkdownFragment(prefix, GetDiffIndicatorBaseStyle(entry.Value.Indicator))];
+        foreach (MarkdownFragment fragment in HighlightCodeLines([codeText], language)[0])
+        {
+            AddMarkdownFragment(
+                fragments,
+                fragment.Text,
+                CombineDiffStyles(fragment.Style, entry.Value.Indicator));
+        }
+
+        int padding = Math.Max(0, width - (prefix.Length + codeText.Length));
+        if (padding > 0)
+        {
+            AddMarkdownFragment(fragments, new string(' ', padding), GetDiffIndicatorBaseStyle(entry.Value.Indicator));
+        }
+
+        return RenderMarkdownFragments(fragments, string.Empty);
+    }
+
+    private static string GetDiffIndicatorBaseStyle(char indicator)
+    {
+        return indicator switch
+        {
+            '-' => "white on red",
+            '+' => "black on green",
+            _ => "grey"
+        };
+    }
+
+    private static string CombineDiffStyles(string syntaxStyle, char indicator)
+    {
+        string baseStyle = GetDiffIndicatorBaseStyle(indicator);
+        if (string.IsNullOrWhiteSpace(syntaxStyle))
+        {
+            return baseStyle;
+        }
+
+        int backgroundIndex = baseStyle.IndexOf(" on ", StringComparison.Ordinal);
+        if (backgroundIndex < 0)
+        {
+            return syntaxStyle;
+        }
+
+        return syntaxStyle + baseStyle[backgroundIndex..];
+    }
+
+    private static void ParseGitPatchHunkHeader(string rawLine, out int oldLineNumber, out int newLineNumber)
+    {
+        Match match = Regex.Match(rawLine, @"^@@ -(?<old>\d+)(?:,\d+)? \+(?<new>\d+)(?:,\d+)? @@");
+        oldLineNumber = match.Success && int.TryParse(match.Groups["old"].Value, out int parsedOld)
+            ? parsedOld
+            : 1;
+        newLineNumber = match.Success && int.TryParse(match.Groups["new"].Value, out int parsedNew)
+            ? parsedNew
+            : 1;
+    }
+
+    private static string? NormalizeGitPatchPath(string rawPath)
+    {
+        string trimmed = rawPath.Trim();
+        if (string.Equals(trimmed, "/dev/null", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (trimmed.StartsWith("a/", StringComparison.Ordinal) ||
+            trimmed.StartsWith("b/", StringComparison.Ordinal))
+        {
+            return trimmed[2..];
+        }
+
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+
+    private static string? GuessCodeLanguageFromPath(string? path)
+    {
+        string extension = Path.GetExtension(path ?? string.Empty).ToLowerInvariant();
+        return extension switch
+        {
+            ".cs" => "cs",
+            ".fs" => "fs",
+            ".vb" => "vb",
+            ".js" => "js",
+            ".jsx" => "jsx",
+            ".ts" => "ts",
+            ".tsx" => "tsx",
+            ".json" or ".jsonl" => "json",
+            ".xml" or ".csproj" or ".props" or ".targets" or ".svg" => "xml",
+            ".yaml" or ".yml" => "yaml",
+            ".toml" or ".ini" => "toml",
+            ".md" => "md",
+            ".html" or ".htm" => "html",
+            ".css" or ".scss" => "css",
+            ".py" => "py",
+            ".go" => "go",
+            ".rs" => "rust",
+            ".java" => "java",
+            ".c" or ".h" or ".cpp" or ".hpp" => "cpp",
+            ".sql" => "sql",
+            ".sh" => "sh",
+            ".ps1" => "powershell",
+            _ => null
+        };
+    }
 }

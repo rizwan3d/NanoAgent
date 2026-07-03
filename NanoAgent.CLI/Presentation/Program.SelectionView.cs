@@ -15,7 +15,7 @@ public static partial class Program
     private static IRenderable BuildReaderView(AppState state)
     {
         int width = Math.Max(20, GetWindowWidth() - 1);
-        List<string> readerLines = BuildReaderLines(state, width);
+        List<ReaderViewLine> readerLines = BuildReaderDisplayLines(state, width);
         int viewportLineCount = GetReaderViewportLineCount();
         int maxScrollOffset = Math.Max(0, readerLines.Count - viewportLineCount);
         state.ReaderScrollOffset = Math.Clamp(state.ReaderScrollOffset, 0, maxScrollOffset);
@@ -31,7 +31,7 @@ public static partial class Program
 
         for (int index = startLine; index < endLine; index++)
         {
-            rendered.Add(Markup.Escape(readerLines[index]));
+            rendered.Add(readerLines[index].Markup);
         }
 
         return new Markup(string.Join('\n', rendered));
@@ -107,6 +107,18 @@ public static partial class Program
         return lines;
     }
 
+    private static List<ReaderViewLine> BuildReaderDisplayLines(AppState state, int width)
+    {
+        if (state.ReaderViewStyledLines is { } styledLines)
+        {
+            return [.. styledLines];
+        }
+
+        return BuildReaderLines(state, width)
+            .Select(static line => new ReaderViewLine(Markup.Escape(line), line))
+            .ToList();
+    }
+
     private static List<string> BuildReaderLines(IReadOnlyList<string> sourceLines, int width)
     {
         List<string> lines = [];
@@ -149,7 +161,7 @@ public static partial class Program
     private static int GetMaxReaderScrollOffset(AppState state)
     {
         int width = Math.Max(20, GetWindowWidth() - 1);
-        int lineCount = BuildReaderLines(state, width).Count;
+        int lineCount = BuildReaderDisplayLines(state, width).Count;
         return Math.Max(0, lineCount - GetReaderViewportLineCount());
     }
 
