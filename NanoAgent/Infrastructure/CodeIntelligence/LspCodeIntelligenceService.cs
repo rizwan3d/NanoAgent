@@ -2330,47 +2330,58 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
             Stream output,
             CancellationToken cancellationToken)
         {
-            List<byte> headerBytes = [];
-            byte[] buffer = new byte[1];
             byte[] separator = [13, 10, 13, 10];
-            int matchedSeparatorBytes = 0;
-
-            while (true)
+            ArrayBufferWriter<byte> messageBuffer = new();
+            byte[] readBuffer = ArrayPool<byte>.Shared.Rent(1024);
+            try
             {
-                int read = await output.ReadAsync(buffer.AsMemory(0, 1), cancellationToken);
-                if (read == 0)
+                int headerLength = -1;
+                while (headerLength < 0)
                 {
-                    throw new IOException("Language server closed the output stream.");
-                }
-
-                byte currentByte = buffer[0];
-                headerBytes.Add(currentByte);
-                if (currentByte == separator[matchedSeparatorBytes])
-                {
-                    matchedSeparatorBytes++;
-                    if (matchedSeparatorBytes == separator.Length)
+                    int read = await output.ReadAsync(
+                        readBuffer.AsMemory(0, readBuffer.Length),
+                        cancellationToken);
+                    if (read == 0)
                     {
+                        throw new IOException("Language server closed the output stream.");
+                    }
+
+                    Span<byte> destination = messageBuffer.GetSpan(read);
+                    readBuffer.AsSpan(0, read).CopyTo(destination);
+                    messageBuffer.Advance(read);
+
+                    int separatorIndex = messageBuffer.WrittenSpan.IndexOf(separator);
+                    if (separatorIndex >= 0)
+                    {
+                        headerLength = separatorIndex + separator.Length;
                         break;
                     }
-                }
-                else
-                {
-                    matchedSeparatorBytes = currentByte == separator[0] ? 1 : 0;
+
+                    if (messageBuffer.WrittenCount > 8_192)
+                    {
+                        throw new InvalidOperationException("Language server sent an oversized message header.");
+                    }
                 }
 
-                if (headerBytes.Count > 8_192)
+                ReadOnlySpan<byte> messageBytes = messageBuffer.WrittenSpan;
+                string headers = Encoding.ASCII.GetString(messageBytes[..headerLength]);
+                int contentLength = ParseContentLength(headers);
+                byte[] body = new byte[contentLength];
+                int bufferedBodyBytes = Math.Min(contentLength, messageBytes.Length - headerLength);
+                if (bufferedBodyBytes > 0)
                 {
-                    throw new InvalidOperationException("Language server sent an oversized message header.");
+                    messageBytes.Slice(headerLength, bufferedBodyBytes).CopyTo(body);
                 }
+
+                await ReadExactAsync(output, body, bufferedBodyBytes, cancellationToken);
+
+                using JsonDocument document = JsonDocument.Parse(body);
+                return document.RootElement.Clone();
             }
-
-            string headers = Encoding.ASCII.GetString(headerBytes.ToArray());
-            int contentLength = ParseContentLength(headers);
-            byte[] body = new byte[contentLength];
-            await ReadExactAsync(output, body, cancellationToken);
-
-            using JsonDocument document = JsonDocument.Parse(body);
-            return document.RootElement.Clone();
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(readBuffer);
+            }
         }
 
         private static int ParseContentLength(string headers)
@@ -2398,7 +2409,19 @@ internal sealed class LspCodeIntelligenceService : ICodeIntelligenceService
             byte[] buffer,
             CancellationToken cancellationToken)
         {
-            int offset = 0;
+            await ReadExactAsync(
+                stream,
+                buffer,
+                0,
+                cancellationToken);
+        }
+
+        private static async Task ReadExactAsync(
+            Stream stream,
+            byte[] buffer,
+            int offset,
+            CancellationToken cancellationToken)
+        {
             while (offset < buffer.Length)
             {
                 int read = await stream.ReadAsync(
