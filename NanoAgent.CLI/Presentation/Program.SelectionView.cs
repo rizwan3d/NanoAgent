@@ -25,7 +25,7 @@ public static partial class Program
 
         List<string> rendered =
         [
-            BuildReaderHeaderMarkup(startLine, endLine, readerLines.Count),
+            BuildReaderHeaderMarkup(state, startLine, endLine, readerLines.Count),
             string.Empty
         ];
 
@@ -37,20 +37,31 @@ public static partial class Program
         return new Markup(string.Join('\n', rendered));
     }
 
-    private static string BuildReaderHeaderMarkup(int startLine, int endLine, int totalLines)
+    private static string BuildReaderHeaderMarkup(AppState state, int startLine, int endLine, int totalLines)
     {
         string range = totalLines == 0
             ? "0/0"
             : $"{startLine + 1}-{endLine}/{totalLines}";
 
-        return "[grey]── READER VIEW ── select with the mouse to copy · " +
-            $"↑/↓ PgUp/PgDn Home/End scroll · Esc/F5 exit · {range} ──[/]";
+        string title = string.IsNullOrWhiteSpace(state.ReaderViewTitle)
+            ? "READER VIEW"
+            : state.ReaderViewTitle!;
+        string instructions = string.IsNullOrWhiteSpace(state.ReaderViewInstructions)
+            ? "select with the mouse to copy | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit"
+            : state.ReaderViewInstructions!;
+
+        return $"[grey]-- {Markup.Escape(title)} -- {Markup.Escape(instructions)} | {range} --[/]";
     }
 
     // Flattens the conversation into clean, wrapped plain-text lines with a role label
     // before each message. Uses ChatMessage.Text verbatim (no markup, glyphs or boxes).
     private static List<string> BuildReaderLines(AppState state, int width)
     {
+        if (state.ReaderViewLines is { } customLines)
+        {
+            return BuildReaderLines(customLines, width);
+        }
+
         List<string> lines = [];
 
         foreach (ChatMessage message in state.Messages)
@@ -91,6 +102,39 @@ public static partial class Program
         if (lines.Count == 0)
         {
             lines.Add("No messages yet.");
+        }
+
+        return lines;
+    }
+
+    private static List<string> BuildReaderLines(IReadOnlyList<string> sourceLines, int width)
+    {
+        List<string> lines = [];
+
+        foreach (string sourceLine in sourceLines)
+        {
+            string normalized = sourceLine
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Replace('\r', '\n');
+
+            foreach (string rawLine in normalized.Split('\n'))
+            {
+                if (rawLine.Length == 0)
+                {
+                    lines.Add(string.Empty);
+                    continue;
+                }
+
+                foreach (string wrapped in WrapText(rawLine, width))
+                {
+                    lines.Add(wrapped);
+                }
+            }
+        }
+
+        if (lines.Count == 0)
+        {
+            lines.Add("Nothing to show.");
         }
 
         return lines;
