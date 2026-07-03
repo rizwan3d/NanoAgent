@@ -6,4 +6,5 @@ public sealed record SelectionPromptRequest<T>(
     string? Description = null,
     int DefaultIndex = 0,
     bool AllowCancellation = true,
-    TimeSpan? AutoSelectAfter = null);
+    TimeSpan? AutoSelectAfter = null,
+    bool DescriptionSupportsMarkup = false);
