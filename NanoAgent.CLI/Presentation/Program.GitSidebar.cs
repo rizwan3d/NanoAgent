@@ -8,6 +8,7 @@ namespace NanoAgent.CLI;
 public enum GitSidebarLineKind
 {
     Text,
+    Repo,
     Branch,
     Commit,
     LoadMoreCommits,
@@ -233,6 +234,7 @@ public static partial class Program
         string repoRoot = Directory.GetParent(gitDir.TrimEnd('\\', '/'))?.FullName ?? root;
         string? branch = GetGitBranchName(root);
 
+        lines.Add(BuildRepoSidebarLine(repoRoot, contentWidth));
         lines.Add(BuildBranchSidebarLine(branch, contentWidth));
 
         AddQueuedPromptLines(lines, state, contentWidth);
@@ -321,6 +323,20 @@ public static partial class Program
         string branchNameTrunc = TruncateFromRight(branchName, Math.Max(0, contentWidth - "branch ".Length));
         string markup = $"[bold][grey]branch[/] [green]{Markup.Escape(branchNameTrunc)}[/][/]";
         return new GitSidebarLine(markup, plain, null, GitSidebarLineKind.Branch);
+    }
+
+    private static GitSidebarLine BuildRepoSidebarLine(string repoRoot, int contentWidth)
+    {
+        string repoName = Path.GetFileName(repoRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        if (string.IsNullOrWhiteSpace(repoName))
+        {
+            repoName = repoRoot;
+        }
+
+        string plain = TruncateFromRight($"repo {repoName}", contentWidth);
+        string repoNameTrunc = TruncateFromRight(repoName, Math.Max(0, contentWidth - "repo ".Length));
+        string markup = $"[bold][grey]repo[/] [aqua]{Markup.Escape(repoNameTrunc)}[/][/]";
+        return new GitSidebarLine(markup, plain, repoRoot, GitSidebarLineKind.Repo);
     }
 
     private static HashSet<string> GetLocalOnlyCommitHashes(string root)
@@ -486,7 +502,7 @@ public static partial class Program
     {
         return index >= 0 &&
             index < lines.Count &&
-            lines[index].Kind is GitSidebarLineKind.Branch or GitSidebarLineKind.Commit or GitSidebarLineKind.LoadMoreCommits or GitSidebarLineKind.StagedFile or GitSidebarLineKind.ChangedFile;
+            lines[index].Kind is GitSidebarLineKind.Repo or GitSidebarLineKind.Branch or GitSidebarLineKind.Commit or GitSidebarLineKind.LoadMoreCommits or GitSidebarLineKind.StagedFile or GitSidebarLineKind.ChangedFile;
     }
 
     private static int FindNextGitSidebarActionableIndex(
@@ -601,6 +617,12 @@ public static partial class Program
             return;
         }
 
+        if (selected.Kind == GitSidebarLineKind.Repo)
+        {
+            PromptRepoActionMenu(state);
+            return;
+        }
+
         if (selected.Kind == GitSidebarLineKind.Branch)
         {
             PromptBranchActionFromGitSidebar(state);
@@ -641,6 +663,9 @@ public static partial class Program
 
         switch (selected.Kind)
         {
+            case GitSidebarLineKind.Repo:
+                PromptRepoActionMenu(state);
+                return;
             case GitSidebarLineKind.Branch:
                 PromptBranchActionFromGitSidebar(state);
                 return;
@@ -662,6 +687,12 @@ public static partial class Program
         GitSidebarLine? selected = GetSelectedGitSidebarLine(state);
         if (selected is null)
         {
+            return;
+        }
+
+        if (selected.Kind == GitSidebarLineKind.Repo)
+        {
+            PromptRepoActionMenu(state);
             return;
         }
 
@@ -706,6 +737,1016 @@ public static partial class Program
         {
             InvalidateGitSidebar(state);
         }
+    }
+
+    private static void PromptRepoActionMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository actions",
+                [
+                    new SelectionPromptOption<string>("Sync", "sync", "Pull, push, fetch, publish, and remote-targeted sync actions."),
+                    new SelectionPromptOption<string>("Changes", "changes", "Stage, unstage, discard, and undo the last commit."),
+                    new SelectionPromptOption<string>("Stash", "stash", "Create, apply, pop, drop, and inspect stashes."),
+                    new SelectionPromptOption<string>("Branches", "branches", "Merge, rebase, create, rename, and delete branches."),
+                    new SelectionPromptOption<string>("Remotes", "remotes", "Add or delete remotes."),
+                    new SelectionPromptOption<string>("Tags", "tags", "Create, delete, and publish tags.")
+                ],
+                "Choose a repository action group. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "sync":
+                        PromptRepoSyncMenu(state);
+                        break;
+                    case "changes":
+                        PromptRepoChangesMenu(state);
+                        break;
+                    case "stash":
+                        PromptRepoStashMenu(state);
+                        break;
+                    case "branches":
+                        PromptRepoBranchMenu(state);
+                        break;
+                    case "remotes":
+                        PromptRepoRemoteMenu(state);
+                        break;
+                    case "tags":
+                        PromptRepoTagMenu(state);
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Repository action cancelled."));
+    }
+
+    private static void PromptRepoSyncMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository sync",
+                [
+                    new SelectionPromptOption<string>("Pull", "pull", "Run git pull for the current branch."),
+                    new SelectionPromptOption<string>("Pull (rebase)", "pull-rebase", "Run git pull --rebase for the current branch."),
+                    new SelectionPromptOption<string>("Pull from...", "pull-from", "Choose a remote and branch to pull from."),
+                    new SelectionPromptOption<string>("Push", "push", "Run git push for the current branch."),
+                    new SelectionPromptOption<string>("Push to...", "push-to", "Choose a remote and branch to push to."),
+                    new SelectionPromptOption<string>("Fetch", "fetch", "Fetch from the default remotes."),
+                    new SelectionPromptOption<string>("Fetch (prune)", "fetch-prune", "Fetch and prune deleted remote refs."),
+                    new SelectionPromptOption<string>("Fetch all remotes", "fetch-all", "Fetch from every configured remote."),
+                    new SelectionPromptOption<string>("Publish branch", "publish", "Push the current branch to origin and set upstream."),
+                    new SelectionPromptOption<string>("Push tags", "push-tags", "Push every local tag to the default remote.")
+                ],
+                "Choose a sync action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "pull":
+                        RunGitPullFromSidebar(state);
+                        break;
+                    case "pull-rebase":
+                        if (TryRunGitCommand(state, "Git pull --rebase completed.", "Failed to pull with rebase", "pull", "--rebase"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                    case "pull-from":
+                        PromptPullFromRemote(state);
+                        break;
+                    case "push":
+                        RunGitPushFromSidebar(state);
+                        break;
+                    case "push-to":
+                        PromptPushToRemote(state);
+                        break;
+                    case "fetch":
+                        if (TryRunGitCommand(state, "Git fetch completed.", "Failed to fetch", "fetch"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                    case "fetch-prune":
+                        if (TryRunGitCommand(state, "Git fetch --prune completed.", "Failed to fetch with prune", "fetch", "--prune"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                    case "fetch-all":
+                        if (TryRunGitCommand(state, "Fetched all remotes.", "Failed to fetch all remotes", "fetch", "--all", "--prune"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                    case "publish":
+                        PromptPublishBranch(state);
+                        break;
+                    case "push-tags":
+                        if (TryRunGitCommand(state, "Pushed all tags.", "Failed to push tags", "push", "--tags"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Sync action cancelled."));
+    }
+
+    private static void PromptRepoChangesMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository changes",
+                [
+                    new SelectionPromptOption<string>("Stage all changes", "stage-all", "Stage tracked, deleted, and untracked files."),
+                    new SelectionPromptOption<string>("Unstage all changes", "unstage-all", "Remove every staged change from the index."),
+                    new SelectionPromptOption<string>("Discard all changes", "discard-all", "Restore tracked files and delete untracked files."),
+                    new SelectionPromptOption<string>("Undo last commit", "undo-last-commit", "Move HEAD back one commit and keep the changes locally.")
+                ],
+                "Choose a changes action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "stage-all":
+                        if (TryRunGitCommand(state, "Staged all changes.", "Failed to stage all changes", "add", "-A"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                    case "unstage-all":
+                        if (TryRunGitCommand(state, "Unstaged all changes.", "Failed to unstage all changes", "restore", "--staged", "."))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                    case "discard-all":
+                        PromptDiscardAllGitChanges(state);
+                        break;
+                    case "undo-last-commit":
+                        PromptUndoLastCommit(state);
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Changes action cancelled."));
+    }
+
+    private static void PromptRepoStashMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository stash",
+                [
+                    new SelectionPromptOption<string>("Stash", "stash", "Create a stash from tracked changes."),
+                    new SelectionPromptOption<string>("Stash (include untracked)", "stash-untracked", "Create a stash and include untracked files."),
+                    new SelectionPromptOption<string>("Stash staged", "stash-staged", "Create a stash from staged changes only."),
+                    new SelectionPromptOption<string>("Apply last stash", "apply-last", "Apply stash@{0} without dropping it."),
+                    new SelectionPromptOption<string>("Apply stash...", "apply", "Choose a stash entry to apply."),
+                    new SelectionPromptOption<string>("Pop last stash", "pop-last", "Apply stash@{0} and drop it."),
+                    new SelectionPromptOption<string>("Pop stash...", "pop", "Choose a stash entry to pop."),
+                    new SelectionPromptOption<string>("Drop stash...", "drop", "Choose a stash entry to delete."),
+                    new SelectionPromptOption<string>("Drop all stashes", "drop-all", "Delete every stash entry."),
+                    new SelectionPromptOption<string>("View stash...", "view", "Open a stash patch inside the reader view.")
+                ],
+                "Choose a stash action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "stash":
+                        PromptCreateStash(state, includeUntracked: false, stagedOnly: false);
+                        break;
+                    case "stash-untracked":
+                        PromptCreateStash(state, includeUntracked: true, stagedOnly: false);
+                        break;
+                    case "stash-staged":
+                        PromptCreateStash(state, includeUntracked: false, stagedOnly: true);
+                        break;
+                    case "apply-last":
+                        RunGitStashAction(state, "apply", "stash@{0}", "Applied the latest stash.", "Failed to apply the latest stash");
+                        break;
+                    case "apply":
+                        PromptSelectStash(state, "Apply stash", "Choose a stash entry to apply. Esc cancels.", stash => RunGitStashAction(state, "apply", stash.Ref, $"Applied {stash.Ref}.", "Failed to apply stash"), "No stashes found.", "Apply stash cancelled.");
+                        break;
+                    case "pop-last":
+                        RunGitStashAction(state, "pop", "stash@{0}", "Popped the latest stash.", "Failed to pop the latest stash");
+                        break;
+                    case "pop":
+                        PromptSelectStash(state, "Pop stash", "Choose a stash entry to pop. Esc cancels.", stash => RunGitStashAction(state, "pop", stash.Ref, $"Popped {stash.Ref}.", "Failed to pop stash"), "No stashes found.", "Pop stash cancelled.");
+                        break;
+                    case "drop":
+                        PromptSelectStash(state, "Drop stash", "Choose a stash entry to delete. Esc cancels.", stash => PromptDropSelectedStash(state, stash), "No stashes found.", "Drop stash cancelled.");
+                        break;
+                    case "drop-all":
+                        PromptDropAllStashes(state);
+                        break;
+                    case "view":
+                        PromptSelectStash(state, "View stash", "Choose a stash entry to inspect. Esc cancels.", stash => OpenGitStashInReaderView(state, stash), "No stashes found.", "View stash cancelled.");
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Stash action cancelled."));
+    }
+
+    private static void PromptRepoBranchMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository branches",
+                [
+                    new SelectionPromptOption<string>("Merge branch...", "merge", "Merge another local branch into the current branch."),
+                    new SelectionPromptOption<string>("Rebase branch...", "rebase", "Rebase the current branch onto another local branch."),
+                    new SelectionPromptOption<string>("Create branch", "create", "Create and switch to a new branch from HEAD."),
+                    new SelectionPromptOption<string>("Create branch from...", "create-from", "Create and switch to a new branch from a chosen ref."),
+                    new SelectionPromptOption<string>("Rename current branch", "rename", "Rename the current local branch."),
+                    new SelectionPromptOption<string>("Delete branch...", "delete", "Delete a local branch."),
+                    new SelectionPromptOption<string>("Delete remote branch...", "delete-remote", "Delete a branch from a remote."),
+                    new SelectionPromptOption<string>("Publish branch", "publish", "Push the current branch and set upstream.")
+                ],
+                "Choose a branch action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "merge":
+                        PromptMergeBranch(state);
+                        break;
+                    case "rebase":
+                        PromptRebaseOntoBranch(state);
+                        break;
+                    case "create":
+                        PromptCreateBranchFromGitSidebar(
+                            state,
+                            startPoint: null,
+                            "New branch name",
+                            "Create and switch to a new git branch from HEAD. Enter submits, Esc cancels.");
+                        break;
+                    case "create-from":
+                        PromptCreateBranchFromRef(state);
+                        break;
+                    case "rename":
+                        PromptRenameCurrentBranch(state);
+                        break;
+                    case "delete":
+                        PromptDeleteLocalBranch(state);
+                        break;
+                    case "delete-remote":
+                        PromptDeleteRemoteBranch(state);
+                        break;
+                    case "publish":
+                        PromptPublishBranch(state);
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Branch action cancelled."));
+    }
+
+    private static void PromptRepoRemoteMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository remotes",
+                [
+                    new SelectionPromptOption<string>("Add remote", "add", "Add a new remote name and URL."),
+                    new SelectionPromptOption<string>("Delete remote...", "delete", "Choose a configured remote to remove.")
+                ],
+                "Choose a remote action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "add":
+                        PromptAddRemote(state);
+                        break;
+                    case "delete":
+                        PromptDeleteRemote(state);
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Remote action cancelled."));
+    }
+
+    private static void PromptRepoTagMenu(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                "Repository tags",
+                [
+                    new SelectionPromptOption<string>("Create tag", "create", "Create a tag that points to HEAD."),
+                    new SelectionPromptOption<string>("Delete tag...", "delete", "Choose a local tag to delete."),
+                    new SelectionPromptOption<string>("Delete remote tag...", "delete-remote", "Delete a tag from a selected remote."),
+                    new SelectionPromptOption<string>("Push tags", "push-tags", "Push every local tag to the default remote.")
+                ],
+                "Choose a tag action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "create":
+                        PromptCreateHeadTag(state);
+                        break;
+                    case "delete":
+                        PromptDeleteTag(state);
+                        break;
+                    case "delete-remote":
+                        PromptDeleteRemoteTag(state);
+                        break;
+                    case "push-tags":
+                        if (TryRunGitCommand(state, "Pushed all tags.", "Failed to push tags", "push", "--tags"))
+                        {
+                            InvalidateGitSidebar(state);
+                        }
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Tag action cancelled."));
+    }
+
+    private static void PromptPullFromRemote(AppState state)
+    {
+        string currentBranch = GetGitBranchName(state.RootDirectory) ?? "main";
+        PromptSelectGitItem(
+            state,
+            "Pull from remote",
+            "Choose a remote to pull from. Enter confirms, Esc cancels.",
+            GetGitRemotes(state.RootDirectory),
+            remote => PromptForGitText(
+                state,
+                "Remote branch",
+                $"Pull from {remote}. Enter the remote branch name.",
+                currentBranch,
+                branch =>
+                {
+                    if (TryRunGitCommand(state, $"Pulled {remote}/{branch}.", "Failed to pull from remote", "pull", remote, branch))
+                    {
+                        InvalidateGitSidebar(state);
+                    }
+                },
+                "Pull cancelled."),
+            "No remotes found.",
+            "Pull cancelled.");
+    }
+
+    private static void PromptPushToRemote(AppState state)
+    {
+        string currentBranch = GetGitBranchName(state.RootDirectory) ?? "main";
+        PromptSelectGitItem(
+            state,
+            "Push to remote",
+            "Choose a remote to push to. Enter confirms, Esc cancels.",
+            GetGitRemotes(state.RootDirectory),
+            remote => PromptForGitText(
+                state,
+                "Remote branch",
+                $"Push HEAD to {remote}. Enter the remote branch name.",
+                currentBranch,
+                branch =>
+                {
+                    if (TryRunGitCommand(state, $"Pushed HEAD to {remote}/{branch}.", "Failed to push to remote", "push", remote, $"HEAD:{branch}"))
+                    {
+                        InvalidateGitSidebar(state);
+                    }
+                },
+                "Push cancelled."),
+            "No remotes found.",
+            "Push cancelled.");
+    }
+
+    private static void PromptPublishBranch(AppState state)
+    {
+        string? currentBranch = GetGitBranchName(state.RootDirectory);
+        if (string.IsNullOrWhiteSpace(currentBranch))
+        {
+            state.AddSystemMessage("Could not publish branch: no current branch was found.");
+            return;
+        }
+
+        if (TryRunGitCommand(state, $"Published branch {currentBranch}.", "Failed to publish branch", "push", "-u", "origin", currentBranch))
+        {
+            InvalidateGitSidebar(state);
+        }
+    }
+
+    private static void PromptDiscardAllGitChanges(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<bool>.Create(
+            new SelectionPromptRequest<bool>(
+                "Discard all changes",
+                [
+                    new SelectionPromptOption<bool>("Yes", true, "Restore tracked files and delete untracked files."),
+                    new SelectionPromptOption<bool>("No", false, "Keep the current repository changes.")
+                ],
+                "This will remove every uncommitted change in the repository. Esc cancels.",
+                DefaultIndex: 1,
+                AllowCancellation: true),
+            new object(),
+            onSelected: confirmed =>
+            {
+                if (!confirmed)
+                {
+                    state.AddSystemMessage("Discard all changes cancelled.");
+                    return;
+                }
+
+                if (TryRunGitCommands(
+                    state,
+                    "Discarded all repository changes.",
+                    "Failed to discard all changes",
+                    ["reset", "--hard", "HEAD"],
+                    ["clean", "-fd"]))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Discard all changes cancelled."));
+    }
+
+    private static void PromptUndoLastCommit(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<bool>.Create(
+            new SelectionPromptRequest<bool>(
+                "Undo last commit",
+                [
+                    new SelectionPromptOption<bool>("Yes", true, "Move HEAD back one commit and keep the changes staged."),
+                    new SelectionPromptOption<bool>("No", false, "Keep the current commit history.")
+                ],
+                "Undo the most recent commit with a soft reset? Esc cancels.",
+                DefaultIndex: 1,
+                AllowCancellation: true),
+            new object(),
+            onSelected: confirmed =>
+            {
+                if (!confirmed)
+                {
+                    state.AddSystemMessage("Undo last commit cancelled.");
+                    return;
+                }
+
+                if (TryRunGitCommand(state, "Undid the last commit.", "Failed to undo the last commit", "reset", "--soft", "HEAD~1"))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Undo last commit cancelled."));
+    }
+
+    private static void PromptCreateStash(AppState state, bool includeUntracked, bool stagedOnly)
+    {
+        string title = stagedOnly
+            ? "Stash staged changes"
+            : includeUntracked
+                ? "Stash changes and untracked files"
+                : "Stash changes";
+        string description = "Enter an optional stash message. Leave it blank to use git's default message. Esc cancels.";
+
+        PromptForGitText(
+            state,
+            title,
+            description,
+            defaultValue: null,
+            onSubmitted: message =>
+            {
+                List<string> arguments = ["stash", "push"];
+                if (includeUntracked)
+                {
+                    arguments.Add("--include-untracked");
+                }
+
+                if (stagedOnly)
+                {
+                    arguments.Add("--staged");
+                }
+
+                if (!string.IsNullOrWhiteSpace(message))
+                {
+                    arguments.Add("-m");
+                    arguments.Add(message.Trim());
+                }
+
+                if (TryRunGitCommand(state, "Created stash entry.", "Failed to create stash", [.. arguments]))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            cancelledMessage: "Stash cancelled.",
+            allowEmpty: true);
+    }
+
+    private static void RunGitStashAction(AppState state, string verb, string stashRef, string successMessage, string failurePrefix)
+    {
+        if (TryRunGitCommand(state, successMessage, failurePrefix, "stash", verb, stashRef))
+        {
+            InvalidateGitSidebar(state);
+        }
+    }
+
+    private static void PromptDropSelectedStash(AppState state, GitStashEntry stash)
+    {
+        state.ActiveModal = SelectionModalState<bool>.Create(
+            new SelectionPromptRequest<bool>(
+                $"Drop {stash.Ref}",
+                [
+                    new SelectionPromptOption<bool>("Yes", true, "Delete the selected stash entry."),
+                    new SelectionPromptOption<bool>("No", false, "Keep the stash entry.")
+                ],
+                stash.Description.Length == 0 ? "Delete the selected stash? Esc cancels." : stash.Description,
+                DefaultIndex: 1,
+                AllowCancellation: true),
+            new object(),
+            onSelected: confirmed =>
+            {
+                if (!confirmed)
+                {
+                    state.AddSystemMessage("Drop stash cancelled.");
+                    return;
+                }
+
+                RunGitStashAction(state, "drop", stash.Ref, $"Dropped {stash.Ref}.", "Failed to drop stash");
+            },
+            onCancelled: _ => state.AddSystemMessage("Drop stash cancelled."));
+    }
+
+    private static void PromptDropAllStashes(AppState state)
+    {
+        state.ActiveModal = SelectionModalState<bool>.Create(
+            new SelectionPromptRequest<bool>(
+                "Drop all stashes",
+                [
+                    new SelectionPromptOption<bool>("Yes", true, "Delete every stash entry."),
+                    new SelectionPromptOption<bool>("No", false, "Keep the existing stashes.")
+                ],
+                "Clear the entire stash list? Esc cancels.",
+                DefaultIndex: 1,
+                AllowCancellation: true),
+            new object(),
+            onSelected: confirmed =>
+            {
+                if (!confirmed)
+                {
+                    state.AddSystemMessage("Drop all stashes cancelled.");
+                    return;
+                }
+
+                if (TryRunGitCommand(state, "Dropped all stashes.", "Failed to drop all stashes", "stash", "clear"))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Drop all stashes cancelled."));
+    }
+
+    private static void OpenGitStashInReaderView(AppState state, GitStashEntry stash)
+    {
+        string? output = RunGit(state.RootDirectory, "stash", "show", "-p", stash.Ref);
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            state.AddSystemMessage($"Could not load {stash.Ref}.");
+            return;
+        }
+
+        int width = Math.Max(20, GetWindowWidth() - 1);
+        if (TryBuildGitPatchReaderLines(output, width, out IReadOnlyList<ReaderViewLine> styledLines))
+        {
+            EnterReaderView(
+                state,
+                styledLines,
+                stash.Ref.ToUpperInvariant(),
+                "stash diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+                startAtBottom: false);
+            return;
+        }
+
+        EnterReaderView(
+            state,
+            output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'),
+            stash.Ref.ToUpperInvariant(),
+            "stash diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            startAtBottom: false);
+    }
+
+    private static void PromptMergeBranch(AppState state)
+    {
+        string? currentBranch = GetGitBranchName(state.RootDirectory);
+        string[] branches = GetLocalBranches(state.RootDirectory)
+            .Where(branch => !string.Equals(branch, currentBranch, StringComparison.Ordinal))
+            .ToArray();
+
+        PromptSelectGitItem(
+            state,
+            "Merge branch",
+            "Choose a local branch to merge into the current branch. Esc cancels.",
+            branches,
+            branch =>
+            {
+                if (TryRunGitCommand(state, $"Merged branch {branch}.", "Failed to merge branch", "merge", branch))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            "No merge targets were found.",
+            "Merge cancelled.");
+    }
+
+    private static void PromptRebaseOntoBranch(AppState state)
+    {
+        string? currentBranch = GetGitBranchName(state.RootDirectory);
+        string[] branches = GetLocalBranches(state.RootDirectory)
+            .Where(branch => !string.Equals(branch, currentBranch, StringComparison.Ordinal))
+            .ToArray();
+
+        PromptSelectGitItem(
+            state,
+            "Rebase onto branch",
+            "Choose a local branch to rebase onto. Esc cancels.",
+            branches,
+            branch =>
+            {
+                if (TryRunGitCommand(state, $"Rebased onto {branch}.", "Failed to rebase branch", "rebase", branch))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            "No rebase targets were found.",
+            "Rebase cancelled.");
+    }
+
+    private static void PromptCreateBranchFromRef(AppState state)
+    {
+        string[] refs =
+        [
+            .. GetLocalBranches(state.RootDirectory),
+            .. GetRemoteBranches(state.RootDirectory),
+            .. GetGitTags(state.RootDirectory)
+        ];
+
+        string[] uniqueRefs = refs
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        PromptSelectGitItem(
+            state,
+            "Create branch from",
+            "Choose a starting ref for the new branch. Esc cancels.",
+            uniqueRefs,
+            startPoint => PromptCreateBranchFromGitSidebar(
+                state,
+                startPoint,
+                "New branch name",
+                $"Create and switch to a new git branch from {startPoint}. Enter submits, Esc cancels."),
+            "No branch, remote branch, or tag refs were found.",
+            "Branch creation cancelled.");
+    }
+
+    private static void PromptRenameCurrentBranch(AppState state)
+    {
+        string? currentBranch = GetGitBranchName(state.RootDirectory);
+        if (string.IsNullOrWhiteSpace(currentBranch))
+        {
+            state.AddSystemMessage("Could not rename branch: no current branch was found.");
+            return;
+        }
+
+        PromptForGitText(
+            state,
+            "Rename branch",
+            $"Rename {currentBranch}. Enter the new branch name.",
+            currentBranch,
+            newName =>
+            {
+                if (TryRunGitCommand(state, $"Renamed branch to {newName}.", "Failed to rename branch", "branch", "-m", newName))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            "Branch rename cancelled.");
+    }
+
+    private static void PromptDeleteLocalBranch(AppState state)
+    {
+        string? currentBranch = GetGitBranchName(state.RootDirectory);
+        string[] branches = GetLocalBranches(state.RootDirectory)
+            .Where(branch => !string.Equals(branch, currentBranch, StringComparison.Ordinal))
+            .ToArray();
+
+        PromptSelectGitItem(
+            state,
+            "Delete branch",
+            "Choose a local branch to delete. Esc cancels.",
+            branches,
+            branch => PromptConfirmGitCommand(
+                state,
+                $"Delete branch {branch}",
+                $"Delete local branch {branch}? Esc cancels.",
+                $"Deleted branch {branch}.",
+                "Failed to delete branch",
+                "Branch deletion cancelled.",
+                "branch",
+                "-d",
+                branch),
+            "No deletable local branches were found.",
+            "Branch deletion cancelled.");
+    }
+
+    private static void PromptDeleteRemoteBranch(AppState state)
+    {
+        string[] remoteBranches = GetRemoteBranches(state.RootDirectory);
+        PromptSelectGitItem(
+            state,
+            "Delete remote branch",
+            "Choose a remote branch to delete. Esc cancels.",
+            remoteBranches,
+            remoteBranch =>
+            {
+                int slashIndex = remoteBranch.IndexOf('/');
+                if (slashIndex <= 0 || slashIndex >= remoteBranch.Length - 1)
+                {
+                    state.AddSystemMessage($"Could not delete remote branch {remoteBranch}.");
+                    return;
+                }
+
+                string remote = remoteBranch[..slashIndex];
+                string branch = remoteBranch[(slashIndex + 1)..];
+                PromptConfirmGitCommand(
+                    state,
+                    $"Delete {remoteBranch}",
+                    $"Delete {remoteBranch} from remote {remote}? Esc cancels.",
+                    $"Deleted remote branch {remoteBranch}.",
+                    "Failed to delete remote branch",
+                    "Remote branch deletion cancelled.",
+                    "push",
+                    remote,
+                    "--delete",
+                    branch);
+            },
+            "No remote branches were found.",
+            "Remote branch deletion cancelled.");
+    }
+
+    private static void PromptAddRemote(AppState state)
+    {
+        PromptForGitText(
+            state,
+            "Remote name",
+            "Enter the new remote name. Esc cancels.",
+            defaultValue: null,
+            onSubmitted: remoteName => PromptForGitText(
+                state,
+                "Remote URL",
+                $"Enter the URL for remote {remoteName}.",
+                defaultValue: null,
+                onSubmitted: remoteUrl =>
+                {
+                    if (TryRunGitCommand(state, $"Added remote {remoteName}.", "Failed to add remote", "remote", "add", remoteName, remoteUrl))
+                    {
+                        InvalidateGitSidebar(state);
+                    }
+                },
+                cancelledMessage: "Add remote cancelled."),
+            cancelledMessage: "Add remote cancelled.");
+    }
+
+    private static void PromptDeleteRemote(AppState state)
+    {
+        PromptSelectGitItem(
+            state,
+            "Delete remote",
+            "Choose a remote to delete. Esc cancels.",
+            GetGitRemotes(state.RootDirectory),
+            remote => PromptConfirmGitCommand(
+                state,
+                $"Delete remote {remote}",
+                $"Delete remote {remote}? Esc cancels.",
+                $"Deleted remote {remote}.",
+                "Failed to delete remote",
+                "Delete remote cancelled.",
+                "remote",
+                "remove",
+                remote),
+            "No remotes found.",
+            "Delete remote cancelled.");
+    }
+
+    private static void PromptCreateHeadTag(AppState state)
+    {
+        PromptForGitText(
+            state,
+            "New tag name",
+            "Create a tag on HEAD. Enter the tag name, Esc cancels.",
+            defaultValue: null,
+            onSubmitted: tagName =>
+            {
+                if (TryRunGitCommand(state, $"Created tag {tagName}.", "Failed to create tag", "tag", tagName))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            cancelledMessage: "Tag creation cancelled.");
+    }
+
+    private static void PromptDeleteTag(AppState state)
+    {
+        PromptSelectGitItem(
+            state,
+            "Delete tag",
+            "Choose a local tag to delete. Esc cancels.",
+            GetGitTags(state.RootDirectory),
+            tag => PromptConfirmGitCommand(
+                state,
+                $"Delete tag {tag}",
+                $"Delete local tag {tag}? Esc cancels.",
+                $"Deleted tag {tag}.",
+                "Failed to delete tag",
+                "Tag deletion cancelled.",
+                "tag",
+                "-d",
+                tag),
+            "No tags found.",
+            "Tag deletion cancelled.");
+    }
+
+    private static void PromptDeleteRemoteTag(AppState state)
+    {
+        PromptSelectGitItem(
+            state,
+            "Delete remote tag",
+            "Choose the remote that owns the tag deletion. Esc cancels.",
+            GetGitRemotes(state.RootDirectory),
+            remote => PromptSelectGitItem(
+                state,
+                "Delete remote tag",
+                $"Choose a tag to delete from {remote}. Esc cancels.",
+                GetGitTags(state.RootDirectory),
+                tag => PromptConfirmGitCommand(
+                    state,
+                    $"Delete {tag} on {remote}",
+                    $"Delete tag {tag} from remote {remote}? Esc cancels.",
+                    $"Deleted remote tag {tag} from {remote}.",
+                    "Failed to delete remote tag",
+                    "Remote tag deletion cancelled.",
+                    "push",
+                    remote,
+                    $":refs/tags/{tag}"),
+                "No tags found.",
+                "Remote tag deletion cancelled."),
+            "No remotes found.",
+            "Remote tag deletion cancelled.");
+    }
+
+    private static void PromptConfirmGitCommand(
+        AppState state,
+        string title,
+        string description,
+        string successMessage,
+        string failurePrefix,
+        string cancelledMessage,
+        params string[] arguments)
+    {
+        state.ActiveModal = SelectionModalState<bool>.Create(
+            new SelectionPromptRequest<bool>(
+                title,
+                [
+                    new SelectionPromptOption<bool>("Yes", true, "Run this git action."),
+                    new SelectionPromptOption<bool>("No", false, "Cancel without changing the repository.")
+                ],
+                description,
+                DefaultIndex: 1,
+                AllowCancellation: true),
+            new object(),
+            onSelected: confirmed =>
+            {
+                if (!confirmed)
+                {
+                    state.AddSystemMessage(cancelledMessage);
+                    return;
+                }
+
+                if (TryRunGitCommand(state, successMessage, failurePrefix, arguments))
+                {
+                    InvalidateGitSidebar(state);
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage(cancelledMessage));
+    }
+
+    private static void PromptForGitText(
+        AppState state,
+        string title,
+        string description,
+        string? defaultValue,
+        Action<string> onSubmitted,
+        string cancelledMessage,
+        bool allowEmpty = false)
+    {
+        state.ActiveModal = TextModalState.Create(
+            new TextPromptRequest(
+                title,
+                description,
+                DefaultValue: defaultValue,
+                AllowCancellation: true),
+            isSecret: false,
+            completionToken: new object(),
+            onSubmitted: value =>
+            {
+                string trimmed = value.Trim();
+                if (!allowEmpty && trimmed.Length == 0)
+                {
+                    state.AddSystemMessage($"{title} cancelled: value cannot be empty.");
+                    return;
+                }
+
+                onSubmitted(allowEmpty ? trimmed : trimmed);
+            },
+            onCancelled: _ => state.AddSystemMessage(cancelledMessage));
+    }
+
+    private static void PromptSelectGitItem(
+        AppState state,
+        string title,
+        string description,
+        IReadOnlyList<string> items,
+        Action<string> onSelected,
+        string emptyMessage,
+        string cancelledMessage)
+    {
+        if (items.Count == 0)
+        {
+            state.AddSystemMessage(emptyMessage);
+            return;
+        }
+
+        SelectionPromptOption<string>[] options = items
+            .Select(item => new SelectionPromptOption<string>(
+                TruncateFromRight(item, 80),
+                item,
+                item))
+            .ToArray();
+
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new SelectionPromptRequest<string>(
+                title,
+                options,
+                description,
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected,
+            onCancelled: _ => state.AddSystemMessage(cancelledMessage));
+    }
+
+    private static void PromptSelectStash(
+        AppState state,
+        string title,
+        string description,
+        Action<GitStashEntry> onSelected,
+        string emptyMessage,
+        string cancelledMessage)
+    {
+        GitStashEntry[] stashes = GetGitStashes(state.RootDirectory);
+        if (stashes.Length == 0)
+        {
+            state.AddSystemMessage(emptyMessage);
+            return;
+        }
+
+        SelectionPromptOption<GitStashEntry>[] options = stashes
+            .Select(stash => new SelectionPromptOption<GitStashEntry>(
+                TruncateFromRight($"{stash.Ref} {stash.Description}".Trim(), 80),
+                stash,
+                stash.Description))
+            .ToArray();
+
+        state.ActiveModal = SelectionModalState<GitStashEntry>.Create(
+            new SelectionPromptRequest<GitStashEntry>(
+                title,
+                options,
+                description,
+                DefaultIndex: 0,
+                AllowCancellation: true),
+            new object(),
+            onSelected,
+            onCancelled: _ => state.AddSystemMessage(cancelledMessage));
     }
 
     private static void PromptCommitActionFromGitSidebar(AppState state, GitSidebarLine selected)
@@ -1573,6 +2614,31 @@ public static partial class Program
         return false;
     }
 
+    private static bool TryRunGitCommands(
+        AppState state,
+        string successMessage,
+        string failurePrefix,
+        params string[][] commandSets)
+    {
+        foreach (string[] command in commandSets)
+        {
+            (bool succeeded, string? output, string? error) = RunGitWithResult(state.RootDirectory, command);
+            if (succeeded)
+            {
+                continue;
+            }
+
+            string detail = !string.IsNullOrWhiteSpace(error)
+                ? error
+                : output ?? "git command failed.";
+            state.AddSystemMessage($"{failurePrefix}: {detail}");
+            return false;
+        }
+
+        state.AddSystemMessage(successMessage);
+        return true;
+    }
+
     private static (bool Succeeded, string? Output, string? Error) RunGitWithResult(
         string workingDirectory,
         params string[] arguments)
@@ -1622,6 +2688,54 @@ public static partial class Program
     {
         (bool succeeded, string? output, _) = RunGitWithResult(workingDirectory, arguments);
         return succeeded ? output : null;
+    }
+
+    private static string[] GetGitRemotes(string root)
+    {
+        return SplitGitOutputLines(RunGit(root, "remote"));
+    }
+
+    private static string[] GetLocalBranches(string root)
+    {
+        return SplitGitOutputLines(RunGit(root, "branch", "--format=%(refname:short)"));
+    }
+
+    private static string[] GetRemoteBranches(string root)
+    {
+        return SplitGitOutputLines(RunGit(root, "branch", "-r", "--format=%(refname:short)"))
+            .Where(static branch => !branch.Contains("->", StringComparison.Ordinal))
+            .ToArray();
+    }
+
+    private static string[] GetGitTags(string root)
+    {
+        return SplitGitOutputLines(RunGit(root, "tag", "--list", "--sort=-creatordate"));
+    }
+
+    private static GitStashEntry[] GetGitStashes(string root)
+    {
+        string[] lines = SplitGitOutputLines(RunGit(root, "stash", "list", "--format=%gd%x09%s"));
+        return lines
+            .Select(line =>
+            {
+                string[] parts = line.Split('\t', 2);
+                string reference = parts.Length > 0 ? parts[0] : line;
+                string description = parts.Length > 1 ? parts[1] : string.Empty;
+                return new GitStashEntry(reference, description);
+            })
+            .ToArray();
+    }
+
+    private static string[] SplitGitOutputLines(string? output)
+    {
+        if (string.IsNullOrWhiteSpace(output))
+        {
+            return [];
+        }
+
+        return output
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
     }
 
     private static void LoadMoreGitSidebarCommits(AppState state)
@@ -1919,4 +3033,8 @@ public static partial class Program
         int TotalAdditions,
         int TotalDeletions,
         IReadOnlyList<string> Files);
+
+    private sealed record GitStashEntry(
+        string Ref,
+        string Description);
 }
