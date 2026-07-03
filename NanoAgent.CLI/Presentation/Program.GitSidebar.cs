@@ -965,6 +965,19 @@ public static partial class Program
         string title = string.IsNullOrWhiteSpace(selected.CommitMessage)
             ? $"COMMIT {shortHash}"
             : $"COMMIT {shortHash} {selected.CommitMessage}";
+        int width = Math.Max(20, GetWindowWidth() - 1);
+
+        if (TryBuildGitPatchReaderLines(output, width, out IReadOnlyList<ReaderViewLine> styledLines))
+        {
+            EnterReaderView(
+                state,
+                styledLines,
+                title,
+                "commit diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+                startAtBottom: false);
+            return;
+        }
+
         string[] lines = output
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n');
@@ -987,6 +1000,19 @@ public static partial class Program
 
         string relativePath = selected.RelativePath ?? selected.FilePath ?? "file";
         string titlePrefix = selected.Kind == GitSidebarLineKind.StagedFile ? "STAGED" : "CHANGES";
+        int width = Math.Max(20, GetWindowWidth() - 1);
+
+        if (TryBuildGitPatchReaderLines(patch, width, out IReadOnlyList<ReaderViewLine> styledLines))
+        {
+            EnterReaderView(
+                state,
+                styledLines,
+                $"{titlePrefix} {relativePath}",
+                "file diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+                startAtBottom: false);
+            return;
+        }
+
         string[] lines = patch
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n');
