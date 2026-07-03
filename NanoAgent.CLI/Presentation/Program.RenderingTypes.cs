@@ -1,4 +1,8 @@
-﻿namespace NanoAgent.CLI;
+namespace NanoAgent.CLI;
+
+internal readonly record struct ReaderViewLine(
+    string Markup,
+    string Plain);
 
 public static partial class Program
 {
