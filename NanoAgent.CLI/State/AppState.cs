@@ -120,6 +120,12 @@ public sealed class AppState
 
     public int ReaderScrollOffset { get; set; }
 
+    public string? ReaderViewTitle { get; set; }
+
+    public string? ReaderViewInstructions { get; set; }
+
+    public IReadOnlyList<string>? ReaderViewLines { get; set; }
+
     // Set whenever the reader view must be repainted (on enter / scroll). While it is
     // false and the reader view is active, the render loop leaves the screen untouched
     // so a native selection is not wiped by the next frame.
