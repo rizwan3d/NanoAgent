@@ -184,6 +184,8 @@ public sealed class AppState
 
     public GitSidebarLine[] VisibleGitSidebarLines { get; set; } = [];
 
+    public int GitSidebarCommitDisplayCount { get; set; } = 10;
+
     public string? SectionResumeCommand { get; set; }
 
     public string? SessionId { get; set; }

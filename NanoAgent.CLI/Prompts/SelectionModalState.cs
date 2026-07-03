@@ -15,6 +15,7 @@ public sealed class SelectionModalState<T> : UiModalState
     private const int FallbackWindowHeight = 24;
 
     private readonly Action<Exception>? _onCancelled;
+    private readonly bool _descriptionSupportsMarkup;
     private readonly Action<T> _onSelected;
     private readonly IReadOnlyList<SelectionPromptOption<T>> _options;
 
@@ -31,6 +32,7 @@ public sealed class SelectionModalState<T> : UiModalState
             completionToken)
     {
         _options = request.Options;
+        _descriptionSupportsMarkup = request.DescriptionSupportsMarkup;
         _onSelected = onSelected;
         _onCancelled = onCancelled;
         SelectedIndex = Math.Clamp(request.DefaultIndex, 0, Math.Max(0, _options.Count - 1));
@@ -353,6 +355,21 @@ public sealed class SelectionModalState<T> : UiModalState
 
     private IReadOnlyList<string> GetVisibleDescriptionLines(int contentWidth)
     {
+        if (_descriptionSupportsMarkup)
+        {
+            IReadOnlyList<string> logicalLines = SplitDescriptionLines(Description);
+            if (logicalLines.Count <= MaxDescriptionLineCount)
+            {
+                return logicalLines;
+            }
+
+            return
+            [
+                .. logicalLines.Take(MaxDescriptionLineCount - 1),
+                "..."
+            ];
+        }
+
         IReadOnlyList<string> wrappedLines = WrapPlainText(Description, contentWidth);
         if (wrappedLines.Count <= MaxDescriptionLineCount)
         {
@@ -367,9 +384,30 @@ public sealed class SelectionModalState<T> : UiModalState
 
     private IReadOnlyList<string> GetVisibleDescriptionMarkupLines(int contentWidth)
     {
+        if (_descriptionSupportsMarkup)
+        {
+            IReadOnlyList<string> logicalLines = GetVisibleDescriptionLines(contentWidth);
+            return logicalLines
+                .Select(line => line == "..." ? "[grey]...[/]" : line)
+                .ToArray();
+        }
+
         return GetVisibleDescriptionLines(contentWidth)
             .Select(line => Markup.Escape(line))
             .ToArray();
+    }
+
+    private static IReadOnlyList<string> SplitDescriptionLines(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return [];
+        }
+
+        return text
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.None);
     }
 
     private int GetSelectedOptionFirstLineIndex()

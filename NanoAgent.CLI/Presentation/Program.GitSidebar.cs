@@ -10,6 +10,7 @@ public enum GitSidebarLineKind
     Text,
     Branch,
     Commit,
+    LoadMoreCommits,
     StagedFile,
     ChangedFile
 }
@@ -29,6 +30,7 @@ public sealed record GitSidebarLine(
 public static partial class Program
 {
     private const int GitSidebarMinWindowWidth = 30;
+    private const int GitSidebarCommitPageSize = 10;
 
     private static bool TryGetGitSidebarWidth(AppState state, int windowWidth, out int width)
     {
@@ -241,7 +243,7 @@ public static partial class Program
 
         lines.Add(new GitSidebarLine(string.Empty, string.Empty, null));
         lines.Add(SectionSidebarLine("Recent commits", contentWidth));
-        AddCommitLines(lines, root, contentWidth);
+        AddCommitLines(lines, root, contentWidth, Math.Max(GitSidebarCommitPageSize, state.GitSidebarCommitDisplayCount));
 
         return lines;
     }
@@ -266,23 +268,24 @@ public static partial class Program
         }
     }
 
-    private static void AddCommitLines(List<GitSidebarLine> lines, string root, int contentWidth)
+    private static void AddCommitLines(List<GitSidebarLine> lines, string root, int contentWidth, int commitLimit)
     {
         HashSet<string> localOnlyCommits = GetLocalOnlyCommitHashes(root);
-        string? log = RunGit(root, "log", "-10", "--pretty=format:%h%x09%H%x09%s");
+        int fetchCount = Math.Max(1, commitLimit) + 1;
+        string? log = RunGit(root, "log", $"-{fetchCount}", "--pretty=format:%h%x09%H%x09%s");
         if (string.IsNullOrEmpty(log))
         {
             lines.Add(PlainSidebarLine("  (none)", contentWidth, "grey"));
             return;
         }
 
-        foreach (string raw in log.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'))
-        {
-            if (raw.Length == 0)
-            {
-                continue;
-            }
+        string[] rawLines = log
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries);
+        bool hasMore = rawLines.Length > commitLimit;
 
+        foreach (string raw in rawLines.Take(commitLimit))
+        {
             string[] parts = raw.Split('\t', 3);
             string shortHash = parts.Length > 0 ? parts[0] : raw;
             string fullHash = parts.Length > 1 ? parts[1] : shortHash;
@@ -298,6 +301,16 @@ public static partial class Program
                 GitSidebarLineKind.Commit,
                 CommitHash: fullHash,
                 CommitMessage: message));
+        }
+
+        if (hasMore)
+        {
+            string text = TruncateFromRight("Load more commits...", contentWidth);
+            lines.Add(new GitSidebarLine(
+                $"[aqua]{Markup.Escape(text)}[/]",
+                text,
+                null,
+                GitSidebarLineKind.LoadMoreCommits));
         }
     }
 
@@ -473,7 +486,7 @@ public static partial class Program
     {
         return index >= 0 &&
             index < lines.Count &&
-            lines[index].Kind is GitSidebarLineKind.Branch or GitSidebarLineKind.Commit or GitSidebarLineKind.StagedFile or GitSidebarLineKind.ChangedFile;
+            lines[index].Kind is GitSidebarLineKind.Branch or GitSidebarLineKind.Commit or GitSidebarLineKind.LoadMoreCommits or GitSidebarLineKind.StagedFile or GitSidebarLineKind.ChangedFile;
     }
 
     private static int FindNextGitSidebarActionableIndex(
@@ -600,6 +613,12 @@ public static partial class Program
             return;
         }
 
+        if (selected.Kind == GitSidebarLineKind.LoadMoreCommits)
+        {
+            LoadMoreGitSidebarCommits(state);
+            return;
+        }
+
         if (selected.FilePath is string path)
         {
             if (File.Exists(path))
@@ -627,6 +646,9 @@ public static partial class Program
                 return;
             case GitSidebarLineKind.Commit:
                 PromptCommitActionFromGitSidebar(state, selected);
+                return;
+            case GitSidebarLineKind.LoadMoreCommits:
+                LoadMoreGitSidebarCommits(state);
                 return;
             case GitSidebarLineKind.StagedFile:
             case GitSidebarLineKind.ChangedFile:
@@ -700,21 +722,41 @@ public static partial class Program
         string message = string.IsNullOrWhiteSpace(selected.CommitMessage)
             ? "(no message)"
             : selected.CommitMessage!;
+        GitCommitDetails? details = TryGetGitCommitDetails(state.RootDirectory, selected.CommitHash!, out GitCommitDetails loadedDetails)
+            ? loadedDetails
+            : null;
+        string? githubUrl = TryBuildGitHubCommitUrl(state.RootDirectory, selected.CommitHash!);
+        string description = BuildCommitActionDescription(message, details);
+
+        List<SelectionPromptOption<string>> options =
+        [
+            new("Open changes", "diff", "Show this commit diff inside the CLI reader view."),
+            new("Copy hash", "copy-hash", "Copy the selected commit hash to the clipboard."),
+            new("Copy message", "copy-message", "Copy the selected commit message to the clipboard."),
+            new("View files", "view-files", "List the file names included in this commit."),
+            new("Cherry-pick", "cherry-pick", "Apply this commit onto the current branch."),
+            new("Create branch", "create-branch", "Create and switch to a new branch from this commit."),
+            new("Create tag", "create-tag", "Create a tag that points at this commit.")
+        ];
+
+        if (!string.IsNullOrWhiteSpace(details?.AuthorEmail))
+        {
+            options.Insert(3, new SelectionPromptOption<string>("Email author", "email-author", "Open your default mail app with the author's address."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(githubUrl))
+        {
+            options.Add(new SelectionPromptOption<string>("Open on GitHub", "open-github", "Open this commit in the browser."));
+        }
 
         state.ActiveModal = SelectionModalState<string>.Create(
             new SelectionPromptRequest<string>(
                 $"Commit {shortHash}",
-                [
-                    new SelectionPromptOption<string>("Open changes", "diff", "Show this commit diff inside the CLI reader view."),
-                    new SelectionPromptOption<string>("Copy hash", "copy-hash", "Copy the selected commit hash to the clipboard."),
-                    new SelectionPromptOption<string>("Copy message", "copy-message", "Copy the selected commit message to the clipboard."),
-                    new SelectionPromptOption<string>("Cherry-pick", "cherry-pick", "Apply this commit onto the current branch."),
-                    new SelectionPromptOption<string>("Create branch", "create-branch", "Create and switch to a new branch from this commit."),
-                    new SelectionPromptOption<string>("Create tag", "create-tag", "Create a tag that points at this commit.")
-                ],
-                TruncateFromRight(message, 80),
+                [.. options],
+                description,
                 DefaultIndex: 0,
-                AllowCancellation: true),
+                AllowCancellation: true,
+                DescriptionSupportsMarkup: true),
             new object(),
             onSelected: action =>
             {
@@ -729,6 +771,12 @@ public static partial class Program
                     case "copy-message":
                         CopyGitSidebarCommitText(state, selected.CommitMessage ?? string.Empty, "commit message");
                         break;
+                    case "email-author":
+                        OpenGitCommitAuthorEmail(state, details);
+                        break;
+                    case "view-files":
+                        OpenGitCommitFilesInReaderView(state, selected, details);
+                        break;
                     case "cherry-pick":
                         PromptCherryPickCommitFromGitSidebar(state, selected);
                         break;
@@ -741,6 +789,9 @@ public static partial class Program
                         break;
                     case "create-tag":
                         PromptCreateTagFromGitSidebar(state, selected);
+                        break;
+                    case "open-github":
+                        OpenGitCommitOnGitHub(state, githubUrl);
                         break;
                 }
             },
@@ -1547,6 +1598,186 @@ public static partial class Program
         return succeeded ? output : null;
     }
 
+    private static void LoadMoreGitSidebarCommits(AppState state)
+    {
+        state.GitSidebarCommitDisplayCount += GitSidebarCommitPageSize;
+        InvalidateGitSidebar(state);
+    }
+
+    private static string BuildCommitActionDescription(string fallbackMessage, GitCommitDetails? details)
+    {
+        if (details is null)
+        {
+            return TruncateFromRight(fallbackMessage, 80);
+        }
+
+        string timestamp = details.Timestamp?.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss zzz") ?? "Unknown";
+        return string.Join(
+            '\n',
+            [
+                $"[grey]Hash:[/] [yellow]{Markup.Escape(details.FullHash)}[/]",
+                $"[grey]Message:[/] [white]{Markup.Escape(details.Message)}[/]",
+                $"[grey]Additions:[/] [green]+{details.TotalAdditions}[/]  [grey]Subtractions:[/] [red]-{details.TotalDeletions}[/]",
+                $"[grey]Author:[/] [aqua]{Markup.Escape(details.AuthorName)}[/]",
+                $"[grey]Email:[/] [underline]{Markup.Escape(details.AuthorEmail)}[/]",
+                $"[grey]Date:[/] {Markup.Escape(timestamp)}"
+            ]);
+    }
+
+    private static bool TryGetGitCommitDetails(string root, string commitHash, out GitCommitDetails details)
+    {
+        details = default!;
+
+        string? summary = RunGit(
+            root,
+            "show",
+            "-s",
+            "--date=iso-strict",
+            "--format=%H%x1f%s%x1f%an%x1f%ae%x1f%ad",
+            commitHash);
+        if (string.IsNullOrWhiteSpace(summary))
+        {
+            return false;
+        }
+
+        string[] parts = summary.Split('\x1f');
+        if (parts.Length < 5)
+        {
+            return false;
+        }
+
+        string? numstat = RunGit(root, "show", "--numstat", "--format=", commitHash);
+        int additions = 0;
+        int deletions = 0;
+        List<string> files = [];
+
+        if (!string.IsNullOrWhiteSpace(numstat))
+        {
+            foreach (string line in numstat.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n', StringSplitOptions.RemoveEmptyEntries))
+            {
+                string[] columns = line.Split('\t');
+                if (columns.Length < 3)
+                {
+                    continue;
+                }
+
+                if (int.TryParse(columns[0], out int added))
+                {
+                    additions += added;
+                }
+
+                if (int.TryParse(columns[1], out int deleted))
+                {
+                    deletions += deleted;
+                }
+
+                files.Add(columns[2]);
+            }
+        }
+
+        DateTimeOffset? timestamp = DateTimeOffset.TryParse(parts[4], out DateTimeOffset parsedTimestamp)
+            ? parsedTimestamp
+            : null;
+
+        details = new GitCommitDetails(
+            parts[0],
+            parts[1],
+            parts[2],
+            parts[3],
+            timestamp,
+            additions,
+            deletions,
+            files);
+        return true;
+    }
+
+    private static void OpenGitCommitFilesInReaderView(AppState state, GitSidebarLine selected, GitCommitDetails? details)
+    {
+        IReadOnlyList<string> files = details?.Files ?? [];
+        if (files.Count == 0)
+        {
+            string? output = RunGit(state.RootDirectory, "show", "--name-only", "--format=", selected.CommitHash!);
+            files = output?
+                .Replace("\r\n", "\n", StringComparison.Ordinal)
+                .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                ?? [];
+        }
+
+        if (files.Count == 0)
+        {
+            state.AddSystemMessage("No file names were found for this commit.");
+            return;
+        }
+
+        string shortHash = selected.CommitHash!.Length > 8 ? selected.CommitHash[..8] : selected.CommitHash;
+        EnterReaderView(
+            state,
+            [.. files],
+            $"FILES {shortHash}",
+            "commit files | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            startAtBottom: false);
+    }
+
+    private static void OpenGitCommitAuthorEmail(AppState state, GitCommitDetails? details)
+    {
+        if (details is null || string.IsNullOrWhiteSpace(details.AuthorEmail))
+        {
+            state.AddSystemMessage("Could not open email: author email is unavailable.");
+            return;
+        }
+
+        string uri = $"mailto:{Uri.EscapeDataString(details.AuthorEmail)}";
+        if (!TryOpenExternalUri(uri))
+        {
+            state.AddSystemMessage($"Could not open the default mail app for {details.AuthorEmail}.");
+        }
+    }
+
+    private static void OpenGitCommitOnGitHub(AppState state, string? githubUrl)
+    {
+        if (string.IsNullOrWhiteSpace(githubUrl))
+        {
+            state.AddSystemMessage("Could not open GitHub: no GitHub origin remote was found.");
+            return;
+        }
+
+        if (!TryOpenExternalUri(githubUrl))
+        {
+            state.AddSystemMessage("Could not open the commit on GitHub.");
+        }
+    }
+
+    private static string? TryBuildGitHubCommitUrl(string root, string commitHash)
+    {
+        string? remoteUrl = RunGit(root, "remote", "get-url", "origin");
+        if (string.IsNullOrWhiteSpace(remoteUrl))
+        {
+            return null;
+        }
+
+        string normalized = remoteUrl.Trim();
+        if (normalized.StartsWith("git@github.com:", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = "https://github.com/" + normalized["git@github.com:".Length..];
+        }
+        else if (normalized.StartsWith("https://github.com/", StringComparison.OrdinalIgnoreCase) ||
+                 normalized.StartsWith("http://github.com/", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized.Replace("http://", "https://", StringComparison.OrdinalIgnoreCase);
+        }
+        else
+        {
+            return null;
+        }
+
+        if (normalized.EndsWith(".git", StringComparison.OrdinalIgnoreCase))
+        {
+            normalized = normalized[..^4];
+        }
+
+        return $"{normalized}/commit/{commitHash}";
+    }
+
     private static void HandleGitSidebarClick(AppState state, int row)
     {
         if (state.ActiveModal is not null ||
@@ -1632,4 +1863,34 @@ public static partial class Program
             return false;
         }
     }
+
+    private static bool TryOpenExternalUri(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+        {
+            return false;
+        }
+
+        if (OperatingSystem.IsWindows())
+        {
+            return TryStartProcess(uri, string.Empty, useShell: true);
+        }
+
+        if (OperatingSystem.IsMacOS())
+        {
+            return TryStartProcess("open", $"\"{uri}\"", useShell: false);
+        }
+
+        return TryStartProcess("xdg-open", $"\"{uri}\"", useShell: false);
+    }
+
+    private sealed record GitCommitDetails(
+        string FullHash,
+        string Message,
+        string AuthorName,
+        string AuthorEmail,
+        DateTimeOffset? Timestamp,
+        int TotalAdditions,
+        int TotalDeletions,
+        IReadOnlyList<string> Files);
 }
