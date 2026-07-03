@@ -12,6 +12,8 @@ namespace NanoAgent.Infrastructure.Storage;
 internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
 {
     private const int CurrentIndexVersion = 3;
+    private const int MaxParallelIndexingTasks = 8;
+    private const int MaxParallelSearchTasks = 8;
     private const int EmbeddingDimensions = 256;
     private const int MaxIndexedFiles = 5_000;
     private const int MaxIndexFileBytes = 262_144;
@@ -175,47 +177,74 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             .Where(static file => file is not null && !string.IsNullOrWhiteSpace(file.Path))
             .ToDictionary(static file => file.Path, StringComparer.OrdinalIgnoreCase);
 
-        List<CodebaseIndexedFileDocument> indexedFiles = [];
+        CodebaseIndexCandidate[] candidates = scan.Files
+            .Take(MaxIndexedFiles)
+            .ToArray();
+        CandidateIndexResult[] candidateResults = new CandidateIndexResult[candidates.Length];
+        ParallelOptions parallelOptions = new()
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = GetMaxParallelism(MaxParallelIndexingTasks)
+        };
+        await Parallel.ForEachAsync(
+            Enumerable.Range(0, candidates.Length),
+            parallelOptions,
+            async (index, ct) =>
+            {
+                CodebaseIndexCandidate candidate = candidates[index];
+                string[] owners = ResolveOwners(candidate.RelativePath, ownershipRules);
+                if (!force &&
+                    existingFiles.TryGetValue(candidate.RelativePath, out CodebaseIndexedFileDocument? existingFile) &&
+                    HasSameMetadata(candidate, existingFile) &&
+                    OwnersEqual(existingFile.Owners, owners))
+                {
+                    candidateResults[index] = CandidateIndexResult.Reused(existingFile, owners);
+                    return;
+                }
+
+                CodebaseIndexedFileDocument? indexedFile = await IndexFileAsync(
+                    candidate,
+                    owners,
+                    ct);
+                candidateResults[index] = indexedFile is null
+                    ? CandidateIndexResult.Skipped()
+                    : CandidateIndexResult.Indexed(indexedFile, existingFiles.ContainsKey(candidate.RelativePath));
+            });
+
+        List<CodebaseIndexedFileDocument> indexedFiles = new(candidates.Length);
         int added = 0;
         int updated = 0;
         int reused = 0;
         int skipped = scan.SkippedFileCount;
 
-        foreach (CodebaseIndexCandidate candidate in scan.Files.Take(MaxIndexedFiles))
+        foreach (CandidateIndexResult result in candidateResults)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            string[] owners = ResolveOwners(candidate.RelativePath, ownershipRules);
-            if (!force &&
-                existingFiles.TryGetValue(candidate.RelativePath, out CodebaseIndexedFileDocument? existingFile) &&
-                HasSameMetadata(candidate, existingFile) &&
-                OwnersEqual(existingFile.Owners, owners))
+            if (result.ReusedFile is not null)
             {
-                existingFile.Owners = owners;
-                indexedFiles.Add(existingFile);
+                result.ReusedFile.Owners = result.Owners;
+                indexedFiles.Add(result.ReusedFile);
                 reused++;
                 continue;
             }
 
-            CodebaseIndexedFileDocument? indexedFile = await IndexFileAsync(
-                candidate,
-                owners,
-                cancellationToken);
-            if (indexedFile is null)
+            if (result.IndexedFile is not null)
             {
-                skipped++;
+                indexedFiles.Add(result.IndexedFile);
+                if (result.WasExistingFile)
+                {
+                    updated++;
+                }
+                else
+                {
+                    added++;
+                }
+
                 continue;
             }
 
-            indexedFiles.Add(indexedFile);
-            if (existingFiles.ContainsKey(candidate.RelativePath))
-            {
-                updated++;
-            }
-            else
-            {
-                added++;
-            }
+            skipped++;
         }
 
         if (scan.Files.Count > MaxIndexedFiles)
@@ -392,13 +421,53 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         int maxResults = Math.Clamp(limit, 1, 50);
         Dictionary<string, IReadOnlyList<CodebaseIndexedCallEdgeDocument>> incomingCallMap = CreateIncomingCallMap(index.Files);
 
-        CodebaseIndexSearchMatch[] matches = index.Files
-            .Select(file => ScoreFile(workspaceRoot, file, normalizedQuery, queryTerms, queryEmbedding, includeSnippets, incomingCallMap, cancellationToken))
-            .Where(static match => match.Score > 0)
+        CodebaseIndexSearchMatch?[] scoredMatches = new CodebaseIndexSearchMatch?[index.Files.Count];
+        Parallel.For(
+            0,
+            index.Files.Count,
+            new ParallelOptions
+            {
+                CancellationToken = cancellationToken,
+                MaxDegreeOfParallelism = GetMaxParallelism(MaxParallelSearchTasks)
+            },
+            fileIndex =>
+            {
+                scoredMatches[fileIndex] = ScoreFile(
+                    workspaceRoot,
+                    index.Files[fileIndex],
+                    normalizedQuery,
+                    queryTerms,
+                    queryEmbedding,
+                    includeSnippets: false,
+                    incomingCallMap,
+                    cancellationToken);
+            });
+
+        CodebaseIndexSearchMatch[] matches = scoredMatches
+            .Where(static match => match is not null && match.Score > 0)
+            .Select(static match => match!)
             .OrderByDescending(static match => match.Score)
             .ThenBy(static match => match.Path, StringComparer.OrdinalIgnoreCase)
             .Take(maxResults)
             .ToArray();
+
+        if (includeSnippets)
+        {
+            for (int matchIndex = 0; matchIndex < matches.Length; matchIndex++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                CodebaseIndexSearchMatch match = matches[matchIndex];
+                matches[matchIndex] = match with
+                {
+                    Snippets = CreateSnippets(
+                        workspaceRoot,
+                        match.Path,
+                        normalizedQuery,
+                        queryTerms,
+                        cancellationToken)
+                };
+            }
+        }
 
         return new CodebaseIndexSearchResult(
             normalizedQuery,
@@ -593,6 +662,11 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         }
 
         return snippets.ToArray();
+    }
+
+    private static int GetMaxParallelism(int configuredMaximum)
+    {
+        return Math.Max(1, Math.Min(Environment.ProcessorCount, configuredMaximum));
     }
 
     private async Task<CodebaseIndexedFileDocument?> IndexFileAsync(
@@ -2337,6 +2411,32 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         string[] Symbols,
         CodebaseIndexedSemanticSymbolDocument[] SemanticSymbols,
         CodebaseIndexedCallEdgeDocument[] Calls);
+
+    private sealed record CandidateIndexResult(
+        CodebaseIndexedFileDocument? ReusedFile,
+        CodebaseIndexedFileDocument? IndexedFile,
+        string[] Owners,
+        bool WasExistingFile)
+    {
+        public static CandidateIndexResult Reused(
+            CodebaseIndexedFileDocument file,
+            string[] owners)
+        {
+            return new CandidateIndexResult(file, null, owners, WasExistingFile: true);
+        }
+
+        public static CandidateIndexResult Indexed(
+            CodebaseIndexedFileDocument file,
+            bool wasExistingFile)
+        {
+            return new CandidateIndexResult(null, file, [], wasExistingFile);
+        }
+
+        public static CandidateIndexResult Skipped()
+        {
+            return new CandidateIndexResult(null, null, [], WasExistingFile: false);
+        }
+    }
 
     private sealed class OpenScope
     {
