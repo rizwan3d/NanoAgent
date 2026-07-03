@@ -1,4 +1,5 @@
 using NanoAgent.Application.Models;
+using NanoAgent.Application.UI;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using System.Diagnostics;
@@ -2371,11 +2372,114 @@ public static partial class Program
             return;
         }
 
+        if (!state.IsReady)
+        {
+            state.AddSystemMessage("NanoAgent is still starting, so enter the commit message manually.");
+            ShowCommitMessagePrompt(state, defaultValue: null);
+            return;
+        }
+
+        StartCommitMessageSuggestion(state, staged);
+    }
+
+    private static void StartCommitMessageSuggestion(AppState state, string stagedFiles)
+    {
+        string diffSummary = BuildCommitMessageDiffSummary(state.RootDirectory);
+        string prompt = BuildCommitMessageSuggestionPrompt(stagedFiles, diffSummary);
+
+        state.ResetTurnCancellation();
+        state.TurnCancellation = CancellationTokenSource.CreateLinkedTokenSource(state.LifetimeCancellation.Token);
+        long operationId = state.BeginTrackedOperation();
+        state.UiBridge.SetActiveCliOperation(operationId);
+        state.IsBusy = true;
+        state.ClearBusyWhenStreamCompletes = false;
+        state.CurrentTurnStartedAt = DateTimeOffset.UtcNow;
+        state.PendingCompletionNote = null;
+        state.ActivityText = "Drafting commit message";
+
+        SilentUiBridge silentUiBridge = new();
+        state.ActiveOperation = Task.Run(async () =>
+        {
+            try
+            {
+                ConversationTurnResult result = await state.Backend.RunTurnAsync(
+                    prompt,
+                    silentUiBridge,
+                    state.TurnCancellation!.Token);
+
+                state.UiBridge.Enqueue(appState =>
+                {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
+                    FinishCommitMessageSuggestion(appState);
+
+                    string suggestion = SanitizeCommitMessageSuggestion(result.ResponseText);
+                    if (string.IsNullOrWhiteSpace(suggestion))
+                    {
+                        appState.AddSystemMessage("AI commit message was empty. Enter the message manually.");
+                        ShowCommitMessagePrompt(appState, defaultValue: null);
+                        return;
+                    }
+
+                    ShowCommitMessagePrompt(appState, suggestion);
+                });
+            }
+            catch (OperationCanceledException) when (state.LifetimeCancellation.IsCancellationRequested)
+            {
+            }
+            catch (OperationCanceledException) when (state.TurnCancellation?.IsCancellationRequested == true)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
+                    FinishCommitMessageSuggestion(appState);
+                    appState.AddSystemMessage("Commit message generation cancelled.");
+                    TryStartNextPendingSubmission(appState);
+                });
+            }
+            catch (Exception exception)
+            {
+                state.UiBridge.Enqueue(appState =>
+                {
+                    if (!appState.IsTrackedOperationCurrent(operationId))
+                    {
+                        return;
+                    }
+
+                    FinishCommitMessageSuggestion(appState);
+                    appState.AddSystemMessage($"Could not generate an AI commit message: {exception.Message}");
+                    ShowCommitMessagePrompt(appState, defaultValue: null);
+                });
+            }
+        });
+    }
+
+    private static void FinishCommitMessageSuggestion(AppState state)
+    {
+        state.IsBusy = false;
+        state.ActiveOperation = null;
+        state.ClearBusyWhenStreamCompletes = false;
+        state.CurrentTurnStartedAt = null;
+        state.PendingCompletionNote = null;
+        state.ActivityText = state.IsReady ? "Ready" : "Idle";
+        state.ResetTurnCancellation();
+        state.IsTurnInterruptPending = false;
+    }
+
+    private static void ShowCommitMessagePrompt(AppState state, string? defaultValue)
+    {
         state.ActiveModal = TextModalState.Create(
             new TextPromptRequest(
                 "Commit message",
-                "Create a git commit from the staged changes. Enter submits, Esc cancels.",
-                DefaultValue: null,
+                "Review or edit the commit message, then press Enter to commit. Esc cancels.",
+                DefaultValue: defaultValue,
                 AllowCancellation: true),
             isSecret: false,
             completionToken: new object(),
@@ -2402,6 +2506,140 @@ public static partial class Program
                 }
             },
             onCancelled: _ => state.AddSystemMessage("Commit cancelled."));
+    }
+
+    private static string BuildCommitMessageSuggestionPrompt(string stagedFiles, string diffSummary)
+    {
+        return
+            "Write a git commit message for the staged changes below." + Environment.NewLine +
+            "Return exactly one line: no bullets, no quotes, no code fences, and no explanation." + Environment.NewLine +
+            "Use imperative mood and keep it concise. Prefer a conventional-commit prefix when it clearly fits." + Environment.NewLine +
+            Environment.NewLine +
+            "Staged files:" + Environment.NewLine +
+            stagedFiles.Trim() + Environment.NewLine +
+            Environment.NewLine +
+            "Staged diff summary:" + Environment.NewLine +
+            diffSummary;
+    }
+
+    private static string BuildCommitMessageDiffSummary(string root)
+    {
+        string stats = RunGit(root, "diff", "--cached", "--stat", "--summary", "--find-renames") ?? string.Empty;
+        string patch = RunGit(root, "diff", "--cached", "--unified=0", "--no-ext-diff", "--no-color", "--minimal")
+            ?? string.Empty;
+
+        string combined = string.IsNullOrWhiteSpace(patch)
+            ? stats
+            : string.IsNullOrWhiteSpace(stats)
+                ? patch
+                : stats.TrimEnd() + Environment.NewLine + Environment.NewLine + patch.TrimStart();
+
+        string normalized = combined
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Trim();
+
+        if (normalized.Length == 0)
+        {
+            return "(no diff details available)";
+        }
+
+        const int maxLength = 12000;
+        return normalized.Length <= maxLength
+            ? normalized
+            : normalized[..maxLength] + Environment.NewLine + "[truncated]";
+    }
+
+    private static string SanitizeCommitMessageSuggestion(string responseText)
+    {
+        if (string.IsNullOrWhiteSpace(responseText))
+        {
+            return string.Empty;
+        }
+
+        string[] lines = responseText
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (lines.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        string suggestion = string.Empty;
+        foreach (string line in lines)
+        {
+            string candidate = line.Trim();
+            if (candidate.StartsWith("```", StringComparison.Ordinal) ||
+                candidate == "```")
+            {
+                continue;
+            }
+
+            candidate = candidate
+                .Trim('`', '"', '\'')
+                .TrimStart('-', '*', ' ');
+
+            if (candidate.Length == 0)
+            {
+                continue;
+            }
+
+            suggestion = candidate;
+            break;
+        }
+
+        if (suggestion.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        return suggestion.Length <= 72
+            ? suggestion
+            : suggestion[..72].TrimEnd();
+    }
+
+    private sealed class SilentUiBridge : IUiBridge
+    {
+        public Task<T> RequestSelectionAsync<T>(SelectionPromptRequest<T> request, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Commit message suggestion cannot request a selection.");
+
+        public Task<string> RequestTextAsync(TextPromptRequest request, bool isSecret, CancellationToken cancellationToken)
+            => throw new InvalidOperationException("Commit message suggestion cannot request text input.");
+
+        public void ShowError(string message)
+        {
+        }
+
+        public void ShowInfo(string message)
+        {
+        }
+
+        public void ShowSuccess(string message)
+        {
+        }
+
+        public void ShowAssistantMessageChunk(string text)
+        {
+        }
+
+        public void ShowAssistantReasoning(string reasoningText)
+        {
+        }
+
+        public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
+        {
+        }
+
+        public void ShowToolResults(ToolExecutionBatchResult toolExecutionResult)
+        {
+        }
+
+        public void ShowExecutionPlan(ExecutionPlanProgress progress)
+        {
+        }
+
+        public void ShowProviderRetry(ProviderRetryProgress progress)
+        {
+        }
     }
 
     private static void PromptBranchActionFromGitSidebar(AppState state)
