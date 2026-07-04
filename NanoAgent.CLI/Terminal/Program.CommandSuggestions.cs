@@ -355,6 +355,20 @@ public static partial class Program
 
     private static SlashCommandSuggestion[] GetSlashCommandSuggestions(string rootDirectory)
     {
+        SlashCommandSuggestion[] builtInSuggestions = ReplCommandCatalog.All
+            .Select(static metadata => new SlashCommandSuggestion(
+                "/" + metadata.CommandName,
+                metadata.Usage,
+                metadata.Description,
+                metadata.RequiresArgument))
+            .Concat(
+            [
+                new SlashCommandSuggestion("/clear", "/clear", "Clear the terminal conversation view.", false),
+                new SlashCommandSuggestion("/ls", "/ls", "List files in the current workspace.", false),
+                new SlashCommandSuggestion("/read", "/read <file>", "Read a workspace file after confirmation.", true)
+            ])
+            .ToArray();
+
         SlashCommandSuggestion[] customSuggestions = CustomSlashCommandService
             .List(rootDirectory)
             .Select(static suggestion => new SlashCommandSuggestion(
@@ -364,7 +378,7 @@ public static partial class Program
                 suggestion.RequiresArgument))
             .ToArray();
 
-        return SlashCommandSuggestions
+        return builtInSuggestions
             .Concat(customSuggestions)
             .OrderBy(static suggestion => suggestion.Command, StringComparer.OrdinalIgnoreCase)
             .ToArray();
