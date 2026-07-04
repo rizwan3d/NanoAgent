@@ -48,55 +48,6 @@ public static partial class Program
         "⠇",
         "⠏"
     ];
-    private static readonly SlashCommandSuggestion[] SlashCommandSuggestions =
-    [
-        new("/allow", "/allow <tool-or-tag> [pattern]", "Add a session-scoped allow override.", true),
-        new("/budget", "/budget [status|local|cloud]", "Show or configure budget controls.", false),
-        new("/clear", "/clear", "Clear the terminal conversation view.", false),
-        new("/clone", "/clone", "Duplicate the current session.", false),
-        new("/compact", "/compact [retained-turns]", "Manually compact session context.", false),
-        new("/config", "/config", "Show provider, session, profile, thinking, and model details.", false),
-        new("/copy", "/copy", "Copy the last agent message.", false),
-        new("/doctor", "/doctor", "Show comprehensive system diagnostics.", false),
-        new("/deny", "/deny <tool-or-tag> [pattern]", "Add a session-scoped deny override.", true),
-        new("/exit", "/exit", "Exit the interactive shell.", false),
-        new("/export", "/export [json|html] [path]", "Export session as JSON or HTML.", false),
-        new("/fork", "/fork [turn-number]", "Fork from a previous user message.", false),
-        new("/help", "/help", "List available commands and usage.", false),
-        new("/import", "/import <json-path>", "Import a session from JSON.", true),
-        new("/init", "/init [recommended|minimal|custom]", "Choose workspace-local NanoAgent files.", false),
-        new("/ls", "/ls", "List files in the current workspace.", false),
-        new("/lsp", "/lsp [status|refresh|file <path> [refresh]]", "Show detected language servers or inspect a file.", false),
-        new("/mcp", "/mcp", "Show configured MCP servers and dynamic tools.", false),
-        new("/models", "/models", "Choose the active model with the picker.", false),
-        new("/new", "/new", "Start a new session.", false),
-        new("/onboard", "/onboard", "Open provider onboarding menus.", false),
-        new("/permissions", "/permissions", "Show permission policy and override guidance.", false),
-        new("/plugin", "/plugin [marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]|install <pluginId>@<marketplaceAlias> [--force]|list|uninstall <pluginId>]", "Manage data-only plugin marketplaces and installs.", false),
-        new("/provider", "/provider [list|name]", "List or switch saved providers.", false),
-        new("/profile", "/profile <name>", "Switch the active agent profile.", true),
-        new("/redact", "/redact [on|off]", "Show or toggle secret redaction.", false),
-        new("/read", "/read <file>", "Read a workspace file after confirmation.", true),
-        new("/reload", "/reload", "Reload local resources.", false),
-        new("/redo", "/redo", "Re-apply the most recently undone file edit.", false),
-        new("/reasoning", "/reasoning [show|<none|minimal|low|medium|high|xhigh|max>]", "Show or set reasoning effort.", false),
-        new("/resume", "/resume [session-id]", "Resume a saved session.", false),
-        new("/rules", "/rules", "List effective permission rules.", false),
-        new("/session", "/session", "Show session info and stats.", false),
-        new("/setting", "/setting [area]", "Open the NanoAgent settings picker.", false),
-        new("/share", "/share", "Share session as a secret GitHub gist.", false),
-        new("/setup-sandbox", "/setup-sandbox", "Set up Windows sandbox support for restricted shell commands.", false),
-        new("/terminals", "/terminals [stop <id>|stop all]", "List or stop background terminals.", false),
-        new("/thinking", "/thinking [on|off]", "Show or set simple thinking mode.", false),
-        new("/tooloutput", "/tooloutput [compact|full|auto]", "Show or toggle full vs compact tool output.", false),
-        new("/tree", "/tree", "Navigate saved sessions.", false),
-        new("/undo", "/undo", "Roll back the most recent tracked file edit.", false),
-        new("/update", "/update [now]", "Check for updates.", false),
-        new("/use", "/use <model>", "Switch the active model directly.", true),
-        new("/version", "/version", "Show the current NanoAgent CLI version.", false),
-        new("/index", "/index [update|status|rebuild|list|list <count>]", "Refresh the local codebase index.", false)
-    ];
-
     public static async Task<int> Main(string[]? args)
     {
         Console.OutputEncoding = Encoding.UTF8;
