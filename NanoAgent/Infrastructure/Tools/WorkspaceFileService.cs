@@ -90,49 +90,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
 
         PatchDocument document = ParsePatch(patch);
-        string[] trackedPaths = await FilterLargeFilePathsAsync(
-            GetTrackedPatchPaths(document),
+        return await ApplyPatchWithTrackingAsync(
+            document,
+            await FilterLargeFilePathsAsync(
+                GetTrackedPatchPaths(document),
+                cancellationToken),
             cancellationToken);
-        WorkspaceFileEditState[] beforeStates = await CaptureFileStatesAsync(
-            trackedPaths,
-            cancellationToken);
-        WorkspaceApplyPatchResult result;
-        try
-        {
-            result = await ApplyPatchDocumentAsync(document, cancellationToken);
-        }
-        catch (Exception exception)
-        {
-            try
-            {
-                await ApplyFileEditStatesAsync(beforeStates, CancellationToken.None);
-            }
-            catch (Exception rollbackException)
-            {
-                throw new AggregateException(
-                    "Patch application failed and rollback did not complete successfully.",
-                    exception,
-                    rollbackException);
-            }
-
-            ExceptionDispatchInfo.Capture(exception).Throw();
-            throw;
-        }
-
-        WorkspaceFileEditState[] afterStates = await CaptureFileStatesAsync(
-            trackedPaths,
-            cancellationToken);
-
-        WorkspaceFileEditTransaction? editTransaction = trackedPaths.Length == 0
-            ? null
-            : new WorkspaceFileEditTransaction(
-                $"apply_patch ({result.FileCount} {(result.FileCount == 1 ? "file" : "files")})",
-                beforeStates,
-                afterStates);
-
-        return new WorkspaceApplyPatchExecutionResult(
-            result,
-            editTransaction);
     }
 
     public async Task ApplyFileEditStatesAsync(
@@ -197,50 +160,97 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         bool overwrite,
         CancellationToken cancellationToken)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-
-        WorkspaceFileEditState beforeState = await CaptureFileStateAsync(
+        return await ExecuteTrackedSingleFileEditAsync(
             path,
+            (service, trackedPath, token) => service.WriteFileAsync(trackedPath, content, overwrite, token),
+            static result => $"file_write ({result.Path})",
+            static (result, transaction) => new WorkspaceFileWriteExecutionResult(result, transaction),
             cancellationToken);
-        WorkspaceFileWriteResult result = await WriteFileAsync(
-            path,
-            content,
-            overwrite,
-            cancellationToken);
-        WorkspaceFileEditState afterState = await CaptureFileStateAsync(
-            path,
-            cancellationToken);
-
-        return new WorkspaceFileWriteExecutionResult(
-            result,
-            new WorkspaceFileEditTransaction(
-                $"file_write ({result.Path})",
-                [beforeState],
-                [afterState]));
     }
 
     public async Task<WorkspaceFileDeleteExecutionResult> DeleteFileWithTrackingAsync(
         string path,
         CancellationToken cancellationToken)
     {
+        return await ExecuteTrackedSingleFileEditAsync(
+            path,
+            static (service, trackedPath, token) => service.DeleteFileAsync(trackedPath, token),
+            static result => $"file_delete ({result.Path})",
+            static (result, transaction) => new WorkspaceFileDeleteExecutionResult(result, transaction),
+            cancellationToken);
+    }
+
+    private async Task<WorkspaceApplyPatchExecutionResult> ApplyPatchWithTrackingAsync(
+        PatchDocument document,
+        string[] trackedPaths,
+        CancellationToken cancellationToken)
+    {
+        WorkspaceFileEditState[] beforeStates = await CaptureFileStatesAsync(trackedPaths, cancellationToken);
+        WorkspaceApplyPatchResult result = await ExecuteTrackedMutationAsync(
+            beforeStates,
+            (_, service, token) => service.ApplyPatchDocumentAsync(document, token),
+            cancellationToken);
+
+        WorkspaceFileEditTransaction? transaction = trackedPaths.Length == 0
+            ? null
+            : new WorkspaceFileEditTransaction(
+                $"apply_patch ({result.FileCount} {(result.FileCount == 1 ? "file" : "files")})",
+                beforeStates,
+                await CaptureFileStatesAsync(trackedPaths, cancellationToken));
+
+        return new WorkspaceApplyPatchExecutionResult(result, transaction);
+    }
+
+    private async Task<TExecutionResult> ExecuteTrackedSingleFileEditAsync<TResult, TExecutionResult>(
+        string path,
+        Func<WorkspaceFileService, string, CancellationToken, Task<TResult>> operation,
+        Func<TResult, string> transactionDescriptionFactory,
+        Func<TResult, WorkspaceFileEditTransaction, TExecutionResult> resultFactory,
+        CancellationToken cancellationToken)
+    {
         cancellationToken.ThrowIfCancellationRequested();
 
-        WorkspaceFileEditState beforeState = await CaptureFileStateAsync(
-            path,
-            cancellationToken);
-        WorkspaceFileDeleteResult result = await DeleteFileAsync(
-            path,
-            cancellationToken);
-        WorkspaceFileEditState afterState = await CaptureFileStateAsync(
-            path,
+        WorkspaceFileEditState beforeState = await CaptureFileStateAsync(path, cancellationToken);
+        TResult result = await ExecuteTrackedMutationAsync(
+            [beforeState],
+            (states, service, token) => operation(service, states[0].Path, token),
             cancellationToken);
 
-        return new WorkspaceFileDeleteExecutionResult(
+        WorkspaceFileEditState afterState = await CaptureFileStateAsync(path, cancellationToken);
+        return resultFactory(
             result,
             new WorkspaceFileEditTransaction(
-                $"file_delete ({result.Path})",
+                transactionDescriptionFactory(result),
                 [beforeState],
                 [afterState]));
+    }
+
+    private async Task<TResult> ExecuteTrackedMutationAsync<TResult>(
+        WorkspaceFileEditState[] beforeStates,
+        Func<WorkspaceFileEditState[], WorkspaceFileService, CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await operation(beforeStates, this, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await ApplyFileEditStatesAsync(beforeStates, CancellationToken.None);
+            }
+            catch (Exception rollbackException)
+            {
+                throw new AggregateException(
+                    "Workspace mutation failed and rollback did not complete successfully.",
+                    exception,
+                    rollbackException);
+            }
+
+            ExceptionDispatchInfo.Capture(exception).Throw();
+            throw;
+        }
     }
 
     private async Task<WorkspaceApplyPatchResult> ApplyPatchDocumentAsync(

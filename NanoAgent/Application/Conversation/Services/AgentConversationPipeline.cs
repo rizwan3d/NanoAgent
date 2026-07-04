@@ -49,6 +49,57 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         If the listed work is truly complete, call update_plan with every item completed before returning final text.
         Do not repeat the final answer until the live plan has no in_progress or pending work.
         """;
+    private sealed class PreparedTurnContext : IDisposable
+    {
+        public PreparedTurnContext(
+            string normalizedInput,
+            IReadOnlyList<ConversationAttachment> attachments,
+            string apiKey,
+            ConversationSettings settings,
+            string? baseSystemPrompt,
+            string? profileSystemPrompt,
+            IReadOnlyList<ToolDefinition> availableToolDefinitions,
+            IReadOnlySet<string> availableToolNames,
+            CancellationTokenSource timeoutSource,
+            DateTimeOffset startedAt)
+        {
+            NormalizedInput = normalizedInput;
+            Attachments = attachments;
+            ApiKey = apiKey;
+            Settings = settings;
+            BaseSystemPrompt = baseSystemPrompt;
+            ProfileSystemPrompt = profileSystemPrompt;
+            AvailableToolDefinitions = availableToolDefinitions;
+            AvailableToolNames = availableToolNames;
+            TimeoutSource = timeoutSource;
+            StartedAt = startedAt;
+        }
+
+        public string NormalizedInput { get; }
+
+        public IReadOnlyList<ConversationAttachment> Attachments { get; }
+
+        public string ApiKey { get; }
+
+        public ConversationSettings Settings { get; }
+
+        public string? BaseSystemPrompt { get; }
+
+        public string? ProfileSystemPrompt { get; }
+
+        public IReadOnlyList<ToolDefinition> AvailableToolDefinitions { get; }
+
+        public IReadOnlySet<string> AvailableToolNames { get; }
+
+        public CancellationTokenSource TimeoutSource { get; }
+
+        public DateTimeOffset StartedAt { get; }
+
+        public void Dispose()
+        {
+            TimeoutSource.Dispose();
+        }
+    }
 
     private readonly TimeProvider _timeProvider;
     private readonly ITokenEstimator _tokenEstimator;
@@ -148,55 +199,36 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         try
         {
-            string apiKey = await LoadProviderSecretAsync(session, cancellationToken)
-                ?? throw new ConversationPipelineException(
-                    "Conversation cannot start because the API key is missing.");
-
-            ConversationSettings settings = _configurationAccessor.GetSettings();
-            string? baseSystemPrompt = await CreateBaseSystemPromptAsync(
-                settings.SystemPrompt,
-                session,
-                cancellationToken);
-            string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
-                baseSystemPrompt,
+            using PreparedTurnContext preparedTurn = await PrepareTurnAsync(
                 normalizedInput,
+                normalizedAttachments,
                 session,
                 cancellationToken);
-            IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
-            IReadOnlySet<string> availableToolNames = availableToolDefinitions
-                .Select(static definition => definition.Name)
-                .ToHashSet(StringComparer.Ordinal);
-            using CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutSource.CancelAfter(settings.RequestTimeout);
-            DateTimeOffset startedAt = _timeProvider.GetUtcNow();
 
             if (session.PendingExecutionPlan is not null &&
                 PlanningModePolicy.IsExecutionApproval(normalizedInput))
             {
                 CompletedAssistantTurn approvedTurn = await ExecuteApprovedPlanAsync(
-                    normalizedInput,
+                    preparedTurn.NormalizedInput,
                     session,
                     progressSink,
-                    settings,
-                    baseSystemPrompt,
-                    apiKey,
-                    availableToolDefinitions,
-                    availableToolNames,
-                    timeoutSource,
-                    startedAt,
-                    normalizedAttachments,
+                    preparedTurn.Settings,
+                    preparedTurn.BaseSystemPrompt,
+                    preparedTurn.ApiKey,
+                    preparedTurn.AvailableToolDefinitions,
+                    preparedTurn.AvailableToolNames,
+                    preparedTurn.TimeoutSource,
+                    preparedTurn.StartedAt,
+                    preparedTurn.Attachments,
                     cancellationToken);
 
-                await RunAfterTaskCompleteHookAsync(normalizedInput, session, approvedTurn.Result, cancellationToken);
-                CommitCompletedTurn(session, approvedTurn);
-                await MaybeUpdateCodebaseIndexAsync(cancellationToken);
-                return approvedTurn.Result;
+                return await FinalizeCompletedTurnAsync(preparedTurn.NormalizedInput, session, approvedTurn, cancellationToken);
             }
 
             List<ConversationRequestMessage> messages =
             [
-                .. session.GetConversationHistory(settings.MaxHistoryTurns),
-                ConversationRequestMessage.User(normalizedInput, normalizedAttachments)
+                .. session.GetConversationHistory(preparedTurn.Settings.MaxHistoryTurns),
+                ConversationRequestMessage.User(preparedTurn.NormalizedInput, preparedTurn.Attachments)
             ];
 
             ApplicationLogMessages.ConversationRequestStarted(
@@ -205,29 +237,26 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 session.ActiveModelId);
 
             PhaseExecutionResult result = await RunPhaseAsync(
-                apiKey,
+                preparedTurn.ApiKey,
                 session,
                 messages,
-                PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(profileSystemPrompt),
-                availableToolDefinitions,
-                availableToolNames,
+                PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(preparedTurn.ProfileSystemPrompt),
+                preparedTurn.AvailableToolDefinitions,
+                preparedTurn.AvailableToolNames,
                 ConversationExecutionPhase.Execution,
                 progressSink,
-                settings,
-                timeoutSource,
+                preparedTurn.Settings,
+                preparedTurn.TimeoutSource,
                 executionPlanTracker: null,
                 cancellationToken);
 
             CompletedAssistantTurn completedTurn = CreateCompletedAssistantTurn(
-                normalizedInput,
+                preparedTurn.NormalizedInput,
                 result,
-                startedAt,
+                preparedTurn.StartedAt,
                 session.ShowThinking);
 
-            await RunAfterTaskCompleteHookAsync(normalizedInput, session, completedTurn.Result, cancellationToken);
-            CommitCompletedTurn(session, completedTurn);
-            await MaybeUpdateCodebaseIndexAsync(cancellationToken);
-            return completedTurn.Result;
+            return await FinalizeCompletedTurnAsync(preparedTurn.NormalizedInput, session, completedTurn, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -242,6 +271,58 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         {
             session.DeleteTemporaryArtifacts(TemporaryArtifactRetention.Turn);
         }
+    }
+
+    private async Task<PreparedTurnContext> PrepareTurnAsync(
+        string normalizedInput,
+        IReadOnlyList<ConversationAttachment> normalizedAttachments,
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        string apiKey = await LoadProviderSecretAsync(session, cancellationToken)
+            ?? throw new ConversationPipelineException(
+                "Conversation cannot start because the API key is missing.");
+
+        ConversationSettings settings = _configurationAccessor.GetSettings();
+        string? baseSystemPrompt = await CreateBaseSystemPromptAsync(
+            settings.SystemPrompt,
+            session,
+            cancellationToken);
+        string? profileSystemPrompt = await CreateProfileSystemPromptAsync(
+            baseSystemPrompt,
+            normalizedInput,
+            session,
+            cancellationToken);
+        IReadOnlyList<ToolDefinition> availableToolDefinitions = GetProfileToolDefinitions(session);
+        IReadOnlySet<string> availableToolNames = availableToolDefinitions
+            .Select(static definition => definition.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        CancellationTokenSource timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(settings.RequestTimeout);
+
+        return new PreparedTurnContext(
+            normalizedInput,
+            normalizedAttachments,
+            apiKey,
+            settings,
+            baseSystemPrompt,
+            profileSystemPrompt,
+            availableToolDefinitions,
+            availableToolNames,
+            timeoutSource,
+            _timeProvider.GetUtcNow());
+    }
+
+    private async Task<ConversationTurnResult> FinalizeCompletedTurnAsync(
+        string input,
+        ReplSessionContext session,
+        CompletedAssistantTurn completedTurn,
+        CancellationToken cancellationToken)
+    {
+        await RunAfterTaskCompleteHookAsync(input, session, completedTurn.Result, cancellationToken);
+        CommitCompletedTurn(session, completedTurn);
+        await MaybeUpdateCodebaseIndexAsync(cancellationToken);
+        return completedTurn.Result;
     }
 
     private async Task<CompletedAssistantTurn> ExecuteApprovedPlanAsync(
