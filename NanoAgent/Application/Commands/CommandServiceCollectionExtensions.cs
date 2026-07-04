@@ -10,54 +10,7 @@ public static class CommandServiceCollectionExtensions
 
         services.AddSingleton<IReplCommandParser, ReplCommandParser>();
         services.AddSingleton<IReplCommandDispatcher, ReplCommandDispatcher>();
-        services.AddSingleton<IReplCommandHandler, AgentCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, AgentAliasCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, AllowCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, BudgetCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ConfigCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, CloneCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, CompactCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, CodebaseIndexCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, CopyCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, DisableAnalyticsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, DoctorCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, DenyCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ExportCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ToolOutputCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, HelpCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, InitCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ImportCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, LessonsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, LspCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, McpCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ModelsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, NewSessionCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, OnboardCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, PermissionsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, PluginCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ProviderCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, RedactCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ReasoningCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ProfileCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ForkCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ReloadCommandHandler>();
-        services.AddSingleton<ResumeCommandHandler>();
-        services.AddSingleton<IReplCommandHandler>(static serviceProvider =>
-            serviceProvider.GetRequiredService<ResumeCommandHandler>());
-        services.AddSingleton<IReplCommandHandler, ThinkingCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, SessionInfoCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ShareCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, SetupSandboxCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, TreeCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, UpdateCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, UndoCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, RedoCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, RulesCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, SettingCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, TerminalsCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, UseModelCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, VersionCommandHandler>();
-        services.AddSingleton<IReplCommandHandler, ExitCommandHandler>();
+        services.AddRegisteredReplCommandHandlers();
 
         return services;
     }
