@@ -2115,6 +2115,57 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : $"@@ {trailing}";
     }
 
+    private static IEnumerable<string> RepairApplyPatchHunkHeader(string line)
+    {
+        if (IsUnifiedDiffHunkHeader(line))
+        {
+            yield return ConvertUnifiedDiffHunkHeader(line);
+            yield break;
+        }
+
+        if (line == "@@" || !line.StartsWith("@@ ", StringComparison.Ordinal))
+        {
+            yield return line;
+            yield break;
+        }
+
+        string locator = line[3..];
+        if (locator.Length == 0)
+        {
+            yield return "@@";
+            yield break;
+        }
+
+        if (locator[0] is '+' or '-' or ' ')
+        {
+            yield return "@@";
+            yield return locator;
+            yield break;
+        }
+
+        yield return line;
+    }
+
+    private static bool IsUnifiedDiffHunkHeader(string line)
+    {
+        if (!line.StartsWith("@@ -", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        int closingIndex = line.IndexOf("@@", 2, StringComparison.Ordinal);
+        if (closingIndex < 0)
+        {
+            return false;
+        }
+
+        string ranges = line[3..closingIndex].Trim();
+        return Regex.IsMatch(
+            ranges,
+            @"^-\d+(?:,\d+)? \+\d+(?:,\d+)?$",
+            RegexOptions.CultureInvariant);
+    }
+
     private static string AutoRepairApplyPatchText(string patch)
     {
         string[] lines = patch.Split('\n', StringSplitOptions.None);
@@ -2177,7 +2228,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 if (line.StartsWith("@@", StringComparison.Ordinal))
                 {
                     insideUpdateHunk = true;
-                    repaired.Add(line);
+                    foreach (string repairedLine in RepairApplyPatchHunkHeader(line))
+                    {
+                        repaired.Add(repairedLine);
+                    }
                     continue;
                 }
 
