@@ -647,9 +647,12 @@ public static partial class Program
         int contentWidth)
     {
         int lineCount = CountThinkingBodyLines(message.Text);
+
+        // Show a preview of the first few words instead of a generic "Thinking…" label.
+        string preview = ExtractThinkingPreview(message.Text);
         string summary = lineCount > 0
-            ? $"Thinking… ({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
-            : "Thinking… · click or Ctrl+T to expand";
+            ? $"Thinking: {preview} ({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
+            : $"Thinking: {preview} · click or Ctrl+T to expand";
 
         int contentBudget = Math.Max(1, contentWidth - (roleName.Length + 2));
         if (summary.Length > contentBudget)
@@ -679,13 +682,62 @@ public static partial class Program
            normalized = normalized[prefix.Length..];
        }
 
-       return normalized
-           .Split('\n')
-           .Count(line => !string.IsNullOrWhiteSpace(line));
-   }
+      return normalized
+          .Split('\n')
+          .Count(line => !string.IsNullOrWhiteSpace(line));
+  }
 
-    // Stamps every conversation line of a collapsible tool message block with its message
-    // id so a click on any of them (collapsed summary or expanded body) toggles that block.
+    // Extracts the first few meaningful words of thinking text to show as a preview in
+    // the collapsed summary. Strips the leading "Thinking:" label and leading empty lines.
+    private static string ExtractThinkingPreview(string text)
+    {
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+        const string prefix = "Thinking:";
+        if (normalized.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            normalized = normalized[prefix.Length..];
+        }
+
+        string[] lines = normalized.Split('\n', StringSplitOptions.None);
+        foreach (string line in lines)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            // Take up to ~7 words or the first 64 characters, whichever is shorter.
+            int maxChars = Math.Min(64, trimmed.Length);
+            string preview = trimmed[..maxChars];
+            int wordCount = 0;
+            int lastIndex = 0;
+            for (int i = 0; i < preview.Length; i++)
+            {
+                if (preview[i] == ' ')
+                {
+                    wordCount++;
+                    if (wordCount >= 7)
+                    {
+                        lastIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (lastIndex > 0)
+            {
+                preview = preview[..lastIndex];
+            }
+
+            return preview.TrimEnd('.') + "…";
+        }
+
+        return "…";
+    }
+
+   // Stamps every conversation line of a collapsible tool message block with its message
+   // id so a click on any of them (collapsed summary or expanded body) toggles that block.
     private static void TagToolCallLines(
         List<ConversationLine> lines,
         int startIndex,
@@ -707,23 +759,30 @@ public static partial class Program
         int contentWidth)
     {
         int lineCount = CountToolCallBodyLines(message.Text);
-        string summary = lineCount > 0
-            ? $"Tool output… ({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
-            : "Tool output… · click or Ctrl+T to expand";
+
+        // Show the first meaningful content line as a colored preview instead of a
+        // generic "Tool output…" label, so the user can see what the tool did at a glance.
+        string previewMarkup = ExtractToolCallPreview(message.Text);
+        string hint = lineCount > 0
+            ? $"({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
+            : "· click or Ctrl+T to expand";
+        string summaryPlain = Markup.Remove(previewMarkup) + " " + hint;
+        string summaryMarkup = $"{previewMarkup} [grey58]{Markup.Escape(hint)}[/]";
 
         int contentBudget = Math.Max(1, contentWidth - (roleName.Length + 2));
-        if (summary.Length > contentBudget)
+        if (summaryPlain.Length > contentBudget)
         {
-            summary = contentBudget <= 1
-                ? summary[..contentBudget]
-                : summary[..(contentBudget - 1)] + "…";
+            summaryPlain = contentBudget <= 1
+                ? summaryPlain[..contentBudget]
+                : summaryPlain[..(contentBudget - 1)] + "…";
+            summaryMarkup = $"[grey58]{Markup.Escape(summaryPlain)}[/]";
         }
 
         bool firstLine = true;
         AddConversationContentLine(
             lines,
-            $"[grey58]{Markup.Escape(summary)}[/]",
-            summary,
+            summaryMarkup,
+            summaryPlain,
             ref firstLine,
             roleName,
             roleColor);
@@ -735,6 +794,35 @@ public static partial class Program
         return normalized
             .Split('\n')
             .Count(line => !string.IsNullOrWhiteSpace(line));
+    }
+
+    // Extracts the first non-empty content line from a tool message and applies the
+    // appropriate tool-output header color, so the collapsed preview shows what the
+    // tool actually did rather than a generic label.
+    private static string ExtractToolCallPreview(string text)
+    {
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+        string[] lines = normalized.Split('\n', StringSplitOptions.None);
+
+        foreach (string line in lines)
+        {
+            string trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                continue;
+            }
+
+            // Determine the tool-output style for this line, matching the expanded view.
+            if (TryGetToolOutputLineStyle(line, out string? style) &&
+                !string.IsNullOrWhiteSpace(style))
+            {
+                return $"[{style}]{Markup.Escape(trimmed)}[/]";
+            }
+
+            return Markup.Escape(trimmed);
+        }
+
+        return "[grey58]Tool output…[/]";
     }
 
    private static string BuildScrollableConversationMarkup(
