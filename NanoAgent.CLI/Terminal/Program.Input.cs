@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
 
@@ -399,8 +399,8 @@ public static partial class Program
 
     private static void ToggleThinkingExpansion(AppState state)
    {
-       state.ToggleAllThinking();
-        state.ToggleAllToolCalls();
+        state.ExpandAllThinking();
+        state.ExpandAllToolCalls();
        state.SkipNextInputLineFeed = false;
    }
 
