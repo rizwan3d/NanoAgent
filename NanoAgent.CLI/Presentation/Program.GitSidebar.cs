@@ -1333,7 +1333,7 @@ public static partial class Program
                 state,
                 styledLines,
                 stash.Ref.ToUpperInvariant(),
-                "stash diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+                "stash diff | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
                 startAtBottom: false);
             return;
         }
@@ -1342,7 +1342,7 @@ public static partial class Program
             state,
             output.Replace("\r\n", "\n", StringComparison.Ordinal).Split('\n'),
             stash.Ref.ToUpperInvariant(),
-            "stash diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            "stash diff | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
             startAtBottom: false);
     }
 
@@ -2015,7 +2015,7 @@ public static partial class Program
                 state,
                 styledLines,
                 title,
-                "commit diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+                "commit diff | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
                 startAtBottom: false);
             return;
         }
@@ -2028,7 +2028,7 @@ public static partial class Program
             state,
             lines,
             title,
-            "commit diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            "commit diff | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
             startAtBottom: false);
     }
 
@@ -2050,7 +2050,7 @@ public static partial class Program
                 state,
                 styledLines,
                 $"{titlePrefix} {relativePath}",
-                "file diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+                "file diff | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
                 startAtBottom: false);
             return;
         }
@@ -2063,7 +2063,7 @@ public static partial class Program
             state,
             lines,
             $"{titlePrefix} {relativePath}",
-            "file diff | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            "file diff | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
             startAtBottom: false);
     }
 
@@ -3092,7 +3092,7 @@ public static partial class Program
             state,
             [.. files],
             $"FILES {shortHash}",
-            "commit files | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit",
+            "commit files | Up/Down PgUp/PgDn Home/End scroll | F5 exit",
             startAtBottom: false);
     }
 
