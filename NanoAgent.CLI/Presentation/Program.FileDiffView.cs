@@ -104,9 +104,11 @@ public static partial class Program
             Role.System,
             contentWidth);
 
-        foreach (FileEditDiffFile file in block.Files)
-        {
-            AddMarkdownTextLine(
+       foreach (FileEditDiffFile file in block.Files)
+       {
+            string? language = GuessCodeLanguageFromPath(file.DisplayPath);
+
+           AddMarkdownTextLine(
                 lines,
                 file.HeaderLine,
                 ref firstLine,
@@ -125,15 +127,16 @@ public static partial class Program
                     contentWidth);
 
                 foreach (FileEditRow row in BuildFileEditRows(file.PreviewEntries))
-                {
-                    AddFileDiffRowLine(
-                        lines,
-                        row,
-                        ref firstLine,
-                        roleName,
-                        roleColor,
-                        contentWidth);
-                }
+               {
+                   AddFileDiffRowLine(
+                       lines,
+                       row,
+                       ref firstLine,
+                       roleName,
+                       roleColor,
+                        contentWidth,
+                        language);
+               }
             }
 
             if (!string.IsNullOrWhiteSpace(file.OmittedLine))
@@ -180,15 +183,17 @@ public static partial class Program
         ref bool firstLine,
         string roleName,
         string roleColor,
-        int contentWidth)
-    {
-        int availableWidth = GetConversationContentWidth(firstLine, roleName, contentWidth);
-        GetFileDiffColumnWidths(availableWidth, out int leftWidth, out int rightWidth);
+        int contentWidth,
+        string? language = null)
+   {
+       int availableWidth = GetConversationContentWidth(firstLine, roleName, contentWidth);
+       GetFileDiffColumnWidths(availableWidth, out int leftWidth, out int rightWidth);
 
-        string leftPlain = BuildFileDiffCellPlain(row.Left, leftWidth);
-        string rightPlain = BuildFileDiffCellPlain(row.Right, rightWidth);
-        string leftMarkup = BuildFileDiffCellMarkup(row.Left, leftPlain);
-        string rightMarkup = BuildFileDiffCellMarkup(row.Right, rightPlain);
+       string leftPlain = BuildFileDiffCellPlain(row.Left, leftWidth);
+       string rightPlain = BuildFileDiffCellPlain(row.Right, rightWidth);
+        string leftMarkup = BuildFileDiffCellMarkupWithHighlighting(row.Left, leftPlain, language);
+        string rightMarkup = BuildFileDiffCellMarkupWithHighlighting(row.Right, rightPlain, language);
+
 
         AddConversationContentLine(
             lines,
@@ -281,26 +286,50 @@ public static partial class Program
             ? " "
             : entry.Value.Indicator.ToString(CultureInfo.InvariantCulture);
         string text = $"{entry.Value.LineNumber.ToString(CultureInfo.InvariantCulture).PadLeft(FileDiffLineNumberWidth)} {indicator} {entry.Value.Text}";
-        return FitDiffCell(text, width, pad: true);
-    }
+       return FitDiffCell(text, width, pad: true);
+   }
 
-    private static string BuildFileDiffCellMarkup(
-        FileEditPreviewEntry? entry,
-        string plainText)
+   private static string BuildFileDiffCellMarkupWithHighlighting(
+       FileEditPreviewEntry? entry,
+        string plainText,
+        string? language)
     {
         if (entry is null)
         {
             return Markup.Escape(plainText);
         }
 
-        string style = entry.Value.Indicator switch
-        {
-            '-' => "white on red",
-            '+' => "black on green",
-            _ => "grey"
-        };
+        char indicator = entry.Value.Indicator;
 
-        return $"[{style}]{Markup.Escape(plainText)}[/]";
+        // Context lines: simple grey, no syntax highlighting needed
+        if (indicator == ' ')
+        {
+            return $"[grey]{Markup.Escape(plainText)}[/]";
+        }
+
+        // For added/removed lines: apply syntax highlighting and combine with diff indicator style
+        string prefix = $"{entry.Value.LineNumber.ToString(CultureInfo.InvariantCulture).PadLeft(FileDiffLineNumberWidth)} {indicator} ";
+        string codeText = entry.Value.Text;
+
+        List<MarkdownFragment> fragments = [new MarkdownFragment(prefix, GetDiffIndicatorBaseStyle(indicator))];
+
+        // Apply syntax highlighting to the code text
+        foreach (MarkdownFragment fragment in HighlightCodeLines([codeText], language)[0])
+        {
+            AddMarkdownFragment(
+                fragments,
+                fragment.Text,
+                CombineDiffStyles(fragment.Style, indicator));
+        }
+
+        // Calculate and add padding to match the expected cell width
+        int padding = Math.Max(0, plainText.Length - (prefix.Length + codeText.Length));
+        if (padding > 0)
+        {
+            AddMarkdownFragment(fragments, new string(' ', padding), GetDiffIndicatorBaseStyle(indicator));
+        }
+
+        return RenderMarkdownFragments(fragments, string.Empty).Markup;
     }
 
     private static int GetConversationContentWidth(
