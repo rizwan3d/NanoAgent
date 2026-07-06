@@ -47,7 +47,7 @@ public static partial class Program
             ? "READER VIEW"
             : state.ReaderViewTitle!;
         string instructions = string.IsNullOrWhiteSpace(state.ReaderViewInstructions)
-            ? "select with the mouse to copy | Up/Down PgUp/PgDn Home/End scroll | Esc/F5 exit"
+            ? "select with the mouse to copy | Up/Down PgUp/PgDn Home/End scroll | F5 exit"
             : state.ReaderViewInstructions!;
 
         return $"[grey]-- {Markup.Escape(title)} -- {Markup.Escape(instructions)} | {range} --[/]";
