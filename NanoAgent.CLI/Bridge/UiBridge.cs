@@ -191,17 +191,19 @@ public sealed class UiBridge : IUiBridge
 
             if (descriptions.Length == 1)
             {
-                state.AddSystemMessage($"Running {descriptions[0]}", isCollapsibleToolMessage: true);
+                ChatMessage msg = state.AddSystemMessage($"Running {descriptions[0]}", isCollapsibleToolMessage: true);
+                msg.IsToolCallMessage = true;
             }
             else if (descriptions.Length > 1)
             {
-                state.AddSystemMessage(
+                ChatMessage msg = state.AddSystemMessage(
                     "Running tools:" +
                     Environment.NewLine +
                     string.Join(
                         Environment.NewLine,
                         descriptions.Select(static description => $"- {description}")),
                     isCollapsibleToolMessage: true);
+                msg.IsToolCallMessage = true;
             }
         });
     }
@@ -224,9 +226,32 @@ public sealed class UiBridge : IUiBridge
     
         EnqueueForActiveOperation(state =>
         {
+            // Merge the preceding tool-call message (if any) into the first result message
+            // so the tool call notification and its output appear as one collapsed block.
+            ChatMessage? toolCallMsg = null;
+            for (int index = state.Messages.Count - 1; index >= 0; index--)
+            {
+                if (state.Messages[index].IsToolCallMessage)
+                {
+                    toolCallMsg = state.Messages[index];
+                    state.Messages.RemoveAt(index);
+                    state.ExpandedToolMessageIds.Remove(toolCallMsg.Id);
+                    break;
+                }
+            }
+
+            bool isFirstResult = true;
             foreach (string message in messages)
             {
-                state.AddSystemMessage(message, isCollapsibleToolMessage: true);
+                ChatMessage resultMsg = state.AddSystemMessage(message, isCollapsibleToolMessage: true);
+
+                // Prepend the tool call text to the first result message so both appear
+                // together in the same collapsed block when the view is collapsed.
+                if (isFirstResult && toolCallMsg is not null)
+                {
+                    resultMsg.Text = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.Text;
+                    isFirstResult = false;
+                }
             }
         });
     }
