@@ -105,6 +105,10 @@ public sealed class AppState
     // A message id present in this set is expanded inline. Ctrl+T toggles all blocks at
     // once; clicking a block toggles just that one.
     public HashSet<int> ExpandedThinkingMessageIds { get; } = [];
+    // Tool-call output messages render collapsed (a single summary line) by default.
+    // A message id present in this set is expanded inline. Click or Ctrl+T toggles
+    // individual or all tool message blocks, matching the thinking-block interaction.
+    public HashSet<int> ExpandedToolMessageIds { get; } = [];
 
     // Screen geometry captured on the last standard-layout render so mouse clicks can be
     // mapped back to conversation lines. TopRow is the 1-based terminal row of the first
@@ -113,6 +117,9 @@ public sealed class AppState
     public int MessagesContentTopRow { get; set; } = -1;
 
     public int?[] VisibleThinkingMessageIds { get; set; } = [];
+    // Parallel to VisibleThinkingMessageIds: maps each visible viewport row to the
+    // collapsible tool message it belongs to (null if none). Populated during render.
+    public int?[] VisibleToolCallMessageIds { get; set; } = [];
 
     // Reader view: a full-screen, chrome-free plain-text transcript that pauses the
     // live redraw so the terminal's own mouse selection can grab clean text.
@@ -209,9 +216,11 @@ public sealed class AppState
 
     public bool HasInputSelection => TryGetInputSelectionRange(out _, out _);
 
-    public void AddSystemMessage(string text)
+   public ChatMessage AddSystemMessage(string text, bool isCollapsibleToolMessage = false)
     {
-        AddMessage(Role.System, text);
+        ChatMessage message = AddMessage(Role.System, text);
+        message.IsCollapsibleToolMessage = isCollapsibleToolMessage;
+        return message;
     }
 
     public void AddThinkingMessage(string text)
@@ -275,6 +284,54 @@ public sealed class AppState
             if (message.Role == Role.Thinking)
             {
                 ExpandedThinkingMessageIds.Add(message.Id);
+            }
+        }
+    }
+
+    public void ToggleToolCallMessage(int messageId)
+    {
+        if (!ExpandedToolMessageIds.Remove(messageId))
+        {
+            ExpandedToolMessageIds.Add(messageId);
+        }
+    }
+
+    // True only when at least one collapsible tool message exists and every one is expanded.
+    public bool AreAllToolCallsExpanded()
+    {
+        bool any = false;
+        foreach (ChatMessage message in Messages)
+        {
+            if (!message.IsCollapsibleToolMessage)
+            {
+                continue;
+            }
+
+            any = true;
+            if (!ExpandedToolMessageIds.Contains(message.Id))
+            {
+                return false;
+            }
+        }
+
+        return any;
+    }
+
+    // Ctrl+T behaviour for tool messages: collapse everything if all tool blocks are open,
+    // otherwise open all. This is applied together with thinking toggle in the input handler.
+    public void ToggleAllToolCalls()
+    {
+        if (AreAllToolCallsExpanded())
+        {
+            ExpandedToolMessageIds.Clear();
+            return;
+        }
+
+        foreach (ChatMessage message in Messages)
+        {
+            if (message.IsCollapsibleToolMessage)
+            {
+                ExpandedToolMessageIds.Add(message.Id);
             }
         }
     }
