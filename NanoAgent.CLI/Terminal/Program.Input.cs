@@ -398,10 +398,11 @@ public static partial class Program
     }
 
     private static void ToggleThinkingExpansion(AppState state)
-    {
-        state.ToggleAllThinking();
-        state.SkipNextInputLineFeed = false;
-    }
+   {
+       state.ToggleAllThinking();
+        state.ToggleAllToolCalls();
+       state.SkipNextInputLineFeed = false;
+   }
 
     private static bool IsEnterKey(ConsoleKeyInfo key)
     {
@@ -673,26 +674,35 @@ public static partial class Program
     // thinking block, if any. Disabled while a modal, reader view, or copy mode is active.
     private static void HandleConversationClick(AppState state, int row)
     {
-        if (state.ActiveModal is not null ||
-            state.IsReaderViewActive ||
-            state.IsCopyModeActive ||
-            state.MessagesContentTopRow <= 0)
-        {
+       if (state.ActiveModal is not null ||
+           state.IsReaderViewActive ||
+           state.IsCopyModeActive ||
+           state.MessagesContentTopRow <= 0)
+       {
+           return;
+       }
+
+       int index = row - state.MessagesContentTopRow;
+       int?[] visibleIds = state.VisibleThinkingMessageIds;
+       if (index < 0 || index >= visibleIds.Length)
+       {
+           return;
+       }
+
+       if (visibleIds[index] is int messageId)
+       {
+           state.ToggleThinkingMessage(messageId);
             return;
         }
 
-        int index = row - state.MessagesContentTopRow;
-        int?[] visibleIds = state.VisibleThinkingMessageIds;
-        if (index < 0 || index >= visibleIds.Length)
+        // Check tool call blocks when no thinking block was found.
+        int?[] toolCallVisibleIds = state.VisibleToolCallMessageIds;
+        if (index >= 0 && index < toolCallVisibleIds.Length &&
+            toolCallVisibleIds[index] is int toolCallMessageId)
         {
-            return;
-        }
-
-        if (visibleIds[index] is int messageId)
-        {
-            state.ToggleThinkingMessage(messageId);
-        }
-    }
+            state.ToggleToolCallMessage(toolCallMessageId);
+       }
+   }
 
     private static void ConsumeX10MouseInput(AppState state)
     {
