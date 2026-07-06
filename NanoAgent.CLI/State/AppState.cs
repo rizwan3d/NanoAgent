@@ -102,13 +102,12 @@ public sealed class AppState
     public int LastConversationLineCount { get; set; }
 
     // Thinking/reasoning messages render collapsed (a single summary line) by default.
-    // A message id present in this set is expanded inline. Ctrl+T toggles all blocks at
-    // once; clicking a block toggles just that one.
-    public HashSet<int> ExpandedThinkingMessageIds { get; } = [];
-    // Tool-call output messages render collapsed (a single summary line) by default.
-    // A message id present in this set is expanded inline. Click or Ctrl+T toggles
-    // individual or all tool message blocks, matching the thinking-block interaction.
-    public HashSet<int> ExpandedToolMessageIds { get; } = [];
+    // A message id present in this set is expanded inline. Ctrl+T expands all blocks;
+    // clicking a single block toggles just that one.
+   public HashSet<int> ExpandedThinkingMessageIds { get; } = [];
+    // Tool-call output messages render expanded by default (message id present in this set).
+    // Ctrl+T expands all blocks; clicking a single block toggles just that one.
+   public HashSet<int> ExpandedToolMessageIds { get; } = [];
 
     // Screen geometry captured on the last standard-layout render so mouse clicks can be
     // mapped back to conversation lines. TopRow is the 1-based terminal row of the first
@@ -218,9 +217,13 @@ public sealed class AppState
 
    public ChatMessage AddSystemMessage(string text, bool isCollapsibleToolMessage = false)
     {
-        ChatMessage message = AddMessage(Role.System, text);
-        message.IsCollapsibleToolMessage = isCollapsibleToolMessage;
-        return message;
+       ChatMessage message = AddMessage(Role.System, text);
+       message.IsCollapsibleToolMessage = isCollapsibleToolMessage;
+        if (isCollapsibleToolMessage)
+        {
+            ExpandedToolMessageIds.Add(message.Id);
+        }
+       return message;
     }
 
     public void AddThinkingMessage(string text)
@@ -237,8 +240,14 @@ public sealed class AppState
             Text = text
         };
 
-        Messages.Add(message);
-        return message;
+       Messages.Add(message);
+
+        if (role == Role.Thinking)
+        {
+            ExpandedThinkingMessageIds.Add(message.Id);
+        }
+
+       return message;
     }
 
     public void ToggleThinkingMessage(int messageId)
@@ -271,22 +280,18 @@ public sealed class AppState
     }
 
     // Ctrl+T behaviour: collapse everything if all blocks are open, otherwise open all.
-    public void ToggleAllThinking()
-    {
-        if (AreAllThinkingExpanded())
-        {
-            ExpandedThinkingMessageIds.Clear();
-            return;
-        }
-
-        foreach (ChatMessage message in Messages)
-        {
-            if (message.Role == Role.Thinking)
-            {
-                ExpandedThinkingMessageIds.Add(message.Id);
-            }
-        }
-    }
+    /// Ctrl+T always expands all thinking blocks (never collapses).
+    /// Individual blocks can still be toggled via click (ToggleThinkingMessage).
+    public void ExpandAllThinking()
+   {
+       foreach (ChatMessage message in Messages)
+       {
+           if (message.Role == Role.Thinking)
+           {
+               ExpandedThinkingMessageIds.Add(message.Id);
+           }
+       }
+   }
 
     public void ToggleToolCallMessage(int messageId)
     {
@@ -318,23 +323,19 @@ public sealed class AppState
     }
 
     // Ctrl+T behaviour for tool messages: collapse everything if all tool blocks are open,
-    // otherwise open all. This is applied together with thinking toggle in the input handler.
-    public void ToggleAllToolCalls()
-    {
-        if (AreAllToolCallsExpanded())
-        {
-            ExpandedToolMessageIds.Clear();
-            return;
-        }
-
-        foreach (ChatMessage message in Messages)
-        {
-            if (message.IsCollapsibleToolMessage)
-            {
-                ExpandedToolMessageIds.Add(message.Id);
-            }
-        }
-    }
+   // otherwise open all. This is applied together with thinking toggle in the input handler.
+    /// Ctrl+T always expands all collapsible tool-call blocks (never collapses).
+    /// Individual blocks can still be toggled via click (ToggleToolCallMessage).
+    public void ExpandAllToolCalls()
+   {
+       foreach (ChatMessage message in Messages)
+       {
+           if (message.IsCollapsibleToolMessage)
+           {
+               ExpandedToolMessageIds.Add(message.Id);
+           }
+       }
+   }
 
     public void BeginAssistantStream(string text)
     {
