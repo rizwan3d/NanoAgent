@@ -123,6 +123,7 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory: (_, _) =>
             {
@@ -169,6 +170,7 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory: (_, _) => new FakeBackend(),
             acpAuthenticationToken: "acp-secret");
@@ -205,6 +207,7 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory: (_, _) => new FakeBackend(),
             acpAuthenticationToken: "acp-secret");
@@ -241,6 +244,7 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory: (_, _) => new FakeBackend(),
             acpAuthenticationToken: "acp-secret");
@@ -268,6 +272,7 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory: (_, _) => new FakeBackend(),
             maxIncomingLineLength: 96);
@@ -298,6 +303,7 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
             autoApproveAllTools: false,
             backendFactory: (_, _) => new FakeBackend(),
             maxRequestsPerWindow: 1,
@@ -340,6 +346,8 @@ public sealed class AcpServerTests
             error,
             backendArgs: ["--profile", "review"],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
+            autoApproveAllTools: false,
             (args, mcpServers) =>
             {
                 args.Should().Contain("--profile");
@@ -396,6 +404,8 @@ public sealed class AcpServerTests
                 error,
                 backendArgs: ["--profile", "review"],
                 providerAuthKey: null,
+                replayLoadedSessionHistory: true,
+                autoApproveAllTools: false,
                 (args, _) =>
                 {
                     argsWithoutSkip = args;
@@ -419,6 +429,8 @@ public sealed class AcpServerTests
                 error,
                 backendArgs: ["--profile", "review", "--no-update-check"],
                 providerAuthKey: null,
+                replayLoadedSessionHistory: true,
+                autoApproveAllTools: false,
                 (args, _) =>
                 {
                     argsWithSkip = args;
@@ -835,7 +847,7 @@ public sealed class AcpServerTests
             providerAuthKey: null,
             replayLoadedSessionHistory: false,
             autoApproveAllTools: false,
-            _ => backend);
+            (_, _) => backend);
 
         await sut.RunAsync(CancellationToken.None);
 
@@ -911,6 +923,8 @@ public sealed class AcpServerTests
             error,
             backendArgs: [],
             providerAuthKey: null,
+            replayLoadedSessionHistory: true,
+            autoApproveAllTools: false,
             (args, _) =>
             {
                 capturedArgs = args;
