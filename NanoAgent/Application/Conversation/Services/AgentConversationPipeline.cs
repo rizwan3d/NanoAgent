@@ -11,6 +11,7 @@ using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
 using System.Globalization;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace NanoAgent.Application.Conversation.Services;
@@ -49,6 +50,13 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         If the listed work is truly complete, call update_plan with every item completed before returning final text.
         Do not repeat the final answer until the live plan has no in_progress or pending work.
         """;
+
+    private static readonly ConversationJsonContext RelaxedConversationJsonContext = new(
+    new JsonSerializerOptions
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    });    
+
     private sealed class PreparedTurnContext : IDisposable
     {
         public PreparedTurnContext(
@@ -737,7 +745,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         return JsonSerializer.Serialize(
             payload,
-            ConversationJsonContext.Default.ToolFeedbackPayload);
+            RelaxedConversationJsonContext.ToolFeedbackPayload);
     }
 
     private async Task<PhaseExecutionResult> RunPhaseAsync(
