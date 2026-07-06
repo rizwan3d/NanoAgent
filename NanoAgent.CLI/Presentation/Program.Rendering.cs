@@ -609,9 +609,25 @@ public static partial class Program
                 roleColor,
                 message.Role,
                 contentWidth);
+       }
+
+        // Show a grey collapse hint at the end of expanded blocks.
+        if (expandThinking && message.Role == Role.Thinking)
+        {
+            const string collapseHint = "\u00b7 click to collapse";
+            lines.Add(new ConversationLine(
+                $"[grey58]{Markup.Escape(collapseHint)}[/]",
+                collapseHint));
+        }
+        else if (expandToolCall && message.IsCollapsibleToolMessage)
+        {
+            const string collapseHint = "\u00b7 click to collapse";
+            lines.Add(new ConversationLine(
+                $"[grey58]{Markup.Escape(collapseHint)}[/]",
+                collapseHint));
         }
 
-        if (message.Role == Role.Thinking)
+       if (message.Role == Role.Thinking)
        {
            TagThinkingLines(lines, thinkingStartIndex, message.Id);
        }
