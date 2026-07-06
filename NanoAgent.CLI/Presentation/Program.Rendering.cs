@@ -434,6 +434,11 @@ public static partial class Program
             .Select(line => line.ThinkingMessageId)
             .ToArray();
 
+        // Same snapshot for collapsible tool call blocks (click to toggle).
+        state.VisibleToolCallMessageIds = visibleLines
+            .Select(line => line.ToolCallMessageId)
+            .ToArray();
+
         if (state.IsCopyModeActive)
         {
             visibleLines = ApplyCopyModeHighlight(state, visibleLines, startIndex);
@@ -460,38 +465,42 @@ public static partial class Program
 
         foreach (ChatMessage message in state.Messages)
         {
-            bool expanded = state.ExpandedThinkingMessageIds.Contains(message.Id);
-            AddMessageLines(lines, message, contentWidth, expanded);
+            bool expandedThinking = state.ExpandedThinkingMessageIds.Contains(message.Id);
+            bool expandedTool = !message.IsCollapsibleToolMessage ||
+                state.ExpandedToolMessageIds.Contains(message.Id);
+            AddMessageLines(lines, message, contentWidth, expandedThinking, expandedTool);
         }
 
         return lines;
     }
 
     private static void AddMessageLines(
-        List<ConversationLine> lines,
-        ChatMessage message,
-        int contentWidth,
-        bool expandThinking)
-    {
-        string roleName = message.Role switch
-        {
-            Role.User => "❯",
-            Role.Assistant => "◆",
-            Role.Thinking => "◇",
-            Role.System => "◆",
-            _ => "?"
-        };
+       List<ConversationLine> lines,
+       ChatMessage message,
+       int contentWidth,
+        bool expandThinking,
+        bool expandToolCall)
+   {
+       string roleName = message.Role switch
+       {
+           Role.User => "❯",
+           Role.Assistant => "◆",
+           Role.Thinking => "◇",
+           Role.System => "◆",
+           _ => "?"
+       };
 
-        string roleColor = message.Role switch
-        {
-            Role.User => "deepskyblue1",
-            Role.Assistant => "mediumpurple1",
-            Role.Thinking => "grey58",
-            Role.System => "yellow",
-            _ => "grey"
-        };
+       string roleColor = message.Role switch
+       {
+           Role.User => "deepskyblue1",
+           Role.Assistant => "mediumpurple1",
+           Role.Thinking => "grey58",
+           Role.System => "yellow",
+           _ => "grey"
+       };
 
-        int thinkingStartIndex = lines.Count;
+       int thinkingStartIndex = lines.Count;
+        int toolCallStartIndex = lines.Count;
 
         if (message.FileEdits is { Count: > 0 } fileEdits)
         {
@@ -502,14 +511,22 @@ public static partial class Program
         }
 
         if (message.Role == Role.Thinking && !expandThinking)
+       {
+           AddCollapsedThinkingLine(lines, message, roleName, roleColor, contentWidth);
+           TagThinkingLines(lines, thinkingStartIndex, message.Id);
+           lines.Add(new ConversationLine(string.Empty, string.Empty));
+           return;
+       }
+
+        if (message.IsCollapsibleToolMessage && !expandToolCall)
         {
-            AddCollapsedThinkingLine(lines, message, roleName, roleColor, contentWidth);
-            TagThinkingLines(lines, thinkingStartIndex, message.Id);
+            AddCollapsedToolCallLine(lines, message, roleName, roleColor, contentWidth);
+            TagToolCallLines(lines, toolCallStartIndex, message.Id);
             lines.Add(new ConversationLine(string.Empty, string.Empty));
             return;
         }
 
-        string[] rawLines = message.Text
+       string[] rawLines = message.Text
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n');
 
@@ -595,12 +612,17 @@ public static partial class Program
         }
 
         if (message.Role == Role.Thinking)
+       {
+           TagThinkingLines(lines, thinkingStartIndex, message.Id);
+       }
+
+        if (message.IsCollapsibleToolMessage)
         {
-            TagThinkingLines(lines, thinkingStartIndex, message.Id);
+            TagToolCallLines(lines, toolCallStartIndex, message.Id);
         }
 
-        lines.Add(new ConversationLine(string.Empty, string.Empty));
-    }
+       lines.Add(new ConversationLine(string.Empty, string.Empty));
+   }
 
     // Stamps every conversation line of a thinking block with its message id so a click on
     // any of them (collapsed summary or expanded body) toggles that block.
@@ -648,21 +670,74 @@ public static partial class Program
     }
 
     private static int CountThinkingBodyLines(string text)
-    {
-        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
+   {
+       string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
 
-        const string prefix = "Thinking:";
-        if (normalized.StartsWith(prefix, StringComparison.Ordinal))
+       const string prefix = "Thinking:";
+       if (normalized.StartsWith(prefix, StringComparison.Ordinal))
+       {
+           normalized = normalized[prefix.Length..];
+       }
+
+       return normalized
+           .Split('\n')
+           .Count(line => !string.IsNullOrWhiteSpace(line));
+   }
+
+    // Stamps every conversation line of a collapsible tool message block with its message
+    // id so a click on any of them (collapsed summary or expanded body) toggles that block.
+    private static void TagToolCallLines(
+        List<ConversationLine> lines,
+        int startIndex,
+        int messageId)
+    {
+        for (int index = startIndex; index < lines.Count; index++)
         {
-            normalized = normalized[prefix.Length..];
+            lines[index] = lines[index] with { ToolCallMessageId = messageId };
+        }
+    }
+
+    // Renders a collapsed tool call block as a single dimmed summary line that reports how
+    // much output is hidden and how to reveal it.
+    private static void AddCollapsedToolCallLine(
+        List<ConversationLine> lines,
+        ChatMessage message,
+        string roleName,
+        string roleColor,
+        int contentWidth)
+    {
+        int lineCount = CountToolCallBodyLines(message.Text);
+        string summary = lineCount > 0
+            ? $"Tool output… ({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
+            : "Tool output… · click or Ctrl+T to expand";
+
+        int contentBudget = Math.Max(1, contentWidth - (roleName.Length + 2));
+        if (summary.Length > contentBudget)
+        {
+            summary = contentBudget <= 1
+                ? summary[..contentBudget]
+                : summary[..(contentBudget - 1)] + "…";
         }
 
+        bool firstLine = true;
+        AddConversationContentLine(
+            lines,
+            $"[grey58]{Markup.Escape(summary)}[/]",
+            summary,
+            ref firstLine,
+            roleName,
+            roleColor);
+    }
+
+    private static int CountToolCallBodyLines(string text)
+    {
+        string normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal);
         return normalized
             .Split('\n')
             .Count(line => !string.IsNullOrWhiteSpace(line));
     }
 
-    private static string BuildScrollableConversationMarkup(
+   private static string BuildScrollableConversationMarkup(
         IReadOnlyList<ConversationLine> visibleLines,
         int totalLineCount,
         int viewportLineCount,
