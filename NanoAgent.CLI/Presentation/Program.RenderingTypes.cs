@@ -13,10 +13,11 @@ public static partial class Program
     // ThinkingMessageId: when set, this line belongs to a thinking block and a mouse click
     // on it toggles that block's collapsed/expanded state.
     private readonly record struct ConversationLine(
-        string Markup,
-        string Plain,
-        string Copy = "",
-        int? ThinkingMessageId = null);
+    string Markup,
+    string Plain,
+    string Copy = "",
+    int? ThinkingMessageId = null,
+    int? ToolCallMessageId = null);
 
     private readonly record struct InlineRenderResult(
         string Markup,

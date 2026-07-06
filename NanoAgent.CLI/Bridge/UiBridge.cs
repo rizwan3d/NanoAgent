@@ -191,7 +191,7 @@ public sealed class UiBridge : IUiBridge
 
             if (descriptions.Length == 1)
             {
-                state.AddSystemMessage($"Running {descriptions[0]}");
+                state.AddSystemMessage($"Running {descriptions[0]}", isCollapsibleToolMessage: true);
             }
             else if (descriptions.Length > 1)
             {
@@ -200,7 +200,8 @@ public sealed class UiBridge : IUiBridge
                     Environment.NewLine +
                     string.Join(
                         Environment.NewLine,
-                        descriptions.Select(static description => $"- {description}")));
+                        descriptions.Select(static description => $"- {description}")),
+                    isCollapsibleToolMessage: true);
             }
         });
     }
@@ -225,7 +226,7 @@ public sealed class UiBridge : IUiBridge
         {
             foreach (string message in messages)
             {
-                state.AddSystemMessage(message);
+                state.AddSystemMessage(message, isCollapsibleToolMessage: true);
             }
         });
     }
@@ -249,7 +250,7 @@ public sealed class UiBridge : IUiBridge
 
             state.IsPlanPinned = true;
 
-            state.AddSystemMessage(description);
+            state.AddSystemMessage(description, isCollapsibleToolMessage: true);
         });
     }
 
@@ -259,7 +260,8 @@ public sealed class UiBridge : IUiBridge
         {
             state.ActivityText = $"Trying {progress.Attempt}/{progress.MaxAttempts}";
             state.AddSystemMessage(
-                $"Provider unreachable ({progress.Reason}). Retrying… ({progress.Attempt}/{progress.MaxAttempts})");
+                $"Provider unreachable ({progress.Reason}). Retrying… ({progress.Attempt}/{progress.MaxAttempts})",
+                isCollapsibleToolMessage: true);
         });
     }
 

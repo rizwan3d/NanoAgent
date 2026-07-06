@@ -12,4 +12,8 @@ public sealed class ChatMessage
 
     // When set, the message renders as the "Files modified" table instead of plain text.
     public IReadOnlyList<FileEditSummary>? FileEdits { get; set; }
+
+    // When true, the message is a tool output that can be collapsed/expanded by the user
+    // via click or Ctrl+T (same interaction model as thinking/reasoning blocks).
+    public bool IsCollapsibleToolMessage { get; set; }
 }
