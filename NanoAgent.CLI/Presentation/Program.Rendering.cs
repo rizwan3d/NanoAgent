@@ -32,6 +32,8 @@ public static partial class Program
         // Off-screen by default; only the standard layout below maps clicks to rows.
         state.MessagesContentTopRow = -1;
 
+         state.InputPanelHeaderRow = -1;
+
         if (state.IsReaderViewActive)
         {
             return BuildReaderView(state);
@@ -80,6 +82,14 @@ public static partial class Program
         // The working directory panel header row (the messages panel top border) is
         // directly above the first conversation line, so clicking it shows actions.
         state.WorkingDirectoryClickRow = headerSize + 1;
+
+        // The input panel header row (its top border) displays the model name.
+        // Clicking on it opens the model selection interface.
+        // With header, body, input, and footer sections consecutively, the first
+        // row of the input section (including its panel border/header) is:
+        // headerSize rows (header) + bodyHeight rows (body) + 1 = input panel header.
+        int bodyHeight = windowHeight - headerSize - inputSize - footerSize;
+        state.InputPanelHeaderRow = headerSize + bodyHeight + 1;
 
         Layout root = new Layout("root");
             root.SplitRows(
