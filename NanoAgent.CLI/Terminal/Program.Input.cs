@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using Spectre.Console;
 
 namespace NanoAgent.CLI;
 
@@ -679,6 +680,13 @@ public static partial class Program
                 column <= state.GitSidebarWidth)
             {
                 HandleGitSidebarClick(state, row);
+               return;
+           }
+
+            // Click on the working directory panel header row opens an action menu.
+            if (state.WorkingDirectoryClickRow > 0 && row == state.WorkingDirectoryClickRow)
+            {
+                HandleWorkingDirectoryClick(state);
                 return;
             }
 
@@ -1898,6 +1906,118 @@ public static partial class Program
         else if (normalizedButtonCode == 65)
         {
             ScrollConversation(state, -MouseWheelScrollLineCount);
+       }
+   }
+
+    // Shows a selection modal with actions for the current working directory:
+    // "Open in Explorer" and "Start Terminal".
+    private static void HandleWorkingDirectoryClick(AppState state)
+    {
+        if (state.ActiveModal is not null ||
+            state.IsReaderViewActive ||
+            state.IsCopyModeActive)
+        {
+            return;
+        }
+
+        string rootDirectory = state.RootDirectory ?? Directory.GetCurrentDirectory();
+        string displayPath = TruncateFromRight(rootDirectory, 60);
+
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new NanoAgent.Application.Models.SelectionPromptRequest<string>(
+                "Working directory actions",
+                [
+                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                        "Open in Explorer",
+                        "explorer",
+                        $"Open {displayPath} in the system file manager."),
+                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                        "Start Terminal",
+                        "terminal",
+                        $"Open a new terminal window in {displayPath}.")
+                ],
+                $"Choose an action for [underline aqua]{Markup.Escape(rootDirectory)}[/]. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true,
+                DescriptionSupportsMarkup: true),
+            completionToken: new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "explorer":
+                        OpenDirectoryInExplorer(state);
+                        break;
+                    case "terminal":
+                        OpenTerminalInDirectory(state);
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Working directory action cancelled."));
+    }
+
+    // Opens the working directory in the system file manager (Explorer on Windows,
+    // Finder on macOS, the default file manager on Linux).
+    private static void OpenDirectoryInExplorer(AppState state)
+    {
+        string directory = state.RootDirectory ?? Directory.GetCurrentDirectory();
+        bool opened = false;
+
+        if (OperatingSystem.IsWindows())
+        {
+            opened = TryStartProcess("explorer.exe", $"\"{directory}\"", useShell: false);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            opened = TryStartProcess("open", $"\"{directory}\"", useShell: false);
+        }
+        else
+        {
+            opened = TryStartProcess("xdg-open", $"\"{directory}\"", useShell: false);
+        }
+
+        if (opened)
+        {
+            state.AddSystemMessage($"Opened {Markup.Escape(directory)} in the file manager.");
+        }
+        else
+        {
+            state.AddSystemMessage($"Could not open {Markup.Escape(directory)}: no suitable file manager was found.");
+        }
+    }
+
+    // Opens a new terminal window rooted at the working directory.
+    // On Windows it prefers Windows Terminal (wt.exe) falling back to cmd.exe.
+    // On macOS it opens the built-in Terminal app.
+    // On Linux it tries x-terminal-emulator then a few common terminals.
+    private static void OpenTerminalInDirectory(AppState state)
+    {
+        string directory = state.RootDirectory ?? Directory.GetCurrentDirectory();
+        bool opened = false;
+
+        if (OperatingSystem.IsWindows())
+        {
+            opened = TryStartProcess("wt.exe", $"-d \"{directory}\"", useShell: false) ||
+                     TryStartProcess("cmd.exe", $"/K cd /d \"{directory}\"", useShell: false);
+        }
+        else if (OperatingSystem.IsMacOS())
+        {
+            opened = TryStartProcess("open", $"-a Terminal \"{directory}\"", useShell: false);
+        }
+        else
+        {
+            opened = TryStartProcess("x-terminal-emulator", $"--working-directory=\"{directory}\"", useShell: false) ||
+                     TryStartProcess("gnome-terminal", $"--working-directory=\"{directory}\"", useShell: false) ||
+                     TryStartProcess("xterm", $"-e \"cd {directory} && exec bash\"", useShell: false);
+        }
+
+        if (opened)
+        {
+            state.AddSystemMessage($"Opened a terminal at {Markup.Escape(directory)}.");
+        }
+        else
+        {
+            state.AddSystemMessage($"Could not open a terminal at {Markup.Escape(directory)}: no suitable terminal was found.");
         }
     }
 }
