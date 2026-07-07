@@ -1765,6 +1765,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             throw new FormatException("Update file operations must include at least one hunk or a move target.");
         }
 
+        if (moveToPath is null &&
+            !hunks.Any(static hunk => hunk.Lines.Any(static line =>
+                line.Kind is PatchLineKind.Addition or PatchLineKind.Removal)))
+        {
+            throw new FormatException(
+                "Update file operations must include at least one added or removed line. " +
+                "Prefix changed lines with '+' or '-'; do not submit context-only hunks.");
+        }
+
         return new PatchOperation(
             PatchOperationKind.Update,
             path,

@@ -208,6 +208,21 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             context.Session.RecordFileEditTransaction(executionResult.EditTransaction);
         }
         WorkspaceApplyPatchResult result = executionResult.Result;
+
+        if (IsNoOpPatchResult(result))
+        {
+            const string message =
+                "Patch did not change any file content. Rebuild the patch with real '+' and '-' lines, " +
+                "or use file_write when replacing a whole file.";
+
+            return ToolResultFactory.InvalidArguments(
+                "patch_no_effect",
+                message,
+                new ToolRenderPayload(
+                    "Patch rejected",
+                    message));
+        }
+
         SessionStateToolRecorder.RecordApplyPatch(context.Session, result);
 
         string renderText = result.Files.Count == 0
@@ -226,6 +241,15 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             new ToolRenderPayload(
                 $"Applied patch ({result.FileCount} {(result.FileCount == 1 ? "file" : "files")})",
                 renderText));
+    }
+
+     private static bool IsNoOpPatchResult(WorkspaceApplyPatchResult result)
+    {
+        return result.FileCount > 0 &&
+            result.AddedLineCount == 0 &&
+            result.RemovedLineCount == 0 &&
+            result.Files.All(static file =>
+                !string.Equals(file.Operation, "move", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string ResolvePatchPathsFromWorkingDirectory(
