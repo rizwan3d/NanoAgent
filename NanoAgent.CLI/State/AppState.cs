@@ -121,6 +121,11 @@ public sealed class AppState
     public int?[] VisibleToolCallMessageIds { get; set; } = [];
 
     // Reader view: a full-screen, chrome-free plain-text transcript that pauses the
+    // Message ids for which the user has Ctrl+clicked to show the full (un-truncated)
+    // tool result text instead of the compact preview. When present, the rendering
+    // uses the message's FullToolOutputText instead of Text.
+    public HashSet<int> FullToolOutputMessageIds { get; } = [];
+
     // live redraw so the terminal's own mouse selection can grab clean text.
     public bool IsReaderViewActive { get; set; }
 
@@ -181,6 +186,9 @@ public sealed class AppState
     // Screen geometry for the working directory panel header row. Set during BuildUi()
     // so a mouse click on that row shows a context action menu (Open in Explorer, Start Terminal).
     public int WorkingDirectoryClickRow { get; set; } = -1;
+    // Screen geometry for the input panel header row. Set during BuildUi() so a mouse
+    // click on the "Model: &lt;name&gt;" row opens the model selection interface.
+    public int InputPanelHeaderRow { get; set; } = -1;
 
     public int GitSidebarWidth { get; set; }
 
@@ -301,6 +309,19 @@ public sealed class AppState
     {
         if (!ExpandedToolMessageIds.Remove(messageId))
         {
+            ExpandedToolMessageIds.Add(messageId);
+        }
+    }
+
+    // Ctrl+click (or Alt+click) on a tool output block toggles per-tool full output.
+    // When enabling full output, the message is also auto-expanded so the user sees
+    // the full content immediately. When disabling, the message stays expanded but
+    // reverts back to the compact preview.
+    public void ToggleToolCallFullOutput(int messageId)
+    {
+        if (!FullToolOutputMessageIds.Remove(messageId))
+        {
+            FullToolOutputMessageIds.Add(messageId);
             ExpandedToolMessageIds.Add(messageId);
         }
     }
