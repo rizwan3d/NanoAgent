@@ -281,7 +281,7 @@ public sealed class AppState
 
     // Ctrl+T behaviour: collapse everything if all blocks are open, otherwise open all.
     /// Ctrl+T always expands all thinking blocks (never collapses).
-    /// Individual blocks can still be toggled via click (ToggleThinkingMessage).
+   /// Individual blocks can still be toggled via click (ToggleThinkingMessage).
     public void ExpandAllThinking()
    {
        foreach (ChatMessage message in Messages)
@@ -324,8 +324,8 @@ public sealed class AppState
 
     // Ctrl+T behaviour for tool messages: collapse everything if all tool blocks are open,
    // otherwise open all. This is applied together with thinking toggle in the input handler.
-    /// Ctrl+T always expands all collapsible tool-call blocks (never collapses).
-    /// Individual blocks can still be toggled via click (ToggleToolCallMessage).
+    /// Expands all collapsible tool-call blocks.
+    /// Individual blocks can still be collapsed via click (ToggleToolCallMessage).
     public void ExpandAllToolCalls()
    {
        foreach (ChatMessage message in Messages)
@@ -449,3 +449,7 @@ public enum PendingSubmissionKind
     Prompt,
     Command
 }
+
+
+
+

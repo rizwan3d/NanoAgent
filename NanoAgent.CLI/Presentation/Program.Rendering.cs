@@ -342,42 +342,72 @@ public static partial class Program
     }
 
     private static string BuildInputPanelHeaderMarkup(AppState state)
-    {
-        string rawModel = state.ActiveModelId ?? "n/a";
-        string modelName = rawModel.ToDisplayName();
-        string completionNote = BuildHeaderCompletionNote(state);
-        const string plainPrefix = "Input -- Model: ";
-        const int minimumNoteLength = 16;
-        const int minimumSeparatorLength = 3;
-        int headerBudget = Math.Max(24, GetMainPaneWidth(state) - 8);
-        int modelBudget = Math.Max(
-            3,
-            headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
+   {
+       string rawModel = state.ActiveModelId ?? "n/a";
+       string modelName = rawModel.ToDisplayName();
+       string completionNote = BuildHeaderCompletionNote(state);
+       const string plainPrefix = "Input -- Model: ";
+       const int minimumNoteLength = 16;
+       const int minimumSeparatorLength = 3;
+       int headerBudget = Math.Max(24, GetMainPaneWidth(state) - 8);
+       int modelBudget = Math.Max(
+           3,
+           headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
 
-        string plainModel = modelName;
+        string modelNamePart = modelName;
+        string? providerSuffix = null;
+        string? effortSuffix = null;
+
+        // Try to add provider name as ·{provider} suffix in gray
         if (!string.IsNullOrWhiteSpace(state.ProviderName))
         {
             string plainProvider = $" ({state.ProviderName})";
-            if (plainModel.Length + plainProvider.Length <= modelBudget)
+            if (modelNamePart.Length + plainProvider.Length <= modelBudget)
             {
-                plainModel += plainProvider;
+                providerSuffix = plainProvider;
             }
         }
 
+        // Try to add reasoning effort as ·{effort} suffix in orange
         if (!string.IsNullOrWhiteSpace(state.ReasoningEffort))
         {
             string plainEffort = $" ·{state.ReasoningEffort}";
-            if (plainModel.Length + plainEffort.Length <= modelBudget)
+            string combined = modelNamePart;
+            if (providerSuffix is not null) combined += providerSuffix;
+            if (combined.Length + plainEffort.Length <= modelBudget)
             {
-                plainModel += plainEffort;
+                effortSuffix = plainEffort;
             }
         }
 
-        string displayPlainModel = TruncateFromRight(plainModel, modelBudget);
-        string displayMarkupModel = Markup.Escape(displayPlainModel);
+        // Compute full plain text for budget / truncation calculations
+        string displayPlain = modelNamePart;
+        if (providerSuffix is not null) displayPlain += providerSuffix;
+        if (effortSuffix is not null) displayPlain += effortSuffix;
+
+        // Safety: if still too long, drop suffixes then truncate model name
+        if (displayPlain.Length > modelBudget)
+        {
+            providerSuffix = null;
+            effortSuffix = null;
+            modelNamePart = TruncateFromRight(modelNamePart, modelBudget);
+            displayPlain = modelNamePart;
+        }
+
+        // Build colored markup with separate segments
+        string modelMarkup = $"[aqua]{Markup.Escape(modelNamePart)}[/]";
+        if (providerSuffix is not null)
+        {
+            modelMarkup += $" [grey]{Markup.Escape(providerSuffix)}[/]";
+        }
+        if (effortSuffix is not null)
+        {
+            modelMarkup += $" [yellow]{Markup.Escape(effortSuffix)}[/]";
+        }
+
         int noteBudget = headerBudget -
             plainPrefix.Length -
-            displayPlainModel.Length -
+            displayPlain.Length -
             minimumSeparatorLength -
             2;
         string displayCompletionNote = noteBudget >= minimumNoteLength
@@ -388,12 +418,11 @@ public static partial class Program
             : " " +
                 $"{new string('─', Math.Max(
                     minimumSeparatorLength,
-                    headerBudget - plainPrefix.Length - displayPlainModel.Length - displayCompletionNote.Length - 2))}" +
+                    headerBudget - plainPrefix.Length - displayPlain.Length - displayCompletionNote.Length - 2))}" +
                 $" [grey]{Markup.Escape(displayCompletionNote)}[/]";
 
-        return $"[bold green]Input[/] ── [grey]Model:[/] [aqua]{displayMarkupModel}[/]{noteMarkup}";
-    }
-
+       return $"[bold green]Input[/] ── [grey]Model:[/] {modelMarkup}{noteMarkup}";
+   }
     private static string BuildMessagesMarkup(AppState state)
     {
         int viewportLineCount = GetMessageViewportLineCount(state);
@@ -2058,3 +2087,4 @@ public static partial class Program
             : "..." + value[^(maxLength - 3)..];
     }
 }
+

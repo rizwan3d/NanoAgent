@@ -399,9 +399,25 @@ public static partial class Program
 
     private static void ToggleThinkingExpansion(AppState state)
    {
-        state.ExpandAllThinking();
-        state.ExpandAllToolCalls();
-       state.SkipNextInputLineFeed = false;
+        bool hasThinking = state.Messages.Any(m => m.Role == Role.Thinking);
+        bool hasToolCalls = state.Messages.Any(m => m.IsCollapsibleToolMessage);
+        bool allExpanded = (!hasThinking || state.AreAllThinkingExpanded()) &&
+                           (!hasToolCalls || state.AreAllToolCallsExpanded());
+
+        if (allExpanded)
+        {
+            // Collapse all thinking and tool call blocks
+            state.ExpandedThinkingMessageIds.Clear();
+            state.ExpandedToolMessageIds.Clear();
+        }
+        else
+        {
+            // Expand all thinking and tool call blocks
+            state.ExpandAllThinking();
+            state.ExpandAllToolCalls();
+        }
+
+        state.SkipNextInputLineFeed = false;
    }
 
     private static bool IsEnterKey(ConsoleKeyInfo key)
