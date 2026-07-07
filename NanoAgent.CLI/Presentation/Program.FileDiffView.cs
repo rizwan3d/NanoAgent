@@ -890,7 +890,7 @@ public static partial class Program
         return indicator switch
         {
             '-' => "white on #37222c",
-            '+' => "black on #203b37",
+            '+' => "white on #203b37",
             _ => "grey"
         };
     }
