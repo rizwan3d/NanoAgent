@@ -567,15 +567,27 @@ public static partial class Program
 
     private static void WriteExitResumeHint(AppState state)
     {
-        if (string.IsNullOrWhiteSpace(state.SessionId) ||
-            string.IsNullOrWhiteSpace(state.SectionResumeCommand))
-        {
-            return;
-        }
+        // Wordmark on top every time we exit
+        AnsiConsole.Write(new Markup(CliBranding.BuildHeaderBodyMarkup()));
+        Console.WriteLine();
 
-        Console.WriteLine("Exiting NanoAgent.");
-        Console.WriteLine($"Section: {state.SessionId}");
-        Console.WriteLine($"Resume this section: {state.SectionResumeCommand}");
+        if (!string.IsNullOrWhiteSpace(state.SessionId) ||
+            !string.IsNullOrWhiteSpace(state.SectionResumeCommand))
+        {
+            Console.WriteLine("Session information:");
+
+            if (!string.IsNullOrWhiteSpace(state.SessionId))
+            {
+                Console.WriteLine($"  Section: {state.SessionId}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(state.SectionResumeCommand))
+            {
+                Console.WriteLine($"  Resume:  {state.SectionResumeCommand}");
+            }
+
+            Console.WriteLine();
+        }
     }
 
     private static int GetHeaderPanelSize(AppState state)
