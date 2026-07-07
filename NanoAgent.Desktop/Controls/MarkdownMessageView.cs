@@ -817,10 +817,10 @@ public sealed class MarkdownMessageView : UserControl
         IBrush background,
         IBrush markerBrush)
     {
-        Grid grid = new()
-        {
-            ColumnDefinitions = new ColumnDefinitions("48,24,*"),
-            ColumnSpacing = 0,
+       Grid grid = new()
+       {
+            ColumnDefinitions = new ColumnDefinitions("48,24,Auto"),
+           ColumnSpacing = 0,
             Background = background,
             MinHeight = 22
         };

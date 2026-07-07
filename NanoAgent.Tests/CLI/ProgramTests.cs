@@ -570,11 +570,11 @@ public sealed class ProgramTests
         string[] plainLines = GetConversationLinePropertyValues(renderedLines, "Plain");
         string[] markupLines = GetConversationLinePropertyValues(renderedLines, "Markup");
 
-        plainLines.Should().Contain(line => line.Contains("before") && line.Contains("|") && line.Contains("after"));
-        plainLines.Should().Contain(line => line.Contains("10 - return 0;") && line.Contains("|") && line.Contains("10 + return 1;"));
-        plainLines.Should().Contain(line => line.Contains("... +2 lines"));
-        markupLines.Should().Contain(line => line.Contains("white on red") && line.Contains("return 0;"));
-        markupLines.Should().Contain(line => line.Contains("black on green") && line.Contains("return 1;"));
+       plainLines.Should().Contain(line => line.Contains("before") && line.Contains("|") && line.Contains("after"));
+       plainLines.Should().Contain(line => line.Contains("10 - return 0;") && line.Contains("|") && line.Contains("10 + return 1;"));
+       plainLines.Should().Contain(line => line.Contains("... +2 lines"));
+        markupLines.Should().Contain(line => line.Contains("white on red") && line.Contains("deepskyblue1") && line.Contains("return"));
+        markupLines.Should().Contain(line => line.Contains("black on green") && line.Contains("deepskyblue1") && line.Contains("return"));
     }
 
     [Fact]
