@@ -307,27 +307,35 @@ public static partial class Program
             return $"[grey]{Markup.Escape(plainText)}[/]";
         }
 
-        // For added/removed lines: apply syntax highlighting and combine with diff indicator style
-        string prefix = $"{entry.Value.LineNumber.ToString(CultureInfo.InvariantCulture).PadLeft(FileDiffLineNumberWidth)} {indicator} ";
-        string codeText = entry.Value.Text;
+       // For added/removed lines: apply syntax highlighting and combine with diff indicator style
+       string prefix = $"{entry.Value.LineNumber.ToString(CultureInfo.InvariantCulture).PadLeft(FileDiffLineNumberWidth)} {indicator} ";
+       string codeText = entry.Value.Text;
 
-        List<MarkdownFragment> fragments = [new MarkdownFragment(prefix, GetDiffIndicatorBaseStyle(indicator))];
+        // Truncate code text to match the truncated plain text width from BuildFileDiffCellPlain
+        int availableCodeWidth = Math.Max(0, plainText.Length - prefix.Length);
+        string truncatedCode = codeText.Length > availableCodeWidth
+            ? (availableCodeWidth > 3
+                ? codeText[..(availableCodeWidth - 3)] + "..."
+                : codeText[..availableCodeWidth])
+            : codeText;
 
-        // Apply syntax highlighting to the code text
-        foreach (MarkdownFragment fragment in HighlightCodeLines([codeText], language)[0])
-        {
-            AddMarkdownFragment(
-                fragments,
-                fragment.Text,
-                CombineDiffStyles(fragment.Style, indicator));
-        }
+       List<MarkdownFragment> fragments = [new MarkdownFragment(prefix, GetDiffIndicatorBaseStyle(indicator))];
 
-        // Calculate and add padding to match the expected cell width
-        int padding = Math.Max(0, plainText.Length - (prefix.Length + codeText.Length));
-        if (padding > 0)
-        {
-            AddMarkdownFragment(fragments, new string(' ', padding), GetDiffIndicatorBaseStyle(indicator));
-        }
+        // Apply syntax highlighting to the (possibly truncated) code text
+        foreach (MarkdownFragment fragment in HighlightCodeLines([truncatedCode], language)[0])
+       {
+           AddMarkdownFragment(
+               fragments,
+               fragment.Text,
+               CombineDiffStyles(fragment.Style, indicator));
+       }
+
+       // Calculate and add padding to match the expected cell width
+        int padding = Math.Max(0, plainText.Length - (prefix.Length + truncatedCode.Length));
+       if (padding > 0)
+       {
+           AddMarkdownFragment(fragments, new string(' ', padding), GetDiffIndicatorBaseStyle(indicator));
+       }
 
         return RenderMarkdownFragments(fragments, string.Empty).Markup;
     }
@@ -851,16 +859,24 @@ public static partial class Program
             return new InlineRenderResult($"[grey]{Markup.Escape(combinedPlain)}[/]", combinedPlain);
         }
 
-        List<MarkdownFragment> fragments = [new MarkdownFragment(prefix, GetDiffIndicatorBaseStyle(entry.Value.Indicator))];
-        foreach (MarkdownFragment fragment in HighlightCodeLines([codeText], language)[0])
-        {
-            AddMarkdownFragment(
-                fragments,
-                fragment.Text,
-                CombineDiffStyles(fragment.Style, entry.Value.Indicator));
-        }
+        // Truncate code text to match the cell width (matching FitDiffCell truncation)
+        int availableCodeWidth = Math.Max(0, width - prefix.Length);
+        string truncatedCode = codeText.Length > availableCodeWidth
+            ? (availableCodeWidth > 3
+                ? codeText[..(availableCodeWidth - 3)] + "..."
+                : codeText[..availableCodeWidth])
+            : codeText;
 
-        int padding = Math.Max(0, width - (prefix.Length + codeText.Length));
+       List<MarkdownFragment> fragments = [new MarkdownFragment(prefix, GetDiffIndicatorBaseStyle(entry.Value.Indicator))];
+        foreach (MarkdownFragment fragment in HighlightCodeLines([truncatedCode], language)[0])
+       {
+           AddMarkdownFragment(
+               fragments,
+               fragment.Text,
+               CombineDiffStyles(fragment.Style, entry.Value.Indicator));
+       }
+
+        int padding = Math.Max(0, width - (prefix.Length + truncatedCode.Length));
         if (padding > 0)
         {
             AddMarkdownFragment(fragments, new string(' ', padding), GetDiffIndicatorBaseStyle(entry.Value.Indicator));
@@ -873,8 +889,8 @@ public static partial class Program
     {
         return indicator switch
         {
-            '-' => "white on red",
-            '+' => "black on green",
+            '-' => "white on #37222c",
+            '+' => "black on #203b37",
             _ => "grey"
         };
     }
