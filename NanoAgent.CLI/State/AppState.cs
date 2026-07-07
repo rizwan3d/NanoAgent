@@ -178,6 +178,10 @@ public sealed class AppState
     // (if any) at each content row.
     public int GitSidebarContentTopRow { get; set; } = -1;
 
+    // Screen geometry for the working directory panel header row. Set during BuildUi()
+    // so a mouse click on that row shows a context action menu (Open in Explorer, Start Terminal).
+    public int WorkingDirectoryClickRow { get; set; } = -1;
+
     public int GitSidebarWidth { get; set; }
 
     public int GitSidebarSelectedIndex { get; set; } = -1;

@@ -77,6 +77,10 @@ public static partial class Program
         // is one row, so the first visible conversation line is headerSize + 2 (1-based).
         state.MessagesContentTopRow = headerSize + 2;
 
+        // The working directory panel header row (the messages panel top border) is
+        // directly above the first conversation line, so clicking it shows actions.
+        state.WorkingDirectoryClickRow = headerSize + 1;
+
         Layout root = new Layout("root");
             root.SplitRows(
                 new Layout("header").Size(headerSize),
@@ -207,7 +211,7 @@ public static partial class Program
         string leftPlain = leftPrefix + displayRootDirectory + plainGitSuffix;
         int spacerLength = Math.Max(1, headerWidth - leftPlain.Length - MessagesPanelScrollHint.Length);
 
-        return $"[bold]Session[/] ──[grey] Working: {Markup.Escape(displayRootDirectory)}[/]{gitSuffix}" +
+        return $"[bold]Session[/] ──[grey] Working:[/] [underline aqua]{Markup.Escape(displayRootDirectory)}[/]{gitSuffix}" +
             $"{new string('─', spacerLength)}" +
             $"[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]";
     }
