@@ -573,8 +573,8 @@ public sealed class ProgramTests
        plainLines.Should().Contain(line => line.Contains("before") && line.Contains("|") && line.Contains("after"));
        plainLines.Should().Contain(line => line.Contains("10 - return 0;") && line.Contains("|") && line.Contains("10 + return 1;"));
        plainLines.Should().Contain(line => line.Contains("... +2 lines"));
-        markupLines.Should().Contain(line => line.Contains("white on red") && line.Contains("deepskyblue1") && line.Contains("return"));
-        markupLines.Should().Contain(line => line.Contains("black on green") && line.Contains("deepskyblue1") && line.Contains("return"));
+        markupLines.Should().Contain(line => line.Contains("white on #37222c") && line.Contains("deepskyblue1") && line.Contains("return"));
+        markupLines.Should().Contain(line => line.Contains("white on #203b37") && line.Contains("deepskyblue1") && line.Contains("return"));
     }
 
     [Fact]
