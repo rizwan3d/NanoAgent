@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
 using Spectre.Console;
 
@@ -1980,37 +1981,101 @@ public static partial class Program
         string modelName = rawModel.ToDisplayName();
         string providerName = state.ProviderName ?? "n/a";
 
+        string reasoningEffort = ReasoningEffortOptions.Format(state.ReasoningEffort);
+        string thinkingMode = ThinkingModeOptions.Format(state.ThinkingMode);
+
+       state.ActiveModal = SelectionModalState<string>.Create(
+           new NanoAgent.Application.Models.SelectionPromptRequest<string>(
+                "Model, Provider & Reasoning",
+               [
+                   new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                       "Select Model",
+                       "model",
+                       "Switch the active model. Currently: " + modelName + "."),
+                   new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                       "Select Provider",
+                       "provider",
+                        "Switch to another saved provider. Currently: " + providerName + "."),
+                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                        "Select Reasoning Effort",
+                        "reasoning",
+                        "Change the reasoning effort. Currently: " + reasoningEffort + "."),
+                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                        "Select Thinking Mode",
+                        "thinking",
+                        "Toggle thinking on/off. Currently: " + thinkingMode + ".")
+               ],
+               "Choose an action. Enter confirms, Esc cancels.",
+               DefaultIndex: 0,
+               AllowCancellation: true,
+               DescriptionSupportsMarkup: true),
+           completionToken: new object(),
+           onSelected: action =>
+           {
+               switch (action)
+               {
+                   case "model":
+                       RequestModelSelection(state);
+                       break;
+                   case "provider":
+                       HandleCommand(state, "/provider");
+                       break;
+                    case "reasoning":
+                        HandleCommand(state, "/reasoning");
+                        break;
+                    case "thinking":
+                        OpenThinkingModeSelection(state);
+                        break;
+               }
+           },
+           onCancelled: _ => state.AddSystemMessage("Model/Provider action cancelled."));
+   }
+
+    // Shows a selection modal to toggle thinking mode on/off.
+    private static void OpenThinkingModeSelection(AppState state)
+    {
+        if (state.ActiveModal is not null ||
+            state.IsReaderViewActive ||
+            state.IsCopyModeActive)
+        {
+            return;
+        }
+
+        string currentMode = ThinkingModeOptions.Format(state.ThinkingMode);
+        bool isCurrentlyOn = string.Equals(state.ThinkingMode, ThinkingModeOptions.On, StringComparison.OrdinalIgnoreCase);
+
         state.ActiveModal = SelectionModalState<string>.Create(
             new NanoAgent.Application.Models.SelectionPromptRequest<string>(
-                "Model & Provider",
+                "Thinking Mode",
                 [
                     new NanoAgent.Application.Models.SelectionPromptOption<string>(
-                        "Select Model",
-                        "model",
-                        "Switch the active model. Currently: " + modelName + "."),
+                        "On",
+                        "on",
+                        "Enable thinking. Currently: " + currentMode + "."),
                     new NanoAgent.Application.Models.SelectionPromptOption<string>(
-                        "Select Provider",
-                        "provider",
-                        "Switch to another saved provider. Currently: " + providerName + ".")
+                        "Off",
+                        "off",
+                        "Disable thinking. Currently: " + currentMode + ".")
                 ],
-                "Choose an action. Enter confirms, Esc cancels.",
-                DefaultIndex: 0,
+                "Choose thinking mode. Enter confirms, Esc cancels.",
+                DefaultIndex: isCurrentlyOn ? 0 : 1,
                 AllowCancellation: true,
                 DescriptionSupportsMarkup: true),
             completionToken: new object(),
-            onSelected: action =>
+            onSelected: mode =>
             {
-                switch (action)
+                if (string.Equals(mode, ThinkingModeOptions.On, StringComparison.OrdinalIgnoreCase))
                 {
-                    case "model":
-                        RequestModelSelection(state);
-                        break;
-                    case "provider":
-                        HandleCommand(state, "/provider");
-                        break;
+                    // Turn thinking on — open reasoning selection (which sets reasoning -> turns thinking on)
+                    HandleCommand(state, "/reasoning");
+                }
+                else
+                {
+                    // Turn thinking off — set reasoning to none
+                    HandleCommand(state, "/reasoning none");
                 }
             },
-            onCancelled: _ => state.AddSystemMessage("Model/Provider action cancelled."));
+            onCancelled: _ => state.AddSystemMessage("Thinking mode selection cancelled."));
     }
     // Opens the working directory in the system file manager (Explorer on Windows,
     // Finder on macOS, the default file manager on Linux).
