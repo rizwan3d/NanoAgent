@@ -377,3 +377,4 @@ NanoAgent.JetBrains/.gradle/
 NanoAgent.JetBrains/.intellijPlatform/
 NanoAgent.JetBrains/.kotlin/
 .idea/
+.DS_Store
