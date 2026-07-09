@@ -654,16 +654,17 @@ public static partial class Program
     }
 
     private static void ApplySessionInfo(
-        AppState state,
-        BackendSessionInfo sessionInfo)
-    {
-        state.SessionId = sessionInfo.SessionId;
-        state.SectionResumeCommand = sessionInfo.SectionResumeCommand;
-        state.ProviderName = sessionInfo.ProviderName;
-        state.ActiveModelId = sessionInfo.ModelId;
-        state.ActiveModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;
-        state.ReasoningEffort = sessionInfo.ReasoningEffort;
-    }
+       AppState state,
+       BackendSessionInfo sessionInfo)
+   {
+       state.SessionId = sessionInfo.SessionId;
+       state.SectionResumeCommand = sessionInfo.SectionResumeCommand;
+       state.ProviderName = sessionInfo.ProviderName;
+       state.ActiveModelId = sessionInfo.ModelId;
+       state.ActiveModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;
+       state.ReasoningEffort = sessionInfo.ReasoningEffort;
+        state.ThinkingMode = sessionInfo.ThinkingMode;
+   }
 
     private static void RenderResumedSection(
         AppState state,
