@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text;
+using NanoAgent.Application.Utilities;
 using Spectre.Console;
 
 namespace NanoAgent.CLI;
@@ -690,6 +691,13 @@ public static partial class Program
                 return;
             }
 
+
+            // Click on the input panel header row opens model/provider actions.
+            if (state.InputPanelHeaderRow > 0 && row == state.InputPanelHeaderRow)
+            {
+                HandleInputPanelHeaderClick(state);
+                return;
+            }
             HandleConversationClick(state, row);
         }
     }
@@ -1956,6 +1964,54 @@ public static partial class Program
             onCancelled: _ => state.AddSystemMessage("Working directory action cancelled."));
     }
 
+
+    // Shows a selection modal with model and provider actions when the input panel
+    // header row (which displays the model and provider name) is clicked.
+    private static void HandleInputPanelHeaderClick(AppState state)
+    {
+        if (state.ActiveModal is not null ||
+            state.IsReaderViewActive ||
+            state.IsCopyModeActive)
+        {
+            return;
+        }
+
+        string rawModel = state.ActiveModelId ?? "n/a";
+        string modelName = rawModel.ToDisplayName();
+        string providerName = state.ProviderName ?? "n/a";
+
+        state.ActiveModal = SelectionModalState<string>.Create(
+            new NanoAgent.Application.Models.SelectionPromptRequest<string>(
+                "Model & Provider",
+                [
+                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                        "Select Model",
+                        "model",
+                        "Switch the active model. Currently: " + modelName + "."),
+                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
+                        "Select Provider",
+                        "provider",
+                        "Switch to another saved provider. Currently: " + providerName + ".")
+                ],
+                "Choose an action. Enter confirms, Esc cancels.",
+                DefaultIndex: 0,
+                AllowCancellation: true,
+                DescriptionSupportsMarkup: true),
+            completionToken: new object(),
+            onSelected: action =>
+            {
+                switch (action)
+                {
+                    case "model":
+                        RequestModelSelection(state);
+                        break;
+                    case "provider":
+                        HandleCommand(state, "/provider");
+                        break;
+                }
+            },
+            onCancelled: _ => state.AddSystemMessage("Model/Provider action cancelled."));
+    }
     // Opens the working directory in the system file manager (Explorer on Windows,
     // Finder on macOS, the default file manager on Linux).
     private static void OpenDirectoryInExplorer(AppState state)
