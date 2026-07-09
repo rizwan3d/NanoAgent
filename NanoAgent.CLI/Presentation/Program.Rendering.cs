@@ -356,68 +356,93 @@ public static partial class Program
     }
 
     private static string BuildInputPanelHeaderMarkup(AppState state)
-   {
-       string rawModel = state.ActiveModelId ?? "n/a";
-       string modelName = rawModel.ToDisplayName();
-       string completionNote = BuildHeaderCompletionNote(state);
-       const string plainPrefix = "Input -- Model: ";
-       const int minimumNoteLength = 16;
-       const int minimumSeparatorLength = 3;
-       int headerBudget = Math.Max(24, GetMainPaneWidth(state) - 8);
-       int modelBudget = Math.Max(
-           3,
-           headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
+  {
+      string rawModel = state.ActiveModelId ?? "n/a";
+      string modelName = rawModel.ToDisplayName();
+      string completionNote = BuildHeaderCompletionNote(state);
+      const string plainPrefix = "Input -- Model: ";
+      const int minimumNoteLength = 16;
+      const int minimumSeparatorLength = 3;
+      int headerBudget = Math.Max(24, GetMainPaneWidth(state) - 8);
+      int modelBudget = Math.Max(
+          3,
+          headerBudget - plainPrefix.Length - minimumNoteLength - minimumSeparatorLength - 2);
 
-        string modelNamePart = modelName;
-        string? providerSuffix = null;
-        string? effortSuffix = null;
+       string modelNamePart = modelName;
+       string? providerSuffix = null;
+        string? thinkingSuffix = null;
+       string? effortSuffix = null;
 
-        // Try to add provider name as ·{provider} suffix in gray
-        if (!string.IsNullOrWhiteSpace(state.ProviderName))
+       // Try to add provider name as ·{provider} suffix in gray
+       if (!string.IsNullOrWhiteSpace(state.ProviderName))
+       {
+           string plainProvider = $" ({state.ProviderName})";
+           if (modelNamePart.Length + plainProvider.Length <= modelBudget)
+           {
+               providerSuffix = plainProvider;
+           }
+       }
+
+        // Try to add thinking mode as ·T (green bold) or ·t (gray) between provider and effort
+        if (!string.IsNullOrWhiteSpace(state.ThinkingMode))
         {
-            string plainProvider = $" ({state.ProviderName})";
-            if (modelNamePart.Length + plainProvider.Length <= modelBudget)
-            {
-                providerSuffix = plainProvider;
-            }
-        }
-
-        // Try to add reasoning effort as ·{effort} suffix in orange
-        if (!string.IsNullOrWhiteSpace(state.ReasoningEffort))
-        {
-            string plainEffort = $" ·{state.ReasoningEffort}";
+            bool isOn = string.Equals(state.ThinkingMode, "on", StringComparison.OrdinalIgnoreCase);
+            string plainThinking = isOn ? " ·T" : " ·t";
             string combined = modelNamePart;
             if (providerSuffix is not null) combined += providerSuffix;
-            if (combined.Length + plainEffort.Length <= modelBudget)
+            if (combined.Length + plainThinking.Length <= modelBudget)
             {
-                effortSuffix = plainEffort;
+                thinkingSuffix = plainThinking;
             }
         }
 
-        // Compute full plain text for budget / truncation calculations
-        string displayPlain = modelNamePart;
-        if (providerSuffix is not null) displayPlain += providerSuffix;
-        if (effortSuffix is not null) displayPlain += effortSuffix;
+       // Try to add reasoning effort as ·{effort} suffix in orange
+       if (!string.IsNullOrWhiteSpace(state.ReasoningEffort))
+       {
+           string plainEffort = $" ·{state.ReasoningEffort}";
+           string combined = modelNamePart;
+           if (providerSuffix is not null) combined += providerSuffix;
+            if (thinkingSuffix is not null) combined += thinkingSuffix;
+           if (combined.Length + plainEffort.Length <= modelBudget)
+           {
+               effortSuffix = plainEffort;
+           }
+       }
 
-        // Safety: if still too long, drop suffixes then truncate model name
-        if (displayPlain.Length > modelBudget)
-        {
-            providerSuffix = null;
-            effortSuffix = null;
-            modelNamePart = TruncateFromRight(modelNamePart, modelBudget);
-            displayPlain = modelNamePart;
-        }
+       // Compute full plain text for budget / truncation calculations
+       string displayPlain = modelNamePart;
+       if (providerSuffix is not null) displayPlain += providerSuffix;
+        if (thinkingSuffix is not null) displayPlain += thinkingSuffix;
+       if (effortSuffix is not null) displayPlain += effortSuffix;
 
-        // Build colored markup with separate segments
-        string modelMarkup = $"[aqua]{Markup.Escape(modelNamePart)}[/]";
-        if (providerSuffix is not null)
+       // Safety: if still too long, drop suffixes then truncate model name
+       if (displayPlain.Length > modelBudget)
+       {
+            thinkingSuffix = null;
+           providerSuffix = null;
+           effortSuffix = null;
+           modelNamePart = TruncateFromRight(modelNamePart, modelBudget);
+           displayPlain = modelNamePart;
+       }
+
+       // Build colored markup with separate segments
+       string modelMarkup = $"[aqua]{Markup.Escape(modelNamePart)}[/]";
+       if (providerSuffix is not null)
+       {
+           modelMarkup += $" [grey]{Markup.Escape(providerSuffix)}[/]";
+       }
+        if (thinkingSuffix is not null)
         {
-            modelMarkup += $" [grey]{Markup.Escape(providerSuffix)}[/]";
+            bool isOn = string.Equals(state.ThinkingMode, "on", StringComparison.OrdinalIgnoreCase);
+            string thinkingMarkup = isOn
+                ? $"[bold green]{Markup.Escape(thinkingSuffix)}[/]"
+                : $"[grey]{Markup.Escape(thinkingSuffix)}[/]";
+            modelMarkup += $" {thinkingMarkup}";
         }
-        if (effortSuffix is not null)
-        {
-            modelMarkup += $" [yellow]{Markup.Escape(effortSuffix)}[/]";
-        }
+       if (effortSuffix is not null)
+       {
+           modelMarkup += $" [yellow]{Markup.Escape(effortSuffix)}[/]";
+       }
 
         int noteBudget = headerBudget -
             plainPrefix.Length -
