@@ -18,6 +18,7 @@ public sealed class SelectionModalState<T> : UiModalState
     private readonly bool _descriptionSupportsMarkup;
     private readonly Action<T> _onSelected;
     private readonly IReadOnlyList<SelectionPromptOption<T>> _options;
+    private int?[] _visibleOptionIndexes = [];
 
     private SelectionModalState(
         SelectionPromptRequest<T> request,
@@ -106,8 +107,8 @@ public sealed class SelectionModalState<T> : UiModalState
     {
         int contentWidth = GetContentWidth();
         int maxBodyLines = Math.Max(1, PanelSize - PanelChromeLineCount);
-        List<string> headingLines = BuildHeadingLines(contentWidth);
-        List<string> optionLines = BuildOptionLines(contentWidth);
+        List<SelectionRenderLine> headingLines = BuildHeadingLines(contentWidth);
+        List<SelectionRenderLine> optionLines = BuildOptionLines(contentWidth);
 
         if (headingLines.Count >= maxBodyLines)
         {
@@ -119,34 +120,41 @@ public sealed class SelectionModalState<T> : UiModalState
             {
                 headingLines = headingLines
                     .Take(Math.Max(0, maxBodyLines - 2))
-                    .Append("[grey]...[/]")
+                    .Append(new SelectionRenderLine("[grey]...[/]"))
                     .ToList();
             }
         }
 
         int availableOptionLines = maxBodyLines - headingLines.Count;
-        IReadOnlyList<string> visibleOptionLines = GetVisibleOptionLines(
+        IReadOnlyList<SelectionRenderLine> visibleOptionLines = GetVisibleOptionLines(
             optionLines,
             availableOptionLines);
 
-        return string.Join('\n', headingLines.Concat(visibleOptionLines)).TrimEnd();
+        List<SelectionRenderLine> visibleLines = headingLines
+            .Concat(visibleOptionLines)
+            .ToList();
+        _visibleOptionIndexes = visibleLines
+            .Select(static line => line.OptionIndex)
+            .ToArray();
+
+        return string.Join('\n', visibleLines.Select(static line => line.Markup)).TrimEnd();
     }
 
     public override string BuildFooterMarkup()
     {
         return AllowCancellation
-            ? "[grey]Up/Down: select[/]  [grey]|[/]  [grey]Enter: confirm[/]  [grey]|[/]  [grey]Esc: cancel[/]"
-            : "[grey]Up/Down: select[/]  [grey]|[/]  [grey]Enter: confirm[/]";
+            ? "[grey]Up/Down or hover: select[/]  [grey]|[/]  [grey]Enter/click: confirm[/]  [grey]|[/]  [grey]Esc: cancel[/]"
+            : "[grey]Up/Down or hover: select[/]  [grey]|[/]  [grey]Enter/click: confirm[/]";
     }
 
     public override string BuildInputMarkup()
     {
         if (DeadlineUtc is not null)
         {
-            return $"[yellow]Selection prompt active.[/] Use [bold]Up/Down[/] and [bold]Enter[/]. Auto-select in [red]{GetRemainingSeconds()}s[/].";
+            return $"[yellow]Selection prompt active.[/] Use [bold]Up/Down[/], hover, or click. Auto-select in [red]{GetRemainingSeconds()}s[/].";
         }
 
-        return "[yellow]Selection prompt active.[/] Use [bold]Up/Down[/] and [bold]Enter[/].";
+        return "[yellow]Selection prompt active.[/] Use [bold]Up/Down[/], hover, or click.";
     }
 
     public override void HandleKey(AppState state, ConsoleKeyInfo key)
@@ -189,6 +197,61 @@ public sealed class SelectionModalState<T> : UiModalState
             {
                 SelectedIndex = index;
             }
+        }
+    }
+
+    public override void HandleMouse(
+        AppState state,
+        int column,
+        int row,
+        int buttonCode,
+        bool isPress)
+    {
+        if (_options.Count == 0)
+        {
+            return;
+        }
+
+        if (column < state.ModalContentLeftColumn ||
+            column > state.ModalContentRightColumn ||
+            row < state.ModalContentTopRow ||
+            row > state.ModalContentBottomRow)
+        {
+            return;
+        }
+
+        int normalizedButtonCode = buttonCode & ~0b1_1100;
+        if (normalizedButtonCode == 64)
+        {
+            MoveSelection(-1);
+            return;
+        }
+
+        if (normalizedButtonCode == 65)
+        {
+            MoveSelection(1);
+            return;
+        }
+
+        int lineIndex = row - state.ModalContentTopRow;
+        if (lineIndex < 0 || lineIndex >= _visibleOptionIndexes.Length)
+        {
+            return;
+        }
+
+        int? optionIndex = _visibleOptionIndexes[lineIndex];
+        if (optionIndex is not int hoveredIndex ||
+            hoveredIndex < 0 ||
+            hoveredIndex >= _options.Count)
+        {
+            return;
+        }
+
+        SelectedIndex = hoveredIndex;
+
+        if (isPress && normalizedButtonCode == 0)
+        {
+            Resolve(state, _options[SelectedIndex].Value);
         }
     }
 
@@ -238,30 +301,32 @@ public sealed class SelectionModalState<T> : UiModalState
         Program.TryStartNextPendingSubmission(state);
     }
 
-    private List<string> BuildHeadingLines(int contentWidth)
+    private List<SelectionRenderLine> BuildHeadingLines(int contentWidth)
     {
-        List<string> lines = [];
-        lines.AddRange(WrapMarkupLines(Title, contentWidth, "[bold yellow]", "[/]"));
+        List<SelectionRenderLine> lines = [];
+        lines.AddRange(WrapMarkupLines(Title, contentWidth, "[bold yellow]", "[/]")
+            .Select(static line => new SelectionRenderLine(line)));
 
         if (!string.IsNullOrWhiteSpace(Description))
         {
-            lines.Add(string.Empty);
-            lines.AddRange(GetVisibleDescriptionMarkupLines(contentWidth));
+            lines.Add(new SelectionRenderLine(string.Empty));
+            lines.AddRange(GetVisibleDescriptionMarkupLines(contentWidth)
+                .Select(static line => new SelectionRenderLine(line)));
         }
 
         if (DeadlineUtc is not null)
         {
-            lines.Add(string.Empty);
-            lines.Add($"[grey]Auto-select in {GetRemainingSeconds()}s[/]");
+            lines.Add(new SelectionRenderLine(string.Empty));
+            lines.Add(new SelectionRenderLine($"[grey]Auto-select in {GetRemainingSeconds()}s[/]"));
         }
 
-        lines.Add(string.Empty);
+        lines.Add(new SelectionRenderLine(string.Empty));
         return lines;
     }
 
-    private List<string> BuildOptionLines(int contentWidth)
+    private List<SelectionRenderLine> BuildOptionLines(int contentWidth)
     {
-        List<string> lines = [];
+        List<SelectionRenderLine> lines = [];
 
         for (int index = 0; index < _options.Count; index++)
         {
@@ -270,12 +335,12 @@ public sealed class SelectionModalState<T> : UiModalState
             {
                 if (lines.Count > 0)
                 {
-                    lines.Add(string.Empty);
+                    lines.Add(new SelectionRenderLine(string.Empty));
                 }
 
                 foreach (string sectionLine in WrapPlainText(option.Section, Math.Max(1, contentWidth)))
                 {
-                    lines.Add($"[bold grey]{Markup.Escape(sectionLine)}[/]");
+                    lines.Add(new SelectionRenderLine($"[bold grey]{Markup.Escape(sectionLine)}[/]"));
                 }
             }
 
@@ -293,16 +358,18 @@ public sealed class SelectionModalState<T> : UiModalState
                     ? firstPrefix
                     : continuationPrefix;
                 string line = prefix + Markup.Escape(labelLines[lineIndex]);
-                lines.Add(selected
-                    ? $"[black on green]{line}[/]"
-                    : $"[green]{line}[/]");
+                lines.Add(new SelectionRenderLine(
+                    selected
+                        ? $"[black on green]{line}[/]"
+                        : $"[green]{line}[/]",
+                    index));
             }
 
             if (!string.IsNullOrWhiteSpace(option.Description))
             {
                 foreach (string descriptionLine in WrapPlainText(option.Description, Math.Max(1, contentWidth - 4)))
                 {
-                    lines.Add($"[grey]    {Markup.Escape(descriptionLine)}[/]");
+                    lines.Add(new SelectionRenderLine($"[grey]    {Markup.Escape(descriptionLine)}[/]", index));
                 }
             }
         }
@@ -310,8 +377,8 @@ public sealed class SelectionModalState<T> : UiModalState
         return lines;
     }
 
-    private IReadOnlyList<string> GetVisibleOptionLines(
-        IReadOnlyList<string> optionLines,
+    private IReadOnlyList<SelectionRenderLine> GetVisibleOptionLines(
+        IReadOnlyList<SelectionRenderLine> optionLines,
         int availableLineCount)
     {
         if (availableLineCount <= 0 ||
@@ -331,7 +398,7 @@ public sealed class SelectionModalState<T> : UiModalState
             0,
             Math.Max(0, optionLines.Count - availableLineCount));
 
-        List<string> visibleLines = optionLines
+        List<SelectionRenderLine> visibleLines = optionLines
             .Skip(startIndex)
             .Take(availableLineCount)
             .ToList();
@@ -340,14 +407,14 @@ public sealed class SelectionModalState<T> : UiModalState
             startIndex > 0 &&
             visibleLines.Count > 0)
         {
-            visibleLines[0] = "[grey]...[/]";
+            visibleLines[0] = new SelectionRenderLine("[grey]...[/]");
         }
 
         if (availableLineCount >= 3 &&
             startIndex + availableLineCount < optionLines.Count &&
             visibleLines.Count > 0)
         {
-            visibleLines[^1] = "[grey]...[/]";
+            visibleLines[^1] = new SelectionRenderLine("[grey]...[/]");
         }
 
         return visibleLines;
@@ -565,4 +632,6 @@ public sealed class SelectionModalState<T> : UiModalState
 
         return lineCount;
     }
+
+    private sealed record SelectionRenderLine(string Markup, int? OptionIndex = null);
 }
