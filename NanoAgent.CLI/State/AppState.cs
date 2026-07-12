@@ -192,6 +192,14 @@ public sealed class AppState
     // click on the "Model: &lt;name&gt;" row opens the model selection interface.
     public int InputPanelHeaderRow { get; set; } = -1;
 
+    public int ModalContentTopRow { get; set; } = -1;
+
+    public int ModalContentBottomRow { get; set; } = -1;
+
+    public int ModalContentLeftColumn { get; set; } = -1;
+
+    public int ModalContentRightColumn { get; set; } = -1;
+
     public int GitSidebarWidth { get; set; }
 
     public int GitSidebarSelectedIndex { get; set; } = -1;
