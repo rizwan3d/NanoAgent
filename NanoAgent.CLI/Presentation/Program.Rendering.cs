@@ -31,8 +31,11 @@ public static partial class Program
     {
         // Off-screen by default; only the standard layout below maps clicks to rows.
         state.MessagesContentTopRow = -1;
-
-         state.InputPanelHeaderRow = -1;
+        state.InputPanelHeaderRow = -1;
+        state.ModalContentTopRow = -1;
+        state.ModalContentBottomRow = -1;
+        state.ModalContentLeftColumn = -1;
+        state.ModalContentRightColumn = -1;
 
         if (state.IsReaderViewActive)
         {
@@ -102,6 +105,13 @@ public static partial class Program
 
         if (state.ActiveModal is not null)
         {
+            int mainPaneLeftColumn = state.GitSidebarWidth > 0
+                ? state.GitSidebarWidth + 1
+                : 1;
+            state.ModalContentTopRow = headerSize + 2;
+            state.ModalContentBottomRow = headerSize + bodyHeight - 1;
+            state.ModalContentLeftColumn = mainPaneLeftColumn + 1;
+            state.ModalContentRightColumn = windowWidth - 1;
             root["body"].Update(BuildPromptPanel(state.ActiveModal));
         }
         else
