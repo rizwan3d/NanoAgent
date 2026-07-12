@@ -654,8 +654,22 @@ public static partial class Program
 
         // Wheel events (button codes 64/65) scroll regardless of press/release.
         int normalizedButtonCode = buttonCode & ~0b1_1100;
+        bool isMotion = (buttonCode & 0b10_0000) != 0;
         if (normalizedButtonCode is 64 or 65)
         {
+            if (state.ActiveModal is not null &&
+                int.TryParse(parts[1], out int modalWheelColumn) &&
+                int.TryParse(parts[2], out int modalWheelRow))
+            {
+                state.ActiveModal.HandleMouse(
+                    state,
+                    modalWheelColumn,
+                    modalWheelRow,
+                    buttonCode,
+                    isPress);
+                return;
+            }
+
             // Scroll the git sidebar when the pointer is over its columns; otherwise the
             // conversation. 64 = wheel up (earlier lines), 65 = wheel down.
             if (state.IsGitSidebarVisible &&
@@ -667,6 +681,23 @@ public static partial class Program
             }
 
             HandleMouseButtonCode(state, buttonCode);
+            return;
+        }
+
+        if (state.ActiveModal is not null &&
+            int.TryParse(parts[1], out int modalColumn) &&
+            int.TryParse(parts[2], out int modalRow))
+        {
+            if (isMotion || (isPress && normalizedButtonCode == 0))
+            {
+                state.ActiveModal.HandleMouse(
+                    state,
+                    modalColumn,
+                    modalRow,
+                    buttonCode,
+                    isPress);
+            }
+
             return;
         }
 
