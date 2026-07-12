@@ -53,6 +53,15 @@ public abstract class UiModalState
 
     public abstract void HandleKey(AppState state, ConsoleKeyInfo key);
 
+    public virtual void HandleMouse(
+        AppState state,
+        int column,
+        int row,
+        int buttonCode,
+        bool isPress)
+    {
+    }
+
     protected static bool IsCancellationKey(ConsoleKeyInfo key)
     {
         return key.Key == ConsoleKey.Escape ||
