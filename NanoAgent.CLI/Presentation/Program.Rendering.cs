@@ -546,13 +546,14 @@ public static partial class Program
             bool expandedThinking = state.ExpandedThinkingMessageIds.Contains(message.Id);
             bool expandedTool = !message.IsCollapsibleToolMessage ||
                 state.ExpandedToolMessageIds.Contains(message.Id);
-            AddMessageLines(lines, message, contentWidth, expandedThinking, expandedTool);
+            AddMessageLines(state, lines, message, contentWidth, expandedThinking, expandedTool);
         }
 
         return lines;
     }
 
     private static void AddMessageLines(
+       AppState state,
        List<ConversationLine> lines,
        ChatMessage message,
        int contentWidth,
@@ -604,7 +605,7 @@ public static partial class Program
             return;
         }
 
-       string[] rawLines = message.Text
+       string[] rawLines = GetDisplayedMessageText(state, message)
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Split('\n');
 
@@ -699,7 +700,7 @@ public static partial class Program
         }
         else if (expandToolCall && message.IsCollapsibleToolMessage)
         {
-            const string collapseHint = "\u00b7 click to collapse";
+            const string collapseHint = "\u00b7 click collapse Ctrl+click full/preview";
             lines.Add(new ConversationLine(
                 $"[grey58]{Markup.Escape(collapseHint)}[/]",
                 collapseHint));
@@ -852,14 +853,15 @@ public static partial class Program
         string roleColor,
         int contentWidth)
     {
-        int lineCount = CountToolCallBodyLines(message.Text);
+        string previewText = message.CompactToolOutputText ?? message.Text;
+        int lineCount = CountToolCallBodyLines(previewText);
 
         // Show the first meaningful content line as a colored preview instead of a
         // generic "Tool output…" label, so the user can see what the tool did at a glance.
-        string previewMarkup = ExtractToolCallPreview(message.Text);
+        string previewMarkup = ExtractToolCallPreview(previewText);
         string hint = lineCount > 0
-            ? $"({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click or Ctrl+T to expand"
-            : "· click or Ctrl+T to expand";
+            ? $"({lineCount} {(lineCount == 1 ? "line" : "lines")} hidden) · click expand/collapse Ctrl+click full/preview"
+            : "· click expand/collapse Ctrl+click full/preview";
         string summaryPlain = Markup.Remove(previewMarkup) + " " + hint;
         string summaryMarkup = $"{previewMarkup} [grey58]{Markup.Escape(hint)}[/]";
 
@@ -880,6 +882,21 @@ public static partial class Program
             ref firstLine,
             roleName,
             roleColor);
+    }
+
+    private static string GetDisplayedMessageText(AppState state, ChatMessage message)
+    {
+        if (!message.IsCollapsibleToolMessage)
+        {
+            return message.Text;
+        }
+
+        if (state.FullToolOutputMessageIds.Contains(message.Id))
+        {
+            return message.FullToolOutputText ?? message.Text;
+        }
+
+        return message.CompactToolOutputText ?? message.Text;
     }
 
     private static int CountToolCallBodyLines(string text)
