@@ -211,10 +211,14 @@ public sealed class UiBridge : IUiBridge
     public void ShowToolResults(ToolExecutionBatchResult toolExecutionResult)
     {
         IReadOnlyList<string> messages;
+        IReadOnlyList<string> compactMessages;
+        IReadOnlyList<string> fullMessages;
     
         try
         {
             messages = _toolOutputFormatter.FormatResults(toolExecutionResult);
+            compactMessages = FormatToolResultsWithOverride(toolExecutionResult, showFullOutput: false);
+            fullMessages = FormatToolResultsWithOverride(toolExecutionResult, showFullOutput: true);
         }
         catch (Exception ex)
         {
@@ -222,6 +226,8 @@ public sealed class UiBridge : IUiBridge
             [
                 $"Tool result display failed: {ex.Message}"
             ];
+            compactMessages = messages;
+            fullMessages = messages;
         }
     
         EnqueueForActiveOperation(state =>
@@ -241,19 +247,46 @@ public sealed class UiBridge : IUiBridge
             }
 
             bool isFirstResult = true;
-            foreach (string message in messages)
+            for (int index = 0; index < messages.Count; index++)
             {
+                string message = messages[index];
                 ChatMessage resultMsg = state.AddSystemMessage(message, isCollapsibleToolMessage: true);
+                resultMsg.CompactToolOutputText = index < compactMessages.Count ? compactMessages[index] : message;
+                resultMsg.FullToolOutputText = index < fullMessages.Count ? fullMessages[index] : message;
 
                 // Prepend the tool call text to the first result message so both appear
                 // together in the same collapsed block when the view is collapsed.
                 if (isFirstResult && toolCallMsg is not null)
                 {
                     resultMsg.Text = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.Text;
+                    resultMsg.CompactToolOutputText = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.CompactToolOutputText;
+                    resultMsg.FullToolOutputText = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.FullToolOutputText;
                     isFirstResult = false;
+                }
+
+                if (ToolOutputDisplay.ShowFullToolOutput)
+                {
+                    state.FullToolOutputMessageIds.Add(resultMsg.Id);
                 }
             }
         });
+    }
+
+    private IReadOnlyList<string> FormatToolResultsWithOverride(
+        ToolExecutionBatchResult toolExecutionResult,
+        bool showFullOutput)
+    {
+        bool? previousOverride = ToolOutputDisplay.FullToolOutputOverride;
+
+        try
+        {
+            ToolOutputDisplay.FullToolOutputOverride = showFullOutput;
+            return _toolOutputFormatter.FormatResults(toolExecutionResult);
+        }
+        finally
+        {
+            ToolOutputDisplay.FullToolOutputOverride = previousOverride;
+        }
     }
 
     public void ShowExecutionPlan(ExecutionPlanProgress progress)

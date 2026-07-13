@@ -730,13 +730,14 @@ public static partial class Program
                 HandleInputPanelHeaderClick(state);
                 return;
             }
-            HandleConversationClick(state, row);
+            bool showFullOutput = (buttonCode & 0b1_1000) != 0;
+            HandleConversationClick(state, row, showFullOutput);
         }
     }
 
     // Maps a 1-based terminal row to the conversation line rendered there and toggles its
     // thinking block, if any. Disabled while a modal, reader view, or copy mode is active.
-    private static void HandleConversationClick(AppState state, int row)
+    private static void HandleConversationClick(AppState state, int row, bool showFullOutput)
     {
        if (state.ActiveModal is not null ||
            state.IsReaderViewActive ||
@@ -764,7 +765,14 @@ public static partial class Program
         if (index >= 0 && index < toolCallVisibleIds.Length &&
             toolCallVisibleIds[index] is int toolCallMessageId)
         {
-            state.ToggleToolCallMessage(toolCallMessageId);
+            if (showFullOutput)
+            {
+                state.ToggleToolCallFullOutput(toolCallMessageId);
+            }
+            else
+            {
+                state.ToggleToolCallMessage(toolCallMessageId);
+            }
        }
    }
 
