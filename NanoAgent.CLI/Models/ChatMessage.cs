@@ -10,6 +10,12 @@ public sealed class ChatMessage
 
     public string Text { get; set; } = string.Empty;
 
+    // Optional compact/full variants for tool-result messages. When present, the CLI can
+    // switch between preview and complete output for the same message without reformatting.
+    public string? CompactToolOutputText { get; set; }
+
+    public string? FullToolOutputText { get; set; }
+
     // When set, the message renders as the "Files modified" table instead of plain text.
     public IReadOnlyList<FileEditSummary>? FileEdits { get; set; }
 

@@ -1,7 +1,7 @@
 using FluentAssertions;
+using NanoAgent.Application.Backend;
 using NanoAgent.Application.Models;
 using NanoAgent.CLI;
-using NanoAgent.Application.Backend;
 using Moq;
 using NanoAgent.Infrastructure.WindowsSandbox;
 using Spectre.Console;
@@ -653,6 +653,81 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public void HandleConversationClick_Should_ToggleFullToolOutputAndExpand_OnCtrlClick()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object)
+        {
+            MessagesContentTopRow = 12,
+            VisibleThinkingMessageIds = [null],
+            VisibleToolCallMessageIds = [null]
+        };
+
+        ChatMessage message = state.AddSystemMessage("Preview", isCollapsibleToolMessage: true);
+        state.ExpandedToolMessageIds.Remove(message.Id);
+        state.VisibleToolCallMessageIds = [message.Id];
+
+        MethodInfo handleConversationClick = typeof(Program).GetMethod(
+            "HandleConversationClick",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        handleConversationClick.Invoke(null, [state, 12, true]);
+
+        state.FullToolOutputMessageIds.Should().Contain(message.Id);
+        state.ExpandedToolMessageIds.Should().Contain(message.Id);
+    }
+
+    [Fact]
+    public void BuildConversationLines_Should_RenderCompactToolOutputByDefault()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        ChatMessage message = state.AddSystemMessage("Default", isCollapsibleToolMessage: true);
+        message.CompactToolOutputText = "Compact preview";
+        message.FullToolOutputText = "Full output line 1\nFull output line 2";
+
+        string[] plainLines = RenderConversationPlain(state);
+
+        plainLines.Should().Contain(line => line.Contains("Compact preview"));
+        plainLines.Should().NotContain(line => line.Contains("Full output line 2"));
+    }
+
+    [Fact]
+    public void BuildConversationLines_Should_RenderFullToolOutput_WhenPerMessageToggleEnabled()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        ChatMessage message = state.AddSystemMessage("Default", isCollapsibleToolMessage: true);
+        message.CompactToolOutputText = "Compact preview";
+        message.FullToolOutputText = "Full output line 1\nFull output line 2";
+        state.FullToolOutputMessageIds.Add(message.Id);
+
+        string[] plainLines = RenderConversationPlain(state);
+
+        plainLines.Should().Contain(line => line.Contains("Full output line 1"));
+        plainLines.Should().Contain(line => line.Contains("Full output line 2"));
+        plainLines.Should().NotContain(line => line.Contains("Compact preview"));
+    }
+
+    [Fact]
+    public void BuildConversationLines_Should_ShowCtrlClickHint_ForCollapsedToolOutput()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+        ChatMessage message = state.AddSystemMessage("Default", isCollapsibleToolMessage: true);
+        message.CompactToolOutputText = "Compact preview";
+        state.ExpandedToolMessageIds.Remove(message.Id);
+
+        string[] plainLines = RenderConversationPlain(state);
+
+        plainLines.Should().Contain(line => line.Contains("Ctrl+click full/preview"));
+    }
+
+    [Fact]
     public void SafeHeaderMarkup_Should_EscapeInvalidMarkup()
     {
         MethodInfo safeHeaderMarkup = typeof(Program).GetMethod(
@@ -724,6 +799,16 @@ public sealed class ProgramTests
 
         IEnumerable renderedLines = (IEnumerable)buildConversationLines.Invoke(null, [state, 90])!;
         return GetConversationLinePropertyValues(renderedLines, "Markup");
+    }
+
+    private static string[] RenderConversationPlain(AppState state)
+    {
+        MethodInfo buildConversationLines = typeof(Program).GetMethod(
+            "BuildConversationLines",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        IEnumerable renderedLines = (IEnumerable)buildConversationLines.Invoke(null, [state, 90])!;
+        return GetConversationLinePropertyValues(renderedLines, "Plain");
     }
 
     private static Mock<INanoAgentBackend> CreateConversationBackend()
