@@ -15,7 +15,9 @@ public sealed class ConversationTurnMetricsTests
             estimatedInputTokens: 500,
             cachedInputTokens: 100,
             providerRetryCount: 2,
-            toolRoundCount: 3);
+            toolRoundCount: 3,
+            providerName: "OpenAI",
+            modelId: "gpt-5");
 
         metrics.Elapsed.Should().Be(TimeSpan.FromSeconds(30));
         metrics.EstimatedOutputTokens.Should().Be(1500);
@@ -24,6 +26,8 @@ public sealed class ConversationTurnMetricsTests
         metrics.CachedInputTokens.Should().Be(100);
         metrics.ProviderRetryCount.Should().Be(2);
         metrics.ToolRoundCount.Should().Be(3);
+        metrics.ProviderName.Should().Be("OpenAI");
+        metrics.ModelId.Should().Be("gpt-5");
     }
 
     [Fact]
@@ -48,7 +52,10 @@ public sealed class ConversationTurnMetricsTests
     public void DisplayedEstimatedOutputTokens_Should_FallbackToOutputTokens()
     {
         var metrics = new ConversationTurnMetrics(
-            TimeSpan.FromSeconds(10), 200);
+            TimeSpan.FromSeconds(10),
+            200,
+            providerName: "OpenAI",
+            modelId: "gpt-5");
 
         metrics.DisplayedEstimatedOutputTokens.Should().Be(200);
     }
@@ -68,13 +75,18 @@ public sealed class ConversationTurnMetricsTests
     public void WithSessionEstimatedOutputTokens_Should_Return_NewInstance()
     {
         var metrics = new ConversationTurnMetrics(
-            TimeSpan.FromSeconds(10), 200);
+            TimeSpan.FromSeconds(10),
+            200,
+            providerName: "OpenAI",
+            modelId: "gpt-5");
 
         var updated = metrics.WithSessionEstimatedOutputTokens(500);
 
         updated.SessionEstimatedOutputTokens.Should().Be(500);
         updated.EstimatedOutputTokens.Should().Be(200);
         updated.Elapsed.Should().Be(TimeSpan.FromSeconds(10));
+        updated.ProviderName.Should().Be("OpenAI");
+        updated.ModelId.Should().Be("gpt-5");
     }
 
     [Fact]

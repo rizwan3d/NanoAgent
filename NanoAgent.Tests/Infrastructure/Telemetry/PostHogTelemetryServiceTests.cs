@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Options;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Backend;
+using NanoAgent.Application.Models;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Telemetry;
 using System.Net;
@@ -17,8 +18,16 @@ public sealed class PostHogTelemetryServiceTests
         RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
         PostHogTelemetryService sut = CreateSut(handler, BackendRuntimeOptions.DesktopSurface);
 
+        ConversationTurnMetrics metrics = new(
+            TimeSpan.FromSeconds(8),
+            estimatedOutputTokens: 220,
+            estimatedInputTokens: 140,
+            cachedInputTokens: 25,
+            providerName: "OpenAI",
+            modelId: "gpt-5");
+
         sut.TrackAppStarted();
-        sut.TrackFeatureUsed("apply_patch", "tool", success: true);
+        sut.TrackFeatureUsed("apply_patch", "tool", success: true, metrics);
         await sut.DisposeAsync();
 
         handler.Requests.Should().HaveCount(3);
@@ -65,6 +74,11 @@ public sealed class PostHogTelemetryServiceTests
         featureProperties.GetProperty("feature_name").GetString().Should().Be("apply_patch");
         featureProperties.GetProperty("interaction_kind").GetString().Should().Be("tool");
         featureProperties.GetProperty("success").GetBoolean().Should().BeTrue();
+        featureProperties.GetProperty("provider_name").GetString().Should().Be("openai");
+        featureProperties.GetProperty("model_id").GetString().Should().Be("gpt-5");
+        featureProperties.GetProperty("input_tokens").GetInt32().Should().Be(140);
+        featureProperties.GetProperty("output_tokens").GetInt32().Should().Be(220);
+        featureProperties.GetProperty("cached_input_tokens").GetInt32().Should().Be(25);
         featureProperties.TryGetProperty("$process_person_profile", out _).Should().BeFalse();
     }
 
