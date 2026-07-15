@@ -58,7 +58,13 @@ public static class NanoAgentHostFactory
         ArgumentNullException.ThrowIfNull(uiBridge);
         ArgumentNullException.ThrowIfNull(runtimeArguments);
 
-        HostApplicationBuilder builder = Host.CreateApplicationBuilder(runtimeArguments.RawArgs);
+        string currentDirectory = Directory.GetCurrentDirectory();
+        HostApplicationBuilder builder = new(new HostApplicationBuilderSettings
+        {
+            ApplicationName = "NanoAgent",
+            ContentRootPath = currentDirectory,
+            DisableDefaults = true
+        });
 
         builder.Configuration.AddJsonFile(
             Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
@@ -66,9 +72,11 @@ public static class NanoAgentHostFactory
             reloadOnChange: false);
 
         builder.Configuration.AddJsonFile(
-            Path.Combine(Directory.GetCurrentDirectory(), ".nanoagent", "agent-profile.json"),
+            Path.Combine(currentDirectory, ".nanoagent", "agent-profile.json"),
             optional: true,
             reloadOnChange: false);
+        builder.Configuration.AddEnvironmentVariables();
+        builder.Configuration.AddCommandLine(runtimeArguments.RawArgs);
 
         builder.Logging.ClearProviders();
         builder.Logging.AddConfiguration(builder.Configuration.GetSection("Logging"));

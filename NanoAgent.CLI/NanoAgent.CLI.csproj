@@ -13,6 +13,13 @@
     <Description>Terminal UI, ACP server, and automation-friendly CLI for NanoAgent.</Description>
   </PropertyGroup>
 
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OptimizationPreference>Size</OptimizationPreference>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <Http3Support>false</Http3Support>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+  </PropertyGroup>
+
   <ItemGroup>
     <PackageReference Include="Spectre.Console" Version="0.54.0" />
   </ItemGroup>
