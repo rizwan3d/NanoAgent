@@ -5,6 +5,7 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
+using Microsoft.Win32.SafeHandles;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
@@ -56,6 +57,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     ];
 
     private readonly record struct FileEncodingInfo(bool HasBom, string NewLine);
+    private readonly record struct ExistingFileMetadata(
+        FileAttributes Attributes,
+        DateTime CreationTimeUtc,
+        DateTime LastAccessTimeUtc,
+        DateTime LastWriteTimeUtc);
     private readonly record struct WorkspaceFileSearchPage(
         IReadOnlyList<WorkspaceFileSearchMatch> Matches,
         int Offset,
@@ -136,6 +142,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 fullPath,
                 state.Content!,
                 new FileEncodingInfo(HasBom: false, NewLine: "\n"),
+                expectedState: null,
                 cancellationToken);
         }
 
@@ -156,7 +163,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (File.Exists(fullPath))
             {
-                DeleteWorkspaceFile(fullPath);
+                DeleteWorkspaceFile(fullPath, expectedState: null, cancellationToken: CancellationToken.None);
             }
         }
     }
@@ -338,7 +345,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         FileWritePreview preview = BuildFileWritePreview(previousContent, string.Empty);
 
         cancellationToken.ThrowIfCancellationRequested();
-        DeleteWorkspaceFile(fullPath);
+        DeleteWorkspaceFile(
+            fullPath,
+            new WorkspaceFileEditState(
+                ToWorkspaceRelativePath(fullPath),
+                exists: true,
+                previousContent),
+            cancellationToken);
 
         return new WorkspaceFileDeleteResult(
             ToWorkspaceRelativePath(fullPath),
@@ -436,6 +449,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
         }
 
+        WorkspaceFileEditState expectedState = new(
+            ToWorkspaceRelativePath(fullPath),
+            exists: fileExists,
+            previousContent);
+
         FileEncodingInfo encoding = fileExists
             ? DetectFileEncoding(fullPath)
             : new FileEncodingInfo(HasBom: false, NewLine: "\n");
@@ -445,6 +463,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             fullPath,
             content,
             encoding,
+            expectedState,
             cancellationToken);
 
         FileWritePreview preview = BuildFileWritePreview(previousContent, content);
@@ -533,10 +552,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
 
         EnsureParentDirectory(fullPath);
+        WorkspaceFileEditState expectedState = new(
+            ToWorkspaceRelativePath(fullPath),
+            exists: false,
+            content: null);
         await WriteWorkspaceFileAsync(
             fullPath,
             content,
             encoding,
+            expectedState,
             cancellationToken);
 
         return CreatePatchFileResult(
@@ -555,7 +579,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
         string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
-        DeleteWorkspaceFile(fullPath);
+        DeleteWorkspaceFile(
+            fullPath,
+            new WorkspaceFileEditState(
+                ToWorkspaceRelativePath(fullPath),
+                exists: true,
+                previousContent),
+            cancellationToken);
 
         return CreatePatchFileResult(
             fullPath,
@@ -574,6 +604,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         EnsurePathNotIgnored(currentFullPath, isDirectory: false, ignoreMatcher);
         FileEncodingInfo encoding = DetectFileEncoding(currentFullPath);
         string previousContent = await ReadWorkspaceFileAsync(currentFullPath, cancellationToken);
+        WorkspaceFileEditState expectedSourceState = new(
+            ToWorkspaceRelativePath(currentFullPath),
+            exists: true,
+            previousContent);
         bool isMoveOnly = operation.MoveToPath is not null && operation.Hunks.Count == 0;
         string updatedContent = isMoveOnly
             ? previousContent
@@ -592,17 +626,31 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         EnsureParentDirectory(destinationFullPath);
-
-        await WriteWorkspaceFileAsync(
-            destinationFullPath,
-            updatedContent,
-            encoding,
-            cancellationToken);
-
-        if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
-            File.Exists(currentFullPath))
+        if (isMoveOnly && !WorkspacePath.PathEquals(currentFullPath, destinationFullPath))
         {
-            DeleteWorkspaceFile(currentFullPath);
+            MoveWorkspaceFileAtomically(currentFullPath, destinationFullPath, expectedSourceState, cancellationToken);
+        }
+        else
+        {
+            WorkspaceFileEditState expectedDestinationState = WorkspacePath.PathEquals(currentFullPath, destinationFullPath)
+                ? expectedSourceState
+                : new WorkspaceFileEditState(
+                    ToWorkspaceRelativePath(destinationFullPath),
+                    exists: false,
+                    content: null);
+
+            await WriteWorkspaceFileAsync(
+                destinationFullPath,
+                updatedContent,
+                encoding,
+                expectedDestinationState,
+                cancellationToken);
+
+            if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
+                File.Exists(currentFullPath))
+            {
+                DeleteWorkspaceFile(currentFullPath, expectedSourceState, cancellationToken);
+            }
         }
 
         return CreatePatchFileResult(
@@ -1508,6 +1556,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string fullPath,
         string content,
         FileEncodingInfo encoding,
+        WorkspaceFileEditState? expectedState,
         CancellationToken cancellationToken)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
@@ -1521,25 +1570,62 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             fullPath,
             ToolPathAccessKind.Write);
 
-        await using FileStream stream = new(
-            fullPath,
-            FileMode.Create,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 81920,
-            useAsync: true);
+        await VerifyFileStateAsync(fullPath, expectedState, cancellationToken);
 
-        WorkspaceResolvedPath.Revalidate(
-            workspaceRoot,
-            fullPath,
-            fullPath,
-            ToolPathAccessKind.Write);
-        await using StreamWriter writer = new(stream, writeEncoding);
-        await writer.WriteAsync(finalContent.AsMemory(), cancellationToken);
-        await writer.FlushAsync(cancellationToken);
+        string tempPath = CreateTemporarySiblingPath(fullPath);
+        ExistingFileMetadata? existingMetadata = TryGetExistingFileMetadata(fullPath);
+
+        try
+        {
+            await using (FileStream stream = new(
+                tempPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                WorkspaceResolvedPath.Revalidate(
+                    workspaceRoot,
+                    tempPath,
+                    tempPath,
+                    ToolPathAccessKind.Write);
+                await using StreamWriter writer = new(stream, writeEncoding);
+                await writer.WriteAsync(finalContent.AsMemory(), cancellationToken);
+                await writer.FlushAsync(cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+                stream.Flush(flushToDisk: true);
+            }
+
+            WorkspaceResolvedPath.Revalidate(
+                workspaceRoot,
+                fullPath,
+                fullPath,
+                ToolPathAccessKind.Write);
+
+            if (File.Exists(fullPath))
+            {
+                TryReplaceFileAtomically(tempPath, fullPath);
+            }
+            else
+            {
+                File.Move(tempPath, fullPath);
+            }
+
+            RestoreFileMetadata(fullPath, existingMetadata);
+            FlushDirectoryIfPossible(Path.GetDirectoryName(fullPath));
+        }
+        catch
+        {
+            TryDeleteTemporaryFile(tempPath);
+            throw;
+        }
     }
 
-    private void DeleteWorkspaceFile(string fullPath)
+    private void DeleteWorkspaceFile(
+        string fullPath,
+        WorkspaceFileEditState? expectedState,
+        CancellationToken cancellationToken)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         WorkspaceResolvedPath.Revalidate(
@@ -1547,7 +1633,202 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             fullPath,
             fullPath,
             ToolPathAccessKind.Write);
+        VerifyFileStateAsync(fullPath, expectedState, cancellationToken).GetAwaiter().GetResult();
         File.Delete(fullPath);
+        FlushDirectoryIfPossible(Path.GetDirectoryName(fullPath));
+    }
+
+    private void MoveWorkspaceFileAtomically(
+        string sourceFullPath,
+        string destinationFullPath,
+        WorkspaceFileEditState expectedSourceState,
+        CancellationToken cancellationToken)
+    {
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        VerifyFileStateAsync(sourceFullPath, expectedSourceState, cancellationToken).GetAwaiter().GetResult();
+
+        if (File.Exists(destinationFullPath) || Directory.Exists(destinationFullPath))
+        {
+            throw new InvalidOperationException(
+                $"Cannot move '{ToWorkspaceRelativePath(sourceFullPath)}' to '{ToWorkspaceRelativePath(destinationFullPath)}' because the destination already exists.");
+        }
+
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            destinationFullPath,
+            destinationFullPath,
+            ToolPathAccessKind.Write);
+        File.Move(sourceFullPath, destinationFullPath);
+        FlushDirectoryIfPossible(Path.GetDirectoryName(sourceFullPath));
+
+        if (!string.Equals(
+                Path.GetDirectoryName(sourceFullPath),
+                Path.GetDirectoryName(destinationFullPath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            FlushDirectoryIfPossible(Path.GetDirectoryName(destinationFullPath));
+        }
+    }
+
+    private async Task VerifyFileStateAsync(
+        string fullPath,
+        WorkspaceFileEditState? expectedState,
+        CancellationToken cancellationToken)
+    {
+        if (expectedState is null)
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (Directory.Exists(fullPath))
+        {
+            throw new InvalidOperationException(
+                $"Cannot safely update '{expectedState.Path}' because a directory exists at that path.");
+        }
+
+        bool fileExists = File.Exists(fullPath);
+        if (!expectedState.Exists)
+        {
+            if (fileExists)
+            {
+                throw new InvalidOperationException(
+                    $"Cannot safely update '{expectedState.Path}' because it changed after it was read.");
+            }
+
+            return;
+        }
+
+        if (!fileExists)
+        {
+            throw new InvalidOperationException(
+                $"Cannot safely update '{expectedState.Path}' because it changed after it was read.");
+        }
+
+        if (expectedState.Content is not null)
+        {
+            string currentContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
+            if (!string.Equals(currentContent, expectedState.Content, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Cannot safely update '{expectedState.Path}' because it changed after it was read.");
+            }
+
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(expectedState.ContentHash))
+        {
+            return;
+        }
+
+        await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
+        byte[] hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
+        string currentHash = Convert.ToHexStringLower(hashBytes);
+        if (!string.Equals(currentHash, expectedState.ContentHash, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Cannot safely update '{expectedState.Path}' because it changed after it was read.");
+        }
+    }
+
+    private static string CreateTemporarySiblingPath(string fullPath)
+    {
+        string? directoryPath = Path.GetDirectoryName(fullPath);
+        string fileName = Path.GetFileName(fullPath);
+        string tempName = $".nanoagent-{fileName}.{Guid.NewGuid():N}.tmp";
+        return string.IsNullOrWhiteSpace(directoryPath)
+            ? tempName
+            : Path.Combine(directoryPath, tempName);
+    }
+
+    private static ExistingFileMetadata? TryGetExistingFileMetadata(string fullPath)
+    {
+        if (!File.Exists(fullPath))
+        {
+            return null;
+        }
+
+        try
+        {
+            return new ExistingFileMetadata(
+                File.GetAttributes(fullPath),
+                File.GetCreationTimeUtc(fullPath),
+                File.GetLastAccessTimeUtc(fullPath),
+                File.GetLastWriteTimeUtc(fullPath));
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+            return null;
+        }
+    }
+
+    private static void RestoreFileMetadata(string fullPath, ExistingFileMetadata? metadata)
+    {
+        if (metadata is null || !File.Exists(fullPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.SetAttributes(fullPath, metadata.Value.Attributes);
+            File.SetCreationTimeUtc(fullPath, metadata.Value.CreationTimeUtc);
+            File.SetLastAccessTimeUtc(fullPath, metadata.Value.LastAccessTimeUtc);
+            File.SetLastWriteTimeUtc(fullPath, metadata.Value.LastWriteTimeUtc);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+        }
+    }
+
+    private static void TryReplaceFileAtomically(string sourceFullPath, string destinationFullPath)
+    {
+        try
+        {
+            File.Replace(sourceFullPath, destinationFullPath, destinationBackupFileName: null, ignoreMetadataErrors: true);
+        }
+        catch (PlatformNotSupportedException)
+        {
+            File.Move(sourceFullPath, destinationFullPath, overwrite: true);
+        }
+    }
+
+    private static void TryDeleteTemporaryFile(string tempPath)
+    {
+        try
+        {
+            if (File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+        }
+    }
+
+    private static void FlushDirectoryIfPossible(string? directoryPath)
+    {
+        if (string.IsNullOrWhiteSpace(directoryPath) || !Directory.Exists(directoryPath))
+        {
+            return;
+        }
+
+        try
+        {
+            using SafeFileHandle handle = File.OpenHandle(
+                directoryPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete,
+                FileOptions.None);
+            RandomAccess.FlushToDisk(handle);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+        }
     }
 
     private static string NormalizeNewlines(string content, string targetNewLine)
