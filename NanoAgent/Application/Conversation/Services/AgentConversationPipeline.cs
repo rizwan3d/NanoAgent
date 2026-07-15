@@ -262,6 +262,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 preparedTurn.NormalizedInput,
                 result,
                 preparedTurn.StartedAt,
+                session,
                 session.ShowThinking);
 
             return await FinalizeCompletedTurnAsync(preparedTurn.NormalizedInput, session, completedTurn, cancellationToken);
@@ -396,6 +397,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             normalizedInput,
             executionResult,
             startedAt,
+            session,
             session.ShowThinking);
     }
 
@@ -403,6 +405,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         string userInput,
         PhaseExecutionResult phaseResult,
         DateTimeOffset startedAt,
+        ReplSessionContext session,
         bool showThinking)
     {
         ToolExecutionBatchResult? batchResult = CreateBatchResult(phaseResult.ExecutedToolResults);
@@ -411,7 +414,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             batchResult,
             CreateMetrics(
                 startedAt,
-                phaseResult),
+                phaseResult,
+                session),
             showThinking
                 ? phaseResult.AssistantReasoningContent ??
                     ExtractReasoningDetailsText(phaseResult.AssistantReasoningDetailsJson)
@@ -444,7 +448,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
     private ConversationTurnMetrics CreateMetrics(
         DateTimeOffset startedAt,
-        PhaseExecutionResult phaseResult)
+        PhaseExecutionResult phaseResult,
+        ReplSessionContext session)
     {
         TimeSpan elapsed = _timeProvider.GetUtcNow() - startedAt;
         int estimatedOutputTokens = GetCompletionTokens(phaseResult) is > 0
@@ -456,7 +461,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             estimatedInputTokens: phaseResult.EstimatedInputTokens,
             cachedInputTokens: phaseResult.CachedInputTokens,
             providerRetryCount: phaseResult.ProviderRetryCount,
-            toolRoundCount: phaseResult.ToolRoundCount);
+            toolRoundCount: phaseResult.ToolRoundCount,
+            providerName: session.ProviderName,
+            modelId: session.ActiveModelId);
 
         ApplicationLogMessages.ConversationTurnMetricsRecorded(
             _logger,
