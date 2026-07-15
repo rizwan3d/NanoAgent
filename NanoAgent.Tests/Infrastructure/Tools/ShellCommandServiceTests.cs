@@ -699,6 +699,49 @@ public sealed class ShellCommandServiceTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_RejectWorkingDirectorySymlinkThatEscapesWorkspace()
+    {
+        string outsideRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-Shell-Outside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(outsideRoot);
+        string linkPath = Path.Combine(_workspaceRoot, "outside-link");
+
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, outsideRoot))
+            {
+                return;
+            }
+
+            FakeProcessRunner processRunner = new();
+            ShellCommandService sut = new(
+                processRunner,
+                new StubWorkspaceRootProvider(_workspaceRoot),
+                new PermissionSettings
+                {
+                    SandboxMode = ToolSandboxMode.DangerFullAccess
+                });
+
+            Func<Task> act = () => sut.ExecuteAsync(
+                new ShellCommandExecutionRequest("pwd", "outside-link"),
+                CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*workspace*");
+            processRunner.Requests.Should().BeEmpty();
+        }
+        finally
+        {
+            if (Directory.Exists(outsideRoot))
+            {
+                Directory.Delete(outsideRoot, recursive: true);
+            }
+        }
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
@@ -727,6 +770,22 @@ public sealed class ShellCommandServiceTests : IDisposable
         return OperatingSystem.IsWindows()
             ? $"Start-Sleep -Seconds {seconds}"
             : $"sleep {seconds}";
+    }
+
+    private static bool TryCreateDirectorySymlink(
+        string linkPath,
+        string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or PlatformNotSupportedException ||
+                                         OperatingSystem.IsWindows() && exception is IOException)
+        {
+            return false;
+        }
     }
 
     private sealed class ManualTimeProvider : TimeProvider

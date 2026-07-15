@@ -515,6 +515,45 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void TrySetWorkingDirectory_Should_RejectSymlinkThatEscapesWorkspace()
+    {
+        string workspaceRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-SessionSymlinkCwd-{Guid.NewGuid():N}");
+        string outsideRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"NanoAgent-SessionSymlinkOutside-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workspaceRoot);
+        Directory.CreateDirectory(outsideRoot);
+        string linkPath = Path.Combine(workspaceRoot, "outside-link");
+
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, outsideRoot))
+            {
+                return;
+            }
+
+            ReplSessionContext session = CreateSession(workspaceRoot);
+
+            session.TrySetWorkingDirectory("outside-link", out string? error).Should().BeFalse();
+            error.Should().Contain("workspace");
+        }
+        finally
+        {
+            if (Directory.Exists(workspaceRoot))
+            {
+                Directory.Delete(workspaceRoot, recursive: true);
+            }
+
+            if (Directory.Exists(outsideRoot))
+            {
+                Directory.Delete(outsideRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public void GetConversationHistory_Should_CompactOlderTurns_When_HistoryExceedsLimit()
     {
         ReplSessionContext session = CreateSession();
@@ -555,6 +594,22 @@ public sealed class ReplSessionContextTests
             "gpt-5-mini",
             ["gpt-5-mini"],
             workspacePath: workspacePath);
+    }
+
+    private static bool TryCreateDirectorySymlink(
+        string linkPath,
+        string targetPath)
+    {
+        try
+        {
+            Directory.CreateSymbolicLink(linkPath, targetPath);
+            return true;
+        }
+        catch (Exception exception) when (exception is UnauthorizedAccessException or PlatformNotSupportedException ||
+                                         OperatingSystem.IsWindows() && exception is IOException)
+        {
+            return false;
+        }
     }
 
     private static WorkspaceFileEditTransaction CreateTransaction(string description)

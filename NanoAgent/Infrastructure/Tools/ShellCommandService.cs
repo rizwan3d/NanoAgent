@@ -890,7 +890,10 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         bool directoryRequired)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        string fullPath = WorkspacePath.Resolve(workspaceRoot, requestedPath);
+        string fullPath = WorkspaceResolvedPath.Resolve(
+            workspaceRoot,
+            requestedPath,
+            ToolPathAccessKind.Write).CanonicalFullPath;
 
         if (directoryRequired && !Directory.Exists(fullPath))
         {
