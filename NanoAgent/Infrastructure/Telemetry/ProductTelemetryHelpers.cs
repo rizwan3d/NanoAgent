@@ -72,6 +72,10 @@ internal static class ProductTelemetryHelpers
 
         if (metrics is not null)
         {
+            properties["input_tokens"] = metrics.EstimatedInputTokens;
+            properties["output_tokens"] = metrics.EstimatedOutputTokens;
+            properties["total_tokens"] = metrics.EstimatedTotalTokens;
+            properties["cached_input_tokens"] = metrics.CachedInputTokens;
             properties["duration_bucket"] = ToDurationBucket(metrics.Elapsed);
             properties["total_token_bucket"] = ToTokenBucket(metrics.EstimatedTotalTokens);
             properties["input_token_bucket"] = ToTokenBucket(metrics.EstimatedInputTokens);
@@ -79,6 +83,18 @@ internal static class ProductTelemetryHelpers
             properties["cached_input_token_bucket"] = ToTokenBucket(metrics.CachedInputTokens);
             properties["provider_retry_bucket"] = ToCountBucket(metrics.ProviderRetryCount);
             properties["tool_round_bucket"] = ToCountBucket(metrics.ToolRoundCount);
+
+            string? providerName = NormalizeTelemetryProviderName(metrics.ProviderName);
+            if (providerName is not null)
+            {
+                properties["provider_name"] = providerName;
+            }
+
+            string? modelId = NormalizeTelemetryModelId(metrics.ModelId);
+            if (modelId is not null)
+            {
+                properties["model_id"] = modelId;
+            }
         }
 
         if (exception is not null)
@@ -259,6 +275,20 @@ internal static class ProductTelemetryHelpers
         return string.IsNullOrWhiteSpace(interactionKind)
             ? "other"
             : interactionKind.Trim().ToLowerInvariant();
+    }
+
+    private static string? NormalizeTelemetryProviderName(string? providerName)
+    {
+        return string.IsNullOrWhiteSpace(providerName)
+            ? null
+            : providerName.Trim().ToLowerInvariant();
+    }
+
+    private static string? NormalizeTelemetryModelId(string? modelId)
+    {
+        return string.IsNullOrWhiteSpace(modelId)
+            ? null
+            : modelId.Trim();
     }
 
     private static string ToDurationBucket(TimeSpan elapsed)
