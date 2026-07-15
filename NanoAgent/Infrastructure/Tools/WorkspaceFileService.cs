@@ -121,18 +121,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 continue;
             }
 
-            string fullPath = ResolveWorkspacePath(state.Path, directoryRequired: false, fileRequired: false);
+            string fullPath = ResolveWorkspacePath(
+                state.Path,
+                directoryRequired: false,
+                fileRequired: false,
+                ToolPathAccessKind.Write);
             if (Directory.Exists(fullPath))
             {
                 throw new InvalidOperationException(
                     $"Cannot restore file '{state.Path}' because a directory exists at that path.");
             }
 
-            EnsureParentDirectory(fullPath);
-            await File.WriteAllTextAsync(
+            await WriteWorkspaceFileAsync(
                 fullPath,
                 state.Content!,
-                Utf8NoBom,
+                new FileEncodingInfo(HasBom: false, NewLine: "\n"),
                 cancellationToken);
         }
 
@@ -140,7 +143,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            string fullPath = ResolveWorkspacePath(state.Path, directoryRequired: false, fileRequired: false);
+            string fullPath = ResolveWorkspacePath(
+                state.Path,
+                directoryRequired: false,
+                fileRequired: false,
+                ToolPathAccessKind.Write);
             if (Directory.Exists(fullPath))
             {
                 throw new InvalidOperationException(
@@ -149,7 +156,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             if (File.Exists(fullPath))
             {
-                File.Delete(fullPath);
+                DeleteWorkspaceFile(fullPath);
             }
         }
     }
@@ -288,7 +295,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string fullPath = ResolveWorkspacePath(path, directoryRequired: true, fileRequired: false);
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: true, fileRequired: false, ToolPathAccessKind.List);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
         EnsurePathNotIgnored(fullPath, isDirectory: true, ignoreMatcher);
         return new WorkspaceDirectoryListResult(
@@ -302,7 +309,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true);
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Read);
         EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
         FileInfo fileInfo = new(fullPath);
         if (fileInfo.Length > MaxFileReadBytes)
@@ -311,10 +318,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 $"File '{ToWorkspaceRelativePath(fullPath)}' exceeds the maximum readable size of {MaxFileReadBytes} bytes.");
         }
 
-        string content = await File.ReadAllTextAsync(
-            fullPath,
-            Encoding.UTF8,
-            cancellationToken);
+        string content = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
         return new WorkspaceFileReadResult(
             ToWorkspaceRelativePath(fullPath),
@@ -328,16 +332,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true);
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
         EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
-        string previousContent = await File.ReadAllTextAsync(
-            fullPath,
-            Encoding.UTF8,
-            cancellationToken);
+        string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
         FileWritePreview preview = BuildFileWritePreview(previousContent, string.Empty);
 
         cancellationToken.ThrowIfCancellationRequested();
-        File.Delete(fullPath);
+        DeleteWorkspaceFile(fullPath);
 
         return new WorkspaceFileDeleteResult(
             ToWorkspaceRelativePath(fullPath),
@@ -355,7 +356,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
+        string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Search);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
         string effectiveMode = GetEffectiveSearchMode(request);
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
@@ -398,7 +399,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         ArgumentNullException.ThrowIfNull(request);
         cancellationToken.ThrowIfCancellationRequested();
 
-        string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false);
+        string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Search);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
         {
@@ -420,7 +421,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(content);
 
-        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Write);
         EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
         bool fileExists = File.Exists(fullPath);
         string? previousContent = null;
@@ -432,10 +433,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         if (fileExists)
         {
-            previousContent = await File.ReadAllTextAsync(
-                fullPath,
-                Encoding.UTF8,
-                cancellationToken);
+            previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
         }
 
         FileEncodingInfo encoding = fileExists
@@ -443,7 +441,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : new FileEncodingInfo(HasBom: false, NewLine: "\n");
         EnsureParentDirectory(fullPath);
 
-        await WriteAllTextWithEncodingAsync(
+        await WriteWorkspaceFileAsync(
             fullPath,
             content,
             encoding,
@@ -480,7 +478,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string path,
         CancellationToken cancellationToken)
     {
-        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Read);
         EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
         if (Directory.Exists(fullPath))
         {
@@ -508,10 +506,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 contentHash: hash);
         }
 
-        string content = await File.ReadAllTextAsync(
-            fullPath,
-            Encoding.UTF8,
-            cancellationToken);
+        string content = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
         return new WorkspaceFileEditState(
             ToWorkspaceRelativePath(fullPath),
@@ -523,7 +518,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         PatchOperation operation,
         CancellationToken cancellationToken)
     {
-        string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: false);
+        string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Write);
         EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
         if (File.Exists(fullPath))
         {
@@ -538,7 +533,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
 
         EnsureParentDirectory(fullPath);
-        await WriteAllTextWithEncodingAsync(
+        await WriteWorkspaceFileAsync(
             fullPath,
             content,
             encoding,
@@ -556,14 +551,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         PatchOperation operation,
         CancellationToken cancellationToken)
     {
-        string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true);
+        string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
         EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
-        string previousContent = await File.ReadAllTextAsync(
-            fullPath,
-            Encoding.UTF8,
-            cancellationToken);
+        string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
-        File.Delete(fullPath);
+        DeleteWorkspaceFile(fullPath);
 
         return CreatePatchFileResult(
             fullPath,
@@ -577,14 +569,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         PatchOperation operation,
         CancellationToken cancellationToken)
     {
-        string currentFullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true);
+        string currentFullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
         EnsurePathNotIgnored(currentFullPath, isDirectory: false, ignoreMatcher);
         FileEncodingInfo encoding = DetectFileEncoding(currentFullPath);
-        string previousContent = await File.ReadAllTextAsync(
-            currentFullPath,
-            Encoding.UTF8,
-            cancellationToken);
+        string previousContent = await ReadWorkspaceFileAsync(currentFullPath, cancellationToken);
         bool isMoveOnly = operation.MoveToPath is not null && operation.Hunks.Count == 0;
         string updatedContent = isMoveOnly
             ? previousContent
@@ -592,7 +581,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         string destinationFullPath = operation.MoveToPath is null
             ? currentFullPath
-            : ResolveWorkspacePath(operation.MoveToPath, directoryRequired: false, fileRequired: false);
+            : ResolveWorkspacePath(operation.MoveToPath, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Write);
         EnsurePathNotIgnored(destinationFullPath, Directory.Exists(destinationFullPath), ignoreMatcher);
 
         if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
@@ -604,7 +593,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         EnsureParentDirectory(destinationFullPath);
 
-        await WriteAllTextWithEncodingAsync(
+        await WriteWorkspaceFileAsync(
             destinationFullPath,
             updatedContent,
             encoding,
@@ -613,7 +602,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
             File.Exists(currentFullPath))
         {
-            File.Delete(currentFullPath);
+            DeleteWorkspaceFile(currentFullPath);
         }
 
         return CreatePatchFileResult(
@@ -1407,11 +1396,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private string ResolveWorkspacePath(
         string? requestedPath,
         bool directoryRequired,
-        bool fileRequired)
+        bool fileRequired,
+        ToolPathAccessKind accessKind)
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
-        string fullPath = WorkspacePath.Resolve(workspaceRoot, requestedPath);
-        WorkspaceResolvedPath.EnsurePathStaysWithinWorkspace(workspaceRoot, fullPath);
+        WorkspaceResolvedPath.Resolution resolution = WorkspaceResolvedPath.Resolve(
+            workspaceRoot,
+            requestedPath,
+            accessKind);
+        string fullPath = resolution.CanonicalFullPath;
 
         if (directoryRequired && !Directory.Exists(fullPath))
         {
@@ -1483,15 +1476,78 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return new FileEncodingInfo(hasBom, hasCrlf ? "\r\n" : "\n");
     }
 
-    private static async Task WriteAllTextWithEncodingAsync(
+    private async Task<string> ReadWorkspaceFileAsync(
+        string fullPath,
+        CancellationToken cancellationToken)
+    {
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Read);
+
+        await using FileStream stream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Read);
+        using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return await reader.ReadToEndAsync(cancellationToken);
+    }
+
+    private async Task WriteWorkspaceFileAsync(
         string fullPath,
         string content,
         FileEncodingInfo encoding,
         CancellationToken cancellationToken)
     {
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         string finalContent = NormalizeNewlines(content, encoding.NewLine);
         Encoding writeEncoding = encoding.HasBom ? Utf8WithBom : Utf8NoBom;
-        await File.WriteAllTextAsync(fullPath, finalContent, writeEncoding, cancellationToken);
+
+        EnsureParentDirectory(fullPath);
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Write);
+
+        await using FileStream stream = new(
+            fullPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81920,
+            useAsync: true);
+
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Write);
+        await using StreamWriter writer = new(stream, writeEncoding);
+        await writer.WriteAsync(finalContent.AsMemory(), cancellationToken);
+        await writer.FlushAsync(cancellationToken);
+    }
+
+    private void DeleteWorkspaceFile(string fullPath)
+    {
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Write);
+        File.Delete(fullPath);
     }
 
     private static string NormalizeNewlines(string content, string targetNewLine)
@@ -3219,7 +3275,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false);
+                string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Read);
                 if (!File.Exists(fullPath) || !TryGetFileLength(fullPath, out long length) || length <= LargeFileThresholdBytes)
                 {
                     filtered.Add(path);
