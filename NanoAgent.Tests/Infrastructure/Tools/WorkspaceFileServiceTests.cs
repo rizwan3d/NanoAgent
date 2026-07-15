@@ -113,6 +113,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         DateTime originalWriteTime = new(2024, 01, 02, 03, 04, 07, DateTimeKind.Utc);
         File.SetCreationTimeUtc(filePath, originalCreationTime);
         File.SetLastWriteTimeUtc(filePath, originalWriteTime);
+        DateTime expectedCreationTime = File.GetCreationTimeUtc(filePath);
+        DateTime expectedWriteTime = File.GetLastWriteTimeUtc(filePath);
 
         await sut.WriteFileAsync(
             "settings.json",
@@ -120,8 +122,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             overwrite: true,
             CancellationToken.None);
 
-        File.GetCreationTimeUtc(filePath).Should().Be(originalCreationTime);
-        File.GetLastWriteTimeUtc(filePath).Should().Be(originalWriteTime);
+        File.GetCreationTimeUtc(filePath).Should().Be(expectedCreationTime);
+        File.GetLastWriteTimeUtc(filePath).Should().Be(expectedWriteTime);
     }
 
     [Fact]
