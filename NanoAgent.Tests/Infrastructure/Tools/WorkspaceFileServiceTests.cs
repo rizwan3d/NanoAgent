@@ -228,6 +228,42 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_DenySymlinkDirectoryBreakout()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string outsideRoot = CreateOutsideDirectory();
+        string outsideFile = Path.Combine(outsideRoot, "target.txt");
+        string linkPath = Path.Combine(_workspaceRoot, "linked-outside");
+        await File.WriteAllTextAsync(outsideFile, "outside", CancellationToken.None);
+
+        try
+        {
+            if (!TryCreateDirectorySymlink(linkPath, outsideRoot))
+            {
+                return;
+            }
+
+            Func<Task> act = () => sut.ApplyFileEditStatesAsync(
+                [
+                    new WorkspaceFileEditState("linked-outside/target.txt", exists: true, content: "changed")
+                ],
+                CancellationToken.None);
+
+            await act.Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("*workspace*");
+            (await File.ReadAllTextAsync(outsideFile, CancellationToken.None))
+                .Should()
+                .Be("outside");
+        }
+        finally
+        {
+            DeleteDirectorySymlinkIfExists(linkPath);
+            DeleteDirectoryTreeIfExists(outsideRoot);
+        }
+    }
+
+    [Fact]
     public async Task SearchFilesAsync_Should_ReturnMatchingWorkspaceRelativePaths()
     {
         WorkspaceFileService sut = CreateSut();

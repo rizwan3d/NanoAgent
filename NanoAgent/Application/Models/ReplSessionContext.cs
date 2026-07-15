@@ -528,24 +528,24 @@ public sealed class ReplSessionContext
         string normalizedBaseDirectory = string.IsNullOrWhiteSpace(baseWorkingDirectory)
             ? "."
             : baseWorkingDirectory.Trim();
-        string baseFullPath = NanoAgent.Application.Utilities.WorkspacePath.Resolve(
+        string baseFullPath = NanoAgent.Application.Utilities.WorkspaceResolvedPath.Resolve(
             WorkspacePath,
-            normalizedBaseDirectory);
+            normalizedBaseDirectory,
+            ToolPathAccessKind.Read).CanonicalFullPath;
         string normalizedRequestedPath = string.IsNullOrWhiteSpace(requestedPath)
             ? "."
             : requestedPath.Trim();
 
-        string fullPath = Path.GetFullPath(
+        string candidatePath = Path.GetFullPath(
             Path.IsPathRooted(normalizedRequestedPath)
                 ? normalizedRequestedPath
                 : Path.Combine(baseFullPath, normalizedRequestedPath));
+        string canonicalFullPath = NanoAgent.Application.Utilities.WorkspaceResolvedPath.Resolve(
+            WorkspacePath,
+            candidatePath,
+            ToolPathAccessKind.Read).CanonicalFullPath;
 
-        if (!NanoAgent.Application.Utilities.WorkspacePath.IsSamePathOrDescendant(WorkspacePath, fullPath))
-        {
-            throw new InvalidOperationException("Tool paths must stay within the current workspace.");
-        }
-
-        return NanoAgent.Application.Utilities.WorkspacePath.ToRelativePath(WorkspacePath, fullPath);
+        return NanoAgent.Application.Utilities.WorkspacePath.ToRelativePath(WorkspacePath, canonicalFullPath);
     }
 
     public bool TrySetWorkingDirectory(
@@ -573,7 +573,10 @@ public sealed class ReplSessionContext
             return false;
         }
 
-        string fullPath = NanoAgent.Application.Utilities.WorkspacePath.Resolve(WorkspacePath, resolvedPath);
+        string fullPath = NanoAgent.Application.Utilities.WorkspaceResolvedPath.Resolve(
+            WorkspacePath,
+            resolvedPath,
+            ToolPathAccessKind.Write).CanonicalFullPath;
         if (!Directory.Exists(fullPath))
         {
             error = $"Directory '{resolvedPath}' does not exist.";
@@ -1320,7 +1323,10 @@ public sealed class ReplSessionContext
             return;
         }
 
-        string fullPath = NanoAgent.Application.Utilities.WorkspacePath.Resolve(WorkspacePath, resolvedPath);
+        string fullPath = NanoAgent.Application.Utilities.WorkspaceResolvedPath.Resolve(
+            WorkspacePath,
+            resolvedPath,
+            ToolPathAccessKind.Write).CanonicalFullPath;
         WorkingDirectory = Directory.Exists(fullPath)
             ? resolvedPath
             : ".";
