@@ -9,7 +9,9 @@ public sealed class ConversationTurnMetrics
         int estimatedInputTokens = 0,
         int cachedInputTokens = 0,
         int providerRetryCount = 0,
-        int toolRoundCount = 0)
+        int toolRoundCount = 0,
+        string? providerName = null,
+        string? modelId = null)
     {
         if (elapsed < TimeSpan.Zero)
         {
@@ -53,6 +55,12 @@ public sealed class ConversationTurnMetrics
         CachedInputTokens = cachedInputTokens;
         ProviderRetryCount = providerRetryCount;
         ToolRoundCount = toolRoundCount;
+        ProviderName = string.IsNullOrWhiteSpace(providerName)
+            ? null
+            : providerName.Trim();
+        ModelId = string.IsNullOrWhiteSpace(modelId)
+            ? null
+            : modelId.Trim();
     }
 
     public int CachedInputTokens { get; }
@@ -73,6 +81,10 @@ public sealed class ConversationTurnMetrics
 
     public int DisplayedEstimatedOutputTokens => SessionEstimatedOutputTokens ?? EstimatedOutputTokens;
 
+    public string? ModelId { get; }
+
+    public string? ProviderName { get; }
+
     public string ToDisplayText()
     {
         return MetricDisplayFormatter.FormatEstimatedOutputMetric(
@@ -89,6 +101,8 @@ public sealed class ConversationTurnMetrics
             EstimatedInputTokens,
             CachedInputTokens,
             ProviderRetryCount,
-            ToolRoundCount);
+            ToolRoundCount,
+            ProviderName,
+            ModelId);
     }
 }

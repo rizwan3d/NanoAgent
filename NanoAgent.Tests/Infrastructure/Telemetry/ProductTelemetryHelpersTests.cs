@@ -16,7 +16,9 @@ public sealed class ProductTelemetryHelpersTests
             estimatedInputTokens: 180,
             cachedInputTokens: 20,
             providerRetryCount: 1,
-            toolRoundCount: 2);
+            toolRoundCount: 2,
+            providerName: "OpenAI",
+            modelId: "gpt-5");
 
         IReadOnlyDictionary<string, object> properties = ProductTelemetryHelpers.CreateFeatureProperties(
             "1.2.3",
@@ -42,13 +44,19 @@ public sealed class ProductTelemetryHelpersTests
                 "interaction_kind",
                 "success",
                 "attachment_count_bucket",
+                "input_tokens",
+                "output_tokens",
+                "total_tokens",
+                "cached_input_tokens",
                 "duration_bucket",
                 "total_token_bucket",
                 "input_token_bucket",
                 "output_token_bucket",
                 "cached_input_token_bucket",
                 "provider_retry_bucket",
-                "tool_round_bucket"
+                "tool_round_bucket",
+                "provider_name",
+                "model_id"
             ]);
     }
 
@@ -77,6 +85,9 @@ public sealed class ProductTelemetryHelpersTests
             exception: new ConversationPipelineException(@"Failed for C:\repo\secret.txt"));
 
         properties["duration_bucket"].Should().Be("ge_60s");
+        properties["input_tokens"].Should().Be(1250);
+        properties["output_tokens"].Should().Be(4500);
+        properties["total_tokens"].Should().Be(5750);
         properties["total_token_bucket"].Should().Be("ge_4001");
         properties["input_token_bucket"].Should().Be("1001_to_4000");
         properties["output_token_bucket"].Should().Be("ge_4001");
@@ -84,6 +95,35 @@ public sealed class ProductTelemetryHelpersTests
         properties["failure_kind"].Should().Be("conversation_pipeline");
         string serializedValues = string.Join("|", properties.Values.Select(static value => value?.ToString()));
         serializedValues.Should().NotContain(@"C:\repo\secret.txt");
+    }
+
+    [Fact]
+    public void CreateFeatureProperties_ShouldIncludeNormalizedProviderAndModel()
+    {
+        ConversationTurnMetrics metrics = new(
+            TimeSpan.FromSeconds(4),
+            estimatedOutputTokens: 80,
+            estimatedInputTokens: 120,
+            cachedInputTokens: 30,
+            providerName: "OpenAI ChatGPT Plus/Pro",
+            modelId: "gpt-5-mini");
+
+        IReadOnlyDictionary<string, object> properties = ProductTelemetryHelpers.CreateFeatureProperties(
+            "1.2.3",
+            "windows",
+            "desktop",
+            "local",
+            ciProvider: null,
+            "prompt",
+            "turn",
+            success: true,
+            metrics,
+            attachmentCount: 0,
+            exception: null);
+
+        properties["provider_name"].Should().Be("openai chatgpt plus/pro");
+        properties["model_id"].Should().Be("gpt-5-mini");
+        properties["cached_input_tokens"].Should().Be(30);
     }
 
     [Fact]
