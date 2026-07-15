@@ -103,6 +103,28 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task WriteFileAsync_Should_PreserveExistingTimestamps_When_Overwriting()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "settings.json");
+        await File.WriteAllTextAsync(filePath, "{}\n", CancellationToken.None);
+
+        DateTime originalCreationTime = new(2024, 01, 02, 03, 04, 05, DateTimeKind.Utc);
+        DateTime originalWriteTime = new(2024, 01, 02, 03, 04, 07, DateTimeKind.Utc);
+        File.SetCreationTimeUtc(filePath, originalCreationTime);
+        File.SetLastWriteTimeUtc(filePath, originalWriteTime);
+
+        await sut.WriteFileAsync(
+            "settings.json",
+            "{ \"updated\": true }\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        File.GetCreationTimeUtc(filePath).Should().Be(originalCreationTime);
+        File.GetLastWriteTimeUtc(filePath).Should().Be(originalWriteTime);
+    }
+
+    [Fact]
     public async Task WriteFileAsync_Should_WriteUtf8WithoutBom()
     {
         WorkspaceFileService sut = CreateSut();
@@ -1139,6 +1161,28 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             result.EditTransaction!.BeforeStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
             result.EditTransaction.AfterStates.Select(static state => state.Path).Should().Equal("Foo.txt", "foo.txt");
         }
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MoveFileWithoutLeavingSourceBehind()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string sourcePath = Path.Combine(_workspaceRoot, "notes.txt");
+        string destinationPath = Path.Combine(_workspaceRoot, "archive.txt");
+        await File.WriteAllTextAsync(sourcePath, "hello", CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: notes.txt
+            *** Move to: archive.txt
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        File.Exists(sourcePath).Should().BeFalse();
+        File.Exists(destinationPath).Should().BeTrue();
+        (await File.ReadAllTextAsync(destinationPath, CancellationToken.None)).Should().Be("hello");
     }
 
     [Fact]
