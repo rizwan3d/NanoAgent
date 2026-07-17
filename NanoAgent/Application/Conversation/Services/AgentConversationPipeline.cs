@@ -24,7 +24,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private const int MinimumUsableInputTokens = 2_048;
     private const int MinimumSafetyMarginTokens = 1_000;
     private const int MinimumRecentConversationTokens = 2_000;
-    private const int MaximumRecentConversationTokens = 12_000;
+    private const int MaximumRecentConversationTokens = 8_000;
     private const int MinimumToolOutputPruneTokens = 20_000;
     private const int ProtectedRecentToolOutputTokens = 40_000;
     private const string EmptyResponseRetryInstruction =
@@ -62,7 +62,11 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     new JsonSerializerOptions
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
-    });    
+    });
+    private static readonly HashSet<string> ToolOutputsProtectedFromPruning = new(StringComparer.Ordinal)
+    {
+        AgentToolNames.SkillLoad
+    };
 
     private sealed class PreparedTurnContext : IDisposable
     {
@@ -1588,7 +1592,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             activeToolTokens);
         ConversationRequestMessage currentTask = TrimMessageToBudget(
             messages[currentTaskIndex],
-            currentTaskBudget);
+            currentTaskBudget)
+            ?? messages[currentTaskIndex];
         int currentTaskTokens = EstimateMessageTokens(currentTask);
 
         int remainingBudget = Math.Max(
@@ -1598,28 +1603,16 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             budget.RecentConversationTargetTokens,
             remainingBudget);
 
-        List<ConversationRequestMessage> keptHistoricalConversation = KeepNewestMessagesWithinBudget(
+        List<ConversationRequestMessage> keptHistoricalConversation = KeepNewestTurnsWithinBudget(
             historicalConversation,
             recentConversationBudget);
-        IReadOnlyList<ConversationRequestMessage> omittedHistoricalConversation = historicalConversation
-            .Take(Math.Max(0, historicalConversation.Count - keptHistoricalConversation.Count))
-            .ToArray();
         int keptHistoricalTokens = keptHistoricalConversation.Sum(EstimateMessageTokens);
-        int summaryBudget = Math.Max(0, recentConversationBudget - keptHistoricalTokens);
-        ConversationRequestMessage? summaryMessage = CreateConversationSummaryMessage(
-            omittedHistoricalConversation,
-            summaryBudget);
 
         List<ConversationRequestMessage> keptActiveTurnMessages = KeepNewestToolRoundsWithinBudget(
             prunedActiveTurnMessages,
-            Math.Max(256, budget.UsableInputTokens - currentTaskTokens - keptHistoricalTokens - EstimateOptionalMessageTokens(summaryMessage)));
+            Math.Max(256, budget.UsableInputTokens - currentTaskTokens - keptHistoricalTokens));
 
         List<ConversationRequestMessage> finalMessages = [];
-        if (summaryMessage is not null)
-        {
-            finalMessages.Add(summaryMessage);
-        }
-
         finalMessages.AddRange(keptHistoricalConversation);
         finalMessages.Add(currentTask);
         finalMessages.AddRange(keptActiveTurnMessages);
@@ -1662,9 +1655,70 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return messages.Count - 1;
     }
 
-    private List<ConversationRequestMessage> KeepNewestMessagesWithinBudget(
+    private List<ConversationRequestMessage> KeepNewestTurnsWithinBudget(
         IReadOnlyList<ConversationRequestMessage> messages,
         int budgetTokens)
+    {
+        if (messages.Count == 0 || budgetTokens <= 0)
+        {
+            return [];
+        }
+
+        List<(int Start, int Count, int Tokens)> turns = [];
+        int index = 0;
+        while (index < messages.Count)
+        {
+            int start = index;
+            int tokens = EstimateMessageTokens(messages[index]);
+            index++;
+
+            while (index < messages.Count &&
+                !string.Equals(messages[index].Role, "user", StringComparison.Ordinal))
+            {
+                tokens += EstimateMessageTokens(messages[index]);
+                index++;
+            }
+
+            turns.Add((start, index - start, tokens));
+        }
+
+        int total = 0;
+        List<ConversationRequestMessage> kept = [];
+        for (int turnIndex = turns.Count - 1; turnIndex >= 0; turnIndex--)
+        {
+            (int start, int count, int tokens) = turns[turnIndex];
+            if (total + tokens <= budgetTokens)
+            {
+                kept.InsertRange(0, messages.Skip(start).Take(count));
+                total += tokens;
+                continue;
+            }
+
+            int remainingBudget = budgetTokens - total;
+            if (remainingBudget <= 0)
+            {
+                break;
+            }
+
+            List<ConversationRequestMessage> partialTurn = KeepNewestMessagesWithinBudget(
+                messages.Skip(start).Take(count).ToArray(),
+                remainingBudget,
+                allowPartialOldestMessage: true);
+            if (partialTurn.Count > 0)
+            {
+                kept.InsertRange(0, partialTurn);
+            }
+
+            break;
+        }
+
+        return kept;
+    }
+
+    private List<ConversationRequestMessage> KeepNewestMessagesWithinBudget(
+        IReadOnlyList<ConversationRequestMessage> messages,
+        int budgetTokens,
+        bool allowPartialOldestMessage)
     {
         if (messages.Count == 0 || budgetTokens <= 0)
         {
@@ -1677,13 +1731,27 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         {
             ConversationRequestMessage message = messages[index];
             int messageTokens = EstimateMessageTokens(message);
-            if (kept.Count > 0 && total + messageTokens > budgetTokens)
+            if (total + messageTokens <= budgetTokens)
             {
-                break;
+                kept.Add(message);
+                total += messageTokens;
+                continue;
             }
 
-            kept.Add(message);
-            total += messageTokens;
+            if (allowPartialOldestMessage)
+            {
+                int remainingBudget = budgetTokens - total;
+                ConversationRequestMessage? partialMessage = TrimMessageToBudget(
+                    message,
+                    remainingBudget,
+                    preserveTail: true);
+                if (partialMessage is not null)
+                {
+                    kept.Add(partialMessage);
+                }
+            }
+
+            break;
         }
 
         kept.Reverse();
@@ -1772,6 +1840,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 continue;
             }
 
+            if (IsToolResultProtectedFromPruning(message))
+            {
+                prunedMessages.Add(message);
+                continue;
+            }
+
             int messageTokens = EstimateMessageTokens(message);
             if (preservedRecentToolTokens < ProtectedRecentToolOutputTokens)
             {
@@ -1840,50 +1914,6 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
     }
 
-    private ConversationRequestMessage? CreateConversationSummaryMessage(
-        IReadOnlyList<ConversationRequestMessage> omittedMessages,
-        int budgetTokens)
-    {
-        if (omittedMessages.Count == 0 || budgetTokens < 64)
-        {
-            return null;
-        }
-
-        List<string> lines = ["Earlier conversation summary:"];
-        foreach (ConversationRequestMessage message in omittedMessages)
-        {
-            if (!string.Equals(message.Role, "user", StringComparison.Ordinal) &&
-                !string.Equals(message.Role, "assistant", StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            string prefix = string.Equals(message.Role, "user", StringComparison.Ordinal)
-                ? "user"
-                : "assistant";
-            string content = NormalizeSummaryText(message.Content);
-            if (string.IsNullOrWhiteSpace(content))
-            {
-                continue;
-            }
-
-            lines.Add($"- {prefix}: {content}");
-            string candidate = string.Join(Environment.NewLine, lines);
-            if (_tokenEstimator.Estimate(candidate) > budgetTokens)
-            {
-                lines.RemoveAt(lines.Count - 1);
-                break;
-            }
-        }
-
-        if (lines.Count == 1)
-        {
-            return null;
-        }
-
-        return ConversationRequestMessage.AssistantMessage(string.Join(Environment.NewLine, lines));
-    }
-
     private string? TrimSystemPrompt(string? systemPrompt, int budgetTokens)
     {
         if (string.IsNullOrWhiteSpace(systemPrompt))
@@ -1932,20 +1962,26 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             : string.Join($"{Environment.NewLine}{Environment.NewLine}", keptSections);
     }
 
-    private ConversationRequestMessage TrimMessageToBudget(
+    private ConversationRequestMessage? TrimMessageToBudget(
         ConversationRequestMessage message,
-        int budgetTokens)
+        int budgetTokens,
+        bool preserveTail = false)
     {
-        if (EstimateMessageTokens(message) <= budgetTokens || budgetTokens <= 0)
+        if (budgetTokens <= 0)
+        {
+            return null;
+        }
+
+        if (EstimateMessageTokens(message) <= budgetTokens)
         {
             return message;
         }
 
         if (!string.Equals(message.Role, "user", StringComparison.Ordinal))
         {
-            string trimmedContent = TrimTextToBudget(message.Content, budgetTokens);
+            string trimmedContent = TrimTextToBudget(message.Content, budgetTokens, preserveTail);
             return string.IsNullOrWhiteSpace(trimmedContent)
-                ? message
+                ? null
                 : ConversationRequestMessage.AssistantMessage(
                     trimmedContent,
                     message.ReasoningContent,
@@ -1953,7 +1989,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
 
         IReadOnlyList<ConversationAttachment> attachments = message.Attachments;
-        string? trimmedContentText = TrimTextToBudget(message.Content, Math.Max(128, budgetTokens / 2));
+        string? trimmedContentText = TrimTextToBudget(
+            message.Content,
+            Math.Max(128, budgetTokens / 2),
+            preserveTail);
         List<ConversationAttachment> trimmedAttachments = [];
         foreach (ConversationAttachment attachment in attachments)
         {
@@ -1967,7 +2006,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 attachment.Name,
                 attachment.MediaType,
                 attachment.ContentBase64,
-                TrimTextToBudget(attachment.TextContent, Math.Max(64, budgetTokens / Math.Max(1, attachments.Count + 1)))));
+                TrimTextToBudget(
+                    attachment.TextContent,
+                    Math.Max(64, budgetTokens / Math.Max(1, attachments.Count + 1)),
+                    preserveTail)));
+        }
+
+        if (string.IsNullOrWhiteSpace(trimmedContentText) && trimmedAttachments.Count == 0)
+        {
+            return null;
         }
 
         return ConversationRequestMessage.User(
@@ -2055,7 +2102,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return Math.Min(8_192, Math.Max(2_048, contextWindowTokens / 10));
     }
 
-    private string TrimTextToBudget(string? text, int budgetTokens)
+    private string TrimTextToBudget(
+        string? text,
+        int budgetTokens,
+        bool preserveTail = false)
     {
         if (string.IsNullOrWhiteSpace(text) || budgetTokens <= 0)
         {
@@ -2068,21 +2118,32 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             return normalized;
         }
 
-        int maxChars = Math.Max(32, budgetTokens * 4);
-        string candidate = normalized.Length <= maxChars
-            ? normalized
-            : normalized[..maxChars].TrimEnd();
-        if (_tokenEstimator.Estimate(candidate) <= budgetTokens)
+        const string ellipsis = "...";
+        int low = 1;
+        int high = normalized.Length;
+        string best = string.Empty;
+        while (low <= high)
         {
-            return candidate + "...";
+            int length = low + ((high - low) / 2);
+            string slice = preserveTail
+                ? normalized[^length..]
+                : normalized[..length];
+            string candidate = preserveTail
+                ? ellipsis + slice
+                : slice + ellipsis;
+
+            if (_tokenEstimator.Estimate(candidate) <= budgetTokens)
+            {
+                best = candidate;
+                low = length + 1;
+            }
+            else
+            {
+                high = length - 1;
+            }
         }
 
-        while (candidate.Length > 32 && _tokenEstimator.Estimate(candidate) > budgetTokens)
-        {
-            candidate = candidate[..Math.Max(32, candidate.Length / 2)].TrimEnd();
-        }
-
-        return candidate + "...";
+        return best;
     }
 
     private static string NormalizeSummaryText(string? value)
@@ -2141,11 +2202,29 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return excerpts.ToArray();
     }
 
-    private int EstimateOptionalMessageTokens(ConversationRequestMessage? message)
+    private static bool IsToolResultProtectedFromPruning(ConversationRequestMessage message)
     {
-        return message is null
-            ? 0
-            : EstimateMessageTokens(message);
+        string? toolName = TryGetToolNameFromToolResult(message.Content);
+        return !string.IsNullOrWhiteSpace(toolName) &&
+            ToolOutputsProtectedFromPruning.Contains(toolName);
+    }
+
+    private static string? TryGetToolNameFromToolResult(string? content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return null;
+        }
+
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(content);
+            return TryGetStringProperty(document.RootElement, "ToolName");
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task EnsureBudgetAllowsProviderRequestAsync(
