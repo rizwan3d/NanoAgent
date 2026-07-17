@@ -445,6 +445,205 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
+    public async Task ProcessAsync_Should_SummarizeOlderConversation_UsingModelTokenBudget()
+    {
+        ReplSessionContext session = CreateSession(
+            activeModelId: "small-model",
+            modelContextWindowTokens: new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["small-model"] = 7_000
+            });
+        for (int index = 1; index <= 6; index++)
+        {
+            session.AddConversationTurn(
+                $"Historic user turn {index}: {new string((char)('a' + index - 1), 900)}",
+                $"Historic assistant turn {index}: {new string((char)('g' + index - 1), 900)}");
+        }
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings(new string('s', 8_000), maxHistoryTurns: 6));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_1"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse("Done.", [], "resp_1"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await ProcessAsync(
+            sut,
+            $"Current task: {new string('z', 1_400)}",
+            session);
+
+        requests.Should().ContainSingle();
+        requests[0].Messages.Should().Contain(message =>
+            string.Equals(message.Role, "assistant", StringComparison.Ordinal) &&
+            message.Content != null &&
+            message.Content.Contains("Earlier conversation summary:", StringComparison.Ordinal));
+        requests[0].Messages.Should().NotContain(message =>
+            string.Equals(message.Content, session.ConversationTurns[0].UserInput, StringComparison.Ordinal));
+        requests[0].Messages.Should().Contain(message =>
+            message.Content != null &&
+            message.Content.Contains("Historic assistant turn 6:", StringComparison.Ordinal));
+        requests[0].SystemPrompt.Should().NotBeNull();
+        requests[0].SystemPrompt!.Length.Should().BeLessThan(8_000);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_PruneOlderActiveTurnToolOutput_BeforeFurtherConversationCompression()
+    {
+        ReplSessionContext session = CreateSession(
+            activeModelId: "small-model",
+            modelContextWindowTokens: new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                ["small-model"] = 12_000
+            });
+        for (int index = 1; index <= 4; index++)
+        {
+            session.AddConversationTurn(
+                $"Historic user {index}: {new string((char)('a' + index - 1), 700)}",
+                $"Historic assistant {index}: {new string((char)('k' + index - 1), 700)}");
+        }
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt", maxHistoryTurns: 4));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.FileRead)]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("call_1", AgentToolNames.FileRead, """{ "path": "one.txt" }""")],
+                "resp_1"))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("call_2", AgentToolNames.FileRead, """{ "path": "two.txt" }""")],
+                "resp_2"))
+            .Returns(new ConversationResponse(
+                "Final answer.",
+                [],
+                "resp_3"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .SetupSequence(pipeline => pipeline.ExecuteAsync(
+                It.IsAny<IReadOnlyList<ConversationToolCall>>(),
+                session,
+                ConversationExecutionPhase.Execution,
+                It.IsAny<IReadOnlySet<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "call_1",
+                    AgentToolNames.FileRead,
+                    ToolResult.Success(
+                        "first result",
+                        $$"""{"blob":"{{new string('x', 220_000)}}" }"""))
+            ]))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "call_2",
+                    AgentToolNames.FileRead,
+                    ToolResult.Success(
+                        "second result",
+                        $$"""{"blob":"{{new string('y', 2_000)}}" }"""))
+            ]));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await ProcessAsync(
+            sut,
+            "Inspect the generated files.",
+            session);
+
+        requests.Should().HaveCount(3);
+        requests[2].Messages.Should().Contain(message =>
+            string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
+            message.ToolCallId == "call_2");
+        requests[2].Messages.Should().NotContain(message =>
+            string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
+            message.ToolCallId == "call_1");
+        requests[2].Messages.Should().Contain(message =>
+            string.Equals(message.Role, "assistant", StringComparison.Ordinal) &&
+            message.Content != null &&
+            message.Content.Contains("Earlier conversation summary:", StringComparison.Ordinal));
+        requests[2].Messages.Should().Contain(message =>
+            string.Equals(message.Role, "assistant", StringComparison.Ordinal) &&
+            message.Content != null &&
+            message.Content.Contains("Historic assistant 4:", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public async Task ProcessAsync_Should_UseWorkspaceSystemPromptWhenAvailable()
     {
         ReplSessionContext session = CreateSession();
@@ -2603,15 +2802,11 @@ public sealed class AgentConversationPipelineTests
         await ProcessAsync(sut, "Question three", session);
 
         requests.Should().HaveCount(3);
-        requests[2].Messages.Should().HaveCount(4);
+        requests[2].Messages.Should().HaveCount(3);
         requests[2].Messages[0].Role.Should().Be("user");
-        requests[2].Messages[0].Content.Should().Contain("Earlier conversation context");
-        requests[2].Messages[0].Content.Should().Contain("Question one");
-        requests[2].Messages[0].Content.Should().Contain("Reply one.");
-        requests[2].Messages[0].Content.Should().NotContain("Question two");
-        requests[2].Messages[1].Content.Should().Be("Question two");
-        requests[2].Messages[2].Content.Should().Be("Reply two.");
-        requests[2].Messages[3].Content.Should().Be("Question three");
+        requests[2].Messages[0].Content.Should().Be("Question two");
+        requests[2].Messages[1].Content.Should().Be("Reply two.");
+        requests[2].Messages[2].Content.Should().Be("Question three");
     }
 
     [Fact]
@@ -2948,13 +3143,16 @@ public sealed class AgentConversationPipelineTests
 
     private static ReplSessionContext CreateSession(
         IAgentProfile? agentProfile = null,
-        string? activeProviderName = null)
+        string? activeProviderName = null,
+        string activeModelId = "gpt-5-mini",
+        IReadOnlyDictionary<string, int>? modelContextWindowTokens = null)
     {
         return new ReplSessionContext(
             new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
-            "gpt-5-mini",
-            ["gpt-5-mini", "gpt-4.1"],
+            activeModelId,
+            [activeModelId, "gpt-4.1"],
             agentProfile,
+            modelContextWindowTokens: modelContextWindowTokens,
             activeProviderName: activeProviderName);
     }
 
