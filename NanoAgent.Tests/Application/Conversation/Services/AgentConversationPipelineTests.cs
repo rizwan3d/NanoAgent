@@ -2944,7 +2944,7 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_CompactOlderHistory_When_MaxHistoryTurnsIsLimited()
+    public async Task ProcessAsync_Should_NotUseMaxHistoryTurnsForNormalPromptConstruction()
     {
         ReplSessionContext session = CreateSession();
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
@@ -2999,11 +2999,15 @@ public sealed class AgentConversationPipelineTests
         await ProcessAsync(sut, "Question three", session);
 
         requests.Should().HaveCount(3);
-        requests[2].Messages.Should().HaveCount(3);
+        requests[2].Messages.Should().HaveCount(5);
         requests[2].Messages[0].Role.Should().Be("user");
-        requests[2].Messages[0].Content.Should().Be("Question two");
-        requests[2].Messages[1].Content.Should().Be("Reply two.");
-        requests[2].Messages[2].Content.Should().Be("Question three");
+        requests[2].Messages[0].Content.Should().Be("Question one");
+        requests[2].Messages[1].Role.Should().Be("assistant");
+        requests[2].Messages[1].Content.Should().Be("Reply one.");
+        requests[2].Messages[2].Content.Should().Be("Question two");
+        requests[2].Messages[3].Role.Should().Be("assistant");
+        requests[2].Messages[3].Content.Should().Be("Reply two.");
+        requests[2].Messages[4].Content.Should().Be("Question three");
     }
 
     [Fact]
