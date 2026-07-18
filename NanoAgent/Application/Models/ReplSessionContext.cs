@@ -638,15 +638,133 @@ public sealed class ReplSessionContext
             toolCalls,
             toolOutputMessages,
             assistantReasoningContent,
-            assistantReasoningDetailsJson);
+            assistantReasoningDetailsJson,
+            ConversationTurnStatus.Completed);
 
-        _conversationTurns.Add(turn);
-        _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
-        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(
-            turn.AssistantResponse,
-            turn.AssistantReasoningContent,
-            turn.AssistantReasoningDetailsJson));
+        AddStoredTurn(turn);
         IsPersistedStateDirty = true;
+    }
+
+    public ConversationSectionTurn CreatePendingConversationTurn(
+        string userInput,
+        IReadOnlyList<ConversationAttachment>? attachments = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(userInput);
+
+        ConversationSectionTurn turn = new(
+            userInput,
+            attachments: attachments,
+            status: ConversationTurnStatus.Pending);
+
+        AddStoredTurn(turn);
+        IsPersistedStateDirty = true;
+        return turn;
+    }
+
+    public bool TryCompleteConversationTurn(
+        string turnId,
+        string assistantResponse,
+        IReadOnlyList<ConversationToolCall>? toolCalls = null,
+        IReadOnlyList<string>? toolOutputMessages = null,
+        string? assistantReasoningContent = null,
+        string? assistantReasoningDetailsJson = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(turnId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(assistantResponse);
+
+        int turnIndex = FindTurnIndex(turnId);
+        if (turnIndex < 0)
+        {
+            return false;
+        }
+
+        ConversationSectionTurn existingTurn = _conversationTurns[turnIndex];
+        if (existingTurn.Status == ConversationTurnStatus.Completed)
+        {
+            return true;
+        }
+
+        if (existingTurn.Status is ConversationTurnStatus.Interrupted or ConversationTurnStatus.Cancelled)
+        {
+            return false;
+        }
+
+        _conversationTurns[turnIndex] = new ConversationSectionTurn(
+            userInput: existingTurn.UserInput,
+            assistantResponse: assistantResponse,
+            toolCalls: toolCalls,
+            toolOutputMessages: toolOutputMessages,
+            assistantReasoningContent: assistantReasoningContent,
+            assistantReasoningDetailsJson: assistantReasoningDetailsJson,
+            status: ConversationTurnStatus.Completed,
+            turnId: existingTurn.TurnId,
+            attachments: existingTurn.Attachments);
+        RebuildConversationHistory();
+        IsPersistedStateDirty = true;
+        return true;
+    }
+
+    public bool TryInterruptConversationTurn(
+        string turnId,
+        IReadOnlyList<ConversationToolCall>? toolCalls = null,
+        IReadOnlyList<string>? toolOutputMessages = null,
+        ConversationFailureInfo? failureInfo = null)
+    {
+        return TryFinalizeIncompleteConversationTurn(
+            turnId,
+            ConversationTurnStatus.Interrupted,
+            toolCalls,
+            toolOutputMessages,
+            failureInfo);
+    }
+
+    public bool TryCancelConversationTurn(string turnId)
+    {
+        return TryFinalizeIncompleteConversationTurn(
+            turnId,
+            ConversationTurnStatus.Cancelled,
+            null,
+            null,
+            null);
+    }
+
+    public bool TryAppendConversationTurnToolProgress(
+        string turnId,
+        IReadOnlyList<ConversationToolCall>? toolCalls,
+        IReadOnlyList<string>? toolOutputMessages)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(turnId);
+
+        int turnIndex = FindTurnIndex(turnId);
+        if (turnIndex < 0)
+        {
+            return false;
+        }
+
+        ConversationSectionTurn existingTurn = _conversationTurns[turnIndex];
+        if (existingTurn.Status != ConversationTurnStatus.Pending)
+        {
+            return existingTurn.Status == ConversationTurnStatus.Interrupted;
+        }
+
+        ConversationToolCall[] mergedToolCalls =
+            [.. existingTurn.ToolCalls, .. (toolCalls ?? []).Where(static toolCall => toolCall is not null)];
+        string[] mergedToolOutputMessages =
+            [.. existingTurn.ToolOutputMessages, .. (toolOutputMessages ?? []).Where(static message => !string.IsNullOrWhiteSpace(message))];
+
+        _conversationTurns[turnIndex] = new ConversationSectionTurn(
+            userInput: existingTurn.UserInput,
+            assistantResponse: null,
+            toolCalls: mergedToolCalls,
+            toolOutputMessages: mergedToolOutputMessages,
+            assistantReasoningContent: null,
+            assistantReasoningDetailsJson: null,
+            status: existingTurn.Status,
+            turnId: existingTurn.TurnId,
+            attachments: existingTurn.Attachments,
+            failureInfo: existingTurn.FailureInfo);
+        IsPersistedStateDirty = true;
+        return true;
     }
 
     public int CompactConversationHistory(int retainedHistoryTurns)
@@ -814,37 +932,7 @@ public sealed class ReplSessionContext
             throw new ArgumentOutOfRangeException(nameof(updatedAtUtc));
         }
 
-        if (_conversationHistory.Count % 2 != 0)
-        {
-            throw new InvalidOperationException(
-                "Conversation history must contain complete user/assistant turns before it can be persisted.");
-        }
-
-        if (_conversationTurns.Count * 2 != _conversationHistory.Count)
-        {
-            throw new InvalidOperationException(
-                "Conversation turn metadata must match conversation history before it can be persisted.");
-        }
-
-        for (int index = 0; index < _conversationHistory.Count; index += 2)
-        {
-            ConversationRequestMessage userMessage = _conversationHistory[index];
-            ConversationRequestMessage assistantMessage = _conversationHistory[index + 1];
-            ConversationSectionTurn turn = _conversationTurns[index / 2];
-
-            if (!string.Equals(userMessage.Role, "user", StringComparison.Ordinal) ||
-                !string.Equals(assistantMessage.Role, "assistant", StringComparison.Ordinal) ||
-                string.IsNullOrWhiteSpace(userMessage.Content) ||
-                string.IsNullOrWhiteSpace(assistantMessage.Content) ||
-                !string.Equals(userMessage.Content, turn.UserInput, StringComparison.Ordinal) ||
-                !string.Equals(assistantMessage.Content, turn.AssistantResponse, StringComparison.Ordinal) ||
-                !string.Equals(assistantMessage.ReasoningContent, turn.AssistantReasoningContent, StringComparison.Ordinal) ||
-                !string.Equals(assistantMessage.ReasoningDetailsJson, turn.AssistantReasoningDetailsJson, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    "Conversation history contains an unsupported message layout for section persistence.");
-            }
-        }
+        ValidateConversationHistoryConsistency();
 
         return new ConversationSectionSnapshot(
             SectionId,
@@ -928,8 +1016,14 @@ public sealed class ReplSessionContext
             builder.Append(originalTurnNumber.ToString(CultureInfo.InvariantCulture));
             builder.Append(" user: ");
             builder.AppendLine(CompactHistoryField(turn.UserInput));
-            builder.Append("  assistant: ");
-            builder.AppendLine(CompactHistoryField(turn.AssistantResponse));
+            builder.Append("  status: ");
+            builder.AppendLine(turn.Status.ToString());
+
+            if (!string.IsNullOrWhiteSpace(turn.AssistantResponse))
+            {
+                builder.Append("  assistant: ");
+                builder.AppendLine(CompactHistoryField(turn.AssistantResponse));
+            }
 
             if (turn.ToolCalls.Count > 0)
             {
@@ -963,11 +1057,117 @@ public sealed class ReplSessionContext
     private void AddStoredTurn(ConversationSectionTurn turn)
     {
         _conversationTurns.Add(turn);
-        _conversationHistory.Add(ConversationRequestMessage.User(turn.UserInput));
-        _conversationHistory.Add(ConversationRequestMessage.AssistantMessage(
-            turn.AssistantResponse,
-            turn.AssistantReasoningContent,
-            turn.AssistantReasoningDetailsJson));
+        AddTurnMessages(_conversationHistory, turn);
+    }
+
+    private void AddTurnMessages(
+        List<ConversationRequestMessage> history,
+        ConversationSectionTurn turn)
+    {
+        history.Add(ConversationRequestMessage.User(turn.UserInput, turn.Attachments));
+
+        if (!string.IsNullOrWhiteSpace(turn.AssistantResponse))
+        {
+            history.Add(ConversationRequestMessage.AssistantMessage(
+                turn.AssistantResponse,
+                turn.AssistantReasoningContent,
+                turn.AssistantReasoningDetailsJson));
+        }
+    }
+
+    private int FindTurnIndex(string turnId)
+    {
+        return _conversationTurns.FindIndex(turn =>
+            string.Equals(turn.TurnId, turnId.Trim(), StringComparison.Ordinal));
+    }
+
+    private bool TryFinalizeIncompleteConversationTurn(
+        string turnId,
+        ConversationTurnStatus finalStatus,
+        IReadOnlyList<ConversationToolCall>? toolCalls,
+        IReadOnlyList<string>? toolOutputMessages,
+        ConversationFailureInfo? failureInfo)
+    {
+        if (finalStatus is not ConversationTurnStatus.Interrupted and not ConversationTurnStatus.Cancelled)
+        {
+            throw new ArgumentOutOfRangeException(nameof(finalStatus));
+        }
+
+        int turnIndex = FindTurnIndex(turnId);
+        if (turnIndex < 0)
+        {
+            return false;
+        }
+
+        ConversationSectionTurn existingTurn = _conversationTurns[turnIndex];
+        if (existingTurn.Status == ConversationTurnStatus.Completed)
+        {
+            return false;
+        }
+
+        if (existingTurn.Status == finalStatus)
+        {
+            return true;
+        }
+
+        if (existingTurn.Status is ConversationTurnStatus.Interrupted or ConversationTurnStatus.Cancelled)
+        {
+            return false;
+        }
+
+        _conversationTurns[turnIndex] = new ConversationSectionTurn(
+            userInput: existingTurn.UserInput,
+            assistantResponse: null,
+            toolCalls: toolCalls ?? existingTurn.ToolCalls,
+            toolOutputMessages: toolOutputMessages ?? existingTurn.ToolOutputMessages,
+            assistantReasoningContent: null,
+            assistantReasoningDetailsJson: null,
+            status: finalStatus,
+            turnId: existingTurn.TurnId,
+            attachments: existingTurn.Attachments,
+            failureInfo: failureInfo);
+        RebuildConversationHistory();
+        IsPersistedStateDirty = true;
+        return true;
+    }
+
+    private void RebuildConversationHistory()
+    {
+        _conversationHistory.Clear();
+        foreach (ConversationSectionTurn turn in _conversationTurns)
+        {
+            AddTurnMessages(_conversationHistory, turn);
+        }
+    }
+
+    private void ValidateConversationHistoryConsistency()
+    {
+        List<ConversationRequestMessage> expectedHistory = [];
+        foreach (ConversationSectionTurn turn in _conversationTurns)
+        {
+            AddTurnMessages(expectedHistory, turn);
+        }
+
+        if (_conversationHistory.Count != expectedHistory.Count)
+        {
+            throw new InvalidOperationException(
+                "Conversation turn metadata must match conversation history before it can be persisted.");
+        }
+
+        for (int index = 0; index < expectedHistory.Count; index++)
+        {
+            ConversationRequestMessage actual = _conversationHistory[index];
+            ConversationRequestMessage expected = expectedHistory[index];
+            if (!string.Equals(actual.Role, expected.Role, StringComparison.Ordinal) ||
+                !string.Equals(actual.Content, expected.Content, StringComparison.Ordinal) ||
+                !string.Equals(actual.ReasoningContent, expected.ReasoningContent, StringComparison.Ordinal) ||
+                !string.Equals(actual.ReasoningDetailsJson, expected.ReasoningDetailsJson, StringComparison.Ordinal) ||
+                actual.Attachments.Count != expected.Attachments.Count)
+            {
+                throw new InvalidOperationException(
+                    "Conversation history contains an unsupported message layout for section persistence.");
+            }
+        }
     }
 
     private static string CompactHistoryField(string value)

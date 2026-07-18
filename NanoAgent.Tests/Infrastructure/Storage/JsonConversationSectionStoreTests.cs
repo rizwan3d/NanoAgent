@@ -145,8 +145,54 @@ public sealed class JsonConversationSectionStoreTests : IDisposable
 
         loadedSnapshot.Should().NotBeNull();
         loadedSnapshot!.Turns.Should().ContainSingle();
+        loadedSnapshot.Turns[0].Status.Should().Be(ConversationTurnStatus.Completed);
         loadedSnapshot.Turns[0].ToolCalls.Should().BeEmpty();
         loadedSnapshot.Turns[0].ToolOutputMessages.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SaveAsync_ThenLoadAsync_Should_PreserveInterruptedTurn()
+    {
+        StubUserDataPathProvider pathProvider = new(_tempRoot);
+        JsonConversationSectionStore sut = new(pathProvider);
+        ConversationSectionSnapshot snapshot = new(
+            Guid.NewGuid().ToString("D"),
+            "Interrupted Session",
+            new DateTimeOffset(2026, 4, 21, 1, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2026, 4, 21, 1, 5, 0, TimeSpan.Zero),
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "gpt-5-mini",
+            ["gpt-5-mini"],
+            [
+                new ConversationSectionTurn(
+                    "Implement the round winner component",
+                    status: ConversationTurnStatus.Interrupted,
+                    toolCalls:
+                    [
+                        new ConversationToolCall(
+                            "call_1",
+                            "file_read",
+                            """{ "path": "README.md" }""")
+                    ],
+                    toolOutputMessages: ["Read README.md"],
+                    failureInfo: new ConversationFailureInfo(
+                        "provider_request_error",
+                        "OpenAI-compatible",
+                        "gpt-5-mini",
+                        isRetryable: false))
+            ],
+            12);
+
+        await sut.SaveAsync(snapshot, CancellationToken.None);
+        ConversationSectionSnapshot? loadedSnapshot = await sut.LoadAsync(snapshot.SectionId, CancellationToken.None);
+
+        loadedSnapshot.Should().NotBeNull();
+        loadedSnapshot!.Turns.Should().ContainSingle();
+        loadedSnapshot.Turns[0].Status.Should().Be(ConversationTurnStatus.Interrupted);
+        loadedSnapshot.Turns[0].AssistantResponse.Should().BeNull();
+        loadedSnapshot.Turns[0].ToolOutputMessages.Should().ContainSingle().Which.Should().Be("Read README.md");
+        loadedSnapshot.Turns[0].FailureInfo.Should().NotBeNull();
+        loadedSnapshot.Turns[0].FailureInfo!.Category.Should().Be("provider_request_error");
     }
 
     public void Dispose()
