@@ -22,6 +22,7 @@ public sealed class ConversationSectionSnapshot
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata = null,
         string? activeProviderName = null,
         string? parentSessionId = null)
     {
@@ -60,9 +61,11 @@ public sealed class ConversationSectionSnapshot
             ? BuiltInAgentProfiles.BuildName
             : agentProfileName.Trim();
         AvailableModelIds = normalizedAvailableModelIds;
-        ModelContextWindowTokens = NormalizeModelContextWindowTokens(
+        ModelContextMetadata = NormalizeModelContextMetadata(
+            modelContextMetadata,
             modelContextWindowTokens,
             AvailableModelIds);
+        ModelContextWindowTokens = CreateModelContextWindowTokens(ModelContextMetadata);
         CreatedAtUtc = createdAtUtc;
         ProviderProfile = providerProfile;
         ReasoningOptions normalizedReasoning = ReasoningOptions.Create(
@@ -97,6 +100,8 @@ public sealed class ConversationSectionSnapshot
     public DateTimeOffset CreatedAtUtc { get; }
 
     public IReadOnlyDictionary<string, int> ModelContextWindowTokens { get; }
+
+    public IReadOnlyDictionary<string, ModelContextMetadata> ModelContextMetadata { get; }
 
     public AgentProviderProfile ProviderProfile { get; }
 
@@ -146,17 +151,38 @@ public sealed class ConversationSectionSnapshot
                 : turn;
     }
 
-    private static Dictionary<string, int> NormalizeModelContextWindowTokens(
+    private static Dictionary<string, ModelContextMetadata> NormalizeModelContextMetadata(
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
         IReadOnlyList<string> availableModelIds)
     {
-        Dictionary<string, int> normalized = new(StringComparer.Ordinal);
-        if (modelContextWindowTokens is null || modelContextWindowTokens.Count == 0)
+        Dictionary<string, ModelContextMetadata> normalized = new(StringComparer.Ordinal);
+        HashSet<string> available = new(availableModelIds, StringComparer.Ordinal);
+
+        if (modelContextMetadata is not null)
+        {
+            foreach ((string modelId, ModelContextMetadata metadata) in modelContextMetadata)
+            {
+                if (string.IsNullOrWhiteSpace(modelId) ||
+                    metadata is null ||
+                    metadata.ContextWindowTokens <= 0)
+                {
+                    continue;
+                }
+
+                string normalizedModelId = modelId.Trim();
+                if (available.Contains(normalizedModelId))
+                {
+                    normalized[normalizedModelId] = metadata;
+                }
+            }
+        }
+
+        if (modelContextWindowTokens is null)
         {
             return normalized;
         }
 
-        HashSet<string> available = new(availableModelIds, StringComparer.Ordinal);
         foreach ((string modelId, int contextWindowTokens) in modelContextWindowTokens)
         {
             if (string.IsNullOrWhiteSpace(modelId) || contextWindowTokens <= 0)
@@ -165,13 +191,29 @@ public sealed class ConversationSectionSnapshot
             }
 
             string normalizedModelId = modelId.Trim();
-            if (available.Contains(normalizedModelId))
+            if (available.Contains(normalizedModelId) &&
+                !normalized.ContainsKey(normalizedModelId))
             {
-                normalized[normalizedModelId] = contextWindowTokens;
+                normalized[normalizedModelId] = new ModelContextMetadata(contextWindowTokens);
             }
         }
 
         return normalized;
+    }
+
+    private static Dictionary<string, int> CreateModelContextWindowTokens(
+        IReadOnlyDictionary<string, ModelContextMetadata> modelContextMetadata)
+    {
+        Dictionary<string, int> contextWindowTokens = new(StringComparer.Ordinal);
+        foreach ((string modelId, ModelContextMetadata metadata) in modelContextMetadata)
+        {
+            if (metadata.ContextWindowTokens > 0)
+            {
+                contextWindowTokens[modelId] = metadata.ContextWindowTokens;
+            }
+        }
+
+        return contextWindowTokens;
     }
 
     private static string? NormalizeProviderName(string? providerName)

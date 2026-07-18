@@ -398,7 +398,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
         handler.AuthorizationHeader.Should().Be("Bearer test-key");
         handler.KiloCodeEditorHeader.Should().Be("NanoAgent");
         handler.KiloCodeUserAgentHeader.Should().Be("nanoagent-kilo-provider");
-        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("kilo-auto/free", 128000));
+        models.Should().ContainSingle();
+        models[0].Id.Should().Be("kilo-auto/free");
+        models[0].ContextWindowTokens.Should().Be(128000);
+        models[0].ContextMetadata?.ContextWindowTokens.Should().Be(128000);
     }
 
     [Fact]
@@ -490,7 +493,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:11434/v1/models"));
         handler.AuthorizationHeader.Should().Be("Bearer ollama");
-        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("llama3.2", 131072));
+        models.Should().ContainSingle();
+        models[0].Id.Should().Be("llama3.2");
+        models[0].ContextWindowTokens.Should().Be(131072);
+        models[0].ContextMetadata?.ContextWindowTokens.Should().Be(131072);
     }
 
     [Fact]
@@ -513,7 +519,10 @@ public sealed class OpenAiCompatibleModelProviderClientTests
 
         handler.RequestUri.Should().Be(new Uri("http://127.0.0.1:4321/v1/models"));
         handler.AuthorizationHeader.Should().Be("Bearer lm-studio-key");
-        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("qwen3-8b", 32768));
+        models.Should().ContainSingle();
+        models[0].Id.Should().Be("qwen3-8b");
+        models[0].ContextWindowTokens.Should().Be(32768);
+        models[0].ContextMetadata?.ContextWindowTokens.Should().Be(32768);
     }
 
     [Fact]

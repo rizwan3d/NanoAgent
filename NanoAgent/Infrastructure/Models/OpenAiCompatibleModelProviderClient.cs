@@ -54,6 +54,33 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         "top_provider",
         "topProvider"
     ];
+    private static readonly string[] MaxContextWindowPropertyNames =
+    [
+        "max_context_window",
+        "maxContextWindow",
+        "max_context_window_tokens",
+        "maxContextWindowTokens"
+    ];
+    private static readonly string[] AutoCompactTokenLimitPropertyNames =
+    [
+        "auto_compact_token_limit",
+        "autoCompactTokenLimit"
+    ];
+    private static readonly string[] EffectiveContextWindowPercentPropertyNames =
+    [
+        "effective_context_window_percent",
+        "effectiveContextWindowPercent"
+    ];
+    private static readonly string[] ToolOutputTokenLimitPropertyNames =
+    [
+        "tool_output_token_limit",
+        "toolOutputTokenLimit"
+    ];
+    private static readonly string[] TruncationPolicyPropertyNames =
+    [
+        "truncation_policy",
+        "truncationPolicy"
+    ];
 
     private readonly HttpClient _httpClient;
     private readonly IOpenAiCodexClientVersionProvider _openAiCodexClientVersionProvider;
@@ -657,11 +684,13 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             if (!string.IsNullOrWhiteSpace(id))
             {
                 string normalizedId = id.Trim();
+                int? contextWindowTokens = TryGetContextWindowTokens(item) ?? TryGetFallbackContextWindowTokens(
+                    providerKind,
+                    normalizedId);
                 models.Add(new AvailableModel(
                     normalizedId,
-                    TryGetContextWindowTokens(item) ?? TryGetFallbackContextWindowTokens(
-                        providerKind,
-                        normalizedId)));
+                    contextWindowTokens,
+                    TryGetModelContextMetadata(item, contextWindowTokens)));
             }
         }
 
@@ -784,6 +813,167 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             : null;
     }
 
+    private static ModelContextMetadata? TryGetModelContextMetadata(
+        JsonElement item,
+        int? fallbackContextWindowTokens)
+    {
+        int contextWindowTokens = TryGetContextWindowTokens(item) ?? fallbackContextWindowTokens ?? 0;
+        if (contextWindowTokens <= 0)
+        {
+            return null;
+        }
+
+        return new ModelContextMetadata(
+            contextWindowTokens,
+            TryGetNamedPositiveInt32(item, MaxContextWindowPropertyNames),
+            TryGetNamedPositiveInt32(item, AutoCompactTokenLimitPropertyNames),
+            TryGetNamedFraction(item, EffectiveContextWindowPercentPropertyNames),
+            TryGetTruncationPolicy(item),
+            TryGetNamedPositiveInt32(item, ToolOutputTokenLimitPropertyNames));
+    }
+
+    private static ToolResultTruncationPolicy? TryGetTruncationPolicy(JsonElement item)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (!MatchesAny(property.Name, TruncationPolicyPropertyNames) ||
+                property.Value.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            JsonElement policy = property.Value;
+            if (!TryGetNamedString(policy, "mode", out string? mode))
+            {
+                continue;
+            }
+
+            int? limit = TryGetNamedPositiveInt32(policy, ["limit"]);
+            if (limit is not > 0)
+            {
+                continue;
+            }
+
+            return new ToolResultTruncationPolicy(mode!, limit.Value);
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (MatchesAny(property.Name, ContextWindowContainerPropertyNames))
+            {
+                ToolResultTruncationPolicy? nestedPolicy = TryGetTruncationPolicy(property.Value);
+                if (nestedPolicy is not null)
+                {
+                    return nestedPolicy;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static int? TryGetNamedPositiveInt32(
+        JsonElement item,
+        IReadOnlyList<string> propertyNames)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (MatchesAny(property.Name, propertyNames) &&
+                TryReadPositiveInt32(property.Value, out int value))
+            {
+                return value;
+            }
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (MatchesAny(property.Name, ContextWindowContainerPropertyNames))
+            {
+                int? nested = TryGetNamedPositiveInt32(property.Value, propertyNames);
+                if (nested is not null)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static double? TryGetNamedFraction(
+        JsonElement item,
+        IReadOnlyList<string> propertyNames)
+    {
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (!MatchesAny(property.Name, propertyNames))
+            {
+                continue;
+            }
+
+            if (TryReadDouble(property.Value, out double value) &&
+                value > 0d)
+            {
+                return value > 1d
+                    ? Math.Min(1d, value / 100d)
+                    : value;
+            }
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (MatchesAny(property.Name, ContextWindowContainerPropertyNames))
+            {
+                double? nested = TryGetNamedFraction(property.Value, propertyNames);
+                if (nested is not null)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryGetNamedString(
+        JsonElement item,
+        string propertyName,
+        out string? value)
+    {
+        value = null;
+        if (item.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (JsonProperty property in item.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase) &&
+                property.Value.ValueKind == JsonValueKind.String)
+            {
+                value = property.Value.GetString();
+                return !string.IsNullOrWhiteSpace(value);
+            }
+        }
+
+        return false;
+    }
+
     private static bool TryReadPositiveInt32(JsonElement value, out int result)
     {
         result = 0;
@@ -820,6 +1010,26 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
 
         result = (int)numericValue;
         return true;
+    }
+
+    private static bool TryReadDouble(JsonElement value, out double result)
+    {
+        result = 0d;
+        if (value.ValueKind == JsonValueKind.Number)
+        {
+            return value.TryGetDouble(out result);
+        }
+
+        if (value.ValueKind == JsonValueKind.String)
+        {
+            return double.TryParse(
+                value.GetString(),
+                NumberStyles.Float | NumberStyles.AllowThousands,
+                CultureInfo.InvariantCulture,
+                out result);
+        }
+
+        return false;
     }
 
     private static bool MatchesAny(string value, IReadOnlyList<string> candidates)

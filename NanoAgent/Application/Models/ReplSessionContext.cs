@@ -26,6 +26,7 @@ public sealed class ReplSessionContext
     public const string DefaultSectionTitle = "Untitled section";
     private readonly HashSet<string> _availableModelIds;
     private Dictionary<string, int> _modelContextWindowTokens;
+    private Dictionary<string, ModelContextMetadata> _modelContextMetadata;
     private List<WorkspaceFileEditTransaction>? _batchedFileEditTransactions;
     private readonly List<ConversationRequestMessage> _conversationHistory = [];
     private readonly List<ConversationSectionTurn> _conversationTurns = [];
@@ -50,6 +51,7 @@ public sealed class ReplSessionContext
         string? thinkingMode = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata = null,
         string? activeProviderName = null,
         string? parentSessionId = null,
         SessionContext? sessionContext = null)
@@ -63,6 +65,7 @@ public sealed class ReplSessionContext
             thinkingMode: thinkingMode,
             workspacePath: workspacePath,
             modelContextWindowTokens: modelContextWindowTokens,
+            modelContextMetadata: modelContextMetadata,
             activeProviderName: activeProviderName,
             parentSessionId: parentSessionId,
             sessionContext: sessionContext)
@@ -88,6 +91,7 @@ public sealed class ReplSessionContext
         SessionStateSnapshot? sessionState = null,
         string? workspacePath = null,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata = null,
         string? activeProviderName = null,
         string? parentSessionId = null,
         SessionContext? sessionContext = null)
@@ -108,9 +112,11 @@ public sealed class ReplSessionContext
         ActiveProviderName = NormalizeProviderName(activeProviderName);
         ProviderProfile = providerProfile;
         AvailableModelIds = NormalizeAvailableModelIds(availableModelIds);
-        _modelContextWindowTokens = NormalizeModelContextWindowTokens(
+        _modelContextMetadata = NormalizeModelContextMetadata(
+            modelContextMetadata,
             modelContextWindowTokens,
             AvailableModelIds);
+        _modelContextWindowTokens = CreateModelContextWindowTokens(_modelContextMetadata);
 
         if (AvailableModelIds.Count == 0)
         {
@@ -179,10 +185,18 @@ public sealed class ReplSessionContext
 
     public IReadOnlyDictionary<string, int> ModelContextWindowTokens => _modelContextWindowTokens;
 
+    public IReadOnlyDictionary<string, ModelContextMetadata> ModelContextMetadata => _modelContextMetadata;
+
     public int? ActiveModelContextWindowTokens => _modelContextWindowTokens.TryGetValue(
         ActiveModelId,
         out int contextWindowTokens)
             ? contextWindowTokens
+            : null;
+
+    public ModelContextMetadata? ActiveModelContextMetadata => _modelContextMetadata.TryGetValue(
+        ActiveModelId,
+        out ModelContextMetadata? metadata)
+            ? metadata
             : null;
 
     public ReasoningOptions Reasoning => _reasoningOptions;
@@ -404,6 +418,7 @@ public sealed class ReplSessionContext
         string activeModelId,
         IReadOnlyList<string> availableModelIds,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens = null,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata = null,
         string? activeProviderName = null)
     {
         ArgumentNullException.ThrowIfNull(providerProfile);
@@ -426,8 +441,13 @@ public sealed class ReplSessionContext
                 nameof(activeModelId));
         }
 
+        Dictionary<string, ModelContextMetadata> normalizedModelContextMetadata =
+            NormalizeModelContextMetadata(
+                modelContextMetadata,
+                modelContextWindowTokens,
+                normalizedAvailableModelIds);
         Dictionary<string, int> normalizedModelContextWindowTokens =
-            NormalizeModelContextWindowTokens(modelContextWindowTokens, normalizedAvailableModelIds);
+            CreateModelContextWindowTokens(normalizedModelContextMetadata);
         string? normalizedActiveProviderName = NormalizeProviderName(activeProviderName);
         if (normalizedActiveProviderName is null && Equals(ProviderProfile, providerProfile))
         {
@@ -439,11 +459,12 @@ public sealed class ReplSessionContext
             !string.Equals(ActiveProviderName, normalizedActiveProviderName, StringComparison.Ordinal) ||
             !string.Equals(ActiveModelId, normalizedActiveModelId, StringComparison.Ordinal) ||
             !AvailableModelIds.SequenceEqual(normalizedAvailableModelIds, StringComparer.Ordinal) ||
-            !ModelContextWindowTokensEqual(_modelContextWindowTokens, normalizedModelContextWindowTokens);
+            !ModelContextMetadataEqual(_modelContextMetadata, normalizedModelContextMetadata);
 
         ActiveProviderName = normalizedActiveProviderName;
         ProviderProfile = providerProfile;
         AvailableModelIds = normalizedAvailableModelIds;
+        _modelContextMetadata = normalizedModelContextMetadata;
         _modelContextWindowTokens = normalizedModelContextWindowTokens;
         _availableModelIds.Clear();
         foreach (string modelId in normalizedAvailableModelIds)
@@ -951,6 +972,7 @@ public sealed class ReplSessionContext
             SessionState,
             WorkspacePath,
             _modelContextWindowTokens,
+            _modelContextMetadata,
             ActiveProviderName,
             ParentSessionId);
     }
@@ -1211,17 +1233,38 @@ public sealed class ReplSessionContext
             .ToArray();
     }
 
-    private static Dictionary<string, int> NormalizeModelContextWindowTokens(
+    private static Dictionary<string, ModelContextMetadata> NormalizeModelContextMetadata(
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
         IReadOnlyList<string> availableModelIds)
     {
-        Dictionary<string, int> normalized = new(StringComparer.Ordinal);
-        if (modelContextWindowTokens is null || modelContextWindowTokens.Count == 0)
+        Dictionary<string, ModelContextMetadata> normalized = new(StringComparer.Ordinal);
+        HashSet<string> available = new(availableModelIds, StringComparer.Ordinal);
+
+        if (modelContextMetadata is not null)
+        {
+            foreach ((string modelId, ModelContextMetadata metadata) in modelContextMetadata)
+            {
+                if (string.IsNullOrWhiteSpace(modelId) ||
+                    metadata is null ||
+                    metadata.ContextWindowTokens <= 0)
+                {
+                    continue;
+                }
+
+                string normalizedModelId = modelId.Trim();
+                if (available.Contains(normalizedModelId))
+                {
+                    normalized[normalizedModelId] = metadata;
+                }
+            }
+        }
+
+        if (modelContextWindowTokens is null)
         {
             return normalized;
         }
 
-        HashSet<string> available = new(availableModelIds, StringComparer.Ordinal);
         foreach ((string modelId, int contextWindowTokens) in modelContextWindowTokens)
         {
             if (string.IsNullOrWhiteSpace(modelId) || contextWindowTokens <= 0)
@@ -1230,28 +1273,44 @@ public sealed class ReplSessionContext
             }
 
             string normalizedModelId = modelId.Trim();
-            if (available.Contains(normalizedModelId))
+            if (available.Contains(normalizedModelId) &&
+                !normalized.ContainsKey(normalizedModelId))
             {
-                normalized[normalizedModelId] = contextWindowTokens;
+                normalized[normalizedModelId] = new ModelContextMetadata(contextWindowTokens);
             }
         }
 
         return normalized;
     }
 
-    private static bool ModelContextWindowTokensEqual(
-        IReadOnlyDictionary<string, int> first,
-        IReadOnlyDictionary<string, int> second)
+    private static Dictionary<string, int> CreateModelContextWindowTokens(
+        IReadOnlyDictionary<string, ModelContextMetadata> modelContextMetadata)
+    {
+        Dictionary<string, int> contextWindowTokens = new(StringComparer.Ordinal);
+        foreach ((string modelId, ModelContextMetadata metadata) in modelContextMetadata)
+        {
+            if (metadata.ContextWindowTokens > 0)
+            {
+                contextWindowTokens[modelId] = metadata.ContextWindowTokens;
+            }
+        }
+
+        return contextWindowTokens;
+    }
+
+    private static bool ModelContextMetadataEqual(
+        IReadOnlyDictionary<string, ModelContextMetadata> first,
+        IReadOnlyDictionary<string, ModelContextMetadata> second)
     {
         if (first.Count != second.Count)
         {
             return false;
         }
 
-        foreach ((string modelId, int contextWindowTokens) in first)
+        foreach ((string modelId, ModelContextMetadata metadata) in first)
         {
-            if (!second.TryGetValue(modelId, out int otherContextWindowTokens) ||
-                otherContextWindowTokens != contextWindowTokens)
+            if (!second.TryGetValue(modelId, out ModelContextMetadata? otherMetadata) ||
+                !Equals(otherMetadata, metadata))
             {
                 return false;
             }

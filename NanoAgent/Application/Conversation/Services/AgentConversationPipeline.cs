@@ -23,11 +23,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private const int IncompletePlanFinalResponseRetryLimit = 1;
     private const int DefaultModelContextWindowTokens = 128_000;
     private const int MinimumUsableInputTokens = 2_048;
-    private const int MinimumSafetyMarginTokens = 1_000;
     private const int MinimumRecentConversationTokens = 2_000;
-    private const int MaximumRecentConversationTokens = 8_000;
-    private const int MinimumToolOutputPruneTokens = 20_000;
-    private const int ProtectedRecentToolOutputTokens = 40_000;
     private const string EmptyResponseRetryInstruction =
         """
         The previous provider response was empty even though it ended normally. This output was rejected by the runtime and was not saved.
@@ -146,25 +142,29 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     {
         public ContextBudget(
             int contextWindowTokens,
-            int reservedOutputTokens,
-            int safetyMarginTokens,
             int usableInputTokens,
-            int recentConversationTargetTokens)
+            int recentConversationTargetTokens,
+            int autoCompactTokenLimit,
+            int toolResultTokenLimit,
+            ToolResultTruncationPolicy? toolResultTruncationPolicy)
         {
             ContextWindowTokens = contextWindowTokens;
-            ReservedOutputTokens = reservedOutputTokens;
-            SafetyMarginTokens = safetyMarginTokens;
             UsableInputTokens = usableInputTokens;
             RecentConversationTargetTokens = recentConversationTargetTokens;
+            AutoCompactTokenLimit = autoCompactTokenLimit;
+            ToolResultTokenLimit = toolResultTokenLimit;
+            ToolResultTruncationPolicy = toolResultTruncationPolicy;
         }
+
+        public int AutoCompactTokenLimit { get; }
 
         public int ContextWindowTokens { get; }
 
         public int RecentConversationTargetTokens { get; }
 
-        public int ReservedOutputTokens { get; }
+        public ToolResultTruncationPolicy? ToolResultTruncationPolicy { get; }
 
-        public int SafetyMarginTokens { get; }
+        public int ToolResultTokenLimit { get; }
 
         public int UsableInputTokens { get; }
     }
@@ -538,7 +538,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             turnId,
             completedTurn.AssistantResponse,
             completedTurn.ToolCalls,
-            CreateToolOutputMessages(completedTurn.BatchResult),
+            CreateToolOutputMessages(completedTurn.BatchResult, session),
             completedTurn.AssistantReasoningContent,
             completedTurn.AssistantReasoningDetailsJson);
     }
@@ -1222,7 +1222,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 session.TryAppendConversationTurnToolProgress(
                     turnId,
                     response.ToolCalls,
-                    CreateToolOutputMessages(toolExecutionResult));
+                    CreateToolOutputMessages(toolExecutionResult, session));
 
                 ExecutionPlanProgress? reportedPlanUpdate = await ReportPlanUpdatesAsync(
                     toolExecutionResult,
@@ -1262,7 +1262,8 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                         ? 0
                         : IncrementFailureCount(consecutiveToolFailureCount);
 
-                    messages.Add(ConversationRequestMessage.ToolResult(
+                    messages.Add(CreateToolResultMessage(
+                        session,
                         invocationResult.ToolCallId,
                         CreateToolFeedbackContent(invocationResult, consecutiveToolFailureCount)));
                 }
@@ -1806,7 +1807,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
     }
 
-    private static IReadOnlyList<ConversationRequestMessage> BuildInitialConversationMessages(
+    private IReadOnlyList<ConversationRequestMessage> BuildInitialConversationMessages(
         ReplSessionContext session)
     {
         ConversationSectionTurn[] turns = session.ConversationTurns.ToArray();
@@ -1825,7 +1826,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 messages.Add(ConversationRequestMessage.AssistantToolCalls(turn.ToolCalls));
                 foreach ((string toolCallId, string toolOutputMessage) in CreateStoredToolResultMessages(turn))
                 {
-                    messages.Add(ConversationRequestMessage.ToolResult(toolCallId, toolOutputMessage));
+                    messages.Add(ConversationRequestMessage.ToolResult(
+                        toolCallId,
+                        TruncateToolResultContent(session, toolOutputMessage)));
                 }
             }
 
@@ -1883,17 +1886,32 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     {
         int toolDefinitionTokens = EstimateToolDefinitionTokens(availableTools);
         ContextBudget budget = CreateContextBudget(
-            session.ActiveModelId,
+            session.ActiveModelContextMetadata,
             session.ActiveModelContextWindowTokens ?? DefaultModelContextWindowTokens,
             toolDefinitionTokens);
 
+        string? effectiveSystemPrompt = AppendInterruptedTurnRecoveryContext(systemPrompt, session);
+        List<ConversationRequestMessage> truncatedMessages = ApplyToolResultTruncation(messages, budget);
+        int fullMessageTokens = truncatedMessages.Sum(EstimateMessageTokens);
+        int fullSystemPromptTokens = string.IsNullOrWhiteSpace(effectiveSystemPrompt)
+            ? 0
+            : _tokenEstimator.Estimate(effectiveSystemPrompt);
+
+        if (fullMessageTokens + fullSystemPromptTokens <= budget.AutoCompactTokenLimit &&
+            fullMessageTokens + fullSystemPromptTokens <= budget.UsableInputTokens)
+        {
+            return new PreparedConversationRequest(
+                effectiveSystemPrompt,
+                truncatedMessages.ToArray());
+        }
+
         List<ConversationRequestMessage> trimmedMessages = TrimMessages(
-            messages,
+            truncatedMessages,
             budget);
         int messageTokens = trimmedMessages.Sum(EstimateMessageTokens);
         int remainingSystemBudget = Math.Max(256, budget.UsableInputTokens - messageTokens);
         string? trimmedSystemPrompt = TrimSystemPrompt(
-            AppendInterruptedTurnRecoveryContext(systemPrompt, session),
+            effectiveSystemPrompt,
             remainingSystemBudget);
 
         if (!string.IsNullOrWhiteSpace(trimmedSystemPrompt))
@@ -1929,9 +1947,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             .Skip(currentTaskIndex + 1)
             .ToArray();
 
-        List<ConversationRequestMessage> prunedActiveTurnMessages = PruneOldToolOutput(activeTurnMessages);
-
-        int activeToolTokens = prunedActiveTurnMessages.Sum(EstimateMessageTokens);
+        int activeToolTokens = activeTurnMessages.Sum(EstimateMessageTokens);
         int currentTaskBudget = Math.Max(
             512,
             budget.UsableInputTokens -
@@ -1956,7 +1972,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         int keptHistoricalTokens = keptHistoricalConversation.Sum(EstimateMessageTokens);
 
         List<ConversationRequestMessage> keptActiveTurnMessages = KeepNewestToolRoundsWithinBudget(
-            prunedActiveTurnMessages,
+            activeTurnMessages,
             Math.Max(256, budget.UsableInputTokens - currentTaskTokens - keptHistoricalTokens));
 
         List<ConversationRequestMessage> finalMessages = [];
@@ -1967,26 +1983,40 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     }
 
     private ContextBudget CreateContextBudget(
-        string modelId,
-        int contextWindowTokens,
+        ModelContextMetadata? modelContextMetadata,
+        int fallbackContextWindowTokens,
         int toolDefinitionTokens)
     {
-        int reservedOutputTokens = GetReservedResponseTokens(modelId, contextWindowTokens);
-        int safetyMarginTokens = Math.Max(MinimumSafetyMarginTokens, contextWindowTokens / 50);
+        int contextWindowTokens = modelContextMetadata?.ContextWindowTokens is > 0
+            ? modelContextMetadata.ContextWindowTokens
+            : fallbackContextWindowTokens;
+        double effectivePercent = modelContextMetadata?.EffectiveContextWindowPercent is > 0d and <= 1d
+            ? modelContextMetadata.EffectiveContextWindowPercent.Value
+            : 1d;
+        int effectiveInputLimit = Math.Max(
+            MinimumUsableInputTokens,
+            FractionOf(contextWindowTokens, effectivePercent));
+        int derivedAutoCompactTokenLimit = FractionOf(contextWindowTokens, 0.90d);
+        int autoCompactTokenLimit = modelContextMetadata?.AutoCompactTokenLimit is > 0
+            ? Math.Min(modelContextMetadata.AutoCompactTokenLimit.Value, derivedAutoCompactTokenLimit)
+            : derivedAutoCompactTokenLimit;
         int usableInputTokens = Math.Max(
             MinimumUsableInputTokens,
-            contextWindowTokens - reservedOutputTokens - safetyMarginTokens - toolDefinitionTokens);
-        int recentConversationTargetTokens = Math.Clamp(
-            usableInputTokens / 4,
+            effectiveInputLimit - toolDefinitionTokens);
+        int recentConversationTargetTokens = Math.Max(
             MinimumRecentConversationTokens,
-            MaximumRecentConversationTokens);
+            usableInputTokens / 4);
+        int toolResultTokenLimit = ResolveToolResultTokenLimit(
+            modelContextMetadata,
+            contextWindowTokens);
 
         return new ContextBudget(
             contextWindowTokens,
-            reservedOutputTokens,
-            safetyMarginTokens,
             usableInputTokens,
-            recentConversationTargetTokens);
+            recentConversationTargetTokens,
+            autoCompactTokenLimit,
+            toolResultTokenLimit,
+            modelContextMetadata?.ToolResultTruncationPolicy);
     }
 
     private static int FindCurrentTaskIndex(IReadOnlyList<ConversationRequestMessage> messages)
@@ -2162,50 +2192,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private List<ConversationRequestMessage> PruneOldToolOutput(
         IReadOnlyList<ConversationRequestMessage> activeTurnMessages)
     {
-        if (activeTurnMessages.Count == 0)
-        {
-            return [];
-        }
-
-        int totalToolOutputTokens = activeTurnMessages
-            .Where(static message => string.Equals(message.Role, "tool", StringComparison.Ordinal))
-            .Sum(EstimateMessageTokens);
-        if (totalToolOutputTokens < MinimumToolOutputPruneTokens)
-        {
-            return activeTurnMessages.ToList();
-        }
-
-        List<ConversationRequestMessage> prunedMessages = [];
-        int preservedRecentToolTokens = 0;
-
-        for (int index = activeTurnMessages.Count - 1; index >= 0; index--)
-        {
-            ConversationRequestMessage message = activeTurnMessages[index];
-            if (!string.Equals(message.Role, "tool", StringComparison.Ordinal))
-            {
-                prunedMessages.Add(message);
-                continue;
-            }
-
-            if (IsToolResultProtectedFromPruning(message))
-            {
-                prunedMessages.Add(message);
-                continue;
-            }
-
-            int messageTokens = EstimateMessageTokens(message);
-            if (preservedRecentToolTokens < ProtectedRecentToolOutputTokens)
-            {
-                prunedMessages.Add(message);
-                preservedRecentToolTokens += messageTokens;
-                continue;
-            }
-
-            prunedMessages.Add(SummarizeToolResultMessage(message));
-        }
-
-        prunedMessages.Reverse();
-        return prunedMessages;
+        return activeTurnMessages.ToList();
     }
 
     private ConversationRequestMessage SummarizeToolResultMessage(ConversationRequestMessage message)
@@ -2419,29 +2406,50 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         }
     }
 
+    private List<ConversationRequestMessage> ApplyToolResultTruncation(
+        IReadOnlyList<ConversationRequestMessage> messages,
+        ContextBudget budget)
+    {
+        List<ConversationRequestMessage> normalized = [];
+        foreach (ConversationRequestMessage message in messages)
+        {
+            if (!string.Equals(message.Role, "tool", StringComparison.Ordinal))
+            {
+                normalized.Add(message);
+                continue;
+            }
+
+            normalized.Add(ConversationRequestMessage.ToolResult(
+                message.ToolCallId ?? "tool_result",
+                TruncateToolResultContent(
+                    message.Content,
+                    budget.ToolResultTokenLimit,
+                    budget.ToolResultTruncationPolicy)));
+        }
+
+        return normalized;
+    }
+
     private static int FractionOf(int total, double fraction)
     {
         return (int)Math.Round(total * fraction, MidpointRounding.AwayFromZero);
     }
 
-    private static int GetReservedResponseTokens(string modelId, int contextWindowTokens)
+    private static int ResolveToolResultTokenLimit(
+        ModelContextMetadata? modelContextMetadata,
+        int contextWindowTokens)
     {
-        if (modelId.Contains("gpt-5", StringComparison.OrdinalIgnoreCase))
+        if (modelContextMetadata?.ToolOutputTokenLimit is > 0)
         {
-            return Math.Min(32_768, Math.Max(8_192, contextWindowTokens / 8));
+            return modelContextMetadata.ToolOutputTokenLimit.Value;
         }
 
-        if (modelId.Contains("claude", StringComparison.OrdinalIgnoreCase))
+        if (modelContextMetadata?.ToolResultTruncationPolicy?.Limit is > 0)
         {
-            return Math.Min(16_384, Math.Max(4_096, contextWindowTokens / 10));
+            return modelContextMetadata.ToolResultTruncationPolicy.Limit;
         }
 
-        if (modelId.Contains("gemini", StringComparison.OrdinalIgnoreCase))
-        {
-            return Math.Min(16_384, Math.Max(4_096, contextWindowTokens / 10));
-        }
-
-        return Math.Min(8_192, Math.Max(2_048, contextWindowTokens / 10));
+        return Math.Min(32_768, Math.Max(2_048, contextWindowTokens / 10));
     }
 
     private string TrimTextToBudget(
@@ -2501,6 +2509,93 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return normalized.Length <= 240
             ? normalized
             : normalized[..237].TrimEnd() + "...";
+    }
+
+    private ConversationRequestMessage CreateToolResultMessage(
+        ReplSessionContext session,
+        string toolCallId,
+        string content)
+    {
+        return ConversationRequestMessage.ToolResult(
+            toolCallId,
+            TruncateToolResultContent(session, content));
+    }
+
+    private string TruncateToolResultContent(
+        ReplSessionContext session,
+        string? content)
+    {
+        ContextBudget budget = CreateContextBudget(
+            session.ActiveModelContextMetadata,
+            session.ActiveModelContextWindowTokens ?? DefaultModelContextWindowTokens,
+            toolDefinitionTokens: 0);
+        return TruncateToolResultContent(
+            content,
+            budget.ToolResultTokenLimit,
+            budget.ToolResultTruncationPolicy);
+    }
+
+    private string TruncateToolResultContent(
+        string? content,
+        int tokenLimit,
+        ToolResultTruncationPolicy? truncationPolicy)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return string.Empty;
+        }
+
+        string normalized = content.Trim();
+        string? toolName = TryGetToolNameFromToolResult(normalized);
+        if (!string.IsNullOrWhiteSpace(toolName) &&
+            ToolOutputsProtectedFromPruning.Contains(toolName))
+        {
+            return normalized;
+        }
+
+        if (truncationPolicy is not null &&
+            string.Equals(truncationPolicy.Mode, "bytes", StringComparison.OrdinalIgnoreCase))
+        {
+            return TrimTextToByteBudget(normalized, truncationPolicy.Limit);
+        }
+
+        return _tokenEstimator.Estimate(normalized) <= tokenLimit
+            ? normalized
+            : TrimTextToBudget(normalized, tokenLimit);
+    }
+
+    private static string TrimTextToByteBudget(string text, int byteLimit)
+    {
+        if (string.IsNullOrWhiteSpace(text) || byteLimit <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (System.Text.Encoding.UTF8.GetByteCount(text) <= byteLimit)
+        {
+            return text;
+        }
+
+        const string ellipsis = "...";
+        int low = 1;
+        int high = text.Length;
+        string best = string.Empty;
+        while (low <= high)
+        {
+            int length = low + ((high - low) / 2);
+            string candidate = text[..length] + ellipsis;
+            if (System.Text.Encoding.UTF8.GetByteCount(candidate) <= byteLimit)
+            {
+                best = candidate;
+                low = length + 1;
+            }
+            else
+            {
+                high = length - 1;
+            }
+        }
+
+        return best;
     }
 
     private static string? TryGetStringProperty(JsonElement element, string propertyName)
@@ -2700,11 +2795,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     }
 
     private IReadOnlyList<string> CreateToolOutputMessages(
-        ToolExecutionBatchResult? batchResult)
+        ToolExecutionBatchResult? batchResult,
+        ReplSessionContext session)
     {
         return batchResult is null
             ? []
-            : _toolOutputFormatter.FormatResults(batchResult);
+            : _toolOutputFormatter
+                .FormatResults(batchResult)
+                .Select(message => TruncateToolResultContent(session, message))
+                .ToArray();
     }
 
     private ConversationFailureInfo CreateFailureInfo(

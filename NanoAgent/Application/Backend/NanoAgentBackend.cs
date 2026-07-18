@@ -171,6 +171,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                     onboardingResult.ReasoningEffort,
                     options.ThinkingMode ?? onboardingResult.ThinkingMode,
                     CreateModelContextWindowMap(modelResult.AvailableModels),
+                    CreateModelContextMetadataMap(modelResult.AvailableModels),
                     onboardingResult.ActiveProviderName),
                 cancellationToken);
         }
@@ -488,6 +489,35 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
 
         return contextWindowTokens;
+    }
+
+    private static IReadOnlyDictionary<string, ModelContextMetadata> CreateModelContextMetadataMap(
+        IEnumerable<AvailableModel> models)
+    {
+        Dictionary<string, ModelContextMetadata> metadata = new(StringComparer.Ordinal);
+        foreach (AvailableModel model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Id))
+            {
+                continue;
+            }
+
+            string modelId = model.Id.Trim();
+            ModelContextMetadata? modelMetadata = model.ContextMetadata;
+            if (modelMetadata is null)
+            {
+                if (model.ContextWindowTokens is not > 0)
+                {
+                    continue;
+                }
+
+                modelMetadata = new ModelContextMetadata(model.ContextWindowTokens.Value);
+            }
+
+            metadata[modelId] = modelMetadata;
+        }
+
+        return metadata;
     }
 
     private async Task PromptForUpdateIfAvailableAsync(
