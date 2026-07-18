@@ -88,10 +88,12 @@ internal sealed class FileReadTool : ITool
             cancellationToken);
         if (SecretRedactor.IsEnvironmentFilePath(result.Path))
         {
-            string redactedContent = RedactNumberedEnvironmentFileContent(result.Content);
+            string redactedRawContent = RedactNumberedEnvironmentFileContent(result.RawContent);
+            string redactedDisplayContent = RedactNumberedEnvironmentFileContent(result.DisplayContent);
             result = result with
             {
-                Content = redactedContent
+                RawContent = redactedRawContent,
+                DisplayContent = redactedDisplayContent
             };
         }
 
@@ -171,7 +173,7 @@ internal sealed class FileReadTool : ITool
         [
             $"<path>{result.Path}</path>",
             "<content>",
-            result.Content,
+            result.DisplayContent,
             "</content>",
             string.Empty,
             $"Showing lines {result.StartLine}-{result.EndLine} of {result.TotalLines}."
