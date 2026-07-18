@@ -17,7 +17,13 @@ public sealed class ToolResultFactoryTests
             new WorkspaceFileReadResult(
                 "NanoAgent/Application/Backend/NanoAgentBackend.cs",
                 content,
-                content.Length),
+                12,
+                12,
+                100,
+                false,
+                null,
+                "abc123",
+                "utf-8"),
             ToolJsonContext.Default.WorkspaceFileReadResult);
 
         result.JsonResult.Should().Contain(content);

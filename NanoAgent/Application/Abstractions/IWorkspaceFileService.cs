@@ -32,6 +32,8 @@ public interface IWorkspaceFileService
 
     Task<WorkspaceFileReadResult> ReadFileAsync(
         string path,
+        int offset,
+        int limit,
         CancellationToken cancellationToken);
 
     Task<WorkspaceFileSearchResult> SearchFilesAsync(

@@ -173,6 +173,11 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 case "file_read":
                 case "file_delete":
                     AddNamedArgumentLine(root, lines, "path");
+                    if (string.Equals(toolCall.Name, "file_read", StringComparison.Ordinal))
+                    {
+                        AddNamedArgumentLine(root, lines, "offset");
+                        AddNamedArgumentLine(root, lines, "limit");
+                    }
                     break;
 
                 case "directory_list":
@@ -555,7 +560,11 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
             }
 
             TryGetJsonString(root, "Content", out string content, trim: false);
-            TryGetJsonInt32(root, "CharacterCount", out int characterCount);
+            TryGetJsonInt32(root, "StartLine", out int startLine);
+            TryGetJsonInt32(root, "EndLine", out int endLine);
+            TryGetJsonInt32(root, "TotalLines", out int totalLines);
+            TryGetJsonBoolean(root, "Truncated", out bool truncated);
+            TryGetJsonInt32(root, "NextOffset", out int nextOffset);
 
             string[] lines = SplitPreviewLines(content);
             bool showFullContent = ToolOutputDisplay.ShowFullToolOutput;
@@ -565,9 +574,13 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 .Append(Bullet)
                 .Append(" Read ")
                 .Append(path)
-                .Append(" (")
-                .Append(characterCount)
-                .Append(" chars)");
+                .Append(" (lines ")
+                .Append(startLine)
+                .Append('-')
+                .Append(endLine)
+                .Append(" of ")
+                .Append(totalLines)
+                .Append(')');
 
             if (lines.Length == 0)
             {
@@ -594,6 +607,14 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                     .Append("    ... +")
                     .Append(lines.Length - displayedLineCount)
                     .Append(" lines");
+            }
+
+            if (truncated)
+            {
+                builder
+                    .AppendLine()
+                    .Append("  - next offset: ")
+                    .Append(nextOffset);
             }
 
             message = builder.ToString();

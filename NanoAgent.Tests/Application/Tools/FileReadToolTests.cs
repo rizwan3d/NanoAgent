@@ -29,8 +29,8 @@ public sealed class FileReadToolTests
     {
         Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
         workspaceFileService
-            .Setup(service => service.ReadFileAsync("README.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WorkspaceFileReadResult("README.md", "hello", 5));
+            .Setup(service => service.ReadFileAsync("README.md", 1, 2_000, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateReadResult("README.md", "1: hello", 1, 1, 1));
 
         FileReadTool sut = new(workspaceFileService.Object);
 
@@ -42,7 +42,8 @@ public sealed class FileReadToolTests
         result.Message.Should().Contain("README.md");
         result.JsonResult.Should().Contain("\"Path\":\"README.md\"");
         result.RenderPayload.Should().NotBeNull();
-        result.RenderPayload!.Text.Should().Be("```text\nhello\n```");
+        result.RenderPayload!.Text.Should().Be(
+            "<path>README.md</path>\n<content>\n1: hello\n</content>\n\nShowing lines 1-1 of 1.");
     }
 
     [Fact]
@@ -55,11 +56,13 @@ public sealed class FileReadToolTests
         {
             Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
             workspaceFileService
-                .Setup(service => service.ReadFileAsync(".env", It.IsAny<CancellationToken>()))
-                .ReturnsAsync(new WorkspaceFileReadResult(
+                .Setup(service => service.ReadFileAsync(".env", 1, 2_000, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(CreateReadResult(
                     ".env",
-                    "NODE_ENV=development\nDATABASE_URL=postgres://user:pass@example/db",
-                    63));
+                    "1: NODE_ENV=development\n2: DATABASE_URL=postgres://user:pass@example/db",
+                    1,
+                    2,
+                    2));
 
             FileReadTool sut = new(workspaceFileService.Object);
 
@@ -81,26 +84,50 @@ public sealed class FileReadToolTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_UseLongerMarkdownFence_When_FileContainsTripleBackticks()
+    public async Task ExecuteAsync_Should_AcceptExplicitOffsetAndLimit()
     {
-        const string fileContent = "alpha\n```\nbeta";
-
         Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
         workspaceFileService
-            .Setup(service => service.ReadFileAsync("notes.md", It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new WorkspaceFileReadResult("notes.md", fileContent, fileContent.Length));
+            .Setup(service => service.ReadFileAsync("notes.md", 25, 100, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(CreateReadResult("notes.md", "25: alpha", 25, 25, 50));
 
         FileReadTool sut = new(workspaceFileService.Object);
 
         ToolResult result = await sut.ExecuteAsync(
-            CreateContext("""{ "path": "notes.md" }"""),
+            CreateContext("""{ "path": "notes.md", "offset": 25, "limit": 100 }"""),
             CancellationToken.None);
 
         result.Status.Should().Be(ToolResultStatus.Success);
         using JsonDocument jsonResult = JsonDocument.Parse(result.JsonResult);
-        jsonResult.RootElement.GetProperty("Content").GetString().Should().Be(fileContent);
-        result.RenderPayload.Should().NotBeNull();
-        result.RenderPayload!.Text.Should().Be("````text\nalpha\n```\nbeta\n````");
+        jsonResult.RootElement.GetProperty("StartLine").GetInt32().Should().Be(25);
+        jsonResult.RootElement.GetProperty("EndLine").GetInt32().Should().Be(25);
+        jsonResult.RootElement.GetProperty("TotalLines").GetInt32().Should().Be(50);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_OffsetIsNotPositive()
+    {
+        FileReadTool sut = new(Mock.Of<IWorkspaceFileService>());
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": "README.md", "offset": 0 }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("'offset' to be a positive integer");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_LimitIsNotPositive()
+    {
+        FileReadTool sut = new(Mock.Of<IWorkspaceFileService>());
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": "README.md", "limit": 0 }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain("'limit' to be a positive integer");
     }
 
     private static ToolExecutionContext CreateContext(string argumentsJson)
@@ -111,5 +138,26 @@ public sealed class FileReadToolTests
             "file_read",
             document.RootElement.Clone(),
             TestSessionFactory.Create());
+    }
+
+    private static WorkspaceFileReadResult CreateReadResult(
+        string path,
+        string content,
+        int startLine,
+        int endLine,
+        int totalLines,
+        bool truncated = false,
+        int? nextOffset = null)
+    {
+        return new WorkspaceFileReadResult(
+            path,
+            content,
+            startLine,
+            endLine,
+            totalLines,
+            truncated,
+            nextOffset,
+            "abc123",
+            "utf-8");
     }
 }
