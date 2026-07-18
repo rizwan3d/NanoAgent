@@ -10,4 +10,5 @@ public sealed record CreateSessionRequest(
     string? ReasoningEffort = null,
     string? ThinkingMode = null,
     IReadOnlyDictionary<string, int>? ModelContextWindowTokens = null,
+    IReadOnlyDictionary<string, ModelContextMetadata>? ModelContextMetadata = null,
     string? ActiveProviderName = null);

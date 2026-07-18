@@ -12,6 +12,7 @@ public interface IReplSectionService
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
         string? activeProviderName,
         CancellationToken cancellationToken);
 
@@ -26,6 +27,7 @@ public interface IReplSectionService
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
         string? activeProviderName,
         ReplSessionContext completedSection,
         CancellationToken cancellationToken);

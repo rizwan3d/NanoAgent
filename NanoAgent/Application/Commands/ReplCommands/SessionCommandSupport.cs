@@ -51,6 +51,7 @@ internal static class SessionCommandSupport
             includeState ? source.SessionState : SessionStateSnapshot.Empty,
             source.WorkspacePath,
             source.ModelContextWindowTokens,
+            source.ModelContextMetadata,
             source.ActiveProviderName);
     }
 
@@ -200,6 +201,7 @@ internal static class SessionCommandSupport
             imported.SessionState,
             currentSession.WorkspacePath,
             imported.ModelContextWindowTokens,
+            imported.ModelContextMetadata,
             imported.ActiveProviderName);
     }
 

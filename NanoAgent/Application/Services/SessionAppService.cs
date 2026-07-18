@@ -36,6 +36,7 @@ internal sealed class SessionAppService : ISessionAppService
             request.AvailableModelIds,
             profile,
             request.ModelContextWindowTokens,
+            request.ModelContextMetadata,
             request.ActiveProviderName,
             cancellationToken);
 
@@ -61,6 +62,7 @@ internal sealed class SessionAppService : ISessionAppService
             currentSession.AvailableModelIds,
             profile,
             currentSession.ModelContextWindowTokens,
+            currentSession.ModelContextMetadata,
             currentSession.ActiveProviderName,
             currentSession,
             cancellationToken);

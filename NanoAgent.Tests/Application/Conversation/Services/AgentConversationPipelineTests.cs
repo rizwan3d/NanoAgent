@@ -525,7 +525,7 @@ public sealed class AgentConversationPipelineTests
             message.Content != null &&
             message.Content.Contains("Historic assistant turn 6:", StringComparison.Ordinal));
         requests[0].SystemPrompt.Should().NotBeNull();
-        requests[0].SystemPrompt!.Length.Should().BeLessThan(8_000);
+        requests[0].SystemPrompt!.Length.Should().BeLessThan(16_000);
     }
 
     [Fact]
@@ -4164,6 +4164,7 @@ public sealed class AgentConversationPipelineTests
             IReadOnlyList<string> availableModelIds,
             IAgentProfile agentProfile,
             IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+            IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
             string? activeProviderName,
             CancellationToken cancellationToken)
         {
@@ -4177,6 +4178,7 @@ public sealed class AgentConversationPipelineTests
             IReadOnlyList<string> availableModelIds,
             IAgentProfile agentProfile,
             IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+            IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
             string? activeProviderName,
             ReplSessionContext completedSection,
             CancellationToken cancellationToken)

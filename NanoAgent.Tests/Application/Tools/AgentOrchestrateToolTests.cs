@@ -90,6 +90,7 @@ public sealed class AgentOrchestrateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentOrchestrateTool sut = new(
             serviceProvider,
@@ -163,6 +164,7 @@ public sealed class AgentOrchestrateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentOrchestrateTool sut = new(
             serviceProvider,
@@ -208,6 +210,7 @@ public sealed class AgentOrchestrateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentOrchestrateTool sut = new(
             serviceProvider,
@@ -252,6 +255,7 @@ public sealed class AgentOrchestrateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentOrchestrateTool sut = new(
             serviceProvider,

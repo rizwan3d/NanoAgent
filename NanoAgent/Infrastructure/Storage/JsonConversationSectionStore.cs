@@ -165,6 +165,7 @@ internal sealed class JsonConversationSectionStore : IConversationSectionStore
             snapshot.SessionState,
             snapshot.WorkspacePath,
             snapshot.ModelContextWindowTokens,
+            snapshot.ModelContextMetadata,
             snapshot.ActiveProviderName,
             snapshot.ParentSessionId);
     }
