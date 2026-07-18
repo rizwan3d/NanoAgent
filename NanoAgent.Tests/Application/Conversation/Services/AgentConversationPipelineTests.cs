@@ -718,9 +718,12 @@ public sealed class AgentConversationPipelineTests
         requests[2].Messages.Should().Contain(message =>
             string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
             message.ToolCallId == "call_2");
-        requests[2].Messages.Should().NotContain(message =>
+        requests[2].Messages.Should().Contain(message =>
             string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
-            message.ToolCallId == "call_1");
+            message.ToolCallId == "call_1" &&
+            message.Content != null &&
+            message.Content.Contains("\"ToolName\":\"file_read\"", StringComparison.Ordinal) &&
+            !message.Content.Contains(new string('x', 1_000), StringComparison.Ordinal));
         requests[2].Messages.Should().NotContain(message =>
             message.Content != null &&
             message.Content.Contains("Earlier conversation summary:", StringComparison.Ordinal));
@@ -838,6 +841,212 @@ public sealed class AgentConversationPipelineTests
         requests[2].Messages.Should().Contain(message =>
             string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
             message.ToolCallId == "call_2");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_CompactFileReadToolFeedback_BeforeSendingToProvider()
+    {
+        ReplSessionContext session = CreateSession();
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.FileRead)]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("call_1", AgentToolNames.FileRead, """{ "path": "README.md" }""")],
+                "resp_1"))
+            .Returns(new ConversationResponse(
+                "Final answer.",
+                [],
+                "resp_2"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.IsAny<IReadOnlyList<ConversationToolCall>>(),
+                session,
+                ConversationExecutionPhase.Execution,
+                It.IsAny<IReadOnlySet<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "call_1",
+                    AgentToolNames.FileRead,
+                    ToolResult.Success(
+                        "Read file 'README.md'.",
+                        """
+                        {
+                          "Path": "README.md",
+                          "RawContent": "1: raw line",
+                          "DisplayContent": "1: raw line",
+                          "StartLine": 1,
+                          "EndLine": 1,
+                          "TotalLines": 1,
+                          "Truncated": false,
+                          "NextOffset": null,
+                          "Sha256": "abc",
+                          "Encoding": "utf-8"
+                        }
+                        """))
+            ]));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await ProcessAsync(
+            sut,
+            "Read the file.",
+            session);
+
+        requests.Should().HaveCount(2);
+        ConversationRequestMessage toolMessage = requests[1].Messages.Single(message =>
+            string.Equals(message.Role, "tool", StringComparison.Ordinal));
+        toolMessage.Content.Should().Contain("\"DisplayContent\":\"1: raw line\"");
+        toolMessage.Content.Should().NotContain("\"RawContent\"");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_CompactCodebaseIndexToolFeedback_BeforeSendingToProvider()
+    {
+        ReplSessionContext session = CreateSession();
+
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings("Base prompt"));
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.CodebaseIndex)]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    $"resp_{requests.Count}"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                null,
+                [new ConversationToolCall("call_1", AgentToolNames.CodebaseIndex, """{ "action": "search", "query": "round winner" }""")],
+                "resp_1"))
+            .Returns(new ConversationResponse(
+                "Final answer.",
+                [],
+                "resp_2"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.IsAny<IReadOnlyList<ConversationToolCall>>(),
+                session,
+                ConversationExecutionPhase.Execution,
+                It.IsAny<IReadOnlySet<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "call_1",
+                    AgentToolNames.CodebaseIndex,
+                    ToolResult.Success(
+                        "Found 1 indexed codebase match for 'round winner'.",
+                        """
+                        {
+                          "Query": "round winner",
+                          "IndexPath": ".nanoagent/cache/codebase-index.json",
+                          "IndexWasUpdated": false,
+                          "IndexedFileCount": 123,
+                          "Warnings": ["No CODEOWNERS file was found."],
+                          "Matches": [
+                            {
+                              "Path": "Overlay/src/app/roundwiner/roundwiner.component.ts",
+                              "Language": "typescript",
+                              "Score": 48.0,
+                              "Symbols": ["RoundWinerComponent", "ngOnChanges"],
+                              "SemanticSymbols": [{ "Name": "verbose" }],
+                              "Snippets": [
+                                { "LineNumber": 12, "Text": "round winner snippet" }
+                              ]
+                            }
+                          ]
+                        }
+                        """))
+            ]));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await ProcessAsync(
+            sut,
+            "Search the codebase.",
+            session);
+
+        requests.Should().HaveCount(2);
+        ConversationRequestMessage toolMessage = requests[1].Messages.Single(message =>
+            string.Equals(message.Role, "tool", StringComparison.Ordinal));
+        toolMessage.Content.Should().Contain("\"Matches\"");
+        toolMessage.Content.Should().Contain("round winner snippet");
+        toolMessage.Content.Should().NotContain("\"SemanticSymbols\"");
     }
 
     [Fact]

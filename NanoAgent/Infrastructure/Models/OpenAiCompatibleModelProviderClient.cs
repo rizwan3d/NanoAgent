@@ -238,7 +238,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                     $"Unable to fetch models from the configured provider. {detail}");
             }
 
-            IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+            IReadOnlyList<AvailableModel> models = ParseAvailableModels(
+                responseBody,
+                providerProfile.ProviderKind);
             if (models.Count == 0)
             {
                 throw new ModelProviderException(
@@ -311,7 +313,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                         $"Unable to fetch OpenAI ChatGPT Plus/Pro models from the account API. {detail}");
                 }
 
-                IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+                IReadOnlyList<AvailableModel> models = ParseAvailableModels(
+                    responseBody,
+                    ProviderKind.OpenAiChatGptAccount);
                 if (models.Count > 0)
                 {
                     return models;
@@ -394,7 +398,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                         $"Unable to fetch Anthropic Claude Pro/Max models from the account API. {detail}");
                 }
 
-                IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+                IReadOnlyList<AvailableModel> models = ParseAvailableModels(
+                    responseBody,
+                    ProviderKind.AnthropicClaudeAccount);
                 if (models.Count > 0)
                 {
                     return models;
@@ -472,7 +478,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                         $"Unable to fetch GitHub Copilot models from the account API. {detail}");
                 }
 
-                IReadOnlyList<AvailableModel> models = ParseAvailableModels(responseBody);
+                IReadOnlyList<AvailableModel> models = ParseAvailableModels(
+                    responseBody,
+                    ProviderKind.GitHubCopilot);
                 if (models.Count > 0)
                 {
                     return models;
@@ -632,7 +640,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
             : value[..Math.Max(0, maxLength - 3)] + "...";
     }
 
-    private static IReadOnlyList<AvailableModel> ParseAvailableModels(string responseBody)
+    private static IReadOnlyList<AvailableModel> ParseAvailableModels(
+        string responseBody,
+        ProviderKind providerKind)
     {
         using JsonDocument document = JsonDocument.Parse(responseBody);
         if (!TryGetModelArray(document.RootElement, out JsonElement modelsElement))
@@ -649,7 +659,9 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
                 string normalizedId = id.Trim();
                 models.Add(new AvailableModel(
                     normalizedId,
-                    TryGetContextWindowTokens(item) ?? TryGetFallbackContextWindowTokens(normalizedId)));
+                    TryGetContextWindowTokens(item) ?? TryGetFallbackContextWindowTokens(
+                        providerKind,
+                        normalizedId)));
             }
         }
 
@@ -758,8 +770,15 @@ internal sealed class OpenAiCompatibleModelProviderClient : IModelProviderClient
         return null;
     }
 
-    private static int? TryGetFallbackContextWindowTokens(string modelId)
+    private static int? TryGetFallbackContextWindowTokens(
+        ProviderKind providerKind,
+        string modelId)
     {
+        if (providerKind != ProviderKind.DeepSeek)
+        {
+            return null;
+        }
+
         return ContextWindowFallbacks.TryGetValue(modelId.Replace("-free","").Replace("free",""), out int contextWindowTokens)
             ? contextWindowTokens
             : null;

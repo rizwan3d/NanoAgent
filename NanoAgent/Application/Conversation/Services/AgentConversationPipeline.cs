@@ -10,6 +10,7 @@ using NanoAgent.Application.Tools;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Tools.Serialization;
 using NanoAgent.Domain.Models;
+using System.Buffers;
 using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -801,11 +802,268 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             invocationResult.Result.IsSuccess,
             consecutiveFailureCount,
             invocationResult.Result.Message,
-            dataDocument.RootElement.Clone());
+            CompactToolFeedbackData(
+                invocationResult.ToolName,
+                dataDocument.RootElement));
 
         return JsonSerializer.Serialize(
             payload,
             RelaxedConversationJsonContext.ToolFeedbackPayload);
+    }
+
+    private static JsonElement CompactToolFeedbackData(
+        string toolName,
+        JsonElement data)
+    {
+        return toolName switch
+        {
+            AgentToolNames.FileRead => CompactFileReadFeedback(data),
+            AgentToolNames.CodebaseIndex => CompactCodebaseIndexFeedback(data),
+            AgentToolNames.SearchFiles => CompactSearchFilesFeedback(data),
+            AgentToolNames.TextSearch => CompactTextSearchFeedback(data),
+            AgentToolNames.DirectoryList => CompactDirectoryListFeedback(data),
+            AgentToolNames.AgentOrchestrate => CompactAgentOrchestrateFeedback(data),
+            _ => data.Clone()
+        };
+    }
+
+    private static JsonElement CompactFileReadFeedback(JsonElement data)
+    {
+        string? displayContent = TryGetStringProperty(data, "DisplayContent") ??
+            TryGetStringProperty(data, "RawContent");
+
+        return CreateJsonElement(writer =>
+        {
+            writer.WriteStartObject();
+            WriteStringProperty(writer, "Path", TryGetStringProperty(data, "Path"));
+            WriteStringProperty(writer, "DisplayContent", displayContent);
+            WriteNullableInt32Property(writer, "StartLine", TryGetInt32Property(data, "StartLine"));
+            WriteNullableInt32Property(writer, "EndLine", TryGetInt32Property(data, "EndLine"));
+            WriteNullableInt32Property(writer, "TotalLines", TryGetInt32Property(data, "TotalLines"));
+            WriteNullableBooleanProperty(writer, "Truncated", TryGetBooleanProperty(data, "Truncated"));
+            WriteNullableInt32Property(writer, "NextOffset", TryGetNullableInt32Property(data, "NextOffset"));
+            WriteStringProperty(writer, "Sha256", TryGetStringProperty(data, "Sha256"));
+            WriteStringProperty(writer, "Encoding", TryGetStringProperty(data, "Encoding"));
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CompactCodebaseIndexFeedback(JsonElement data)
+    {
+        return CreateJsonElement(writer =>
+        {
+            writer.WriteStartObject();
+            WriteStringProperty(writer, "Query", TryGetStringProperty(data, "Query"));
+            WriteStringProperty(writer, "IndexPath", TryGetStringProperty(data, "IndexPath"));
+            WriteNullableBooleanProperty(writer, "IndexWasUpdated", TryGetBooleanProperty(data, "IndexWasUpdated"));
+            WriteNullableInt32Property(writer, "IndexedFileCount", TryGetInt32Property(data, "IndexedFileCount"));
+            WriteStringArrayProperty(writer, "Warnings", TryGetStringArrayProperty(data, "Warnings", 5));
+            writer.WritePropertyName("Matches");
+            writer.WriteStartArray();
+            foreach (JsonElement match in TryGetArrayProperty(data, "Matches").Take(5))
+            {
+                writer.WriteStartObject();
+                WriteStringProperty(writer, "Path", TryGetStringProperty(match, "Path"));
+                WriteStringProperty(writer, "Language", TryGetStringProperty(match, "Language"));
+                WriteNullableDoubleProperty(writer, "Score", TryGetDoubleProperty(match, "Score"));
+                WriteStringArrayProperty(writer, "Symbols", TryGetStringArrayProperty(match, "Symbols", 5));
+                writer.WritePropertyName("Snippets");
+                writer.WriteStartArray();
+                foreach (JsonElement snippet in TryGetArrayProperty(match, "Snippets").Take(3))
+                {
+                    writer.WriteStartObject();
+                    WriteNullableInt32Property(writer, "LineNumber", TryGetInt32Property(snippet, "LineNumber"));
+                    WriteStringProperty(writer, "Text", NormalizeSummaryText(TryGetStringProperty(snippet, "Text")));
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CompactSearchFilesFeedback(JsonElement data)
+    {
+        return CreateJsonElement(writer =>
+        {
+            JsonElement[] matches = TryGetArrayProperty(data, "Matches").Take(10).ToArray();
+            writer.WriteStartObject();
+            WriteStringProperty(writer, "Query", TryGetStringProperty(data, "Query"));
+            WriteStringProperty(writer, "Path", TryGetStringProperty(data, "Path"));
+            WriteNullableInt32Property(writer, "TotalMatchCount", TryGetInt32Property(data, "TotalMatchCount") ?? matches.Length);
+            WriteNullableBooleanProperty(writer, "HasMore", TryGetBooleanProperty(data, "HasMore"));
+            writer.WritePropertyName("Matches");
+            writer.WriteStartArray();
+            foreach (JsonElement match in matches)
+            {
+                writer.WriteStartObject();
+                WriteStringProperty(writer, "Path", TryGetStringProperty(match, "Path"));
+                WriteNullableDoubleProperty(writer, "Score", TryGetDoubleProperty(match, "Score"));
+                WriteStringProperty(writer, "MatchKind", TryGetStringProperty(match, "MatchKind"));
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CompactTextSearchFeedback(JsonElement data)
+    {
+        return CreateJsonElement(writer =>
+        {
+            JsonElement[] matches = TryGetArrayProperty(data, "Matches")
+                .Where(match => !IsGitIndexPath(TryGetStringProperty(match, "Path")))
+                .Take(10)
+                .ToArray();
+            writer.WriteStartObject();
+            WriteStringProperty(writer, "Query", TryGetStringProperty(data, "Query"));
+            WriteStringProperty(writer, "Path", TryGetStringProperty(data, "Path"));
+            WriteNullableInt32Property(writer, "MatchCount", matches.Length);
+            writer.WritePropertyName("Matches");
+            writer.WriteStartArray();
+            foreach (JsonElement match in matches)
+            {
+                writer.WriteStartObject();
+                WriteStringProperty(writer, "Path", TryGetStringProperty(match, "Path"));
+                WriteNullableInt32Property(writer, "LineNumber", TryGetInt32Property(match, "LineNumber"));
+                WriteStringProperty(writer, "LineText", NormalizeSummaryText(TryGetStringProperty(match, "LineText")));
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CompactDirectoryListFeedback(JsonElement data)
+    {
+        return CreateJsonElement(writer =>
+        {
+            JsonElement[] entries = TryGetArrayProperty(data, "Entries").Take(50).ToArray();
+            writer.WriteStartObject();
+            WriteStringProperty(writer, "Path", TryGetStringProperty(data, "Path"));
+            WriteNullableInt32Property(writer, "EntryCount", TryGetArrayProperty(data, "Entries").Count());
+            writer.WritePropertyName("Entries");
+            writer.WriteStartArray();
+            foreach (JsonElement entry in entries)
+            {
+                writer.WriteStartObject();
+                WriteStringProperty(writer, "Path", TryGetStringProperty(entry, "Path"));
+                WriteStringProperty(writer, "EntryType", TryGetStringProperty(entry, "EntryType"));
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CompactAgentOrchestrateFeedback(JsonElement data)
+    {
+        return CreateJsonElement(writer =>
+        {
+            writer.WriteStartObject();
+            WriteNullableInt32Property(writer, "FailedTaskCount", TryGetInt32Property(data, "FailedTaskCount"));
+            WriteNullableInt32Property(writer, "SucceededTaskCount", TryGetInt32Property(data, "SucceededTaskCount"));
+            WriteNullableBooleanProperty(writer, "RecordedFileEdits", TryGetBooleanProperty(data, "RecordedFileEdits"));
+            writer.WritePropertyName("Tasks");
+            writer.WriteStartArray();
+            foreach (JsonElement task in TryGetArrayProperty(data, "Tasks").Take(6))
+            {
+                writer.WriteStartObject();
+                WriteStringProperty(writer, "AgentName", TryGetStringProperty(task, "AgentName"));
+                WriteNullableInt32Property(writer, "Index", TryGetInt32Property(task, "Index"));
+                WriteNullableBooleanProperty(writer, "Succeeded", TryGetBooleanProperty(task, "Succeeded"));
+                WriteStringProperty(writer, "ErrorMessage", NormalizeSummaryText(TryGetStringProperty(task, "ErrorMessage")));
+                WriteStringProperty(writer, "Response", NormalizeSummaryText(TryGetStringProperty(task, "Response")));
+                WriteStringArrayProperty(writer, "ExecutedTools", TryGetStringArrayProperty(task, "ExecutedTools", 8));
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        });
+    }
+
+    private static JsonElement CreateJsonElement(Action<Utf8JsonWriter> write)
+    {
+        ArrayBufferWriter<byte> buffer = new();
+        using (Utf8JsonWriter writer = new(buffer))
+        {
+            write(writer);
+        }
+
+        using JsonDocument document = JsonDocument.Parse(buffer.WrittenMemory);
+        return document.RootElement.Clone();
+    }
+
+    private static string CreateSummaryJson(string summary)
+    {
+        JsonElement element = CreateJsonElement(writer =>
+        {
+            writer.WriteStartObject();
+            WriteStringProperty(writer, "summary", summary);
+            writer.WriteEndObject();
+        });
+
+        return element.GetRawText();
+    }
+
+    private static void WriteStringProperty(Utf8JsonWriter writer, string name, string? value)
+    {
+        if (value is null)
+        {
+            writer.WriteNull(name);
+            return;
+        }
+
+        writer.WriteString(name, value);
+    }
+
+    private static void WriteNullableInt32Property(Utf8JsonWriter writer, string name, int? value)
+    {
+        if (value.HasValue)
+        {
+            writer.WriteNumber(name, value.Value);
+        }
+        else
+        {
+            writer.WriteNull(name);
+        }
+    }
+
+    private static void WriteNullableDoubleProperty(Utf8JsonWriter writer, string name, double? value)
+    {
+        if (value.HasValue)
+        {
+            writer.WriteNumber(name, value.Value);
+        }
+        else
+        {
+            writer.WriteNull(name);
+        }
+    }
+
+    private static void WriteNullableBooleanProperty(Utf8JsonWriter writer, string name, bool? value)
+    {
+        if (value.HasValue)
+        {
+            writer.WriteBoolean(name, value.Value);
+        }
+        else
+        {
+            writer.WriteNull(name);
+        }
+    }
+
+    private static void WriteStringArrayProperty(Utf8JsonWriter writer, string name, IReadOnlyList<string> values)
+    {
+        writer.WritePropertyName(name);
+        writer.WriteStartArray();
+        foreach (string value in values)
+        {
+            writer.WriteStringValue(value);
+        }
+        writer.WriteEndArray();
     }
 
     private async Task<PhaseExecutionResult> RunPhaseAsync(
@@ -1891,18 +2149,13 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             lines.Add("Full output was pruned during context compaction.");
 
             string text = string.Join(Environment.NewLine, lines);
-            return JsonSerializer.Serialize(new
-            {
-                summary = text
-            });
+            return CreateSummaryJson(text);
         }
         catch (JsonException)
         {
             string text = NormalizeSummaryText(content);
-            return JsonSerializer.Serialize(new
-            {
-                summary = $"{text}{Environment.NewLine}Full output was pruned during context compaction."
-            });
+            return CreateSummaryJson(
+                $"{text}{Environment.NewLine}Full output was pruned during context compaction.");
         }
     }
 
@@ -2159,6 +2412,75 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             property.ValueKind == JsonValueKind.String
                 ? property.GetString()
                 : null;
+    }
+
+    private static int? TryGetInt32Property(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out JsonElement property) &&
+            property.ValueKind == JsonValueKind.Number &&
+            property.TryGetInt32(out int value)
+                ? value
+                : null;
+    }
+
+    private static int? TryGetNullableInt32Property(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out JsonElement property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.Null => null,
+            JsonValueKind.Number when property.TryGetInt32(out int value) => value,
+            _ => null
+        };
+    }
+
+    private static double? TryGetDoubleProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out JsonElement property) &&
+            property.ValueKind == JsonValueKind.Number &&
+            property.TryGetDouble(out double value)
+                ? value
+                : null;
+    }
+
+    private static bool? TryGetBooleanProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out JsonElement property) &&
+            (property.ValueKind == JsonValueKind.True || property.ValueKind == JsonValueKind.False)
+                ? property.GetBoolean()
+                : null;
+    }
+
+    private static IEnumerable<JsonElement> TryGetArrayProperty(JsonElement element, string propertyName)
+    {
+        return element.TryGetProperty(propertyName, out JsonElement property) &&
+            property.ValueKind == JsonValueKind.Array
+                ? property.EnumerateArray().ToArray()
+                : [];
+    }
+
+    private static string[] TryGetStringArrayProperty(
+        JsonElement element,
+        string propertyName,
+        int limit)
+    {
+        return TryGetArrayProperty(element, propertyName)
+            .Where(item => item.ValueKind == JsonValueKind.String)
+            .Select(item => item.GetString())
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Take(limit)
+            .Cast<string>()
+            .ToArray();
+    }
+
+    private static bool IsGitIndexPath(string? path)
+    {
+        return string.Equals(path, ".git/index", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(path, ".git\\index", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string[] ExtractRelevantJsonExcerpts(JsonElement root, int limit)

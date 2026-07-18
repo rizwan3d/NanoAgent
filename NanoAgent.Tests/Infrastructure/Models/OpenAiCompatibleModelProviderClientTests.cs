@@ -91,6 +91,27 @@ public sealed class OpenAiCompatibleModelProviderClientTests
     }
 
     [Fact]
+    public async Task GetAvailableModelsAsync_Should_Not_ApplyDeepSeekContextWindowFallback_ForOpenCodeZenModels()
+    {
+        RecordingHandler handler = new("""
+            {
+              "data": [
+                { "id": "deepseek-v4-flash-free" }
+              ]
+            }
+            """);
+        HttpClient httpClient = new(handler);
+        OpenAiCompatibleModelProviderClient sut = CreateSut(httpClient);
+
+        IReadOnlyList<AvailableModel> models = await sut.GetAvailableModelsAsync(
+            new AgentProviderProfile(ProviderKind.OpenCodeZen, null),
+            "test-key",
+            CancellationToken.None);
+
+        models.Should().ContainSingle().Which.Should().Be(new AvailableModel("deepseek-v4-flash-free", null));
+    }
+
+    [Fact]
     public async Task GetAvailableModelsAsync_Should_RequestModelsRelativeToExplicitV1BaseUrl_When_CompatibleProviderBaseUrlAlreadyIncludesV1()
     {
         RecordingHandler handler = new("""
