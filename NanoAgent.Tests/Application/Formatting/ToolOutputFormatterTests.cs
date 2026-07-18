@@ -202,8 +202,12 @@ public sealed class ToolOutputFormatterTests
                 """
                 {
                   "Path": "README.md",
-                  "Content": "line 1\nline 2",
-                  "CharacterCount": 13
+                  "Content": "1: line 1\n2: line 2",
+                  "StartLine": 1,
+                  "EndLine": 2,
+                  "TotalLines": 5,
+                  "Truncated": true,
+                  "NextOffset": 3
                 }
                 """),
             CreateResult(
@@ -255,8 +259,9 @@ public sealed class ToolOutputFormatterTests
         IReadOnlyList<string> messages = _sut.FormatResults(batch);
 
         messages.Should().HaveCount(4);
-        messages[0].Should().Contain("Read README.md (13 chars)");
-        messages[0].Should().Contain("1 line 1");
+        messages[0].Should().Contain("Read README.md (lines 1-2 of 5)");
+        messages[0].Should().Contain("1 1: line 1");
+        messages[0].Should().Contain("next offset: 3");
         messages[1].Should().Contain("Listed src (2 entries)");
         messages[1].Should().Contain("file: src/Program.cs");
         messages[1].Should().Contain("directory: src/Models");
@@ -283,9 +288,9 @@ public sealed class ToolOutputFormatterTests
 
             messages.Should().ContainSingle();
             messages[0].Should().Contain("  - preview:");
-            messages[0].Should().Contain("1 line 1");
-            messages[0].Should().Contain("8 line 8");
-            messages[0].Should().NotContain("9 line 9");
+            messages[0].Should().Contain("1: line 1");
+            messages[0].Should().Contain("8: line 8");
+            messages[0].Should().NotContain("9: line 9");
             messages[0].Should().Contain("... +2 lines");
         }
         finally
@@ -310,9 +315,9 @@ public sealed class ToolOutputFormatterTests
 
             messages.Should().ContainSingle();
             messages[0].Should().Contain("  - content:");
-            messages[0].Should().Contain("1 line 1");
-            messages[0].Should().Contain("9 line 9");
-            messages[0].Should().Contain("10 line 10");
+            messages[0].Should().Contain("1: line 1");
+            messages[0].Should().Contain("9: line 9");
+            messages[0].Should().Contain("10: line 10");
             messages[0].Should().NotContain("... +");
         }
         finally
@@ -338,7 +343,7 @@ public sealed class ToolOutputFormatterTests
 
             messages.Should().ContainSingle();
             messages[0].Should().Contain("  - content:");
-            messages[0].Should().Contain("10 line 10");
+            messages[0].Should().Contain("10: line 10");
             messages[0].Should().NotContain("... +");
         }
         finally
@@ -431,7 +436,7 @@ public sealed class ToolOutputFormatterTests
 
     private static ToolExecutionBatchResult CreateTenLineFileReadBatch()
     {
-        string content = string.Join("\\n", Enumerable.Range(1, 10).Select(static line => $"line {line}"));
+        string content = string.Join("\\n", Enumerable.Range(1, 10).Select(static line => $"{line}: line {line}"));
         return new ToolExecutionBatchResult(
         [
             CreateResult(
@@ -440,7 +445,11 @@ public sealed class ToolOutputFormatterTests
                 {
                   "Path": "README.md",
                   "Content": "{{content}}",
-                  "CharacterCount": {{content.Replace("\\n", "\n", StringComparison.Ordinal).Length}}
+                  "StartLine": 1,
+                  "EndLine": 10,
+                  "TotalLines": 10,
+                  "Truncated": false,
+                  "NextOffset": null
                 }
                 """)
         ]);
