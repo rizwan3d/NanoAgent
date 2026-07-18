@@ -202,7 +202,8 @@ public sealed class ToolOutputFormatterTests
                 """
                 {
                   "Path": "README.md",
-                  "Content": "1: line 1\n2: line 2",
+                  "RawContent": "1: line 1\n2: line 2",
+                  "DisplayContent": "1: line 1\n2: line 2",
                   "StartLine": 1,
                   "EndLine": 2,
                   "TotalLines": 5,
@@ -444,7 +445,8 @@ public sealed class ToolOutputFormatterTests
                 $$"""
                 {
                   "Path": "README.md",
-                  "Content": "{{content}}",
+                  "RawContent": "{{content}}",
+                  "DisplayContent": "{{content}}",
                   "StartLine": 1,
                   "EndLine": 10,
                   "TotalLines": 10,
