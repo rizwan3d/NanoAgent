@@ -30,13 +30,27 @@ internal static class ToolArgumentRepairer
             return arguments;
         }
 
-        JsonNode? parsedNode = JsonNode.Parse(arguments.GetRawText());
-        if (parsedNode is not JsonObject argumentsObject)
+        if (ContainsDuplicateObjectKeys(arguments))
         {
             return arguments;
         }
 
-        bool repaired = RepairObject(argumentsObject, schemaDocument.RootElement);
+        if (!TryParseNode(arguments.GetRawText(), out JsonNode? parsedNode) ||
+            parsedNode is not JsonObject argumentsObject)
+        {
+            return arguments;
+        }
+
+        bool repaired;
+        try
+        {
+            repaired = RepairObject(argumentsObject, schemaDocument.RootElement);
+        }
+        catch (ArgumentException)
+        {
+            return arguments;
+        }
+
         if (!repaired)
         {
             return arguments;
@@ -224,8 +238,8 @@ internal static class ToolArgumentRepairer
 
         try
         {
-            JsonNode? parsedNode = JsonNode.Parse(trimmed);
-            if (parsedNode is not JsonArray parsedArray)
+            if (!TryParseNode(trimmed, out JsonNode? parsedNode) ||
+                parsedNode is not JsonArray parsedArray)
             {
                 return false;
             }
@@ -349,6 +363,41 @@ internal static class ToolArgumentRepairer
                propertyName.EndsWith("Path", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool ContainsDuplicateObjectKeys(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+            {
+                HashSet<string> propertyNames = new(StringComparer.Ordinal);
+                foreach (JsonProperty property in element.EnumerateObject())
+                {
+                    if (!propertyNames.Add(property.Name) ||
+                        ContainsDuplicateObjectKeys(property.Value))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
+
+            case JsonValueKind.Array:
+                foreach (JsonElement item in element.EnumerateArray())
+                {
+                    if (ContainsDuplicateObjectKeys(item))
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
     private static bool TryUnwrapDegenerateMarkdownAutoLinks(
         string value,
         out string repairedValue)
@@ -377,5 +426,26 @@ internal static class ToolArgumentRepairer
             string.Empty,
             RegexOptions.None,
             TimeSpan.FromMilliseconds(100));
+    }
+
+    private static bool TryParseNode(
+        string json,
+        out JsonNode? node)
+    {
+        try
+        {
+            node = JsonNode.Parse(json);
+            return node is not null;
+        }
+        catch (JsonException)
+        {
+            node = null;
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            node = null;
+            return false;
+        }
     }
 }

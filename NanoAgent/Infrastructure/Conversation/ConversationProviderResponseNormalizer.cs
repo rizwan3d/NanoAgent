@@ -173,9 +173,11 @@ internal sealed class ConversationProviderResponseNormalizer
 
     private static JsonElement CreateStringContentElement(string? value)
     {
-        return JsonSerializer.SerializeToElement(
+        string json = JsonSerializer.Serialize(
             value ?? string.Empty,
             OpenAiConversationJsonContext.Default.String);
+        using JsonDocument document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     private static string? TryGetString(JsonElement element, string propertyName)
