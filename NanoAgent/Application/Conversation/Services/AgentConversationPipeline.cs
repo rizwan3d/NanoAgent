@@ -288,7 +288,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             List<ConversationRequestMessage> messages =
             [
-                .. BuildInitialConversationMessages(session, preparedTurn.Settings.MaxHistoryTurns),
+                .. BuildInitialConversationMessages(session),
                 ConversationRequestMessage.User(preparedTurn.NormalizedInput, preparedTurn.Attachments)
             ];
 
@@ -415,7 +415,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         List<ConversationRequestMessage> executionMessages =
         [
-            .. BuildInitialConversationMessages(session, settings.MaxHistoryTurns),
+            .. BuildInitialConversationMessages(session),
             ConversationRequestMessage.User(normalizedInput, attachments)
         ];
 
@@ -1501,17 +1501,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     }
 
     private static IReadOnlyList<ConversationRequestMessage> BuildInitialConversationMessages(
-        ReplSessionContext session,
-        int maxHistoryTurns)
+        ReplSessionContext session)
     {
-        if (maxHistoryTurns <= 0)
-        {
-            return [];
-        }
-
-        ConversationSectionTurn[] turns = session.ConversationTurns
-            .TakeLast(maxHistoryTurns)
-            .ToArray();
+        ConversationSectionTurn[] turns = session.ConversationTurns.ToArray();
         if (turns.Length == 0)
         {
             return [];
