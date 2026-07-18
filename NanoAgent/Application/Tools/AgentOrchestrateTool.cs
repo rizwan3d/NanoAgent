@@ -312,6 +312,7 @@ internal sealed class AgentOrchestrateTool : ITool
             bool recordedFileEdits = AgentDelegationSupport.TryRecordChildFileEdits(
                 childSession,
                 parentSession,
+                _serviceProvider.GetRequiredService<IWorkspaceFileService>(),
                 request.Profile.Name,
                 request.Task);
 

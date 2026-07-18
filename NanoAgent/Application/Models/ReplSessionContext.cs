@@ -31,6 +31,7 @@ public sealed class ReplSessionContext
     private readonly List<ConversationSectionTurn> _conversationTurns = [];
     private readonly List<SessionEditContext> _editContexts = [];
     private readonly List<SessionFileContext> _fileContexts = [];
+    private readonly List<WorkspaceFileEditTransaction> _expiredFileEditTransactions = [];
     private readonly Stack<WorkspaceFileEditTransaction> _redoFileEditTransactions = new();
     private readonly List<SessionTerminalCommand> _terminalHistory = [];
     private readonly List<TemporaryArtifactReference> _temporaryArtifacts = [];
@@ -1069,8 +1070,8 @@ public sealed class ReplSessionContext
             return;
         }
 
+        ExpireRedoFileEditTransactions();
         _undoFileEditTransactions.Push(transaction);
-        _redoFileEditTransactions.Clear();
     }
 
     public bool TryCreateFileEditTransactionSnapshot(
@@ -1148,6 +1149,18 @@ public sealed class ReplSessionContext
 
         WorkspaceFileEditTransaction transaction = _redoFileEditTransactions.Pop();
         _undoFileEditTransactions.Push(transaction);
+    }
+
+    public IReadOnlyList<WorkspaceFileEditTransaction> DrainExpiredFileEditTransactions()
+    {
+        if (_expiredFileEditTransactions.Count == 0)
+        {
+            return [];
+        }
+
+        WorkspaceFileEditTransaction[] expired = _expiredFileEditTransactions.ToArray();
+        _expiredFileEditTransactions.Clear();
+        return expired;
     }
 
     public void MarkSectionPersisted(DateTimeOffset updatedAtUtc)
@@ -1231,7 +1244,18 @@ public sealed class ReplSessionContext
             ? batch[0]
             : MergeTransactions(batch);
 
+        ExpireRedoFileEditTransactions();
         _undoFileEditTransactions.Push(transaction);
+    }
+
+    private void ExpireRedoFileEditTransactions()
+    {
+        if (_redoFileEditTransactions.Count == 0)
+        {
+            return;
+        }
+
+        _expiredFileEditTransactions.AddRange(_redoFileEditTransactions);
         _redoFileEditTransactions.Clear();
     }
 

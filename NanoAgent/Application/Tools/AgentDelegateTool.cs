@@ -168,6 +168,7 @@ internal sealed class AgentDelegateTool : ITool
         bool recordedFileEdits = AgentDelegationSupport.TryRecordChildFileEdits(
             childSession,
             context.Session,
+            _serviceProvider.GetRequiredService<IWorkspaceFileService>(),
             subagentProfile.Name,
             task!);
 

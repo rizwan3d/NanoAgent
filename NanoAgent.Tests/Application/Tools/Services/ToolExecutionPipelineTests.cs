@@ -15,6 +15,15 @@ public sealed class ToolExecutionPipelineTests
         "gpt-5-mini",
         ["gpt-5-mini", "gpt-4.1"]);
 
+    private static Mock<IWorkspaceFileService> CreateWorkspaceFileServiceMock()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ReleaseTrackedFileEditTransactions(
+                It.IsAny<IReadOnlyList<WorkspaceFileEditTransaction>>()));
+        return workspaceFileService;
+    }
+
     [Fact]
     public async Task ExecuteAsync_Should_ReturnStructuredResultsInInputOrder()
     {
@@ -45,7 +54,7 @@ public sealed class ToolExecutionPipelineTests
                     "Tool 'shell_command' requires a non-empty 'command' string.",
                     new ToolRenderPayload("Invalid shell_command arguments", "Provide a non-empty command."))));
 
-        ToolExecutionPipeline sut = new(toolInvoker.Object);
+        ToolExecutionPipeline sut = new(CreateWorkspaceFileServiceMock().Object, toolInvoker.Object);
 
         ToolExecutionBatchResult result = await sut.ExecuteAsync(
             [
@@ -71,6 +80,7 @@ public sealed class ToolExecutionPipelineTests
             StringComparer.Ordinal);
         ParallelGateToolInvoker toolInvoker = new(["call_1", "call_2"]);
         ToolExecutionPipeline sut = new(
+            CreateWorkspaceFileServiceMock().Object,
             toolInvoker,
             maxParallelToolExecutions: 2);
 
@@ -101,6 +111,7 @@ public sealed class ToolExecutionPipelineTests
             StringComparer.Ordinal);
         SequentialBarrierToolInvoker toolInvoker = new();
         ToolExecutionPipeline sut = new(
+            CreateWorkspaceFileServiceMock().Object,
             toolInvoker,
             maxParallelToolExecutions: 3);
 
@@ -140,7 +151,7 @@ public sealed class ToolExecutionPipelineTests
             ["file_write"],
             StringComparer.Ordinal);
         TrackingToolInvoker toolInvoker = new();
-        ToolExecutionPipeline sut = new(toolInvoker);
+        ToolExecutionPipeline sut = new(CreateWorkspaceFileServiceMock().Object, toolInvoker);
 
         await sut.ExecuteAsync(
             [
@@ -156,6 +167,41 @@ public sealed class ToolExecutionPipelineTests
         transaction!.Description.Should().Be("tool round (2 edits across 2 files)");
         transaction.BeforeStates.Select(static state => state.Path).Should().Equal("README.md", "src/App.js");
         transaction.AfterStates.Select(static state => state.Path).Should().Equal("README.md", "src/App.js");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReleaseExpiredRedoTransactionsAfterBatch()
+    {
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1"),
+            "gpt-5-mini",
+            ["gpt-5-mini"]);
+        WorkspaceFileEditTransaction expiredTransaction = new(
+            "file_write (README.md)",
+            [new WorkspaceFileEditState("README.md", exists: false, content: null)],
+            [new WorkspaceFileEditState("README.md", exists: true, content: "hello")]);
+        session.RecordFileEditTransaction(expiredTransaction);
+        session.CompleteUndoFileEdit();
+
+        Mock<IWorkspaceFileService> workspaceFileService = CreateWorkspaceFileServiceMock();
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_write"],
+            StringComparer.Ordinal);
+        TrackingToolInvoker toolInvoker = new();
+        ToolExecutionPipeline sut = new(workspaceFileService.Object, toolInvoker);
+
+        await sut.ExecuteAsync(
+            [new ConversationToolCall("call_2", "file_write", """{ "path": "src/App.js" }""")],
+            session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        workspaceFileService.Verify(service => service.ReleaseTrackedFileEditTransactions(
+            It.Is<IReadOnlyList<WorkspaceFileEditTransaction>>(transactions =>
+                transactions.Count == 1 &&
+                ReferenceEquals(transactions[0], expiredTransaction))),
+            Times.Once);
     }
 
     [Fact]
@@ -181,6 +227,7 @@ public sealed class ToolExecutionPipelineTests
             .ReturnsAsync(invocationResult);
         RecordingLessonMemoryService lessonMemoryService = new();
         ToolExecutionPipeline sut = new(
+            CreateWorkspaceFileServiceMock().Object,
             toolInvoker.Object,
             lessonMemoryService);
 
@@ -220,6 +267,7 @@ public sealed class ToolExecutionPipelineTests
             .ReturnsAsync(invocationResult);
         RecordingToolAuditLogService auditLogService = new();
         ToolExecutionPipeline sut = new(
+            CreateWorkspaceFileServiceMock().Object,
             toolInvoker.Object,
             toolAuditLogService: auditLogService);
 

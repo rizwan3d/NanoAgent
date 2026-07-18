@@ -17,6 +17,12 @@ public interface IWorkspaceFileService
         string patch,
         CancellationToken cancellationToken);
 
+    void ReleaseTrackedFileEditTransactions(
+        IReadOnlyList<WorkspaceFileEditTransaction> transactions);
+
+    void RetainTrackedFileEditTransaction(
+        WorkspaceFileEditTransaction transaction);
+
     Task<WorkspaceDirectoryListResult> ListDirectoryAsync(
         string? path,
         bool recursive,

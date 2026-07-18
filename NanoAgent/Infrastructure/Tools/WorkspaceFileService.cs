@@ -15,7 +15,7 @@ using System.Text.RegularExpressions;
 
 namespace NanoAgent.Infrastructure.Tools;
 
-internal sealed class WorkspaceFileService : IWorkspaceFileService
+internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
 {
     private const int MaxDirectoryEntries = 200;
     private const int DefaultFileReadLimit = 2_000;
@@ -96,6 +96,27 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         DateTime CreationTimeUtc,
         DateTime LastAccessTimeUtc,
         DateTime LastWriteTimeUtc);
+    private sealed class ManagedBackupRecord
+    {
+        public ManagedBackupRecord(
+            string backupPath,
+            WorkspaceFileMetadata? originalMetadata)
+        {
+            BackupPath = backupPath;
+            OriginalMetadata = originalMetadata;
+            ReferenceCount = 1;
+        }
+
+        public string BackupPath { get; }
+
+        public WorkspaceFileMetadata? OriginalMetadata { get; }
+
+        public int ReferenceCount { get; set; }
+    }
+    private readonly record struct ManagedBackupCapture(
+        string BackupId,
+        string ContentHash,
+        WorkspaceFileMetadata? OriginalMetadata);
     private readonly record struct FileLineEndingInfo(
         string DominantNewLine,
         bool HasMixedLineEndings);
@@ -119,10 +140,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
+    private readonly object _backupSyncRoot = new();
+    private readonly Dictionary<string, ManagedBackupRecord> _managedBackups = new(StringComparer.Ordinal);
+    private readonly string _backupDirectoryPath;
 
     public WorkspaceFileService(IWorkspaceRootProvider workspaceRootProvider)
     {
         _workspaceRootProvider = workspaceRootProvider;
+        _backupDirectoryPath = Path.Combine(
+            Path.GetTempPath(),
+            ".nanoagent",
+            "backups",
+            Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture));
     }
 
 
@@ -149,6 +178,26 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 GetTrackedPatchPaths(document),
                 cancellationToken),
             cancellationToken);
+    }
+
+    public void ReleaseTrackedFileEditTransactions(
+        IReadOnlyList<WorkspaceFileEditTransaction> transactions)
+    {
+        ArgumentNullException.ThrowIfNull(transactions);
+
+        foreach (WorkspaceFileEditTransaction transaction in transactions.Where(static transaction => transaction is not null))
+        {
+            ReleaseTrackedFileEditStates(transaction.BeforeStates);
+            ReleaseTrackedFileEditStates(transaction.AfterStates);
+        }
+    }
+
+    public void RetainTrackedFileEditTransaction(WorkspaceFileEditTransaction transaction)
+    {
+        ArgumentNullException.ThrowIfNull(transaction);
+
+        RetainTrackedFileEditStates(transaction.BeforeStates);
+        RetainTrackedFileEditStates(transaction.AfterStates);
     }
 
     public async Task ApplyFileEditStatesAsync(
@@ -180,11 +229,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     $"Cannot restore file '{state.Path}' because a directory exists at that path.");
             }
 
-            if (!string.IsNullOrWhiteSpace(state.ContentBackupPath))
+            if (!string.IsNullOrWhiteSpace(state.ContentBackupId))
             {
                 await RestoreWorkspaceFileFromBackupAsync(
                     fullPath,
-                    state.ContentBackupPath!,
+                    state.ContentBackupId!,
+                    state.OriginalMetadata,
                     cancellationToken);
                 continue;
             }
@@ -578,24 +628,22 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         if (TryGetFileLength(fullPath, out long fileLength) && fileLength > LargeFileThresholdBytes)
         {
             FileEncodingInfo fileEncoding = DetectFileEncoding(fullPath);
-            string backupPath = await CreateTemporaryByteBackupAsync(fullPath, cancellationToken);
-            await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-            byte[] hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
-            string hash = Convert.ToHexStringLower(hashBytes);
+            ManagedBackupCapture backup = await CreateManagedByteBackupAsync(fullPath, cancellationToken);
             return new WorkspaceFileEditState(
                 ToWorkspaceRelativePath(fullPath),
                 exists: true,
                 content: null,
-                contentHash: hash,
+                contentHash: backup.ContentHash,
                 encoding: GetEncodingName(fileEncoding.Encoding),
                 newLine: fileEncoding.NewLine,
-                contentBackupPath: backupPath);
+                contentBackupId: backup.BackupId,
+                originalMetadata: backup.OriginalMetadata);
         }
 
         FileEncodingInfo encoding = DetectFileEncoding(fullPath);
         string content = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
-        string? mixedLineEndingBackupPath = HasMixedLineEndings(content)
-            ? await CreateTemporaryByteBackupAsync(fullPath, cancellationToken)
+        ManagedBackupCapture? mixedLineEndingBackup = HasMixedLineEndings(content)
+            ? await CreateManagedByteBackupAsync(fullPath, cancellationToken)
             : null;
 
         return new WorkspaceFileEditState(
@@ -604,7 +652,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             content,
             encoding: GetEncodingName(encoding.Encoding),
             newLine: encoding.NewLine,
-            contentBackupPath: mixedLineEndingBackupPath);
+            contentBackupId: mixedLineEndingBackup?.BackupId,
+            originalMetadata: mixedLineEndingBackup?.OriginalMetadata);
     }
 
     private async Task<WorkspaceApplyPatchFileResult> ApplyAddFileOperationAsync(
@@ -2147,9 +2196,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static string NormalizeNewLine(string? newLine)
     {
-        return string.Equals(newLine, "\r\n", StringComparison.Ordinal)
-            ? "\r\n"
-            : "\n";
+        return newLine switch
+        {
+            "\r\n" => "\r\n",
+            "\r" => "\r",
+            _ => "\n"
+        };
     }
 
     private static int GetBomLength(WorkspaceTextEncoding encoding)
@@ -2342,9 +2394,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private async Task RestoreWorkspaceFileFromBackupAsync(
         string fullPath,
-        string backupPath,
+        string backupId,
+        WorkspaceFileMetadata? originalMetadata,
         CancellationToken cancellationToken)
     {
+        string backupPath = GetManagedBackupPath(backupId);
         if (!File.Exists(backupPath))
         {
             throw new InvalidOperationException(
@@ -2361,7 +2415,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         EnsureParentDirectory(fullPath);
 
         string tempPath = CreateTemporarySiblingPath(fullPath);
-        ExistingFileMetadata? existingMetadata = TryGetExistingFileMetadata(fullPath);
 
         try
         {
@@ -2399,7 +2452,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 File.Move(tempPath, fullPath);
             }
 
-            RestoreFileMetadata(fullPath, existingMetadata);
+            RestoreFileMetadata(fullPath, originalMetadata);
             FlushDirectoryIfPossible(Path.GetDirectoryName(fullPath));
         }
         catch
@@ -2520,32 +2573,51 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
     }
 
-    private static async Task<string> CreateTemporaryByteBackupAsync(
+    private async Task<ManagedBackupCapture> CreateManagedByteBackupAsync(
         string fullPath,
         CancellationToken cancellationToken)
     {
-        string backupPath = Path.Combine(
-            Path.GetTempPath(),
-            $".nanoagent-backup-{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+        string backupId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture);
+        string backupPath = Path.Combine(_backupDirectoryPath, backupId + ".bin");
+        WorkspaceFileMetadata? originalMetadata = ToWorkspaceFileMetadata(TryGetExistingFileMetadata(fullPath));
 
-        await using FileStream sourceStream = new(
-            fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81920,
-            useAsync: true);
-        await using FileStream destinationStream = new(
-            backupPath,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None,
-            bufferSize: 81920,
-            FileOptions.Asynchronous | FileOptions.WriteThrough);
-        await sourceStream.CopyToAsync(destinationStream, cancellationToken);
-        await destinationStream.FlushAsync(cancellationToken);
-        destinationStream.Flush(flushToDisk: true);
-        return backupPath;
+        Directory.CreateDirectory(_backupDirectoryPath);
+        try
+        {
+            await using FileStream sourceStream = new(
+                fullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                useAsync: true);
+            await using FileStream destinationStream = new(
+                backupPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.WriteThrough);
+
+            string hash = await CopyToBackupAndComputeHashAsync(
+                sourceStream,
+                destinationStream,
+                cancellationToken);
+
+            lock (_backupSyncRoot)
+            {
+                _managedBackups.Add(
+                    backupId,
+                    new ManagedBackupRecord(backupPath, originalMetadata));
+            }
+
+            return new ManagedBackupCapture(backupId, hash, originalMetadata);
+        }
+        catch
+        {
+            TryDeleteTemporaryFile(backupPath);
+            throw;
+        }
     }
 
     private static string CreateTemporarySiblingPath(string fullPath)
@@ -2598,6 +2670,36 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
     }
 
+    private static WorkspaceFileMetadata? ToWorkspaceFileMetadata(ExistingFileMetadata? metadata)
+    {
+        if (metadata is null)
+        {
+            return null;
+        }
+
+        return new WorkspaceFileMetadata(
+            metadata.Value.Attributes,
+            metadata.Value.CreationTimeUtc,
+            metadata.Value.LastAccessTimeUtc,
+            metadata.Value.LastWriteTimeUtc);
+    }
+
+    private static void RestoreFileMetadata(string fullPath, WorkspaceFileMetadata? metadata)
+    {
+        if (metadata is null)
+        {
+            return;
+        }
+
+        RestoreFileMetadata(
+            fullPath,
+            new ExistingFileMetadata(
+                metadata.Attributes,
+                metadata.CreationTimeUtc,
+                metadata.LastAccessTimeUtc,
+                metadata.LastWriteTimeUtc));
+    }
+
     private static void TryReplaceFileAtomically(string sourceFullPath, string destinationFullPath)
     {
         try
@@ -2621,6 +2723,104 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
         catch (Exception exception) when (IsFileSystemAccessException(exception))
         {
+        }
+    }
+
+    private static async Task<string> CopyToBackupAndComputeHashAsync(
+        Stream sourceStream,
+        FileStream destinationStream,
+        CancellationToken cancellationToken)
+    {
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = ArrayPool<byte>.Shared.Rent(81920);
+
+        try
+        {
+            while (true)
+            {
+                int read = await sourceStream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                hash.AppendData(buffer, 0, read);
+                await destinationStream.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+            }
+
+            await destinationStream.FlushAsync(cancellationToken);
+            destinationStream.Flush(flushToDisk: true);
+            return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+    }
+
+    private string GetManagedBackupPath(string backupId)
+    {
+        lock (_backupSyncRoot)
+        {
+            if (_managedBackups.TryGetValue(backupId, out ManagedBackupRecord? record))
+            {
+                return record.BackupPath;
+            }
+        }
+
+        throw new InvalidOperationException($"Managed backup '{backupId}' is no longer available.");
+    }
+
+    private void ReleaseTrackedFileEditStates(IReadOnlyList<WorkspaceFileEditState> states)
+    {
+        foreach (WorkspaceFileEditState state in states.Where(static state => state is not null))
+        {
+            if (string.IsNullOrWhiteSpace(state.ContentBackupId))
+            {
+                continue;
+            }
+
+            string? backupPath = null;
+            lock (_backupSyncRoot)
+            {
+                if (!_managedBackups.TryGetValue(state.ContentBackupId, out ManagedBackupRecord? record))
+                {
+                    continue;
+                }
+
+                record.ReferenceCount--;
+                if (record.ReferenceCount > 0)
+                {
+                    continue;
+                }
+
+                backupPath = record.BackupPath;
+                _managedBackups.Remove(state.ContentBackupId);
+            }
+
+            if (backupPath is not null)
+            {
+                TryDeleteTemporaryFile(backupPath);
+            }
+        }
+    }
+
+    private void RetainTrackedFileEditStates(IReadOnlyList<WorkspaceFileEditState> states)
+    {
+        lock (_backupSyncRoot)
+        {
+            foreach (WorkspaceFileEditState state in states.Where(static state => state is not null))
+            {
+                if (string.IsNullOrWhiteSpace(state.ContentBackupId))
+                {
+                    continue;
+                }
+
+                if (_managedBackups.TryGetValue(state.ContentBackupId, out ManagedBackupRecord? record))
+                {
+                    record.ReferenceCount++;
+                }
+            }
         }
     }
 
@@ -2651,9 +2851,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string normalized = content
             .Replace("\r\n", "\n", StringComparison.Ordinal)
             .Replace('\r', '\n');
-        return targetNewLine == "\r\n"
-            ? normalized.Replace("\n", "\r\n", StringComparison.Ordinal)
-            : normalized;
+        return targetNewLine switch
+        {
+            "\r\n" => normalized.Replace("\n", "\r\n", StringComparison.Ordinal),
+            "\r" => normalized.Replace("\n", "\r", StringComparison.Ordinal),
+            _ => normalized
+        };
     }
 
     private static void EnsureParentDirectory(string fullPath)
@@ -4563,7 +4766,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         if (!sawCrLf && !sawLf && sawCr)
         {
-            dominantNewLine = "\n";
+            dominantNewLine = "\r";
         }
 
         return new FileLineEndingInfo(dominantNewLine, distinctKinds > 1);
@@ -4572,6 +4775,34 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private static bool HasMixedLineEndings(string text)
     {
         return DetectLineEndings(text).HasMixedLineEndings;
+    }
+
+    public void Dispose()
+    {
+        List<string> backupPaths;
+        lock (_backupSyncRoot)
+        {
+            backupPaths = _managedBackups.Values
+                .Select(static record => record.BackupPath)
+                .ToList();
+            _managedBackups.Clear();
+        }
+
+        foreach (string backupPath in backupPaths)
+        {
+            TryDeleteTemporaryFile(backupPath);
+        }
+
+        try
+        {
+            if (Directory.Exists(_backupDirectoryPath))
+            {
+                Directory.Delete(_backupDirectoryPath, recursive: true);
+            }
+        }
+        catch (Exception exception) when (IsFileSystemAccessException(exception))
+        {
+        }
     }
 
     private static PatchRetryMatch? TryFindRetryMatch(

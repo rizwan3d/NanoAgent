@@ -81,11 +81,13 @@ internal static class AgentDelegationSupport
     public static bool TryRecordChildFileEdits(
         ReplSessionContext childSession,
         ReplSessionContext parentSession,
+        IWorkspaceFileService workspaceFileService,
         string subagentName,
         string task)
     {
         ArgumentNullException.ThrowIfNull(childSession);
         ArgumentNullException.ThrowIfNull(parentSession);
+        ArgumentNullException.ThrowIfNull(workspaceFileService);
         ArgumentException.ThrowIfNullOrWhiteSpace(subagentName);
         ArgumentException.ThrowIfNullOrWhiteSpace(task);
 
@@ -97,6 +99,7 @@ internal static class AgentDelegationSupport
             return false;
         }
 
+        workspaceFileService.RetainTrackedFileEditTransaction(transaction);
         parentSession.RecordFileEditTransaction(transaction);
         return true;
     }
