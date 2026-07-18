@@ -75,6 +75,7 @@ public sealed class ConversationSectionSnapshot
         TotalEstimatedOutputTokens = totalEstimatedOutputTokens;
         Turns = turns
             .Where(static turn => turn is not null)
+            .Select(static turn => NormalizeLegacyTurnStatus(turn))
             .ToArray();
         UpdatedAtUtc = updatedAtUtc;
         PendingExecutionPlan = pendingExecutionPlan;
@@ -124,6 +125,26 @@ public sealed class ConversationSectionSnapshot
     /// Null when the section is standalone (legacy format).
     /// </summary>
     public string? ParentSessionId { get; }
+
+    private static ConversationSectionTurn NormalizeLegacyTurnStatus(ConversationSectionTurn turn)
+    {
+        ArgumentNullException.ThrowIfNull(turn);
+
+        return turn.Status == ConversationTurnStatus.Pending &&
+            !string.IsNullOrWhiteSpace(turn.AssistantResponse) &&
+            turn.FailureInfo is null
+                ? new ConversationSectionTurn(
+                    userInput: turn.UserInput,
+                    assistantResponse: turn.AssistantResponse,
+                    toolCalls: turn.ToolCalls,
+                    toolOutputMessages: turn.ToolOutputMessages,
+                    assistantReasoningContent: turn.AssistantReasoningContent,
+                    assistantReasoningDetailsJson: turn.AssistantReasoningDetailsJson,
+                    status: ConversationTurnStatus.Completed,
+                    turnId: turn.TurnId,
+                    attachments: turn.Attachments)
+                : turn;
+    }
 
     private static Dictionary<string, int> NormalizeModelContextWindowTokens(
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,

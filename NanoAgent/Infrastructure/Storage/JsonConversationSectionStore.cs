@@ -31,9 +31,12 @@ internal sealed class JsonConversationSectionStore : IConversationSectionStore
 
         try
         {
-            return JsonSerializer.Deserialize(
+            ConversationSectionSnapshot? snapshot = JsonSerializer.Deserialize(
                 json,
                 ConversationSectionStorageJsonContext.Default.ConversationSectionSnapshot);
+            return snapshot is null
+                ? null
+                : NormalizeLegacySnapshot(snapshot);
         }
         catch (JsonException)
         {
@@ -123,5 +126,46 @@ internal sealed class JsonConversationSectionStore : IConversationSectionStore
         }
 
         return parsedSectionId.ToString("D");
+    }
+
+    private static ConversationSectionSnapshot NormalizeLegacySnapshot(ConversationSectionSnapshot snapshot)
+    {
+        ConversationSectionTurn[] normalizedTurns = snapshot.Turns
+            .Select(static turn =>
+                turn.Status == ConversationTurnStatus.Pending &&
+                !string.IsNullOrWhiteSpace(turn.AssistantResponse) &&
+                turn.FailureInfo is null
+                    ? new ConversationSectionTurn(
+                        userInput: turn.UserInput,
+                        assistantResponse: turn.AssistantResponse,
+                        toolCalls: turn.ToolCalls,
+                        toolOutputMessages: turn.ToolOutputMessages,
+                        assistantReasoningContent: turn.AssistantReasoningContent,
+                        assistantReasoningDetailsJson: turn.AssistantReasoningDetailsJson,
+                        status: ConversationTurnStatus.Completed,
+                        turnId: turn.TurnId,
+                        attachments: turn.Attachments)
+                    : turn)
+            .ToArray();
+
+        return new ConversationSectionSnapshot(
+            snapshot.SectionId,
+            snapshot.Title,
+            snapshot.CreatedAtUtc,
+            snapshot.UpdatedAtUtc,
+            snapshot.ProviderProfile,
+            snapshot.ActiveModelId,
+            snapshot.AvailableModelIds,
+            normalizedTurns,
+            snapshot.TotalEstimatedOutputTokens,
+            snapshot.PendingExecutionPlan,
+            snapshot.AgentProfileName,
+            snapshot.ReasoningEffort,
+            snapshot.ThinkingMode,
+            snapshot.SessionState,
+            snapshot.WorkspacePath,
+            snapshot.ModelContextWindowTokens,
+            snapshot.ActiveProviderName,
+            snapshot.ParentSessionId);
     }
 }

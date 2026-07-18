@@ -58,6 +58,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         If the listed work is truly complete, call update_plan with every item completed before returning final text.
         Do not repeat the final answer until the live plan has no in_progress or pending work.
         """;
+    private const string InterruptedTurnRecoveryMessage =
+        """
+        Recovery context:
+        The previous task was interrupted before the assistant completed its response.
+        Continue from the preserved task and available tool progress.
+        """;
 
     private static readonly ConversationJsonContext RelaxedConversationJsonContext = new(
     new JsonSerializerOptions
@@ -179,6 +185,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     private readonly ILessonMemoryService _lessonMemoryService;
     private readonly ISkillService _skillService;
     private readonly IToolOutputFormatter _toolOutputFormatter;
+    private readonly IReplSectionService? _sectionService;
     private readonly ICodebaseIndexService? _codebaseIndexService;
     private readonly CodebaseIndexSettings _codebaseIndexSettings;
     private readonly ILogger<AgentConversationPipeline> _logger;
@@ -201,6 +208,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         IToolOutputFormatter? toolOutputFormatter = null,
         IBudgetControlsUsageService? budgetControlsUsageService = null,
         IWorkspaceAgentProfilePromptProvider? workspaceAgentProfilePromptProvider = null,
+        IReplSectionService? sectionService = null,
         ICodebaseIndexService? codebaseIndexService = null,
         CodebaseIndexSettings? codebaseIndexSettings = null)
     {
@@ -221,6 +229,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         _lessonMemoryService = lessonMemoryService;
         _skillService = skillService ?? DisabledSkillService.Instance;
         _toolOutputFormatter = toolOutputFormatter ?? new ToolOutputFormatter();
+        _sectionService = sectionService;
         _codebaseIndexService = codebaseIndexService;
         _codebaseIndexSettings = codebaseIndexSettings ?? new CodebaseIndexSettings();
         _logger = logger;
@@ -259,6 +268,11 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             .ToArray();
         await RunBeforeTaskStartHookAsync(normalizedInput, session, cancellationToken);
 
+        ConversationSectionTurn pendingTurn = session.CreatePendingConversationTurn(
+            normalizedInput,
+            normalizedAttachments);
+        await PersistSessionStateAsync(session, cancellationToken);
+
         try
         {
             using PreparedTurnContext preparedTurn = await PrepareTurnAsync(
@@ -284,13 +298,17 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                     preparedTurn.Attachments,
                     cancellationToken);
 
-                return await FinalizeCompletedTurnAsync(preparedTurn.NormalizedInput, session, approvedTurn, cancellationToken);
+                return await FinalizeCompletedTurnAsync(
+                    pendingTurn.TurnId,
+                    preparedTurn.NormalizedInput,
+                    session,
+                    approvedTurn,
+                    cancellationToken);
             }
 
             List<ConversationRequestMessage> messages =
             [
-                .. BuildInitialConversationMessages(session),
-                ConversationRequestMessage.User(preparedTurn.NormalizedInput, preparedTurn.Attachments)
+                .. BuildInitialConversationMessages(session)
             ];
 
             ApplicationLogMessages.ConversationRequestStarted(
@@ -300,6 +318,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
             PhaseExecutionResult result = await RunPhaseAsync(
                 preparedTurn.ApiKey,
+                pendingTurn.TurnId,
                 session,
                 messages,
                 PlanningModePolicy.CreateToolDrivenConversationSystemPrompt(preparedTurn.ProfileSystemPrompt),
@@ -319,14 +338,35 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 session,
                 session.ShowThinking);
 
-            return await FinalizeCompletedTurnAsync(preparedTurn.NormalizedInput, session, completedTurn, cancellationToken);
+            return await FinalizeCompletedTurnAsync(
+                pendingTurn.TurnId,
+                preparedTurn.NormalizedInput,
+                session,
+                completedTurn,
+                cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            session.TryCancelConversationTurn(pendingTurn.TurnId);
+            await PersistSessionStateIgnoringErrorsAsync(session, cancellationToken);
+            throw;
         }
         catch (OperationCanceledException)
         {
+            session.TryInterruptConversationTurn(
+                pendingTurn.TurnId,
+                failureInfo: CreateFailureInfo(
+                    session,
+                    new ConversationProviderException("The conversation request was cancelled.")));
+            await PersistSessionStateIgnoringErrorsAsync(session, cancellationToken);
             throw;
         }
         catch (Exception exception)
         {
+            session.TryInterruptConversationTurn(
+                pendingTurn.TurnId,
+                failureInfo: CreateFailureInfo(session, exception));
+            await PersistSessionStateIgnoringErrorsAsync(session, cancellationToken);
             await RunAfterTaskFailedHookAsync(normalizedInput, session, exception, cancellationToken);
             throw;
         }
@@ -377,13 +417,15 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     }
 
     private async Task<ConversationTurnResult> FinalizeCompletedTurnAsync(
+        string turnId,
         string input,
         ReplSessionContext session,
         CompletedAssistantTurn completedTurn,
         CancellationToken cancellationToken)
     {
         await RunAfterTaskCompleteHookAsync(input, session, completedTurn.Result, cancellationToken);
-        CommitCompletedTurn(session, completedTurn);
+        CommitCompletedTurn(turnId, session, completedTurn);
+        await PersistSessionStateAsync(session, cancellationToken);
         await MaybeUpdateCodebaseIndexAsync(cancellationToken);
         return completedTurn.Result;
     }
@@ -416,12 +458,12 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
         List<ConversationRequestMessage> executionMessages =
         [
-            .. BuildInitialConversationMessages(session),
-            ConversationRequestMessage.User(normalizedInput, attachments)
+            .. BuildInitialConversationMessages(session)
         ];
 
         PhaseExecutionResult executionResult = await RunPhaseAsync(
             apiKey,
+            session.ConversationTurns.Last().TurnId,
             session,
             executionMessages,
             PlanningModePolicy.CreateExecutionSystemPrompt(
@@ -486,13 +528,14 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
     }
 
     private void CommitCompletedTurn(
+        string turnId,
         ReplSessionContext session,
         CompletedAssistantTurn completedTurn)
     {
         ApplicationLogMessages.ConversationAssistantMessageReceived(_logger);
         session.ClearPendingExecutionPlan();
-        session.AddConversationTurn(
-            completedTurn.UserInput,
+        session.TryCompleteConversationTurn(
+            turnId,
             completedTurn.AssistantResponse,
             completedTurn.ToolCalls,
             CreateToolOutputMessages(completedTurn.BatchResult),
@@ -1068,6 +1111,7 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
 
     private async Task<PhaseExecutionResult> RunPhaseAsync(
         string apiKey,
+        string turnId,
         ReplSessionContext session,
         IReadOnlyList<ConversationRequestMessage> initialMessages,
         string? systemPrompt,
@@ -1175,6 +1219,10 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
                 ApplicationLogMessages.ConversationToolHandoffCompleted(_logger);
                 executedToolCalls.AddRange(response.ToolCalls);
                 executedToolResults.AddRange(toolExecutionResult.Results);
+                session.TryAppendConversationTurnToolProgress(
+                    turnId,
+                    response.ToolCalls,
+                    CreateToolOutputMessages(toolExecutionResult));
 
                 ExecutionPlanProgress? reportedPlanUpdate = await ReportPlanUpdatesAsync(
                     toolExecutionResult,
@@ -1762,22 +1810,69 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         ReplSessionContext session)
     {
         ConversationSectionTurn[] turns = session.ConversationTurns.ToArray();
-        if (turns.Length == 0)
+        List<ConversationRequestMessage> messages = [];
+        foreach (ConversationSectionTurn turn in turns)
+        {
+            if (turn.Status == ConversationTurnStatus.Cancelled)
+            {
+                continue;
+            }
+
+            messages.Add(ConversationRequestMessage.User(turn.UserInput, turn.Attachments));
+
+            if (turn.ToolCalls.Count > 0)
+            {
+                messages.Add(ConversationRequestMessage.AssistantToolCalls(turn.ToolCalls));
+                foreach ((string toolCallId, string toolOutputMessage) in CreateStoredToolResultMessages(turn))
+                {
+                    messages.Add(ConversationRequestMessage.ToolResult(toolCallId, toolOutputMessage));
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(turn.AssistantResponse))
+            {
+                messages.Add(ConversationRequestMessage.AssistantMessage(
+                    turn.AssistantResponse,
+                    turn.AssistantReasoningContent,
+                    turn.AssistantReasoningDetailsJson));
+            }
+        }
+
+        return messages;
+    }
+
+    private static IReadOnlyList<(string ToolCallId, string ToolOutputMessage)> CreateStoredToolResultMessages(
+        ConversationSectionTurn turn)
+    {
+        if (turn.ToolOutputMessages.Count == 0)
         {
             return [];
         }
 
-        List<ConversationRequestMessage> messages = new(turns.Length * 2);
-        foreach (ConversationSectionTurn turn in turns)
+        List<(string ToolCallId, string ToolOutputMessage)> results = [];
+        for (int index = 0; index < turn.ToolOutputMessages.Count; index++)
         {
-            messages.Add(ConversationRequestMessage.User(turn.UserInput));
-            messages.Add(ConversationRequestMessage.AssistantMessage(
-                turn.AssistantResponse,
-                turn.AssistantReasoningContent,
-                turn.AssistantReasoningDetailsJson));
+            string toolCallId = index < turn.ToolCalls.Count
+                ? turn.ToolCalls[index].Id
+                : $"{turn.TurnId}-tool-{index + 1}";
+            results.Add((toolCallId, turn.ToolOutputMessages[index]));
         }
 
-        return messages;
+        return results;
+    }
+
+    private static string? AppendInterruptedTurnRecoveryContext(
+        string? systemPrompt,
+        ReplSessionContext session)
+    {
+        if (!session.ConversationTurns.Any(static turn => turn.Status == ConversationTurnStatus.Interrupted))
+        {
+            return systemPrompt;
+        }
+
+        return string.IsNullOrWhiteSpace(systemPrompt)
+            ? InterruptedTurnRecoveryMessage
+            : InterruptedTurnRecoveryMessage + Environment.NewLine + Environment.NewLine + systemPrompt.TrimStart();
     }
 
     private PreparedConversationRequest PrepareConversationRequest(
@@ -1797,7 +1892,9 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
             budget);
         int messageTokens = trimmedMessages.Sum(EstimateMessageTokens);
         int remainingSystemBudget = Math.Max(256, budget.UsableInputTokens - messageTokens);
-        string? trimmedSystemPrompt = TrimSystemPrompt(systemPrompt, remainingSystemBudget);
+        string? trimmedSystemPrompt = TrimSystemPrompt(
+            AppendInterruptedTurnRecoveryContext(systemPrompt, session),
+            remainingSystemBudget);
 
         if (!string.IsNullOrWhiteSpace(trimmedSystemPrompt))
         {
@@ -2608,6 +2705,60 @@ internal sealed class AgentConversationPipeline : IConversationPipeline
         return batchResult is null
             ? []
             : _toolOutputFormatter.FormatResults(batchResult);
+    }
+
+    private ConversationFailureInfo CreateFailureInfo(
+        ReplSessionContext session,
+        Exception exception)
+    {
+        string category = exception switch
+        {
+            ConversationResponseException responseException when responseException.IsRetryableProviderOutput =>
+                "provider_output_exhausted",
+            ConversationResponseException => "provider_response_error",
+            ConversationProviderException providerException when providerException.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase) =>
+                "provider_timeout",
+            ConversationProviderException => "provider_request_error",
+            ConversationPipelineException => "conversation_pipeline_error",
+            _ => "unexpected_error"
+        };
+
+        bool isRetryable = exception is ConversationResponseException response &&
+            response.IsRetryableProviderOutput;
+
+        return new ConversationFailureInfo(
+            category,
+            session.ProviderName,
+            session.ActiveModelId,
+            isRetryable);
+    }
+
+    private async Task PersistSessionStateAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        if (_sectionService is null)
+        {
+            return;
+        }
+
+        await _sectionService.SaveIfDirtyAsync(session, cancellationToken);
+    }
+
+    private async Task PersistSessionStateIgnoringErrorsAsync(
+        ReplSessionContext session,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await PersistSessionStateAsync(session, cancellationToken);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Failed to persist conversation session state during interrupted-turn recovery.");
+        }
     }
 
     private sealed class DisabledLifecycleHookService : ILifecycleHookService
