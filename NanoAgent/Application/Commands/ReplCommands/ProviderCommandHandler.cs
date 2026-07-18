@@ -152,6 +152,7 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
             modelResult.SelectedModelId,
             modelResult.AvailableModels.Select(static model => model.Id).ToArray(),
             CreateModelContextWindowMap(modelResult.AvailableModels),
+            CreateModelContextMetadataMap(modelResult.AvailableModels),
             provider.Name);
 
         await _configurationStore.SaveAsync(
@@ -236,5 +237,33 @@ internal sealed class ProviderCommandHandler : IReplCommandHandler
         }
 
         return contextWindowTokens;
+    }
+
+    private static IReadOnlyDictionary<string, ModelContextMetadata> CreateModelContextMetadataMap(
+        IEnumerable<AvailableModel> models)
+    {
+        Dictionary<string, ModelContextMetadata> metadata = new(StringComparer.Ordinal);
+        foreach (AvailableModel model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Id))
+            {
+                continue;
+            }
+
+            ModelContextMetadata? modelMetadata = model.ContextMetadata;
+            if (modelMetadata is null)
+            {
+                if (model.ContextWindowTokens is not > 0)
+                {
+                    continue;
+                }
+
+                modelMetadata = new ModelContextMetadata(model.ContextWindowTokens.Value);
+            }
+
+            metadata[model.Id.Trim()] = modelMetadata;
+        }
+
+        return metadata;
     }
 }

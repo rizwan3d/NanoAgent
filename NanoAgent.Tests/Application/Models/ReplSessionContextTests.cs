@@ -243,6 +243,7 @@ public sealed class ReplSessionContextTests
                 ["openai/gpt-5.4"] = 400_000,
                 ["anthropic/claude-sonnet-4.6"] = 200_000
             },
+            null,
             "OpenRouter");
 
         ConversationSectionSnapshot snapshot = session.CreateSectionSnapshot(

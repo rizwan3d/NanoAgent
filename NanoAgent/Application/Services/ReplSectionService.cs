@@ -48,6 +48,7 @@ internal sealed class ReplSectionService : IReplSectionService
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
         string? activeProviderName,
         CancellationToken cancellationToken)
     {
@@ -67,6 +68,7 @@ internal sealed class ReplSectionService : IReplSectionService
             sectionUpdatedAtUtc: now,
             agentProfile: agentProfile,
             modelContextWindowTokens: modelContextWindowTokens,
+            modelContextMetadata: modelContextMetadata,
             activeProviderName: activeProviderName);
 
         await _sectionStore.SaveAsync(
@@ -88,6 +90,7 @@ internal sealed class ReplSectionService : IReplSectionService
         IReadOnlyList<string> availableModelIds,
         IAgentProfile agentProfile,
         IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+        IReadOnlyDictionary<string, ModelContextMetadata>? modelContextMetadata,
         string? activeProviderName,
         ReplSessionContext completedSection,
         CancellationToken cancellationToken)
@@ -143,6 +146,7 @@ internal sealed class ReplSectionService : IReplSectionService
             sectionUpdatedAtUtc: now,
             agentProfile: agentProfile,
             modelContextWindowTokens: modelContextWindowTokens,
+            modelContextMetadata: modelContextMetadata,
             activeProviderName: activeProviderName,
             parentSessionId: parentSessionId,
             sessionContext: accumulatedContext);
@@ -232,6 +236,7 @@ internal sealed class ReplSectionService : IReplSectionService
             sessionState: snapshot.SessionState,
             workspacePath: snapshot.WorkspacePath,
             modelContextWindowTokens: snapshot.ModelContextWindowTokens,
+            modelContextMetadata: snapshot.ModelContextMetadata,
             activeProviderName: snapshot.ActiveProviderName,
             parentSessionId: snapshot.ParentSessionId,
             sessionContext: sessionContext);

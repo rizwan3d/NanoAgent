@@ -19,6 +19,8 @@ namespace NanoAgent.Infrastructure.Storage;
 [JsonSerializable(typeof(SessionEditContext))]
 [JsonSerializable(typeof(SessionTerminalCommand))]
 [JsonSerializable(typeof(AgentProviderProfile))]
+[JsonSerializable(typeof(ModelContextMetadata))]
+[JsonSerializable(typeof(ToolResultTruncationPolicy))]
 internal sealed partial class ConversationSectionStorageJsonContext : JsonSerializerContext
 {
 }

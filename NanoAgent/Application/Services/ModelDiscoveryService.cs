@@ -153,7 +153,8 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
 
             normalizedModels.Add(new AvailableModel(
                 normalizedId,
-                NormalizeContextWindowTokens(model.ContextWindowTokens)));
+                NormalizeContextWindowTokens(model.ContextWindowTokens),
+                NormalizeContextMetadata(model.ContextMetadata, model.ContextWindowTokens)));
         }
 
         if (normalizedModels.Count == 0)
@@ -177,5 +178,23 @@ internal sealed class ModelDiscoveryService : IModelDiscoveryService
         return contextWindowTokens is > 0
             ? contextWindowTokens
             : null;
+    }
+
+    private static ModelContextMetadata? NormalizeContextMetadata(
+        ModelContextMetadata? metadata,
+        int? fallbackContextWindowTokens)
+    {
+        int contextWindowTokens = metadata?.ContextWindowTokens is > 0
+            ? metadata.ContextWindowTokens
+            : NormalizeContextWindowTokens(fallbackContextWindowTokens) ?? 0;
+
+        if (contextWindowTokens <= 0)
+        {
+            return null;
+        }
+
+        return metadata is null
+            ? new ModelContextMetadata(contextWindowTokens)
+            : metadata with { ContextWindowTokens = contextWindowTokens };
     }
 }

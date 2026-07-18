@@ -98,6 +98,7 @@ public sealed class AgentDelegateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentDelegateTool sut = new(
             serviceProvider,
@@ -136,6 +137,7 @@ public sealed class AgentDelegateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentDelegateTool sut = new(
             serviceProvider,
@@ -177,6 +179,7 @@ public sealed class AgentDelegateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentDelegateTool sut = new(
             serviceProvider,
@@ -212,6 +215,7 @@ public sealed class AgentDelegateToolTests
 
         using ServiceProvider serviceProvider = new ServiceCollection()
             .AddSingleton(conversationPipeline.Object)
+            .AddSingleton(Mock.Of<IWorkspaceFileService>())
             .BuildServiceProvider();
         AgentDelegateTool sut = new(
             serviceProvider,
