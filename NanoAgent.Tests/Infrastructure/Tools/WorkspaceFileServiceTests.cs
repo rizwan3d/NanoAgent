@@ -3,6 +3,7 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Tools;
+using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 
@@ -186,13 +187,91 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         WorkspaceFileService sut = CreateSut();
         string filePath = Path.Combine(_workspaceRoot, "README.md");
 
-        await File.WriteAllTextAsync(filePath, "hello", CancellationToken.None);
+        await File.WriteAllTextAsync(filePath, "hello\nworld\nthird", CancellationToken.None);
 
         WorkspaceFileReadResult result = await sut.ReadFileAsync(
             "README.md",
+            offset: 1,
+            limit: 2,
             CancellationToken.None);
 
-        result.Content.Should().Be("hello");
+        result.Path.Should().Be("README.md");
+        result.Content.Should().Be("1: hello\n2: world");
+        result.StartLine.Should().Be(1);
+        result.EndLine.Should().Be(2);
+        result.TotalLines.Should().Be(3);
+        result.Truncated.Should().BeTrue();
+        result.NextOffset.Should().Be(3);
+        result.Sha256.Should().NotBeNullOrWhiteSpace();
+        result.Encoding.Should().Be("utf-8");
+    }
+
+    [Fact]
+    public async Task ReadFileAsync_Should_AllowLargeFiles_ByReturningRequestedWindow()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "large.log");
+        string content = string.Join(
+            '\n',
+            Enumerable.Range(1, 30_000).Select(static line => $"line {line:D5} {new string('x', 16)}"));
+
+        await File.WriteAllTextAsync(filePath, content, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "large.log",
+            offset: 20_001,
+            limit: 3,
+            CancellationToken.None);
+
+        result.Content.Should().Be(
+            "20001: line 20001 xxxxxxxxxxxxxxxx\n20002: line 20002 xxxxxxxxxxxxxxxx\n20003: line 20003 xxxxxxxxxxxxxxxx");
+        result.StartLine.Should().Be(20001);
+        result.EndLine.Should().Be(20003);
+        result.TotalLines.Should().Be(30000);
+        result.Truncated.Should().BeTrue();
+        result.NextOffset.Should().Be(20004);
+    }
+
+    [Fact]
+    public async Task ReadFileAsync_Should_ReturnClearError_When_OffsetIsOutOfRange()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "README.md");
+
+        await File.WriteAllTextAsync(filePath, "hello\nworld", CancellationToken.None);
+
+        Func<Task> act = () => sut.ReadFileAsync(
+            "README.md",
+            offset: 3,
+            limit: 10,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*has 2 lines, so offset 3 is out of range*");
+    }
+
+    [Fact]
+    public async Task ReadFileAsync_Should_TruncateLongLines_AndHonorResponseCap()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "minified.js");
+        string content = string.Join(
+            '\n',
+            Enumerable.Range(1, 40).Select(_ => new string('a', 6_000)));
+
+        await File.WriteAllTextAsync(filePath, content, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "minified.js",
+            offset: 1,
+            limit: 40,
+            CancellationToken.None);
+
+        result.Content.Should().Contain("[truncated]");
+        Encoding.UTF8.GetByteCount(result.Content).Should().BeLessThanOrEqualTo(50 * 1024);
+        result.Truncated.Should().BeTrue();
+        result.NextOffset.Should().NotBeNull();
     }
 
     [Fact]
@@ -1251,6 +1330,8 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         Func<Task> act = () => sut.ReadFileAsync(
             "token.secret",
+            offset: 1,
+            limit: 2_000,
             CancellationToken.None);
 
         await act.Should()

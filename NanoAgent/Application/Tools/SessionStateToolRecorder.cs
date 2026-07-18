@@ -23,7 +23,7 @@ internal static class SessionStateToolRecorder
             result.Path,
             "read",
             DateTimeOffset.UtcNow,
-            $"Read {result.CharacterCount} characters. Excerpt: {NormalizeForState(result.Content, MaxContentExcerptCharacters)}"));
+            $"Read lines {result.StartLine}-{result.EndLine} of {result.TotalLines}. Excerpt: {NormalizeForState(result.Content, MaxContentExcerptCharacters)}"));
     }
 
     public static void RecordDirectoryList(

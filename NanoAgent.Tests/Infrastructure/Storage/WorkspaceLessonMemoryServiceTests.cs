@@ -263,7 +263,7 @@ public sealed class WorkspaceLessonMemoryServiceTests
                 AgentToolNames.FileRead,
                 ToolResultFactory.Success(
                     "Read file 'README.md'.",
-                    new WorkspaceFileReadResult("README.md", "hello", 5),
+                    new WorkspaceFileReadResult("README.md", "1: hello", 1, 1, 1, false, null, "abc123", "utf-8"),
                     ToolJsonContext.Default.WorkspaceFileReadResult)),
             CancellationToken.None);
 

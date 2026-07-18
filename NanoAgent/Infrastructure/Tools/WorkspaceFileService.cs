@@ -17,7 +17,9 @@ namespace NanoAgent.Infrastructure.Tools;
 internal sealed class WorkspaceFileService : IWorkspaceFileService
 {
     private const int MaxDirectoryEntries = 200;
-    private const int MaxFileReadBytes = 262_144;
+    private const int DefaultFileReadLimit = 2_000;
+    private const int MaxFileReadResponseBytes = 50 * 1024;
+    private const int MaxFileReadLineBytes = 4 * 1024;
     private const int MaxSearchFileBytes = 262_144;
     private const int MaxSearchResults = 100;
     private const int MaxFileSearchResults = 200;
@@ -69,6 +71,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int TotalMatchCount,
         bool HasMore,
         string? NextCursor);
+    private readonly record struct WorkspaceFileReadPage(
+        string Content,
+        int StartLine,
+        int EndLine,
+        int TotalLines,
+        bool Truncated,
+        int? NextOffset,
+        string Sha256,
+        string Encoding);
 
 
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
@@ -312,25 +323,30 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     public async Task<WorkspaceFileReadResult> ReadFileAsync(
         string path,
+        int offset,
+        int limit,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Read);
         EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
-        FileInfo fileInfo = new(fullPath);
-        if (fileInfo.Length > MaxFileReadBytes)
-        {
-            throw new InvalidOperationException(
-                $"File '{ToWorkspaceRelativePath(fullPath)}' exceeds the maximum readable size of {MaxFileReadBytes} bytes.");
-        }
-
-        string content = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
+        WorkspaceFileReadPage page = await ReadWorkspaceFilePageAsync(
+            fullPath,
+            offset,
+            limit,
+            cancellationToken);
 
         return new WorkspaceFileReadResult(
             ToWorkspaceRelativePath(fullPath),
-            content,
-            content.Length);
+            page.Content,
+            page.StartLine,
+            page.EndLine,
+            page.TotalLines,
+            page.Truncated,
+            page.NextOffset,
+            page.Sha256,
+            page.Encoding);
     }
 
     public async Task<WorkspaceFileDeleteResult> DeleteFileAsync(
@@ -1522,6 +1538,226 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return new FileEncodingInfo(hasBom, hasCrlf ? "\r\n" : "\n");
+    }
+
+    private async Task<WorkspaceFileReadPage> ReadWorkspaceFilePageAsync(
+        string fullPath,
+        int offset,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Read);
+
+        int safeOffset = Math.Max(1, offset);
+        int safeLimit = limit <= 0
+            ? DefaultFileReadLimit
+            : limit;
+
+        (string sha256, string encoding) = await ComputeFileDigestAsync(fullPath, cancellationToken);
+
+        await using FileStream stream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Read);
+
+        using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        List<string> selectedLines = [];
+        int totalLines = 0;
+        int linesAdded = 0;
+        bool hitResponseCap = false;
+        int responseBytes = 0;
+        StringBuilder contentBuilder = new();
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            string? line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
+
+            totalLines++;
+            if (totalLines < safeOffset)
+            {
+                continue;
+            }
+
+            if (linesAdded >= safeLimit || hitResponseCap)
+            {
+                continue;
+            }
+
+            string formattedLine = FormatReadLine(totalLines, line, responseBytes, out int lineBytes);
+            int separatorBytes = linesAdded == 0 ? 0 : 1;
+            if (responseBytes + separatorBytes + lineBytes > MaxFileReadResponseBytes)
+            {
+                hitResponseCap = true;
+                continue;
+            }
+
+            if (linesAdded > 0)
+            {
+                contentBuilder.Append('\n');
+                responseBytes++;
+            }
+
+            contentBuilder.Append(formattedLine);
+            responseBytes += lineBytes;
+            linesAdded++;
+        }
+
+        if (totalLines == 0)
+        {
+            if (safeOffset > 1)
+            {
+                throw new InvalidOperationException(
+                    $"File '{ToWorkspaceRelativePath(fullPath)}' has 0 lines, so offset {safeOffset} is out of range.");
+            }
+
+            return new WorkspaceFileReadPage(
+                string.Empty,
+                0,
+                0,
+                0,
+                Truncated: false,
+                NextOffset: null,
+                sha256,
+                encoding);
+        }
+
+        if (safeOffset > totalLines)
+        {
+            throw new InvalidOperationException(
+                $"File '{ToWorkspaceRelativePath(fullPath)}' has {totalLines} lines, so offset {safeOffset} is out of range.");
+        }
+
+        int startLine = safeOffset;
+        int endLine = linesAdded == 0
+            ? safeOffset - 1
+            : safeOffset + linesAdded - 1;
+        bool truncated = endLine < totalLines;
+        int? nextOffset = truncated
+            ? endLine + 1
+            : null;
+
+        return new WorkspaceFileReadPage(
+            contentBuilder.ToString(),
+            startLine,
+            endLine,
+            totalLines,
+            truncated,
+            nextOffset,
+            sha256,
+            encoding);
+    }
+
+    private async Task<(string Sha256, string Encoding)> ComputeFileDigestAsync(
+        string fullPath,
+        CancellationToken cancellationToken)
+    {
+        await using FileStream stream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+
+        using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = new byte[81920];
+        bool firstChunk = true;
+        bool hasBom = false;
+
+        while (true)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (firstChunk)
+            {
+                hasBom = read >= 3 &&
+                         buffer[0] == 0xEF &&
+                         buffer[1] == 0xBB &&
+                         buffer[2] == 0xBF;
+                firstChunk = false;
+            }
+
+            hash.AppendData(buffer, 0, read);
+        }
+
+        return (
+            Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
+            hasBom ? "utf-8-bom" : "utf-8");
+    }
+
+    private static string FormatReadLine(
+        int lineNumber,
+        string line,
+        int currentResponseBytes,
+        out int byteCount)
+    {
+        string prefix = lineNumber.ToString(CultureInfo.InvariantCulture) + ": ";
+        int prefixBytes = Encoding.UTF8.GetByteCount(prefix);
+        int availableBytes = Math.Max(
+            0,
+            Math.Min(
+                MaxFileReadLineBytes,
+                MaxFileReadResponseBytes - currentResponseBytes) - prefixBytes);
+
+        string formattedLine = prefix + TruncateUtf8(line, availableBytes);
+        byteCount = Encoding.UTF8.GetByteCount(formattedLine);
+        return formattedLine;
+    }
+
+    private static string TruncateUtf8(
+        string value,
+        int maxBytes)
+    {
+        if (maxBytes <= 0)
+        {
+            return string.Empty;
+        }
+
+        if (Encoding.UTF8.GetByteCount(value) <= maxBytes)
+        {
+            return value;
+        }
+
+        const string suffix = " [truncated]";
+        int suffixBytes = Encoding.UTF8.GetByteCount(suffix);
+        if (maxBytes <= suffixBytes)
+        {
+            return suffix[..Math.Min(suffix.Length, maxBytes)];
+        }
+
+        int allowedBytes = maxBytes - suffixBytes;
+        int length = value.Length;
+        while (length > 0 &&
+               Encoding.UTF8.GetByteCount(value.AsSpan(0, length)) > allowedBytes)
+        {
+            length--;
+        }
+
+        return value[..length] + suffix;
     }
 
     private async Task<string> ReadWorkspaceFileAsync(
