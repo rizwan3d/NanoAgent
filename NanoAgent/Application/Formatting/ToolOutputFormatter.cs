@@ -559,7 +559,11 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 return false;
             }
 
-            TryGetJsonString(root, "Content", out string content, trim: false);
+            if (!TryGetJsonString(root, "DisplayContent", out string content, trim: false) &&
+                !TryGetJsonString(root, "Content", out content, trim: false))
+            {
+                TryGetJsonString(root, "RawContent", out content, trim: false);
+            }
             TryGetJsonInt32(root, "StartLine", out int startLine);
             TryGetJsonInt32(root, "EndLine", out int endLine);
             TryGetJsonInt32(root, "TotalLines", out int totalLines);
