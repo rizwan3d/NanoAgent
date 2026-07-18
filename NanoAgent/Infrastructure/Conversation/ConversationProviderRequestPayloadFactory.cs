@@ -662,16 +662,20 @@ internal sealed class ConversationProviderRequestPayloadFactory
                 FormatAttachmentText(attachment)));
         }
 
-        return JsonSerializer.SerializeToElement(
+        string json = JsonSerializer.Serialize(
             parts,
             OpenAiConversationJsonContext.Default.IReadOnlyListOpenAiChatCompletionContentPart);
+        using JsonDocument document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     private static JsonElement CreateStringContentElement(string? value)
     {
-        return JsonSerializer.SerializeToElement(
+        string json = JsonSerializer.Serialize(
             value ?? string.Empty,
             OpenAiConversationJsonContext.Default.String);
+        using JsonDocument document = JsonDocument.Parse(json);
+        return document.RootElement.Clone();
     }
 
     private static IReadOnlyList<OpenAiResponsesContentPart> CreateResponsesContentParts(

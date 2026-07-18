@@ -149,6 +149,31 @@ public sealed class RegistryBackedToolInvokerTests
     }
 
     [Fact]
+    public async Task InvokeAsync_Should_IgnoreDuplicateArgumentKeys_DuringDeepSeekRepair()
+    {
+        PathCaptureTool tool = new();
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([tool], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall(
+                "call_1",
+                tool.Name,
+                """{ "path": "docs/notes.md", "overwrite": false, "overwrite": true }"""),
+            DeepSeekSession,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames(tool.Name),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.Success);
+        tool.Path.Should().Be("docs/notes.md");
+        tool.HadOverwrite.Should().BeTrue();
+        tool.Overwrite.Should().BeTrue();
+    }
+
+    [Fact]
     public async Task InvokeAsync_Should_NotRepairArguments_ForNonDeepSeekSessions()
     {
         ArrayCaptureTool tool = new();
@@ -606,6 +631,8 @@ public sealed class RegistryBackedToolInvokerTests
     {
         public bool HadOverwrite { get; private set; }
 
+        public bool? Overwrite { get; private set; }
+
         public string? Path { get; private set; }
 
         public string Description => "Path capture tool";
@@ -636,6 +663,9 @@ public sealed class RegistryBackedToolInvokerTests
         {
             Path = context.Arguments.GetProperty("path").GetString();
             HadOverwrite = context.Arguments.TryGetProperty("overwrite", out _);
+            Overwrite = ToolArguments.TryGetBoolean(context.Arguments, "overwrite", out bool overwrite)
+                ? overwrite
+                : null;
 
             return Task.FromResult(ToolResultFactory.Success(
                 "Captured path.",
