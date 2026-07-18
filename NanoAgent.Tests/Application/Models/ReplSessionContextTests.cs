@@ -98,6 +98,20 @@ public sealed class ReplSessionContextTests
     }
 
     [Fact]
+    public void RecordFileEditTransaction_Should_ExposeExpiredRedoTransactions_ForBackupCleanup()
+    {
+        ReplSessionContext session = CreateSession();
+        WorkspaceFileEditTransaction expiredTransaction = CreateTransaction("file_write (README.md)");
+        session.RecordFileEditTransaction(expiredTransaction);
+        session.CompleteUndoFileEdit();
+
+        session.RecordFileEditTransaction(CreateTransaction("apply_patch (2 files)"));
+
+        session.DrainExpiredFileEditTransactions().Should().ContainSingle().Which.Should().BeSameAs(expiredTransaction);
+        session.DrainExpiredFileEditTransactions().Should().BeEmpty();
+    }
+
+    [Fact]
     public void BeginFileEditTransactionBatch_Should_GroupMultipleEditsIntoOneUndoEntry()
     {
         ReplSessionContext session = CreateSession();

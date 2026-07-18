@@ -11,17 +11,18 @@ public sealed class WorkspaceFileEditState
         string? contentHash = null,
         string? encoding = null,
         string? newLine = null,
-        string? contentBackupPath = null)
+        string? contentBackupId = null,
+        WorkspaceFileMetadata? originalMetadata = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
         if (exists &&
             content is null &&
             string.IsNullOrWhiteSpace(contentHash) &&
-            string.IsNullOrWhiteSpace(contentBackupPath))
+            string.IsNullOrWhiteSpace(contentBackupId))
         {
             throw new ArgumentException(
-                "Existing file states must include content, a content hash, or a backup path for tracked restores.",
+                "Existing file states must include content, a content hash, or a backup ID for tracked restores.",
                 nameof(content));
         }
 
@@ -30,22 +31,19 @@ public sealed class WorkspaceFileEditState
         Content = content;
         ContentHash = string.IsNullOrWhiteSpace(contentHash) ? null : contentHash;
         Encoding = string.IsNullOrWhiteSpace(encoding) ? null : encoding.Trim();
-        NewLine = string.IsNullOrEmpty(newLine)
+        NewLine = NormalizeNewLine(newLine);
+        ContentBackupId = string.IsNullOrWhiteSpace(contentBackupId)
             ? null
-            : newLine.Replace("\r\n", "\n", StringComparison.Ordinal) == "\n" && newLine.Contains('\r')
-                ? "\r\n"
-                : "\n";
-        ContentBackupPath = string.IsNullOrWhiteSpace(contentBackupPath)
-            ? null
-            : contentBackupPath.Trim();
+            : contentBackupId.Trim();
+        OriginalMetadata = originalMetadata;
     }
 
     public string? Content { get; }
 
     /// <summary>
-    /// Temporary on-disk backup used when rollback must restore the original file bytes exactly.
+    /// Managed backup ID used when rollback must restore the original file bytes exactly.
     /// </summary>
-    public string? ContentBackupPath { get; }
+    public string? ContentBackupId { get; }
 
     /// <summary>
     /// SHA256 content hash, stored instead of full <see cref="Content"/> for large files
@@ -59,5 +57,18 @@ public sealed class WorkspaceFileEditState
 
     public string? NewLine { get; }
 
+    public WorkspaceFileMetadata? OriginalMetadata { get; }
+
     public string Path { get; }
+
+    private static string? NormalizeNewLine(string? newLine)
+    {
+        return newLine switch
+        {
+            "\r\n" => "\r\n",
+            "\r" => "\r",
+            "\n" => "\n",
+            _ => null
+        };
+    }
 }
