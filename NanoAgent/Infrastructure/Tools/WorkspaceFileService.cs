@@ -30,6 +30,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly Encoding Utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
+    private static readonly Encoding StrictUtf8NoBom = new UTF8Encoding(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true);
     private static readonly HashSet<string> GeneratedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "bin",
@@ -58,7 +61,19 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         ".AssemblyInfo.cs"
     ];
 
-    private readonly record struct FileEncodingInfo(bool HasBom, string NewLine);
+    internal enum WorkspaceTextEncoding
+    {
+        Utf8,
+        Utf8Bom,
+        Utf16LittleEndian,
+        Utf16BigEndian,
+        Utf32LittleEndian,
+        Utf32BigEndian
+    }
+
+    private readonly record struct FileEncodingInfo(
+        WorkspaceTextEncoding Encoding,
+        string NewLine);
     private readonly record struct ExistingFileMetadata(
         FileAttributes Attributes,
         DateTime CreationTimeUtc,
@@ -72,7 +87,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         bool HasMore,
         string? NextCursor);
     private readonly record struct WorkspaceFileReadPage(
-        string Content,
+        string RawContent,
+        string DisplayContent,
         int StartLine,
         int EndLine,
         int TotalLines,
@@ -152,7 +168,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             await WriteWorkspaceFileAsync(
                 fullPath,
                 state.Content!,
-                new FileEncodingInfo(HasBom: false, NewLine: "\n"),
+                new FileEncodingInfo(WorkspaceTextEncoding.Utf8, "\n"),
                 expectedState: null,
                 cancellationToken);
         }
@@ -339,7 +355,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         return new WorkspaceFileReadResult(
             ToWorkspaceRelativePath(fullPath),
-            page.Content,
+            page.RawContent,
+            page.DisplayContent,
             page.StartLine,
             page.EndLine,
             page.TotalLines,
@@ -472,7 +489,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         FileEncodingInfo encoding = fileExists
             ? DetectFileEncoding(fullPath)
-            : new FileEncodingInfo(HasBom: false, NewLine: "\n");
+            : new FileEncodingInfo(WorkspaceTextEncoding.Utf8, "\n");
         EnsureParentDirectory(fullPath);
 
         await WriteWorkspaceFileAsync(
@@ -564,7 +581,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string content = operation.AddLines.Count == 0
             ? string.Empty
             : JoinLines(operation.AddLines, trailingNewLine: true);
-        FileEncodingInfo encoding = new FileEncodingInfo(HasBom: false, NewLine: "\n");
+        FileEncodingInfo encoding = new FileEncodingInfo(WorkspaceTextEncoding.Utf8, "\n");
 
 
         EnsureParentDirectory(fullPath);
@@ -1518,26 +1535,42 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         if (!File.Exists(fullPath))
         {
-            return new FileEncodingInfo(HasBom: false, NewLine: "\n");
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf8, "\n");
         }
 
         byte[] bytes = File.ReadAllBytes(fullPath);
+        return DetectFileEncoding(bytes);
+    }
 
-        bool hasBom = bytes.Length >= 3 &&
-                      bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
-
-        int start = hasBom ? 3 : 0;
-        bool hasCrlf = false;
-        for (int i = start; i < bytes.Length - 1; i++)
+    private static FileEncodingInfo DetectFileEncoding(
+        ReadOnlySpan<byte> bytes)
+    {
+        if (HasBytePrefix(bytes, 0xEF, 0xBB, 0xBF))
         {
-            if (bytes[i] == '\r' && bytes[i + 1] == '\n')
-            {
-                hasCrlf = true;
-                break;
-            }
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf8Bom, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf8Bom)));
         }
 
-        return new FileEncodingInfo(hasBom, hasCrlf ? "\r\n" : "\n");
+        if (HasBytePrefix(bytes, 0xFF, 0xFE, 0x00, 0x00))
+        {
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf32LittleEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf32LittleEndian)));
+        }
+
+        if (HasBytePrefix(bytes, 0x00, 0x00, 0xFE, 0xFF))
+        {
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf32BigEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf32BigEndian)));
+        }
+
+        if (HasBytePrefix(bytes, 0xFF, 0xFE))
+        {
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf16LittleEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf16LittleEndian)));
+        }
+
+        if (HasBytePrefix(bytes, 0xFE, 0xFF))
+        {
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf16BigEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf16BigEndian)));
+        }
+
+        return new FileEncodingInfo(WorkspaceTextEncoding.Utf8, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf8)));
     }
 
     private async Task<WorkspaceFileReadPage> ReadWorkspaceFilePageAsync(
@@ -1558,42 +1591,24 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             ? DefaultFileReadLimit
             : limit;
 
-        (string sha256, string encoding) = await ComputeFileDigestAsync(fullPath, cancellationToken);
-
-        await using FileStream stream = new(
-            fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81920,
-            useAsync: true);
-
-        WorkspaceResolvedPath.Revalidate(
-            workspaceRoot,
-            fullPath,
-            fullPath,
-            ToolPathAccessKind.Read);
-
-        using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
+        (string sha256, string encoding) = ComputeFileDigest(bytes);
+        EnsureReadableTextFile(fullPath, bytes);
+        FileEncodingInfo fileEncoding = DetectFileEncoding(bytes);
+        string text = DecodeFileBytes(bytes, fileEncoding.Encoding);
+        string[] fileLines = SplitLines(text);
         List<string> selectedLines = [];
-        int totalLines = 0;
         int linesAdded = 0;
         bool hitResponseCap = false;
         int responseBytes = 0;
-        StringBuilder contentBuilder = new();
+        int totalLines = fileLines.Length;
 
-        while (true)
+        for (int index = 0; index < fileLines.Length; index++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            string? line = await reader.ReadLineAsync(cancellationToken);
-            if (line is null)
-            {
-                break;
-            }
-
-            totalLines++;
-            if (totalLines < safeOffset)
+            int lineNumber = index + 1;
+            if (lineNumber < safeOffset)
             {
                 continue;
             }
@@ -1603,22 +1618,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 continue;
             }
 
-            string formattedLine = FormatReadLine(totalLines, line, responseBytes, out int lineBytes);
+            string formattedLine = FormatReadLine(lineNumber, fileLines[index], responseBytes, out int lineBytes);
             int separatorBytes = linesAdded == 0 ? 0 : 1;
             if (responseBytes + separatorBytes + lineBytes > MaxFileReadResponseBytes)
             {
                 hitResponseCap = true;
                 continue;
             }
-
-            if (linesAdded > 0)
-            {
-                contentBuilder.Append('\n');
-                responseBytes++;
-            }
-
-            contentBuilder.Append(formattedLine);
-            responseBytes += lineBytes;
+            selectedLines.Add(formattedLine);
+            responseBytes += separatorBytes + lineBytes;
             linesAdded++;
         }
 
@@ -1631,6 +1639,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             }
 
             return new WorkspaceFileReadPage(
+                string.Empty,
                 string.Empty,
                 0,
                 0,
@@ -1657,7 +1666,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : null;
 
         return new WorkspaceFileReadPage(
-            contentBuilder.ToString(),
+            string.Join("\n", selectedLines),
+            RenderFileReadDisplayContent(selectedLines),
             startLine,
             endLine,
             totalLines,
@@ -1667,46 +1677,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             encoding);
     }
 
-    private async Task<(string Sha256, string Encoding)> ComputeFileDigestAsync(
-        string fullPath,
-        CancellationToken cancellationToken)
+    private static (string Sha256, string Encoding) ComputeFileDigest(
+        ReadOnlySpan<byte> bytes)
     {
-        await using FileStream stream = new(
-            fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81920,
-            useAsync: true);
-
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        byte[] buffer = new byte[81920];
-        bool firstChunk = true;
-        bool hasBom = false;
-
-        while (true)
-        {
-            int read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            if (firstChunk)
-            {
-                hasBom = read >= 3 &&
-                         buffer[0] == 0xEF &&
-                         buffer[1] == 0xBB &&
-                         buffer[2] == 0xBF;
-                firstChunk = false;
-            }
-
-            hash.AppendData(buffer, 0, read);
-        }
+        hash.AppendData(bytes);
+        FileEncodingInfo encodingInfo = DetectFileEncoding(bytes);
 
         return (
             Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
-            hasBom ? "utf-8-bom" : "utf-8");
+            GetEncodingName(encodingInfo.Encoding));
     }
 
     private static string FormatReadLine(
@@ -1760,6 +1740,263 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return value[..length] + suffix;
     }
 
+    private static void EnsureReadableTextFile(
+        string fullPath,
+        ReadOnlySpan<byte> bytes)
+    {
+        string extension = Path.GetExtension(fullPath);
+        if (IsKnownBinaryExtension(extension))
+        {
+            throw new InvalidOperationException(
+                $"File '{Path.GetFileName(fullPath)}' appears to be binary and cannot be read as text.");
+        }
+
+        if (bytes.Length == 0)
+        {
+            return;
+        }
+
+        FileEncodingInfo encoding = DetectFileEncoding(bytes);
+        if (encoding.Encoding == WorkspaceTextEncoding.Utf8 && !IsValidUtf8(bytes))
+        {
+            throw new InvalidOperationException(
+                $"File '{Path.GetFileName(fullPath)}' is not valid UTF-8 text.");
+        }
+
+        int controlCount = 0;
+        int sampledCount = Math.Min(bytes.Length, 4096);
+        int startOffset = GetBomLength(encoding.Encoding);
+        for (int index = startOffset; index < sampledCount; index++)
+        {
+            byte value = bytes[index];
+            if (value == 0x00)
+            {
+                throw new InvalidOperationException(
+                    $"File '{Path.GetFileName(fullPath)}' contains NUL bytes and cannot be read as text.");
+            }
+
+            if (value < 0x20 && value is not (0x09 or 0x0A or 0x0D or 0x1B))
+            {
+                controlCount++;
+            }
+        }
+
+        int effectiveSampleCount = Math.Max(1, sampledCount - startOffset);
+        if (controlCount * 100 >= effectiveSampleCount * 20)
+        {
+            throw new InvalidOperationException(
+                $"File '{Path.GetFileName(fullPath)}' appears to contain binary control data and cannot be read as text.");
+        }
+    }
+
+    private static string RenderFileReadDisplayContent(
+        IReadOnlyList<string> lines)
+    {
+        if (lines.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return string.Join("\n", lines.Select(RenderDisplayLine));
+    }
+
+    private static string RenderDisplayLine(string line)
+    {
+        int separatorIndex = line.IndexOf(": ", StringComparison.Ordinal);
+        if (separatorIndex < 0)
+        {
+            return RenderFileContentVisible(line);
+        }
+
+        return line[..(separatorIndex + 2)] + RenderFileContentVisible(line[(separatorIndex + 2)..]);
+    }
+
+    private static string RenderFileContentVisible(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        StringBuilder builder = new(value.Length);
+        foreach (Rune rune in value.EnumerateRunes())
+        {
+            if (ShouldEscapeFileDisplayRune(rune))
+            {
+                AppendVisibleCodePoint(builder, rune);
+                continue;
+            }
+
+            builder.Append(rune.ToString());
+        }
+
+        return builder.ToString();
+    }
+
+    private static bool ShouldEscapeFileDisplayRune(Rune rune)
+    {
+        int value = rune.Value;
+        if (value is '\t' or '\n' or '\r')
+        {
+            return false;
+        }
+
+        if (value is 0x0000 or 0x0008 or 0x001B or
+            0x202A or 0x202B or 0x202C or 0x202D or 0x202E or
+            0x2066 or 0x2067 or 0x2068 or 0x2069)
+        {
+            return true;
+        }
+
+        UnicodeCategory category = Rune.GetUnicodeCategory(rune);
+        return category is UnicodeCategory.Control or
+            UnicodeCategory.PrivateUse or
+            UnicodeCategory.Surrogate or
+            UnicodeCategory.OtherNotAssigned;
+    }
+
+    private static void AppendVisibleCodePoint(
+        StringBuilder builder,
+        Rune rune)
+    {
+        builder
+            .Append("<U+")
+            .Append(rune.Value.ToString("X4", CultureInfo.InvariantCulture));
+
+        string name = rune.Value switch
+        {
+            0x0000 => "NULL",
+            0x0008 => "BACKSPACE",
+            0x001B => "ESCAPE",
+            0x202A => "LEFT-TO-RIGHT EMBEDDING",
+            0x202B => "RIGHT-TO-LEFT EMBEDDING",
+            0x202C => "POP DIRECTIONAL FORMATTING",
+            0x202D => "LEFT-TO-RIGHT OVERRIDE",
+            0x202E => "RIGHT-TO-LEFT OVERRIDE",
+            0x2066 => "LEFT-TO-RIGHT ISOLATE",
+            0x2067 => "RIGHT-TO-LEFT ISOLATE",
+            0x2068 => "FIRST STRONG ISOLATE",
+            0x2069 => "POP DIRECTIONAL ISOLATE",
+            _ => string.Empty
+        };
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            builder.Append(' ').Append(name);
+        }
+
+        builder.Append('>');
+    }
+
+    private static string DecodeFileBytes(
+        ReadOnlySpan<byte> bytes,
+        WorkspaceTextEncoding encoding)
+    {
+        return encoding switch
+        {
+            WorkspaceTextEncoding.Utf8 => StrictUtf8NoBom.GetString(bytes),
+            WorkspaceTextEncoding.Utf8Bom => StrictUtf8NoBom.GetString(bytes[3..]),
+            WorkspaceTextEncoding.Utf16LittleEndian => Encoding.Unicode.GetString(bytes[2..]),
+            WorkspaceTextEncoding.Utf16BigEndian => Encoding.BigEndianUnicode.GetString(bytes[2..]),
+            WorkspaceTextEncoding.Utf32LittleEndian => Encoding.UTF32.GetString(bytes[4..]),
+            WorkspaceTextEncoding.Utf32BigEndian => new UTF32Encoding(bigEndian: true, byteOrderMark: true, throwOnInvalidCharacters: true).GetString(bytes[4..]),
+            _ => throw new InvalidOperationException("Unsupported workspace text encoding.")
+        };
+    }
+
+    private static string DetectNewLine(string text)
+    {
+        return text.Contains("\r\n", StringComparison.Ordinal)
+            ? "\r\n"
+            : "\n";
+    }
+
+    private static Encoding GetSystemEncoding(WorkspaceTextEncoding encoding)
+    {
+        return encoding switch
+        {
+            WorkspaceTextEncoding.Utf8 => Utf8NoBom,
+            WorkspaceTextEncoding.Utf8Bom => Utf8WithBom,
+            WorkspaceTextEncoding.Utf16LittleEndian => Encoding.Unicode,
+            WorkspaceTextEncoding.Utf16BigEndian => Encoding.BigEndianUnicode,
+            WorkspaceTextEncoding.Utf32LittleEndian => new UTF32Encoding(bigEndian: false, byteOrderMark: true),
+            WorkspaceTextEncoding.Utf32BigEndian => new UTF32Encoding(bigEndian: true, byteOrderMark: true),
+            _ => throw new InvalidOperationException("Unsupported workspace text encoding.")
+        };
+    }
+
+    private static string GetEncodingName(WorkspaceTextEncoding encoding)
+    {
+        return encoding switch
+        {
+            WorkspaceTextEncoding.Utf8 => "utf-8",
+            WorkspaceTextEncoding.Utf8Bom => "utf-8-bom",
+            WorkspaceTextEncoding.Utf16LittleEndian => "utf-16-le",
+            WorkspaceTextEncoding.Utf16BigEndian => "utf-16-be",
+            WorkspaceTextEncoding.Utf32LittleEndian => "utf-32-le",
+            WorkspaceTextEncoding.Utf32BigEndian => "utf-32-be",
+            _ => "utf-8"
+        };
+    }
+
+    private static int GetBomLength(WorkspaceTextEncoding encoding)
+    {
+        return encoding switch
+        {
+            WorkspaceTextEncoding.Utf8Bom => 3,
+            WorkspaceTextEncoding.Utf16LittleEndian => 2,
+            WorkspaceTextEncoding.Utf16BigEndian => 2,
+            WorkspaceTextEncoding.Utf32LittleEndian => 4,
+            WorkspaceTextEncoding.Utf32BigEndian => 4,
+            _ => 0
+        };
+    }
+
+    private static bool IsKnownBinaryExtension(string extension)
+    {
+        return extension.Equals(".png", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".gif", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".bmp", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".ico", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".webp", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".pdf", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".zip", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".gz", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".7z", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".rar", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".dll", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".exe", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".so", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".dylib", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".woff", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".woff2", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals(".otf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsValidUtf8(ReadOnlySpan<byte> bytes)
+    {
+        try
+        {
+            StrictUtf8NoBom.GetString(bytes);
+            return true;
+        }
+        catch (DecoderFallbackException)
+        {
+            return false;
+        }
+    }
+
+    private static bool HasBytePrefix(
+        ReadOnlySpan<byte> bytes,
+        params byte[] prefix)
+    {
+        return bytes.Length >= prefix.Length &&
+            bytes[..prefix.Length].SequenceEqual(prefix);
+    }
+
     private async Task<string> ReadWorkspaceFileAsync(
         string fullPath,
         CancellationToken cancellationToken)
@@ -1770,22 +2007,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             fullPath,
             fullPath,
             ToolPathAccessKind.Read);
-
-        await using FileStream stream = new(
-            fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
-            bufferSize: 81920,
-            useAsync: true);
-
-        WorkspaceResolvedPath.Revalidate(
-            workspaceRoot,
-            fullPath,
-            fullPath,
-            ToolPathAccessKind.Read);
-        using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        return await reader.ReadToEndAsync(cancellationToken);
+        byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
+        EnsureReadableTextFile(fullPath, bytes);
+        return DecodeFileBytes(bytes, DetectFileEncoding(bytes).Encoding);
     }
 
     private async Task WriteWorkspaceFileAsync(
@@ -1797,7 +2021,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
         string finalContent = NormalizeNewlines(content, encoding.NewLine);
-        Encoding writeEncoding = encoding.HasBom ? Utf8WithBom : Utf8NoBom;
+        Encoding writeEncoding = GetSystemEncoding(encoding.Encoding);
 
         EnsureParentDirectory(fullPath);
         WorkspaceResolvedPath.Revalidate(
@@ -3017,6 +3241,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
                 .Select(static line => line.Text)
                 .ToArray();
+            PatchLineKind[] beforeLineKinds = hunk.Lines
+                .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+                .Select(static line => line.Kind)
+                .ToArray();
             string[] afterLines = hunk.Lines
                 .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
                 .Select(static line => line.Text)
@@ -3041,6 +3269,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             PatchSequenceSearchResult match = FindUniqueSequenceMatch(
                 originalLines,
                 pattern,
+                beforeLineKinds,
                 patternSearchStart,
                 hunk.IsEndOfFile);
 
@@ -3049,6 +3278,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 pattern[^1].Length == 0)
             {
                 pattern = pattern[..^1];
+                beforeLineKinds = beforeLineKinds[..^1];
                 if (replacementLines.Length > 0 && replacementLines[^1].Length == 0)
                 {
                     replacementLines = replacementLines[..^1];
@@ -3057,6 +3287,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 match = FindUniqueSequenceMatch(
                     originalLines,
                     pattern,
+                    beforeLineKinds,
                     patternSearchStart,
                     hunk.IsEndOfFile);
             }
@@ -3396,17 +3627,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 right.TrimEnd(' ', '\t'),
                 StringComparison.Ordinal),
             static (left, right) => EqualsIgnoringIndentation(left, right),
-            static (left, right) => string.Equals(
-                NormalizePatchMatchText(
-                    left.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
-                NormalizePatchMatchText(
-                    right.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
-                StringComparison.Ordinal)
+            static (left, right) => EqualsCanonicalUnicode(left, right)
         ];
 
         foreach (Func<string, string, bool> comparer in comparers)
         {
-            int matchIndex = TryMatchSequence(source, target, startIndex, endOfFile, comparer);
+            int matchIndex = TryMatchSequence(
+                source,
+                target,
+                Enumerable.Repeat(PatchLineKind.Context, target.Count).ToArray(),
+                startIndex,
+                endOfFile,
+                (left, right, kind) => comparer(left, right));
             if (matchIndex >= 0)
             {
                 return matchIndex;
@@ -3422,6 +3654,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int startIndex,
         bool endOfFile)
     {
+        return FindUniqueSequenceMatch(
+            source,
+            target,
+            Enumerable.Repeat(PatchLineKind.Context, target.Count).ToArray(),
+            startIndex,
+            endOfFile);
+    }
+
+    private static PatchSequenceSearchResult FindUniqueSequenceMatch(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        IReadOnlyList<PatchLineKind> targetKinds,
+        int startIndex,
+        bool endOfFile)
+    {
         if (target.Count == 0)
         {
             return new PatchSequenceSearchResult(
@@ -3431,25 +3678,25 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 []);
         }
 
-        (string Name, Func<string, string, bool> Comparer)[] comparers =
+        if (target.Count != targetKinds.Count)
+        {
+            throw new InvalidOperationException("Patch match target kinds must align with target lines.");
+        }
+
+        (string Name, Func<string, string, PatchLineKind, bool> Comparer)[] comparers =
         [
-            ("exact text", static (left, right) => string.Equals(left, right, StringComparison.Ordinal)),
-            ("ignored trailing whitespace", static (left, right) => string.Equals(
+            ("exact text", static (left, right, _) => string.Equals(left, right, StringComparison.Ordinal)),
+            ("ignored trailing whitespace", static (left, right, _) => string.Equals(
                 left.TrimEnd(' ', '\t'),
                 right.TrimEnd(' ', '\t'),
                 StringComparison.Ordinal)),
-            ("normalized indentation", static (left, right) => EqualsIgnoringIndentation(left, right)),
-            ("normalized punctuation and indentation", static (left, right) => string.Equals(
-                NormalizePatchMatchText(
-                    left.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
-                NormalizePatchMatchText(
-                    right.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
-                StringComparison.Ordinal))
+            ("normalized indentation", static (left, right, kind) => kind == PatchLineKind.Context && EqualsIgnoringIndentation(left, right)),
+            ("canonical unicode (NFC)", static (left, right, _) => EqualsCanonicalUnicode(left, right))
         ];
 
-        foreach ((string name, Func<string, string, bool> comparer) in comparers)
+        foreach ((string name, Func<string, string, PatchLineKind, bool> comparer) in comparers)
         {
-            int[] matches = FindAllSequenceMatches(source, target, startIndex, endOfFile, comparer);
+            int[] matches = FindAllSequenceMatches(source, target, targetKinds, startIndex, endOfFile, comparer);
             if (matches.Length == 0)
             {
                 continue;
@@ -3481,15 +3728,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private static int TryMatchSequence(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
+        IReadOnlyList<PatchLineKind> targetKinds,
         int startIndex,
         bool endOfFile,
-        Func<string, string, bool> comparer)
+        Func<string, string, PatchLineKind, bool> comparer)
     {
         if (endOfFile)
         {
             int fromEndIndex = source.Count - target.Count;
             if (fromEndIndex >= Math.Max(0, startIndex) &&
-                SequenceMatches(source, target, fromEndIndex, comparer))
+                SequenceMatches(source, target, targetKinds, fromEndIndex, comparer))
             {
                 return fromEndIndex;
             }
@@ -3497,7 +3745,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         for (int index = Math.Max(0, startIndex); index <= source.Count - target.Count; index++)
         {
-            if (SequenceMatches(source, target, index, comparer))
+            if (SequenceMatches(source, target, targetKinds, index, comparer))
             {
                 return index;
             }
@@ -3509,16 +3757,17 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private static int[] FindAllSequenceMatches(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
+        IReadOnlyList<PatchLineKind> targetKinds,
         int startIndex,
         bool endOfFile,
-        Func<string, string, bool> comparer)
+        Func<string, string, PatchLineKind, bool> comparer)
     {
         List<int> matches = [];
         if (endOfFile)
         {
             int fromEndIndex = source.Count - target.Count;
             if (fromEndIndex >= Math.Max(0, startIndex) &&
-                SequenceMatches(source, target, fromEndIndex, comparer))
+                SequenceMatches(source, target, targetKinds, fromEndIndex, comparer))
             {
                 matches.Add(fromEndIndex);
                 return matches.ToArray();
@@ -3527,7 +3776,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         for (int index = Math.Max(0, startIndex); index <= source.Count - target.Count; index++)
         {
-            if (SequenceMatches(source, target, index, comparer))
+            if (SequenceMatches(source, target, targetKinds, index, comparer))
             {
                 matches.Add(index);
             }
@@ -3539,12 +3788,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private static bool SequenceMatches(
         IReadOnlyList<string> source,
         IReadOnlyList<string> target,
+        IReadOnlyList<PatchLineKind> targetKinds,
         int sourceIndex,
-        Func<string, string, bool> comparer)
+        Func<string, string, PatchLineKind, bool> comparer)
     {
         for (int offset = 0; offset < target.Count; offset++)
         {
-            if (!comparer(source[sourceIndex + offset], target[offset]))
+            if (!comparer(source[sourceIndex + offset], target[offset], targetKinds[offset]))
             {
                 return false;
             }
@@ -3571,25 +3821,14 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             StringComparison.Ordinal);
     }
 
-    private static string NormalizePatchMatchText(string value)
+    private static bool EqualsCanonicalUnicode(
+        string left,
+        string right)
     {
-        return DecodeCommonJsonUnicodeEscapes(value)
-            .Replace('\u2018', '\'')
-            .Replace('\u2019', '\'')
-            .Replace('\u201A', '\'')
-            .Replace('\u201B', '\'')
-            .Replace('\u201C', '"')
-            .Replace('\u201D', '"')
-            .Replace('\u201E', '"')
-            .Replace('\u201F', '"')
-            .Replace('\u2010', '-')
-            .Replace('\u2011', '-')
-            .Replace('\u2012', '-')
-            .Replace('\u2013', '-')
-            .Replace('\u2014', '-')
-            .Replace('\u2015', '-')
-            .Replace("\u2026", "...", StringComparison.Ordinal)
-            .Replace('\u00A0', ' ');
+        return string.Equals(
+            left.Normalize(NormalizationForm.FormC),
+            right.Normalize(NormalizationForm.FormC),
+            StringComparison.Ordinal);
     }
 
     private static string DecodeCommonJsonUnicodeEscapes(string value)
@@ -3690,30 +3929,31 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int searchStart,
         bool endOfFile)
     {
-        (string[] BeforeLines, string[] AfterLines)[] retryWindows =
+        PatchRetryWindow[] retryWindows =
         [
             BuildRetryWindow(hunk, includeLeadingAndTrailingContext: false),
             BuildRetryWindow(hunk, removalsOnly: true)
         ];
 
-        foreach ((string[] beforeRetry, string[] afterRetry) in retryWindows)
+        foreach (PatchRetryWindow retryWindow in retryWindows)
         {
-            if (beforeRetry.Length == 0)
+            if (retryWindow.BeforeLines.Count == 0)
             {
                 continue;
             }
 
             PatchSequenceSearchResult retryMatch = FindUniqueSequenceMatch(
                 originalLines,
-                beforeRetry,
+                retryWindow.BeforeLines,
+                retryWindow.BeforeLineKinds,
                 searchStart,
                 endOfFile);
             if (retryMatch.Status == PatchSequenceSearchStatus.Matched)
             {
                 return new PatchRetryMatch(
                     retryMatch.StartIndex,
-                    beforeRetry.Length,
-                    afterRetry,
+                    retryWindow.BeforeLines.Count,
+                    retryWindow.AfterLines,
                     retryMatch.MatchStyle);
             }
         }
@@ -3721,7 +3961,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         return null;
     }
 
-    private static (string[] BeforeLines, string[] AfterLines) BuildRetryWindow(
+    private static PatchRetryWindow BuildRetryWindow(
         PatchHunk hunk,
         bool includeLeadingAndTrailingContext = true,
         bool removalsOnly = false)
@@ -3758,6 +3998,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             }
         }
 
+        PatchLineKind[] beforeLineKinds = removalsOnly
+            ? workingLines
+                .Where(static line => line.Kind == PatchLineKind.Removal)
+                .Select(static line => line.Kind)
+                .ToArray()
+            : workingLines
+                .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+                .Select(static line => line.Kind)
+                .ToArray();
         string[] beforeLines = removalsOnly
             ? workingLines
                 .Where(static line => line.Kind == PatchLineKind.Removal)
@@ -3776,7 +4025,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
                 .Select(static line => line.Text)
                 .ToArray();
-        return (beforeLines, afterLines);
+        return new PatchRetryWindow(beforeLines, beforeLineKinds, afterLines);
     }
 
     private static string DescribeCandidateLines(
@@ -4035,6 +4284,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string MatchStyle);
     private readonly record struct PatchIndependentReplacementGroup(
         IReadOnlyList<string> BeforeLines,
+        IReadOnlyList<string> AfterLines);
+    private readonly record struct PatchRetryWindow(
+        IReadOnlyList<string> BeforeLines,
+        IReadOnlyList<PatchLineKind> BeforeLineKinds,
         IReadOnlyList<string> AfterLines);
 
     private readonly record struct PatchSequenceSearchResult(
