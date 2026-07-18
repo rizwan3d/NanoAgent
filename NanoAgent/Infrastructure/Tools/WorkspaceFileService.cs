@@ -2824,6 +2824,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     repaired.Add("@@");
                 }
 
+                if (currentOperation == PatchOperationKind.Update &&
+                    insideUpdateHunk &&
+                    line.Length > 0 &&
+                    line[0] == '\t')
+                {
+                    repaired.Add(" " + line);
+                    continue;
+                }
+
                 if (insideUpdateHunk &&
                     line.Length == 0 &&
                     !CanTreatBlankUpdateLineAsSeparator(lines, index))
@@ -3382,11 +3391,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         Func<string, string, bool>[] comparers =
         [
             static (left, right) => string.Equals(left, right, StringComparison.Ordinal),
-            static (left, right) => string.Equals(left.TrimEnd(), right.TrimEnd(), StringComparison.Ordinal),
-            static (left, right) => string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal),
             static (left, right) => string.Equals(
-                NormalizePatchMatchText(left.Trim()),
-                NormalizePatchMatchText(right.Trim()),
+                left.TrimEnd(' ', '\t'),
+                right.TrimEnd(' ', '\t'),
+                StringComparison.Ordinal),
+            static (left, right) => EqualsIgnoringIndentation(left, right),
+            static (left, right) => string.Equals(
+                NormalizePatchMatchText(
+                    left.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
+                NormalizePatchMatchText(
+                    right.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
                 StringComparison.Ordinal)
         ];
 
@@ -3420,11 +3434,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         (string Name, Func<string, string, bool> Comparer)[] comparers =
         [
             ("exact text", static (left, right) => string.Equals(left, right, StringComparison.Ordinal)),
-            ("trimmed line endings", static (left, right) => string.Equals(left.TrimEnd(), right.TrimEnd(), StringComparison.Ordinal)),
-            ("trimmed whitespace", static (left, right) => string.Equals(left.Trim(), right.Trim(), StringComparison.Ordinal)),
-            ("normalized punctuation", static (left, right) => string.Equals(
-                NormalizePatchMatchText(left.Trim()),
-                NormalizePatchMatchText(right.Trim()),
+            ("ignored trailing whitespace", static (left, right) => string.Equals(
+                left.TrimEnd(' ', '\t'),
+                right.TrimEnd(' ', '\t'),
+                StringComparison.Ordinal)),
+            ("normalized indentation", static (left, right) => EqualsIgnoringIndentation(left, right)),
+            ("normalized punctuation and indentation", static (left, right) => string.Equals(
+                NormalizePatchMatchText(
+                    left.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
+                NormalizePatchMatchText(
+                    right.TrimStart(' ', '\t').TrimEnd(' ', '\t')),
                 StringComparison.Ordinal))
         ];
 
@@ -3532,6 +3551,24 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         return true;
+    }
+
+    private static bool EqualsIgnoringIndentation(
+        string left,
+        string right)
+    {
+        string normalizedLeft = left
+            .TrimEnd(' ', '\t')
+            .TrimStart(' ', '\t');
+
+        string normalizedRight = right
+            .TrimEnd(' ', '\t')
+            .TrimStart(' ', '\t');
+
+        return string.Equals(
+            normalizedLeft,
+            normalizedRight,
+            StringComparison.Ordinal);
     }
 
     private static string NormalizePatchMatchText(string value)
