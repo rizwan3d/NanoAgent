@@ -2246,6 +2246,47 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         restoredBytes.Should().Equal(originalBytes);
     }
 
+    [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_RestoreMixedLineEndingsFromTrackedByteBackup()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "mixed.txt");
+        byte[] originalBytes = Encoding.UTF8.GetBytes("alpha\r\nbeta\ngamma\rdelta\r\n");
+        await File.WriteAllBytesAsync(filePath, originalBytes, CancellationToken.None);
+
+        WorkspaceFileWriteExecutionResult result = await sut.WriteFileWithTrackingAsync(
+            "mixed.txt",
+            "changed\ncontent\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        await sut.ApplyFileEditStatesAsync(result.EditTransaction.BeforeStates, CancellationToken.None);
+
+        byte[] restoredBytes = await File.ReadAllBytesAsync(filePath, CancellationToken.None);
+        restoredBytes.Should().Equal(originalBytes);
+    }
+
+    [Fact]
+    public async Task ReadFileAsync_Should_AllowIncompleteUtf16SurrogatePairAtValidationSampleBoundary()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "surrogate-boundary.txt");
+        string content = new string('a', 2046) + "\uD83D\uDE00" + "\r\n";
+        byte[] bytes = Encoding.Unicode.GetPreamble()
+            .Concat(Encoding.Unicode.GetBytes(content))
+            .ToArray();
+        await File.WriteAllBytesAsync(filePath, bytes, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "surrogate-boundary.txt",
+            offset: 1,
+            limit: 10,
+            CancellationToken.None);
+
+        result.Encoding.Should().Be("utf-16-le");
+        result.RawContent.Should().Contain("😀");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))

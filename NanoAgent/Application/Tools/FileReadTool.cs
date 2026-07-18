@@ -16,7 +16,7 @@ internal sealed class FileReadTool : ITool
         _workspaceFileService = workspaceFileService;
     }
 
-    public string Description => "Read a UTF-8 text file from the current session working directory in the workspace.";
+    public string Description => "Read a text file from the current session working directory in the workspace and return raw plus display-safe content views.";
 
     public string Name => AgentToolNames.FileRead;
 

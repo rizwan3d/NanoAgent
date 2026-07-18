@@ -96,6 +96,9 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         DateTime CreationTimeUtc,
         DateTime LastAccessTimeUtc,
         DateTime LastWriteTimeUtc);
+    private readonly record struct FileLineEndingInfo(
+        string DominantNewLine,
+        bool HasMixedLineEndings);
     private readonly record struct WorkspaceFileSearchPage(
         IReadOnlyList<WorkspaceFileSearchMatch> Matches,
         int Offset,
@@ -166,11 +169,6 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (state.Content is null)
-            {
-                continue;
-            }
-
             string fullPath = ResolveWorkspacePath(
                 state.Path,
                 directoryRequired: false,
@@ -182,9 +180,23 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     $"Cannot restore file '{state.Path}' because a directory exists at that path.");
             }
 
+            if (!string.IsNullOrWhiteSpace(state.ContentBackupPath))
+            {
+                await RestoreWorkspaceFileFromBackupAsync(
+                    fullPath,
+                    state.ContentBackupPath!,
+                    cancellationToken);
+                continue;
+            }
+
+            if (state.Content is null)
+            {
+                continue;
+            }
+
             await WriteWorkspaceFileAsync(
                 fullPath,
-                state.Content!,
+                state.Content,
                 CreateFileEncodingInfo(state.Encoding, state.NewLine),
                 expectedState: null,
                 cancellationToken);
@@ -566,6 +578,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         if (TryGetFileLength(fullPath, out long fileLength) && fileLength > LargeFileThresholdBytes)
         {
             FileEncodingInfo fileEncoding = DetectFileEncoding(fullPath);
+            string backupPath = await CreateTemporaryByteBackupAsync(fullPath, cancellationToken);
             await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
             byte[] hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
             string hash = Convert.ToHexStringLower(hashBytes);
@@ -575,18 +588,23 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 content: null,
                 contentHash: hash,
                 encoding: GetEncodingName(fileEncoding.Encoding),
-                newLine: fileEncoding.NewLine);
+                newLine: fileEncoding.NewLine,
+                contentBackupPath: backupPath);
         }
 
         FileEncodingInfo encoding = DetectFileEncoding(fullPath);
         string content = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
+        string? mixedLineEndingBackupPath = HasMixedLineEndings(content)
+            ? await CreateTemporaryByteBackupAsync(fullPath, cancellationToken)
+            : null;
 
         return new WorkspaceFileEditState(
             ToWorkspaceRelativePath(fullPath),
             exists: true,
             content,
             encoding: GetEncodingName(encoding.Encoding),
-            newLine: encoding.NewLine);
+            newLine: encoding.NewLine,
+            contentBackupPath: mixedLineEndingBackupPath);
     }
 
     private async Task<WorkspaceApplyPatchFileResult> ApplyAddFileOperationAsync(
@@ -1568,9 +1586,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             return encoding;
         }
 
+        string text = DecodeFileBytes(bytes, encoding.Encoding);
         return encoding with
         {
-            NewLine = DetectNewLine(DecodeFileBytes(bytes, encoding.Encoding))
+            NewLine = DetectLineEndings(text).DominantNewLine
         };
     }
 
@@ -1889,7 +1908,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             return;
         }
 
-        int decodableLength = GetAlignedSampleLength(sample.Length, encoding);
+        int decodableLength = GetDecodableSampleLength(sample, encoding);
         if (decodableLength <= startOffset)
         {
             return;
@@ -1920,8 +1939,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
     }
 
-    private static int GetAlignedSampleLength(
-        int sampleLength,
+    private static int GetDecodableSampleLength(
+        ReadOnlySpan<byte> sample,
         WorkspaceTextEncoding encoding)
     {
         int bomLength = GetBomLength(encoding);
@@ -1932,13 +1951,27 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             _ => 1
         };
 
+        int sampleLength = sample.Length;
         if (sampleLength <= bomLength)
         {
             return sampleLength;
         }
 
         int contentLength = sampleLength - bomLength;
-        return bomLength + (contentLength / unitSize) * unitSize;
+        int decodableLength = bomLength + (contentLength / unitSize) * unitSize;
+        if (encoding is not (WorkspaceTextEncoding.Utf16LittleEndian or WorkspaceTextEncoding.Utf16BigEndian) ||
+            decodableLength - bomLength < 2)
+        {
+            return decodableLength;
+        }
+
+        ushort trailingCodeUnit = encoding == WorkspaceTextEncoding.Utf16LittleEndian
+            ? (ushort)(sample[decodableLength - 2] | (sample[decodableLength - 1] << 8))
+            : (ushort)((sample[decodableLength - 2] << 8) | sample[decodableLength - 1]);
+
+        return char.IsHighSurrogate((char)trailingCodeUnit)
+            ? decodableLength - 2
+            : decodableLength;
     }
 
     private static string RenderFileReadDisplayContent(
@@ -2058,9 +2091,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
     private static string DetectNewLine(string text)
     {
-        return text.Contains("\r\n", StringComparison.Ordinal)
-            ? "\r\n"
-            : "\n";
+        return DetectLineEndings(text).DominantNewLine;
     }
 
     private static Encoding GetSystemEncoding(WorkspaceTextEncoding encoding)
@@ -2309,6 +2340,75 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
     }
 
+    private async Task RestoreWorkspaceFileFromBackupAsync(
+        string fullPath,
+        string backupPath,
+        CancellationToken cancellationToken)
+    {
+        if (!File.Exists(backupPath))
+        {
+            throw new InvalidOperationException(
+                $"Cannot restore '{ToWorkspaceRelativePath(fullPath)}' because its temporary backup is no longer available.");
+        }
+
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
+        WorkspaceResolvedPath.Revalidate(
+            workspaceRoot,
+            fullPath,
+            fullPath,
+            ToolPathAccessKind.Write);
+
+        EnsureParentDirectory(fullPath);
+
+        string tempPath = CreateTemporarySiblingPath(fullPath);
+        ExistingFileMetadata? existingMetadata = TryGetExistingFileMetadata(fullPath);
+
+        try
+        {
+            await using (FileStream sourceStream = new(
+                backupPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                useAsync: true))
+            await using (FileStream destinationStream = new(
+                tempPath,
+                FileMode.CreateNew,
+                FileAccess.Write,
+                FileShare.None,
+                bufferSize: 81920,
+                FileOptions.Asynchronous | FileOptions.WriteThrough))
+            {
+                WorkspaceResolvedPath.Revalidate(
+                    workspaceRoot,
+                    tempPath,
+                    tempPath,
+                    ToolPathAccessKind.Write);
+                await sourceStream.CopyToAsync(destinationStream, cancellationToken);
+                await destinationStream.FlushAsync(cancellationToken);
+                destinationStream.Flush(flushToDisk: true);
+            }
+
+            if (File.Exists(fullPath))
+            {
+                TryReplaceFileAtomically(tempPath, fullPath);
+            }
+            else
+            {
+                File.Move(tempPath, fullPath);
+            }
+
+            RestoreFileMetadata(fullPath, existingMetadata);
+            FlushDirectoryIfPossible(Path.GetDirectoryName(fullPath));
+        }
+        catch
+        {
+            TryDeleteTemporaryFile(tempPath);
+            throw;
+        }
+    }
+
     private void DeleteWorkspaceFile(
         string fullPath,
         WorkspaceFileEditState? expectedState,
@@ -2418,6 +2518,34 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             throw new InvalidOperationException(
                 $"Cannot safely update '{expectedState.Path}' because it changed after it was read.");
         }
+    }
+
+    private static async Task<string> CreateTemporaryByteBackupAsync(
+        string fullPath,
+        CancellationToken cancellationToken)
+    {
+        string backupPath = Path.Combine(
+            Path.GetTempPath(),
+            $".nanoagent-backup-{Path.GetFileName(fullPath)}.{Guid.NewGuid():N}.tmp");
+
+        await using FileStream sourceStream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+        await using FileStream destinationStream = new(
+            backupPath,
+            FileMode.CreateNew,
+            FileAccess.Write,
+            FileShare.None,
+            bufferSize: 81920,
+            FileOptions.Asynchronous | FileOptions.WriteThrough);
+        await sourceStream.CopyToAsync(destinationStream, cancellationToken);
+        await destinationStream.FlushAsync(cancellationToken);
+        destinationStream.Flush(flushToDisk: true);
+        return backupPath;
     }
 
     private static string CreateTemporarySiblingPath(string fullPath)
@@ -3488,6 +3616,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             string[] pattern = beforeLines;
             string[] replacementLines = afterLines;
+            IReadOnlyList<PatchLine> effectivePatchLines = hunk.Lines;
             int patternSearchStart = changeContextIndex is not null &&
                 beforeLines.Length > 0 &&
                 string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
@@ -3510,6 +3639,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 {
                     replacementLines = replacementLines[..^1];
                 }
+                effectivePatchLines = TrimTrailingPatchLines(hunk.Lines, pattern.Length, replacementLines.Length);
 
                 match = FindUniqueSequenceMatch(
                     originalLines,
@@ -3588,7 +3718,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     match.StartIndex,
                     pattern.Length,
                     replacementLines,
-                    hunk.Lines,
+                    effectivePatchLines,
                     match.MatchStyle),
                 hunk,
                 match.MatchStyle));
@@ -4294,8 +4424,34 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         StringBuilder? builder = null;
         for (int index = 0; index < value.Length; index++)
         {
-            if (TryDecodeCommonJsonUnicodeEscape(value, index, out char decoded))
+            if (index + 5 < value.Length &&
+                value[index] == '\\' &&
+                value[index + 1] is 'u' or 'U' &&
+                TryParseHexNibble(value[index + 2], out int first) &&
+                TryParseHexNibble(value[index + 3], out int second) &&
+                TryParseHexNibble(value[index + 4], out int third) &&
+                TryParseHexNibble(value[index + 5], out int fourth))
             {
+                char decoded = (char)((first << 12) | (second << 8) | (third << 4) | fourth);
+                decoded = decoded switch
+                {
+                    '"' => '"',
+                    '&' => '&',
+                    '\'' => '\'',
+                    '/' => '/',
+                    '<' => '<',
+                    '=' => '=',
+                    '>' => '>',
+                    '`' => '`',
+                    _ => default
+                };
+
+                if (decoded == default)
+                {
+                    builder?.Append(value[index]);
+                    continue;
+                }
+
                 if (builder is null)
                 {
                     builder = new StringBuilder(value.Length);
@@ -4315,65 +4471,107 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             : builder.ToString();
     }
 
-    private static bool TryDecodeCommonJsonUnicodeEscape(
-        string value,
-        int index,
-        out char decoded)
+    private static bool TryParseHexNibble(char value, out int digit)
     {
-        decoded = default;
-        if (index + 5 >= value.Length ||
-            value[index] != '\\' ||
-            value[index + 1] is not ('u' or 'U'))
+        digit = value switch
         {
-            return false;
-        }
-
-        int codePoint = 0;
-        for (int offset = 2; offset < 6; offset++)
-        {
-            int digit = FromHexDigit(value[index + offset]);
-            if (digit < 0)
-            {
-                return false;
-            }
-
-            codePoint = (codePoint << 4) + digit;
-        }
-
-        decoded = codePoint switch
-        {
-            0x0022 => '"',
-            0x0026 => '&',
-            0x0027 => '\'',
-            0x002F => '/',
-            0x003C => '<',
-            0x003D => '=',
-            0x003E => '>',
-            0x0060 => '`',
-            _ => default
+            >= '0' and <= '9' => value - '0',
+            >= 'a' and <= 'f' => value - 'a' + 10,
+            >= 'A' and <= 'F' => value - 'A' + 10,
+            _ => -1
         };
 
-        return decoded != default;
+        return digit >= 0;
     }
 
-    private static int FromHexDigit(char value)
+    private static IReadOnlyList<PatchLine> TrimTrailingPatchLines(
+        IReadOnlyList<PatchLine> patchLines,
+        int targetBeforeLineCount,
+        int targetAfterLineCount)
     {
-        if (value is >= '0' and <= '9')
+        List<PatchLine> trimmed = patchLines.ToList();
+        int currentBeforeLineCount = trimmed.Count(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal);
+        int currentAfterLineCount = trimmed.Count(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Addition);
+
+        while (trimmed.Count > 0 &&
+               (currentBeforeLineCount > targetBeforeLineCount || currentAfterLineCount > targetAfterLineCount))
         {
-            return value - '0';
+            PatchLine lastLine = trimmed[^1];
+            bool removeLine = lastLine.Kind switch
+            {
+                PatchLineKind.Context => currentBeforeLineCount > targetBeforeLineCount &&
+                                         currentAfterLineCount > targetAfterLineCount,
+                PatchLineKind.Removal => currentBeforeLineCount > targetBeforeLineCount,
+                PatchLineKind.Addition => currentAfterLineCount > targetAfterLineCount,
+                _ => false
+            };
+
+            if (!removeLine)
+            {
+                break;
+            }
+
+            trimmed.RemoveAt(trimmed.Count - 1);
+            if (lastLine.Kind is PatchLineKind.Context or PatchLineKind.Removal)
+            {
+                currentBeforeLineCount--;
+            }
+
+            if (lastLine.Kind is PatchLineKind.Context or PatchLineKind.Addition)
+            {
+                currentAfterLineCount--;
+            }
         }
 
-        if (value is >= 'a' and <= 'f')
+        return trimmed;
+    }
+
+    private static FileLineEndingInfo DetectLineEndings(string text)
+    {
+        bool sawCrLf = false;
+        bool sawLf = false;
+        bool sawCr = false;
+
+        for (int index = 0; index < text.Length; index++)
         {
-            return value - 'a' + 10;
+            char current = text[index];
+            if (current == '\r')
+            {
+                if (index + 1 < text.Length && text[index + 1] == '\n')
+                {
+                    sawCrLf = true;
+                    index++;
+                }
+                else
+                {
+                    sawCr = true;
+                }
+
+                continue;
+            }
+
+            if (current == '\n')
+            {
+                sawLf = true;
+            }
         }
 
-        if (value is >= 'A' and <= 'F')
+        int distinctKinds = (sawCrLf ? 1 : 0) + (sawLf ? 1 : 0) + (sawCr ? 1 : 0);
+        string dominantNewLine = sawCrLf
+            ? "\r\n"
+            : "\n";
+
+        if (!sawCrLf && !sawLf && sawCr)
         {
-            return value - 'A' + 10;
+            dominantNewLine = "\n";
         }
 
-        return -1;
+        return new FileLineEndingInfo(dominantNewLine, distinctKinds > 1);
+    }
+
+    private static bool HasMixedLineEndings(string text)
+    {
+        return DetectLineEndings(text).HasMixedLineEndings;
     }
 
     private static PatchRetryMatch? TryFindRetryMatch(

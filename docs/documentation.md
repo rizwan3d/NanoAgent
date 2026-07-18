@@ -727,6 +727,13 @@ Indexing respects `.gitignore`, `.nanoagent/.nanoignore`, and built-in exclusion
 
 Use `codebase_index` for broad discovery first, especially when you want to trace ownership, dependencies, callers, or likely symbol definitions across a repo. Then use `file_read`, `text_search`, or `code_intelligence` to verify exact behavior before editing.
 
+`file_read` now returns two content fields in its JSON result:
+
+- `RawContent`: the exact numbered lines returned by the read operation.
+- `DisplayContent`: the same numbered lines with unsafe control and bidi characters rendered visibly for safer display.
+
+The older `Content` JSON property is no longer emitted. Consumers that render previews should prefer `DisplayContent` and use `RawContent` when exact text is required.
+
 ### Manual Index Updates
 
 Use the `/index` REPL command to refresh the local codebase index from a terminal or desktop session:
