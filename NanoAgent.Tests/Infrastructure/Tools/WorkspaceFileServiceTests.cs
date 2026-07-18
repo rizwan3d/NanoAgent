@@ -1716,6 +1716,339 @@ public sealed class WorkspaceFileServiceTests : IDisposable
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("*matched multiple locations*Candidate starting lines: 1, 4*");
     }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MatchTabIndentedFile_WithSpaceIndentedPatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Tabs.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "if (ready)\n\treturn oldValue;\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: Tabs.cs
+            @@
+             if (ready)
+            -    return oldValue;
+            +    return newValue;
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("if (ready)\n    return newValue;\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MatchSpaceIndentedFile_WithTabIndentedPatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Spaces.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "if (ready)\n    return oldValue;\n",
+            CancellationToken.None);
+
+        string patch = string.Join(
+            "\n",
+            [
+                "*** Begin Patch",
+                "*** Update File: Spaces.cs",
+                "@@",
+                " if (ready)",
+                "-\treturn oldValue;",
+                "+\treturn newValue;",
+                "*** End Patch",
+                string.Empty
+            ]);
+
+        await sut.ApplyPatchAsync(patch, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("if (ready)\n\treturn newValue;\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AutoRepairRawTabPrefixedContextLine_InsideUpdateHunk()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "sample.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "def greet():\n\tprint(\"old\")\n\treturn 1\n",
+            CancellationToken.None);
+
+        string patch = string.Join(
+            "\n",
+            [
+                "*** Begin Patch",
+                "*** Update File: sample.py",
+                "@@",
+                " def greet():",
+                "\tprint(\"old\")",
+                "-\treturn 1",
+                "+\treturn 2",
+                "*** End Patch",
+                string.Empty
+            ]);
+
+        await sut.ApplyPatchAsync(patch, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("def greet():\n\tprint(\"old\")\n\treturn 2\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_AcceptMarkerSpaceFollowedByTab_ContextLine()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "TabsOnly.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "if (ready)\n\tLog();\n\treturn oldValue;\n",
+            CancellationToken.None);
+
+        string patch = string.Join(
+            "\n",
+            [
+                "*** Begin Patch",
+                "*** Update File: TabsOnly.cs",
+                "@@",
+                " if (ready)",
+                " \tLog();",
+                "-\treturn oldValue;",
+                "+\treturn newValue;",
+                "*** End Patch",
+                string.Empty
+            ]);
+
+        await sut.ApplyPatchAsync(patch, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("if (ready)\n\tLog();\n\treturn newValue;\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MatchMixedTabsAndSpacesIndentation()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "MixedIndent.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "if (ready)\n  \treturn oldValue;\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: MixedIndent.cs
+            @@
+             if (ready)
+            -        return oldValue;
+            +        return newValue;
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("if (ready)\n        return newValue;\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_IgnoreOnlyTrailingWhitespaceDifferences()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Trailing.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "value = old;   \nkeep();\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: Trailing.cs
+            @@
+            -value = old;
+            +value = new;
+             keep();
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("value = new;\nkeep();\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MatchBlankContextLine_BetweenContentLines()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "BlankLine.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "alpha\n\nomega\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: BlankLine.txt
+            @@
+             alpha
+             
+            -omega
+            +done
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("alpha\n\ndone\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_MatchCrlfFile_WithLfPatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "crlf.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "def greet():\r\n\treturn 1\r\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            "*** Begin Patch\n*** Update File: crlf.py\n@@\n def greet():\n-\treturn 1\n+\treturn 2\n*** End Patch\n",
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("def greet():\r\n\treturn 2\r\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_RejectAmbiguousNormalizedIndentationMatch_WhenSameHunkAppearsTwice()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "duplicate.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "if ready:\n\treturn old\n\nif ready:\n  return old\n",
+            CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: duplicate.py
+            @@
+             if ready:
+            -    return old
+            +    return new
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*matched multiple locations*normalized indentation*Candidate starting lines: 1, 4*");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_NotTreatDifferentInternalSpaces_AsSameText()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Strings.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "var text = \"hello  world\";\n",
+            CancellationToken.None);
+
+        Func<Task> act = () => sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: Strings.cs
+            @@
+            -var text = "hello world";
+            +var text = "updated";
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*target context was not found*");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveMakefileRecipeTabs()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Makefile");
+        await File.WriteAllTextAsync(
+            filePath,
+            "build:\n\tgcc main.c -o app\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: Makefile
+            @@
+            -build:
+            +compile:
+            	gcc main.c -o app
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("compile:\n\tgcc main.c -o app\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_KeepPythonIndentationStructurallyCorrect()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "script.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "def check(flag):\n    if flag:\n        return 1\n    return 0\n",
+            CancellationToken.None);
+
+        string patch = string.Join(
+            "\n",
+            [
+                "*** Begin Patch",
+                "*** Update File: script.py",
+                "@@",
+                " def check(flag):",
+                " \tif flag:",
+                "-\t\treturn 1",
+                "+\t\treturn 2",
+                " \treturn 0",
+                "*** End Patch",
+                string.Empty
+            ]);
+
+        await sut.ApplyPatchAsync(patch, CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("def check(flag):\n\tif flag:\n\t\treturn 2\n\treturn 0\n");
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
