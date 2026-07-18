@@ -33,6 +33,22 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     private static readonly Encoding StrictUtf8NoBom = new UTF8Encoding(
         encoderShouldEmitUTF8Identifier: false,
         throwOnInvalidBytes: true);
+    private static readonly UnicodeEncoding StrictUtf16LittleEndian = new(
+        bigEndian: false,
+        byteOrderMark: true,
+        throwOnInvalidBytes: true);
+    private static readonly UnicodeEncoding StrictUtf16BigEndian = new(
+        bigEndian: true,
+        byteOrderMark: true,
+        throwOnInvalidBytes: true);
+    private static readonly UTF32Encoding StrictUtf32LittleEndian = new(
+        bigEndian: false,
+        byteOrderMark: true,
+        throwOnInvalidCharacters: true);
+    private static readonly UTF32Encoding StrictUtf32BigEndian = new(
+        bigEndian: true,
+        byteOrderMark: true,
+        throwOnInvalidCharacters: true);
     private static readonly HashSet<string> GeneratedDirectoryNames = new(StringComparer.OrdinalIgnoreCase)
     {
         "bin",
@@ -1539,7 +1555,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         byte[] bytes = File.ReadAllBytes(fullPath);
-        return DetectFileEncoding(bytes);
+        FileEncodingInfo encoding = DetectFileEncoding(bytes);
+        if (bytes.Length == 0)
+        {
+            return encoding;
+        }
+
+        return encoding with
+        {
+            NewLine = DetectNewLine(DecodeFileBytes(bytes, encoding.Encoding))
+        };
     }
 
     private static FileEncodingInfo DetectFileEncoding(
@@ -1547,30 +1572,30 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
     {
         if (HasBytePrefix(bytes, 0xEF, 0xBB, 0xBF))
         {
-            return new FileEncodingInfo(WorkspaceTextEncoding.Utf8Bom, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf8Bom)));
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf8Bom, "\n");
         }
 
         if (HasBytePrefix(bytes, 0xFF, 0xFE, 0x00, 0x00))
         {
-            return new FileEncodingInfo(WorkspaceTextEncoding.Utf32LittleEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf32LittleEndian)));
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf32LittleEndian, "\n");
         }
 
         if (HasBytePrefix(bytes, 0x00, 0x00, 0xFE, 0xFF))
         {
-            return new FileEncodingInfo(WorkspaceTextEncoding.Utf32BigEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf32BigEndian)));
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf32BigEndian, "\n");
         }
 
         if (HasBytePrefix(bytes, 0xFF, 0xFE))
         {
-            return new FileEncodingInfo(WorkspaceTextEncoding.Utf16LittleEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf16LittleEndian)));
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf16LittleEndian, "\n");
         }
 
         if (HasBytePrefix(bytes, 0xFE, 0xFF))
         {
-            return new FileEncodingInfo(WorkspaceTextEncoding.Utf16BigEndian, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf16BigEndian)));
+            return new FileEncodingInfo(WorkspaceTextEncoding.Utf16BigEndian, "\n");
         }
 
-        return new FileEncodingInfo(WorkspaceTextEncoding.Utf8, DetectNewLine(DecodeFileBytes(bytes, WorkspaceTextEncoding.Utf8)));
+        return new FileEncodingInfo(WorkspaceTextEncoding.Utf8, "\n");
     }
 
     private async Task<WorkspaceFileReadPage> ReadWorkspaceFilePageAsync(
@@ -1591,23 +1616,35 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             ? DefaultFileReadLimit
             : limit;
 
-        byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
-        (string sha256, string encoding) = ComputeFileDigest(bytes);
-        EnsureReadableTextFile(fullPath, bytes);
-        FileEncodingInfo fileEncoding = DetectFileEncoding(bytes);
-        string text = DecodeFileBytes(bytes, fileEncoding.Encoding);
-        string[] fileLines = SplitLines(text);
+        await using FileStream stream = new(
+            fullPath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read,
+            bufferSize: 81920,
+            useAsync: true);
+        FileEncodingInfo fileEncoding = await DetectFileEncodingAsync(stream, cancellationToken);
+        await EnsureReadableTextFileAsync(fullPath, stream, fileEncoding.Encoding, cancellationToken);
+        string sha256 = await ComputeSha256Async(stream, cancellationToken);
         List<string> selectedLines = [];
         int linesAdded = 0;
         bool hitResponseCap = false;
         int responseBytes = 0;
-        int totalLines = fileLines.Length;
+        int totalLines = 0;
 
-        for (int index = 0; index < fileLines.Length; index++)
+        stream.Position = GetBomLength(fileEncoding.Encoding);
+        using StreamReader reader = CreateStreamReader(stream, fileEncoding.Encoding, leaveOpen: false);
+
+        while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            string? line = await reader.ReadLineAsync(cancellationToken);
+            if (line is null)
+            {
+                break;
+            }
 
-            int lineNumber = index + 1;
+            int lineNumber = ++totalLines;
             if (lineNumber < safeOffset)
             {
                 continue;
@@ -1618,7 +1655,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 continue;
             }
 
-            string formattedLine = FormatReadLine(lineNumber, fileLines[index], responseBytes, out int lineBytes);
+            string formattedLine = FormatReadLine(lineNumber, line, responseBytes, out int lineBytes);
             int separatorBytes = linesAdded == 0 ? 0 : 1;
             if (responseBytes + separatorBytes + lineBytes > MaxFileReadResponseBytes)
             {
@@ -1647,7 +1684,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 Truncated: false,
                 NextOffset: null,
                 sha256,
-                encoding);
+                GetEncodingName(fileEncoding.Encoding));
         }
 
         if (safeOffset > totalLines)
@@ -1674,19 +1711,29 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             truncated,
             nextOffset,
             sha256,
-            encoding);
+            GetEncodingName(fileEncoding.Encoding));
     }
 
-    private static (string Sha256, string Encoding) ComputeFileDigest(
-        ReadOnlySpan<byte> bytes)
+    private static async Task<string> ComputeSha256Async(
+        Stream stream,
+        CancellationToken cancellationToken)
     {
+        stream.Position = 0;
         using IncrementalHash hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
-        hash.AppendData(bytes);
-        FileEncodingInfo encodingInfo = DetectFileEncoding(bytes);
+        byte[] buffer = GC.AllocateUninitializedArray<byte>(81920);
 
-        return (
-            Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(),
-            GetEncodingName(encodingInfo.Encoding));
+        while (true)
+        {
+            int read = await stream.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            hash.AppendData(buffer.AsSpan(0, read));
+        }
+
+        return Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
     }
 
     private static string FormatReadLine(
@@ -1730,19 +1777,29 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         }
 
         int allowedBytes = maxBytes - suffixBytes;
-        int length = value.Length;
-        while (length > 0 &&
-               Encoding.UTF8.GetByteCount(value.AsSpan(0, length)) > allowedBytes)
+        StringBuilder builder = new(value.Length);
+        int currentBytes = 0;
+
+        foreach (Rune rune in value.EnumerateRunes())
         {
-            length--;
+            int bytesWritten = rune.Utf8SequenceLength;
+            if (currentBytes + bytesWritten > allowedBytes)
+            {
+                break;
+            }
+
+            builder.Append(rune.ToString());
+            currentBytes += bytesWritten;
         }
 
-        return value[..length] + suffix;
+        return builder.ToString() + suffix;
     }
 
-    private static void EnsureReadableTextFile(
+    private static async Task EnsureReadableTextFileAsync(
         string fullPath,
-        ReadOnlySpan<byte> bytes)
+        Stream stream,
+        WorkspaceTextEncoding encoding,
+        CancellationToken cancellationToken)
     {
         string extension = Path.GetExtension(fullPath);
         if (IsKnownBinaryExtension(extension))
@@ -1751,42 +1808,130 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 $"File '{Path.GetFileName(fullPath)}' appears to be binary and cannot be read as text.");
         }
 
-        if (bytes.Length == 0)
+        if (stream.Length == 0)
         {
             return;
         }
 
-        FileEncodingInfo encoding = DetectFileEncoding(bytes);
-        if (encoding.Encoding == WorkspaceTextEncoding.Utf8 && !IsValidUtf8(bytes))
+        byte[] sampleBuffer = GC.AllocateUninitializedArray<byte>((int)Math.Min(stream.Length, 4096));
+        stream.Position = 0;
+        int sampleCount = await stream.ReadAsync(sampleBuffer, cancellationToken);
+        ReadOnlySpan<byte> sample = sampleBuffer.AsSpan(0, sampleCount);
+
+        if (encoding == WorkspaceTextEncoding.Utf8 && !IsValidUtf8(sample))
         {
             throw new InvalidOperationException(
                 $"File '{Path.GetFileName(fullPath)}' is not valid UTF-8 text.");
         }
 
-        int controlCount = 0;
-        int sampledCount = Math.Min(bytes.Length, 4096);
-        int startOffset = GetBomLength(encoding.Encoding);
-        for (int index = startOffset; index < sampledCount; index++)
+        ValidateBinaryHeuristics(fullPath, sample, encoding);
+
+        stream.Position = GetBomLength(encoding);
+        using StreamReader reader = CreateStreamReader(stream, encoding, leaveOpen: true);
+        char[] buffer = GC.AllocateUninitializedArray<char>(4096);
+
+        try
         {
-            byte value = bytes[index];
-            if (value == 0x00)
+            while (await reader.ReadAsync(buffer, cancellationToken) > 0)
             {
-                throw new InvalidOperationException(
-                    $"File '{Path.GetFileName(fullPath)}' contains NUL bytes and cannot be read as text.");
+            }
+        }
+        catch (DecoderFallbackException)
+        {
+            throw new InvalidOperationException(
+                $"File '{Path.GetFileName(fullPath)}' contains invalid {GetEncodingName(encoding)} text.");
+        }
+        finally
+        {
+            stream.Position = 0;
+        }
+    }
+
+    private static void ValidateBinaryHeuristics(
+        string fullPath,
+        ReadOnlySpan<byte> sample,
+        WorkspaceTextEncoding encoding)
+    {
+        int controlCount = 0;
+        int startOffset = GetBomLength(encoding);
+
+        if (encoding is WorkspaceTextEncoding.Utf8 or WorkspaceTextEncoding.Utf8Bom)
+        {
+            for (int index = startOffset; index < sample.Length; index++)
+            {
+                byte value = sample[index];
+                if (value == 0x00)
+                {
+                    throw new InvalidOperationException(
+                        $"File '{Path.GetFileName(fullPath)}' contains NUL bytes and cannot be read as text.");
+                }
+
+                if (value < 0x20 && value is not (0x09 or 0x0A or 0x0D or 0x1B))
+                {
+                    controlCount++;
+                }
             }
 
-            if (value < 0x20 && value is not (0x09 or 0x0A or 0x0D or 0x1B))
+            int effectiveSampleCount = Math.Max(1, sample.Length - startOffset);
+            if (controlCount * 100 >= effectiveSampleCount * 20)
+            {
+                throw new InvalidOperationException(
+                    $"File '{Path.GetFileName(fullPath)}' appears to contain binary control data and cannot be read as text.");
+            }
+
+            return;
+        }
+
+        int decodableLength = GetAlignedSampleLength(sample.Length, encoding);
+        if (decodableLength <= startOffset)
+        {
+            return;
+        }
+
+        string sampleText = DecodeFileBytes(sample[..decodableLength], encoding);
+        int runeCount = 0;
+
+        foreach (Rune rune in sampleText.EnumerateRunes())
+        {
+            runeCount++;
+            int value = rune.Value;
+            if (value is 0x0000 or '\t' or '\n' or '\r' or 0x001B)
+            {
+                continue;
+            }
+
+            if (Rune.GetUnicodeCategory(rune) == UnicodeCategory.Control)
             {
                 controlCount++;
             }
         }
 
-        int effectiveSampleCount = Math.Max(1, sampledCount - startOffset);
-        if (controlCount * 100 >= effectiveSampleCount * 20)
+        if (controlCount * 100 >= Math.Max(1, runeCount) * 20)
         {
             throw new InvalidOperationException(
                 $"File '{Path.GetFileName(fullPath)}' appears to contain binary control data and cannot be read as text.");
         }
+    }
+
+    private static int GetAlignedSampleLength(
+        int sampleLength,
+        WorkspaceTextEncoding encoding)
+    {
+        int bomLength = GetBomLength(encoding);
+        int unitSize = encoding switch
+        {
+            WorkspaceTextEncoding.Utf16LittleEndian or WorkspaceTextEncoding.Utf16BigEndian => 2,
+            WorkspaceTextEncoding.Utf32LittleEndian or WorkspaceTextEncoding.Utf32BigEndian => 4,
+            _ => 1
+        };
+
+        if (sampleLength <= bomLength)
+        {
+            return sampleLength;
+        }
+
+        int contentLength = sampleLength - bomLength;
+        return bomLength + (contentLength / unitSize) * unitSize;
     }
 
     private static string RenderFileReadDisplayContent(
@@ -1896,10 +2041,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         {
             WorkspaceTextEncoding.Utf8 => StrictUtf8NoBom.GetString(bytes),
             WorkspaceTextEncoding.Utf8Bom => StrictUtf8NoBom.GetString(bytes[3..]),
-            WorkspaceTextEncoding.Utf16LittleEndian => Encoding.Unicode.GetString(bytes[2..]),
-            WorkspaceTextEncoding.Utf16BigEndian => Encoding.BigEndianUnicode.GetString(bytes[2..]),
-            WorkspaceTextEncoding.Utf32LittleEndian => Encoding.UTF32.GetString(bytes[4..]),
-            WorkspaceTextEncoding.Utf32BigEndian => new UTF32Encoding(bigEndian: true, byteOrderMark: true, throwOnInvalidCharacters: true).GetString(bytes[4..]),
+            WorkspaceTextEncoding.Utf16LittleEndian => StrictUtf16LittleEndian.GetString(bytes[2..]),
+            WorkspaceTextEncoding.Utf16BigEndian => StrictUtf16BigEndian.GetString(bytes[2..]),
+            WorkspaceTextEncoding.Utf32LittleEndian => StrictUtf32LittleEndian.GetString(bytes[4..]),
+            WorkspaceTextEncoding.Utf32BigEndian => StrictUtf32BigEndian.GetString(bytes[4..]),
             _ => throw new InvalidOperationException("Unsupported workspace text encoding.")
         };
     }
@@ -1997,6 +2142,44 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             bytes[..prefix.Length].SequenceEqual(prefix);
     }
 
+    private static StreamReader CreateStreamReader(
+        Stream stream,
+        WorkspaceTextEncoding encoding,
+        bool leaveOpen)
+    {
+        return new StreamReader(
+            stream,
+            GetStrictDecodingEncoding(encoding),
+            detectEncodingFromByteOrderMarks: false,
+            bufferSize: 81920,
+            leaveOpen: leaveOpen);
+    }
+
+    private static Encoding GetStrictDecodingEncoding(WorkspaceTextEncoding encoding)
+    {
+        return encoding switch
+        {
+            WorkspaceTextEncoding.Utf8 => StrictUtf8NoBom,
+            WorkspaceTextEncoding.Utf8Bom => StrictUtf8NoBom,
+            WorkspaceTextEncoding.Utf16LittleEndian => StrictUtf16LittleEndian,
+            WorkspaceTextEncoding.Utf16BigEndian => StrictUtf16BigEndian,
+            WorkspaceTextEncoding.Utf32LittleEndian => StrictUtf32LittleEndian,
+            WorkspaceTextEncoding.Utf32BigEndian => StrictUtf32BigEndian,
+            _ => throw new InvalidOperationException("Unsupported workspace text encoding.")
+        };
+    }
+
+    private static async Task<FileEncodingInfo> DetectFileEncodingAsync(
+        Stream stream,
+        CancellationToken cancellationToken)
+    {
+        byte[] prefix = new byte[4];
+        stream.Position = 0;
+        int bytesRead = await stream.ReadAsync(prefix.AsMemory(0, prefix.Length), cancellationToken);
+        stream.Position = 0;
+        return DetectFileEncoding(prefix.AsSpan(0, bytesRead));
+    }
+
     private async Task<string> ReadWorkspaceFileAsync(
         string fullPath,
         CancellationToken cancellationToken)
@@ -2008,8 +2191,10 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             fullPath,
             ToolPathAccessKind.Read);
         byte[] bytes = await File.ReadAllBytesAsync(fullPath, cancellationToken);
-        EnsureReadableTextFile(fullPath, bytes);
-        return DecodeFileBytes(bytes, DetectFileEncoding(bytes).Encoding);
+        FileEncodingInfo encoding = DetectFileEncoding(bytes);
+        await using MemoryStream stream = new(bytes, writable: false);
+        await EnsureReadableTextFileAsync(fullPath, stream, encoding.Encoding, cancellationToken);
+        return DecodeFileBytes(bytes, encoding.Encoding);
     }
 
     private async Task WriteWorkspaceFileAsync(
@@ -2505,7 +2690,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 }
 
                 currentHunkLines = [];
-                currentChangeContext = line[2..].Trim();
+                currentChangeContext = DecodeCommonJsonUnicodeEscapes(line[2..].Trim());
                 if (currentChangeContext.Length == 0)
                 {
                     currentChangeContext = null;
@@ -2543,7 +2728,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     '-' => PatchLineKind.Removal,
                     _ => throw new FormatException($"Invalid patch line prefix in '{line}'.")
                 },
-                line[1..],
+                DecodeCommonJsonUnicodeEscapes(line[1..]),
                 NoNewlineAtEnd: false));
 
             lineIndex++;
@@ -3255,7 +3440,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 int insertIndex = changeContextIndex is null
                     ? originalLines.Length
                     : changeContextIndex.Value + 1;
-                replacements.Add(new PatchReplacement(insertIndex, 0, afterLines, hunk));
+                replacements.Add(new PatchReplacement(insertIndex, 0, afterLines, hunk, "exact text"));
                 continue;
             }
 
@@ -3305,7 +3490,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                         retryMatch.Value.StartIndex,
                         retryMatch.Value.OldLineCount,
                         retryMatch.Value.NewLines,
-                        hunk));
+                        hunk,
+                        retryMatch.Value.MatchStyle));
                     searchStart = retryMatch.Value.StartIndex + retryMatch.Value.OldLineCount;
                     continue;
                 }
@@ -3352,7 +3538,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     $"using {match.MatchStyle}. Candidate starting lines: {DescribeCandidateLines(match.CandidateStartIndexes)}.");
             }
 
-            replacements.Add(new PatchReplacement(match.StartIndex, pattern.Length, replacementLines, hunk));
+            replacements.Add(new PatchReplacement(
+                match.StartIndex,
+                pattern.Length,
+                AdjustReplacementLinesForMatchStyle(
+                    originalLines,
+                    match.StartIndex,
+                    pattern.Length,
+                    replacementLines,
+                    hunk,
+                    match.MatchStyle),
+                hunk,
+                match.MatchStyle));
             searchStart = match.StartIndex + pattern.Length;
         }
 
@@ -3420,7 +3617,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 match.StartIndex,
                 group.BeforeLines.Count,
                 group.AfterLines,
-                hunk));
+                hunk,
+                match.MatchStyle));
         }
 
         PatchReplacement[] ordered = replacements
@@ -3484,7 +3682,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             matchIndex,
             OldLineCount: 1,
             [replacementLine],
-            hunk);
+            hunk,
+            "exact text");
     }
 
     private static IReadOnlyList<PatchIndependentReplacementGroup> BuildIndependentReplacementGroups(
@@ -3690,7 +3889,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 left.TrimEnd(' ', '\t'),
                 right.TrimEnd(' ', '\t'),
                 StringComparison.Ordinal)),
-            ("normalized indentation", static (left, right, kind) => kind == PatchLineKind.Context && EqualsIgnoringIndentation(left, right)),
+            ("normalized indentation", static (left, right, _) => EqualsIgnoringIndentation(left, right)),
             ("canonical unicode (NFC)", static (left, right, _) => EqualsCanonicalUnicode(left, right))
         ];
 
@@ -3807,18 +4006,123 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string left,
         string right)
     {
-        string normalizedLeft = left
-            .TrimEnd(' ', '\t')
-            .TrimStart(' ', '\t');
-
-        string normalizedRight = right
-            .TrimEnd(' ', '\t')
-            .TrimStart(' ', '\t');
+        string normalizedLeft = TrimLeadingWhitespace(left).TrimEnd(' ', '\t');
+        string normalizedRight = TrimLeadingWhitespace(right).TrimEnd(' ', '\t');
 
         return string.Equals(
             normalizedLeft,
             normalizedRight,
             StringComparison.Ordinal);
+    }
+
+    private static string TrimLeadingWhitespace(string value)
+    {
+        int index = 0;
+        while (index < value.Length && value[index] is ' ' or '\t')
+        {
+            index++;
+        }
+
+        return index == 0
+            ? value
+            : value[index..];
+    }
+
+    private static IReadOnlyList<string> AdjustReplacementLinesForMatchStyle(
+        IReadOnlyList<string> originalLines,
+        int startIndex,
+        int oldLineCount,
+        IReadOnlyList<string> replacementLines,
+        PatchHunk hunk,
+        string matchStyle)
+    {
+        if (!string.Equals(matchStyle, "normalized indentation", StringComparison.Ordinal) ||
+            oldLineCount <= 0)
+        {
+            return replacementLines;
+        }
+
+        string[] matchedLines = originalLines
+            .Skip(startIndex)
+            .Take(oldLineCount)
+            .ToArray();
+        List<string> adjustedLines = [];
+        int matchedLineIndex = 0;
+        int hunkIndex = 0;
+
+        while (hunkIndex < hunk.Lines.Count)
+        {
+            PatchLine line = hunk.Lines[hunkIndex];
+            if (line.Kind == PatchLineKind.Context)
+            {
+                adjustedLines.Add(matchedLines[matchedLineIndex]);
+                matchedLineIndex++;
+                hunkIndex++;
+                continue;
+            }
+
+            if (line.Kind == PatchLineKind.Removal)
+            {
+                List<string> removedLines = [];
+                while (hunkIndex < hunk.Lines.Count &&
+                       hunk.Lines[hunkIndex].Kind == PatchLineKind.Removal)
+                {
+                    removedLines.Add(matchedLines[matchedLineIndex]);
+                    matchedLineIndex++;
+                    hunkIndex++;
+                }
+
+                List<string> addedLines = [];
+                while (hunkIndex < hunk.Lines.Count &&
+                       hunk.Lines[hunkIndex].Kind == PatchLineKind.Addition)
+                {
+                    addedLines.Add(hunk.Lines[hunkIndex].Text);
+                    hunkIndex++;
+                }
+
+                adjustedLines.AddRange(ApplyMatchedIndentation(removedLines, addedLines));
+                continue;
+            }
+
+            adjustedLines.Add(line.Text);
+            hunkIndex++;
+        }
+
+        return adjustedLines;
+    }
+
+    private static IReadOnlyList<string> ApplyMatchedIndentation(
+        IReadOnlyList<string> removedLines,
+        IReadOnlyList<string> addedLines)
+    {
+        if (removedLines.Count == 0 || addedLines.Count == 0)
+        {
+            return addedLines;
+        }
+
+        string[] adjusted = new string[addedLines.Count];
+        for (int index = 0; index < addedLines.Count; index++)
+        {
+            string addedLine = addedLines[index];
+            string sourceIndent = GetLeadingWhitespace(removedLines[Math.Min(index, removedLines.Count - 1)]);
+            string patchIndent = GetLeadingWhitespace(addedLine);
+            adjusted[index] = sourceIndent + addedLine[patchIndent.Length..];
+        }
+
+        return adjusted;
+    }
+
+    private static string GetLeadingWhitespace(string value)
+    {
+        int index = 0;
+        while (index < value.Length && value[index] is ' ' or '\t')
+        {
+            index++;
+        }
+
+        return index == 0
+            ? string.Empty
+            : value[..index];
     }
 
     private static bool EqualsCanonicalUnicode(
@@ -4275,7 +4579,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int StartIndex,
         int OldLineCount,
         IReadOnlyList<string> NewLines,
-        PatchHunk Hunk);
+        PatchHunk Hunk,
+        string MatchStyle);
 
     private readonly record struct PatchRetryMatch(
         int StartIndex,

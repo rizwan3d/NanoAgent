@@ -275,6 +275,46 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadFileAsync_Should_AllowUtf16FilesWithEmbeddedZeroBytes()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "utf16.txt");
+        byte[] bytes = Encoding.Unicode.GetPreamble()
+            .Concat(Encoding.Unicode.GetBytes("hello\nworld"))
+            .ToArray();
+
+        await File.WriteAllBytesAsync(filePath, bytes, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "utf16.txt",
+            offset: 1,
+            limit: 2,
+            CancellationToken.None);
+
+        result.Content.Should().Be("1: hello\n2: world");
+        result.Encoding.Should().Be("utf-16-le");
+    }
+
+    [Fact]
+    public async Task ReadFileAsync_Should_TruncateWithoutSplittingSurrogatePairs()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "emoji.txt");
+        string content = string.Concat(Enumerable.Repeat("🙂", 3_000));
+
+        await File.WriteAllTextAsync(filePath, content, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "emoji.txt",
+            offset: 1,
+            limit: 1,
+            CancellationToken.None);
+
+        result.Content.Should().Contain("[truncated]");
+        result.Content.Should().NotContain("\uFFFD");
+    }
+
+    [Fact]
     public async Task DeleteFileAsync_Should_DeleteFileAndReturnPreview()
     {
         WorkspaceFileService sut = CreateSut();
@@ -1741,7 +1781,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
-            .Be("if (ready)\n    return newValue;\n");
+            .Be("if (ready)\n\treturn newValue;\n");
     }
 
     [Fact]
@@ -1771,7 +1811,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
-            .Be("if (ready)\n\treturn newValue;\n");
+            .Be("if (ready)\n    return newValue;\n");
     }
 
     [Fact]
@@ -1860,7 +1900,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
-            .Be("if (ready)\n        return newValue;\n");
+            .Be("if (ready)\n  \treturn newValue;\n");
     }
 
     [Fact]
@@ -2046,7 +2086,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
-            .Be("def check(flag):\n\tif flag:\n\t\treturn 2\n\treturn 0\n");
+            .Be("def check(flag):\n    if flag:\n        return 2\n    return 0\n");
     }
 
     public void Dispose()
