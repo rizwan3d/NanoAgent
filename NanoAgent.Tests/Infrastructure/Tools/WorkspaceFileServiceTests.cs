@@ -3,12 +3,14 @@ using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
 using NanoAgent.Application.Tools.Models;
 using NanoAgent.Infrastructure.Tools;
+using System.Reflection;
 using System.Text;
 
 namespace NanoAgent.Tests.Infrastructure.Tools;
 
 public sealed class WorkspaceFileServiceTests : IDisposable
 {
+    private readonly List<WorkspaceFileService> _createdServices = [];
     private readonly string _workspaceRoot;
 
     public WorkspaceFileServiceTests()
@@ -2267,6 +2269,99 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_PreserveCrOnlyLineEndingsFromTrackedByteBackup()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "cr-only.txt");
+        byte[] originalBytes = Encoding.UTF8.GetBytes("alpha\rbeta\rgamma\r");
+        await File.WriteAllBytesAsync(filePath, originalBytes, CancellationToken.None);
+
+        WorkspaceFileWriteExecutionResult result = await sut.WriteFileWithTrackingAsync(
+            "cr-only.txt",
+            "changed\ncontent\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        await sut.ApplyFileEditStatesAsync(result.EditTransaction.BeforeStates, CancellationToken.None);
+
+        byte[] restoredBytes = await File.ReadAllBytesAsync(filePath, CancellationToken.None);
+        restoredBytes.Should().Equal(originalBytes);
+    }
+
+    [Fact]
+    public async Task WriteFileWithTrackingAsync_Should_StoreManagedBackupIdAndHashForLargeFiles()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "large.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            new string('a', 300_000),
+            CancellationToken.None);
+
+        WorkspaceFileWriteExecutionResult result = await sut.WriteFileWithTrackingAsync(
+            "large.txt",
+            "small replacement\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        WorkspaceFileEditState beforeState = result.EditTransaction.BeforeStates.Should().ContainSingle().Subject;
+        beforeState.Content.Should().BeNull();
+        beforeState.ContentHash.Should().NotBeNullOrWhiteSpace();
+        beforeState.ContentBackupId.Should().NotBeNullOrWhiteSpace();
+        beforeState.ContentBackupId.Should().NotContain(Path.DirectorySeparatorChar.ToString());
+        beforeState.OriginalMetadata.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_RestoreOriginalMetadataFromTrackedBackup()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "metadata.txt");
+        byte[] originalBytes = Encoding.UTF8.GetBytes("alpha\r\nbeta\ngamma\r");
+        await File.WriteAllBytesAsync(filePath, originalBytes, CancellationToken.None);
+        DateTime expectedLastWriteUtc = new(2024, 02, 03, 04, 05, 06, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(filePath, expectedLastWriteUtc);
+
+        WorkspaceFileWriteExecutionResult result = await sut.WriteFileWithTrackingAsync(
+            "metadata.txt",
+            "changed\ncontent\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        await Task.Delay(20, CancellationToken.None);
+        await sut.ApplyFileEditStatesAsync(result.EditTransaction.BeforeStates, CancellationToken.None);
+
+        File.GetLastWriteTimeUtc(filePath).Should().Be(expectedLastWriteUtc);
+        (await File.ReadAllBytesAsync(filePath, CancellationToken.None)).Should().Equal(originalBytes);
+    }
+
+    [Fact]
+    public async Task WriteFileWithTrackingAsync_Should_DeleteIncompleteManagedBackup_WhenCaptureFails()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "cancel-large.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            new string('b', 300_000),
+            CancellationToken.None);
+        string backupDirectory = GetBackupDirectoryPath(sut);
+        using CancellationTokenSource cancellationSource = new();
+        cancellationSource.Cancel();
+
+        Func<Task> act = async () => await sut.WriteFileWithTrackingAsync(
+            "cancel-large.txt",
+            "replacement\n",
+            overwrite: true,
+            cancellationSource.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+        if (Directory.Exists(backupDirectory))
+        {
+            Directory.EnumerateFiles(backupDirectory).Should().BeEmpty();
+        }
+    }
+
+    [Fact]
     public async Task ReadFileAsync_Should_AllowIncompleteUtf16SurrogatePairAtValidationSampleBoundary()
     {
         WorkspaceFileService sut = CreateSut();
@@ -2289,6 +2384,11 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
     public void Dispose()
     {
+        foreach (WorkspaceFileService service in _createdServices)
+        {
+            service.Dispose();
+        }
+
         if (Directory.Exists(_workspaceRoot))
         {
             DeleteDirectoryTreeIfExists(_workspaceRoot);
@@ -2297,7 +2397,17 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
     private WorkspaceFileService CreateSut()
     {
-        return new WorkspaceFileService(new StubWorkspaceRootProvider(_workspaceRoot));
+        WorkspaceFileService service = new(new StubWorkspaceRootProvider(_workspaceRoot));
+        _createdServices.Add(service);
+        return service;
+    }
+
+    private static string GetBackupDirectoryPath(WorkspaceFileService service)
+    {
+        FieldInfo field = typeof(WorkspaceFileService).GetField(
+            "_backupDirectoryPath",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+        return (string)field.GetValue(service)!;
     }
 
     private async Task WriteNanoIgnoreAsync(string content)

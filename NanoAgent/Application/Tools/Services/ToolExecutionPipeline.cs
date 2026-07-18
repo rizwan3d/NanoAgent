@@ -12,14 +12,17 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
     private readonly int _maxParallelToolExecutions;
     private readonly TimeProvider _timeProvider;
     private readonly IToolInvoker _toolInvoker;
+    private readonly IWorkspaceFileService _workspaceFileService;
 
     public ToolExecutionPipeline(
+        IWorkspaceFileService workspaceFileService,
         IToolInvoker toolInvoker,
         ILessonMemoryService? lessonMemoryService = null,
         IToolAuditLogService? toolAuditLogService = null,
         TimeProvider? timeProvider = null,
         int maxParallelToolExecutions = DefaultMaxParallelToolExecutions)
     {
+        _workspaceFileService = workspaceFileService;
         _toolInvoker = toolInvoker;
         _lessonMemoryService = lessonMemoryService;
         _toolAuditLogService = toolAuditLogService;
@@ -62,50 +65,53 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         }
 
         ToolInvocationResult?[] results = new ToolInvocationResult?[toolCalls.Count];
-        using IDisposable _ = session.BeginFileEditTransactionBatch();
-
-        int index = 0;
-        while (index < toolCalls.Count)
+        using (session.BeginFileEditTransactionBatch())
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!CanRunInParallel(toolCalls[index]))
+            int index = 0;
+            while (index < toolCalls.Count)
             {
-                ToolExecutionRecord record = await InvokeToolAsync(
-                    toolCalls[index],
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (!CanRunInParallel(toolCalls[index]))
+                {
+                    ToolExecutionRecord record = await InvokeToolAsync(
+                        toolCalls[index],
+                        session,
+                        executionPhase,
+                        allowedToolNames,
+                        cancellationToken);
+                    results[index] = record.InvocationResult;
+                    await CompleteToolExecutionAsync(
+                        record,
+                        session,
+                        executionPhase,
+                        onToolResult,
+                        cancellationToken);
+                    index++;
+                    continue;
+                }
+
+                int groupStartIndex = index;
+                while (index < toolCalls.Count &&
+                       CanRunInParallel(toolCalls[index]))
+                {
+                    index++;
+                }
+
+                await ExecuteParallelGroupAsync(
+                    toolCalls,
+                    groupStartIndex,
+                    index,
                     session,
                     executionPhase,
                     allowedToolNames,
-                    cancellationToken);
-                results[index] = record.InvocationResult;
-                await CompleteToolExecutionAsync(
-                    record,
-                    session,
-                    executionPhase,
+                    results,
                     onToolResult,
                     cancellationToken);
-                index++;
-                continue;
             }
-
-            int groupStartIndex = index;
-            while (index < toolCalls.Count &&
-                   CanRunInParallel(toolCalls[index]))
-            {
-                index++;
-            }
-
-            await ExecuteParallelGroupAsync(
-                toolCalls,
-                groupStartIndex,
-                index,
-                session,
-                executionPhase,
-                allowedToolNames,
-                results,
-                onToolResult,
-                cancellationToken);
         }
+
+        _workspaceFileService.ReleaseTrackedFileEditTransactions(session.DrainExpiredFileEditTransactions());
 
         return new ToolExecutionBatchResult(results.Select(static result =>
             result ?? throw new InvalidOperationException("Tool execution completed without a result.")).ToArray());
