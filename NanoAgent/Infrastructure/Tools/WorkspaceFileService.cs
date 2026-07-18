@@ -3500,7 +3500,20 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             yield break;
         }
 
-        if (locator[0] is '+' or '-' or ' ')
+        string trimmedLocator = locator.TrimStart();
+        if (trimmedLocator.Length == 0)
+        {
+            yield return "@@";
+            yield break;
+        }
+
+        if (!string.Equals(locator, trimmedLocator, StringComparison.Ordinal))
+        {
+            yield return "@@ " + trimmedLocator;
+            yield break;
+        }
+
+        if (locator[0] is '+' or '-')
         {
             yield return "@@";
             yield return locator;
@@ -3778,21 +3791,18 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         foreach (PatchHunk hunk in hunks)
         {
             int? changeContextIndex = null;
+            int searchStartBeforeLocator = searchStart;
             if (!string.IsNullOrWhiteSpace(hunk.ChangeContext))
             {
-                int contextIndex = FindFirstSequenceMatch(
+                int contextIndex = FindLocatorMatchIndex(
                     originalLines,
-                    [hunk.ChangeContext],
                     searchStart,
-                    endOfFile: false);
-                if (contextIndex < 0)
+                    hunk.ChangeContext);
+                if (contextIndex >= 0)
                 {
-                    throw new InvalidOperationException(
-                        $"Could not apply the requested patch because context '{hunk.ChangeContext}' was not found in '{path}'.");
+                    changeContextIndex = contextIndex;
+                    searchStart = contextIndex + 1;
                 }
-
-                changeContextIndex = contextIndex;
-                searchStart = contextIndex + 1;
             }
 
             string[] beforeLines = hunk.Lines
@@ -3825,11 +3835,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
                 string.Equals(beforeLines[0], hunk.ChangeContext, StringComparison.Ordinal)
                     ? changeContextIndex.Value
                     : searchStart;
-            PatchSequenceSearchResult match = FindUniqueSequenceMatch(
+            PatchSequenceSearchResult match = FindUniqueHunkMatch(
                 originalLines,
                 pattern,
                 beforeLineKinds,
                 patternSearchStart,
+                searchStartBeforeLocator,
                 hunk.IsEndOfFile);
 
             if (match.Status == PatchSequenceSearchStatus.NotFound &&
@@ -3844,11 +3855,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
                 }
                 effectivePatchLines = TrimTrailingPatchLines(hunk.Lines, pattern.Length, replacementLines.Length);
 
-                match = FindUniqueSequenceMatch(
+                match = FindUniqueHunkMatch(
                     originalLines,
                     pattern,
                     beforeLineKinds,
                     patternSearchStart,
+                    searchStartBeforeLocator,
                     hunk.IsEndOfFile);
             }
 
@@ -4231,6 +4243,78 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         }
 
         return -1;
+    }
+
+    private static int FindLocatorMatchIndex(
+        IReadOnlyList<string> source,
+        int startIndex,
+        string locator)
+    {
+        string normalizedLocator = locator.Trim();
+        if (normalizedLocator.Length == 0)
+        {
+            return -1;
+        }
+
+        Func<string, string, bool>[] matchers =
+        [
+            static (line, candidate) => string.Equals(line, candidate, StringComparison.Ordinal),
+            static (line, candidate) => string.Equals(line.TrimStart(), candidate, StringComparison.Ordinal),
+            static (line, candidate) => line.TrimStart().StartsWith(candidate, StringComparison.Ordinal),
+            static (line, candidate) => line.Contains(candidate, StringComparison.Ordinal)
+        ];
+
+        foreach (Func<string, string, bool> matcher in matchers)
+        {
+            List<int> matches = [];
+            for (int index = Math.Max(0, startIndex); index < source.Count; index++)
+            {
+                if (matcher(source[index], normalizedLocator))
+                {
+                    matches.Add(index);
+                    if (matches.Count > 1)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            if (matches.Count == 1)
+            {
+                return matches[0];
+            }
+        }
+
+        return -1;
+    }
+
+    private static PatchSequenceSearchResult FindUniqueHunkMatch(
+        IReadOnlyList<string> source,
+        IReadOnlyList<string> target,
+        IReadOnlyList<PatchLineKind> targetKinds,
+        int hintedStartIndex,
+        int fallbackStartIndex,
+        bool endOfFile)
+    {
+        PatchSequenceSearchResult match = FindUniqueSequenceMatch(
+            source,
+            target,
+            targetKinds,
+            hintedStartIndex,
+            endOfFile);
+
+        if (match.Status != PatchSequenceSearchStatus.NotFound ||
+            hintedStartIndex == fallbackStartIndex)
+        {
+            return match;
+        }
+
+        return FindUniqueSequenceMatch(
+            source,
+            target,
+            targetKinds,
+            fallbackStartIndex,
+            endOfFile);
     }
 
     private static PatchSequenceSearchResult FindUniqueSequenceMatch(
