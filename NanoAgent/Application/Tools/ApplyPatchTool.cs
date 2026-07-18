@@ -41,7 +41,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             or
             @@ <plain anchor text>
 
-            - The `@@` line is ONLY a locator.
+            - The `@@` line is a locator hint, not mandatory patch context.
             - The `@@` line NEVER removes, adds, or preserves file content.
             - Do NOT put patch content on the `@@` line.
 
@@ -62,7 +62,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             -old line
             +new line
 
-        - If using `@@ <plain anchor text>`, the anchor text MUST NOT begin with `+`, `-`, or a space.
+        - If using `@@ <plain anchor text>`, the anchor text should identify the nearby region. Accidental extra spaces after `@@` are tolerated.
         - If you want to keep a file line, repeat it inside the hunk with a leading space.
         - If you want to remove a file line, repeat it inside the hunk with a leading `-`.
         - If you want to add a file line, write it inside the hunk with a leading `+`.

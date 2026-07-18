@@ -1753,6 +1753,117 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_UseLocatorAsPrefixSearchHint()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "prefix-locator.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "root\n      obs: {\n        value: 1,\n      }\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: prefix-locator.cs
+            @@ obs:
+                  obs: {
+            -        value: 1,
+            +        value: 2,
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("root\n      obs: {\n        value: 2,\n      }\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_TrimExtraSpaceInLocatorHeader()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "extra-space.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "createTestMatchState();\nreturn oldValue;\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: extra-space.cs
+            @@  createTestMatchState();
+             createTestMatchState();
+            -return oldValue;
+            +return newValue;
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("createTestMatchState();\nreturn newValue;\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_FallbackToFullHunkSearch_WhenLocatorDoesNotMatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "locator-fallback.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "header changed\nold value\nfooter changed\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: locator-fallback.txt
+            @@ stale locator
+             header
+            -old value
+            +new value
+             footer
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("header changed\nnew value\nfooter changed\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_FallbackWhenLocatorMatchesMultipleLines_ButHunkIsUnique()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "multi-locator.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "obs: {\n  name: first\n}\nobs: {\n  name: second\n  value: 1\n}\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: multi-locator.txt
+            @@ obs:
+             obs: {
+               name: second
+            -  value: 1
+            +  value: 2
+             }
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("obs: {\n  name: first\n}\nobs: {\n  name: second\n  value: 2\n}\n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_RejectAmbiguousRepeatedMatch()
     {
         WorkspaceFileService sut = CreateSut();
