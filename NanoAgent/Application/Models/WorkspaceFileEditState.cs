@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace NanoAgent.Application.Models;
 
 public sealed class WorkspaceFileEditState
@@ -6,7 +8,9 @@ public sealed class WorkspaceFileEditState
         string path,
         bool exists,
         string? content,
-        string? contentHash = null)
+        string? contentHash = null,
+        string? encoding = null,
+        string? newLine = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
 
@@ -21,6 +25,12 @@ public sealed class WorkspaceFileEditState
         Exists = exists;
         Content = content;
         ContentHash = string.IsNullOrWhiteSpace(contentHash) ? null : contentHash;
+        Encoding = string.IsNullOrWhiteSpace(encoding) ? null : encoding.Trim();
+        NewLine = string.IsNullOrEmpty(newLine)
+            ? null
+            : newLine.Replace("\r\n", "\n", StringComparison.Ordinal) == "\n" && newLine.Contains('\r')
+                ? "\r\n"
+                : "\n";
     }
 
     public string? Content { get; }
@@ -31,7 +41,11 @@ public sealed class WorkspaceFileEditState
     /// </summary>
     public string? ContentHash { get; }
 
+    public string? Encoding { get; }
+
     public bool Exists { get; }
+
+    public string? NewLine { get; }
 
     public string Path { get; }
 }

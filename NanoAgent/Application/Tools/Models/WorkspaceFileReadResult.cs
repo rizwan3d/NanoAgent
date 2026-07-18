@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace NanoAgent.Application.Tools.Models;
 
 public sealed record WorkspaceFileReadResult
@@ -52,6 +54,7 @@ public sealed record WorkspaceFileReadResult
 
     public string Path { get; init; }
 
+    [JsonIgnore]
     public string Content => RawContent;
 
     public string RawContent { get; init; }
