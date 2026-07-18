@@ -10,6 +10,8 @@ namespace NanoAgent.Infrastructure.Storage;
     WriteIndented = true)]
 [JsonSerializable(typeof(ConversationSectionSnapshot))]
 [JsonSerializable(typeof(ConversationSectionTurn))]
+[JsonSerializable(typeof(ConversationAttachment))]
+[JsonSerializable(typeof(ConversationFailureInfo))]
 [JsonSerializable(typeof(ConversationToolCall))]
 [JsonSerializable(typeof(PendingExecutionPlan))]
 [JsonSerializable(typeof(SessionStateSnapshot))]

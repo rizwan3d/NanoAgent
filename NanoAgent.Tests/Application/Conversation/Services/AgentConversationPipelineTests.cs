@@ -305,7 +305,9 @@ public sealed class AgentConversationPipelineTests
 
         await action.Should().ThrowAsync<ConversationPipelineException>()
             .WithMessage("Rejected after completion.");
-        session.ConversationHistory.Should().BeEmpty();
+        session.ConversationHistory.Should().ContainSingle();
+        session.ConversationTurns.Should().ContainSingle();
+        session.ConversationTurns[0].Status.Should().Be(ConversationTurnStatus.Interrupted);
         session.PendingExecutionPlan.Should().BeNull();
         hookService.Contexts.Select(static context => context.EventName)
             .Should()
@@ -2101,7 +2103,9 @@ public sealed class AgentConversationPipelineTests
         requests[2].SystemPrompt.Should().Contain("Recovery attempt 2 of 3");
         requests[3].SystemPrompt.Should().Contain("Recovery attempt 3 of 3");
         requests[3].SystemPrompt.Should().Contain("another tool-less empty response");
-        session.ConversationHistory.Should().BeEmpty();
+        session.ConversationHistory.Should().ContainSingle();
+        session.ConversationTurns.Should().ContainSingle();
+        session.ConversationTurns[0].Status.Should().Be(ConversationTurnStatus.Interrupted);
         session.PendingExecutionPlan.Should().BeNull();
         toolExecutionPipeline.VerifyNoOtherCalls();
     }
@@ -2302,7 +2306,7 @@ public sealed class AgentConversationPipelineTests
     }
 
     [Fact]
-    public async Task ProcessAsync_Should_KeepPendingPlanAndHistoryUnchanged_When_AfterTaskCompleteRejectsApprovedPlan()
+    public async Task ProcessAsync_Should_PreservePendingPlanHistory_When_AfterTaskCompleteRejectsApprovedPlan()
     {
         ReplSessionContext session = CreateSession();
         const string planningSummary =
@@ -2384,9 +2388,11 @@ public sealed class AgentConversationPipelineTests
         await action.Should().ThrowAsync<ConversationPipelineException>()
             .WithMessage("Rejected after completion.");
         session.PendingExecutionPlan.Should().NotBeNull();
-        session.ConversationHistory.Should().HaveCount(2);
+        session.ConversationHistory.Should().HaveCount(3);
         session.ConversationHistory[0].Content.Should().Be("Help me plan this refactor");
         session.ConversationHistory[1].Content.Should().Be(planningSummary);
+        session.ConversationHistory[2].Content.Should().Be("continue");
+        session.ConversationTurns[1].Status.Should().Be(ConversationTurnStatus.Interrupted);
     }
 
     [Fact]
@@ -3087,6 +3093,345 @@ public sealed class AgentConversationPipelineTests
 
         await action.Should().ThrowAsync<ConversationProviderException>()
             .WithMessage("Provider unavailable.");
+        session.ConversationTurns.Should().ContainSingle();
+        session.ConversationTurns[0].Status.Should().Be(ConversationTurnStatus.Interrupted);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_PreserveUserInput_WhenProviderFails()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.FileRead)]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConversationProviderException("Provider unavailable."));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            Mock.Of<IConversationResponseMapper>(),
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await FluentActions.Invoking(() => ProcessAsync(sut, "Implement the round winner component", session))
+            .Should()
+            .ThrowAsync<ConversationProviderException>();
+
+        session.ConversationTurns.Should().ContainSingle();
+        session.ConversationTurns[0].UserInput.Should().Be("Implement the round winner component");
+        session.ConversationTurns[0].Status.Should().Be(ConversationTurnStatus.Interrupted);
+        session.ConversationTurns[0].AssistantResponse.Should().BeNull();
+        session.ConversationHistory.Should().ContainSingle();
+        session.ConversationHistory[0].Content.Should().Be("Implement the round winner component");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_IncludeInterruptedUserTurn_InNextRequest()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([CreateToolDefinition(AgentToolNames.FileRead)]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                if (requests.Count == 0)
+                {
+                    requests.Add(request);
+                    throw new ConversationProviderException("Provider unavailable.");
+                }
+
+                requests.Add(request);
+                return Task.FromResult(new ConversationProviderPayload(
+                    ProviderKind.OpenAiCompatible,
+                    """{ "choices": [] }""",
+                    "resp_2"));
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .Setup(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                "Completed the work.",
+                [],
+                "resp_2"));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await FluentActions.Invoking(() => ProcessAsync(sut, "Implement the round winner component", session))
+            .Should()
+            .ThrowAsync<ConversationProviderException>();
+
+        session.ConversationTurns[0].Status.Should().Be(ConversationTurnStatus.Interrupted);
+
+        await ProcessAsync(sut, "Complete it", session);
+
+        requests.Should().HaveCount(2);
+        string[] userMessages = requests[1].Messages
+            .Where(static message => string.Equals(message.Role, "user", StringComparison.Ordinal))
+            .Select(static message => message.Content!)
+            .ToArray();
+        userMessages.Count(static content => content.Contains("Implement the round winner component", StringComparison.Ordinal))
+            .Should()
+            .Be(1);
+        userMessages.Count(static content => string.Equals(content, "Complete it", StringComparison.Ordinal))
+            .Should()
+            .Be(1);
+        requests[1].SystemPrompt.Should().Contain("Recovery context:");
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_PreserveSuccessfulToolResults_WhenLaterRoundFails()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([
+                CreateToolDefinition(AgentToolNames.FileRead),
+                CreateToolDefinition(AgentToolNames.ApplyPatch)
+            ]);
+
+        List<ConversationProviderRequest> requests = [];
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<ConversationProviderRequest, CancellationToken>((request, _) =>
+            {
+                requests.Add(request);
+                return requests.Count switch
+                {
+                    1 => Task.FromResult(new ConversationProviderPayload(
+                        ProviderKind.OpenAiCompatible,
+                        """{ "choices": [] }""",
+                        "resp_1")),
+                    2 => throw new ConversationProviderException("Second round failed."),
+                    _ => Task.FromResult(new ConversationProviderPayload(
+                        ProviderKind.OpenAiCompatible,
+                        """{ "choices": [] }""",
+                        "resp_3"))
+                };
+            });
+
+        Mock<IConversationResponseMapper> responseMapper = new(MockBehavior.Strict);
+        responseMapper
+            .SetupSequence(mapper => mapper.Map(It.IsAny<ConversationProviderPayload>()))
+            .Returns(new ConversationResponse(
+                null,
+                [
+                    new ConversationToolCall("call_read", AgentToolNames.FileRead, """{ "path": "README.md" }"""),
+                    new ConversationToolCall("call_patch", AgentToolNames.ApplyPatch, """{ "patch": "*** Begin Patch" }""")
+                ],
+                "resp_1"))
+            .Returns(new ConversationResponse(
+                "Finished recovering.",
+                [],
+                "resp_3"));
+
+        Mock<IToolExecutionPipeline> toolExecutionPipeline = new(MockBehavior.Strict);
+        toolExecutionPipeline
+            .Setup(pipeline => pipeline.ExecuteAsync(
+                It.Is<IReadOnlyList<ConversationToolCall>>(calls => calls.Count == 2),
+                session,
+                ConversationExecutionPhase.Execution,
+                It.IsAny<IReadOnlySet<string>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolExecutionBatchResult([
+                new ToolInvocationResult(
+                    "call_read",
+                    AgentToolNames.FileRead,
+                    ToolResultFactory.Success(
+                        "Read README.md",
+                        new WorkspaceFileReadResult("README.md", "content", 1, 1, 1, false, null, "hash", "utf-8"),
+                        ToolJsonContext.Default.WorkspaceFileReadResult)),
+                new ToolInvocationResult(
+                    "call_patch",
+                    AgentToolNames.ApplyPatch,
+                    ToolResultFactory.Success(
+                        "Applied patch.",
+                        new WorkspaceApplyPatchResult(1, 1, 0, []),
+                        ToolJsonContext.Default.WorkspaceApplyPatchResult))
+            ]));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            responseMapper.Object,
+            toolExecutionPipeline.Object,
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await FluentActions.Invoking(() => ProcessAsync(sut, "Implement the feature", session))
+            .Should()
+            .ThrowAsync<ConversationProviderException>();
+
+        session.ConversationTurns.Should().ContainSingle();
+        session.ConversationTurns[0].ToolCalls.Should().HaveCount(2);
+        session.ConversationTurns[0].ToolOutputMessages.Should().NotBeEmpty();
+
+        await ProcessAsync(sut, "Complete it", session);
+
+        ConversationProviderRequest recoveryRequest = requests.Last();
+        recoveryRequest.SystemPrompt.Should().Contain("Recovery context:");
+        recoveryRequest.Messages.Should().Contain(message =>
+            string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
+            message.Content!.Contains("Read README.md", StringComparison.Ordinal));
+        recoveryRequest.Messages.Should().Contain(message =>
+            string.Equals(message.Role, "tool", StringComparison.Ordinal) &&
+            message.Content!.Contains("Edited 0 files", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_NotPersistSecretsInFailureMetadata()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConversationProviderException("Bearer sk-abcdefghijklmnopqrstuvwxyz123456 failed."));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            Mock.Of<IConversationResponseMapper>(),
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object);
+
+        await FluentActions.Invoking(() => ProcessAsync(sut, "hello", session))
+            .Should()
+            .ThrowAsync<ConversationProviderException>();
+
+        ConversationFailureInfo? failureInfo = session.ConversationTurns[0].FailureInfo;
+        failureInfo.Should().NotBeNull();
+        failureInfo!.Category.Should().NotContain("sk-");
+        failureInfo.Category.Should().NotContain("Bearer");
+        failureInfo.ProviderName.Should().Be(session.ProviderName);
+        failureInfo.ModelId.Should().Be(session.ActiveModelId);
+    }
+
+    [Fact]
+    public async Task ProcessAsync_Should_PreserveProviderException_WhenPersistenceFails()
+    {
+        ReplSessionContext session = CreateSession();
+        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
+        secretStore
+            .Setup(store => store.LoadAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync("test-key");
+
+        Mock<IConversationConfigurationAccessor> configurationAccessor = new(MockBehavior.Strict);
+        configurationAccessor
+            .Setup(accessor => accessor.GetSettings())
+            .Returns(CreateSettings());
+
+        Mock<IToolRegistry> toolRegistry = new(MockBehavior.Strict);
+        toolRegistry
+            .Setup(registry => registry.GetToolDefinitions())
+            .Returns([]);
+
+        Mock<IConversationProviderClient> providerClient = new(MockBehavior.Strict);
+        providerClient
+            .Setup(client => client.SendAsync(
+                It.IsAny<ConversationProviderRequest>(),
+                It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new ConversationProviderException("Provider unavailable."));
+
+        AgentConversationPipeline sut = CreateSut(
+            TimeProvider.System,
+            new HeuristicTokenEstimator(),
+            secretStore.Object,
+            providerClient.Object,
+            Mock.Of<IConversationResponseMapper>(),
+            Mock.Of<IToolExecutionPipeline>(),
+            toolRegistry.Object,
+            configurationAccessor.Object,
+            sectionService: new ThrowingSectionService());
+
+        ConversationProviderException exception = (await FluentActions
+                .Invoking(() => ProcessAsync(sut, "hello", session))
+                .Should()
+                .ThrowAsync<ConversationProviderException>())
+            .Which;
+
+        exception.Message.Should().Be("Provider unavailable.");
     }
 
     [Fact]
@@ -3504,6 +3849,7 @@ public sealed class AgentConversationPipelineTests
         ILifecycleHookService? lifecycleHookService = null,
         ISkillService? skillService = null,
         IBudgetControlsUsageService? budgetControlsUsageService = null,
+        IReplSectionService? sectionService = null,
         ICodebaseIndexService? codebaseIndexService = null,
         CodebaseIndexSettings? codebaseIndexSettings = null)
     {
@@ -3524,6 +3870,7 @@ public sealed class AgentConversationPipelineTests
             skillService,
             budgetControlsUsageService: budgetControlsUsageService,
             workspaceAgentProfilePromptProvider: workspaceAgentProfilePromptProvider ?? new EmptyWorkspaceAgentProfilePromptProvider(),
+            sectionService: sectionService,
             codebaseIndexService: codebaseIndexService,
             codebaseIndexSettings: codebaseIndexSettings);
     }
@@ -3800,6 +4147,73 @@ public sealed class AgentConversationPipelineTests
 
         public Task<CodebaseIndexListResult> ListAsync(
             int limit,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+    }
+
+    private sealed class ThrowingSectionService : IReplSectionService
+    {
+        private int _saveCallCount;
+
+        public Task<ReplSessionContext> CreateNewAsync(
+            string applicationName,
+            AgentProviderProfile providerProfile,
+            string activeModelId,
+            IReadOnlyList<string> availableModelIds,
+            IAgentProfile agentProfile,
+            IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+            string? activeProviderName,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> CreateNewWithinSessionAsync(
+            string applicationName,
+            AgentProviderProfile providerProfile,
+            string activeModelId,
+            IReadOnlyList<string> availableModelIds,
+            IAgentProfile agentProfile,
+            IReadOnlyDictionary<string, int>? modelContextWindowTokens,
+            string? activeProviderName,
+            ReplSessionContext completedSection,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public void EnsureTitleGenerationStarted(
+            ReplSessionContext session,
+            string firstUserPrompt)
+        {
+        }
+
+        public Task<ReplSessionContext> ResumeAsync(
+            string applicationName,
+            string sectionId,
+            IAgentProfile? profileOverride,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task SaveIfDirtyAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            _saveCallCount++;
+            if (_saveCallCount > 1)
+            {
+                throw new InvalidOperationException("Persistence failed.");
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(
+            ReplSessionContext session,
             CancellationToken cancellationToken)
         {
             throw new NotSupportedException();
