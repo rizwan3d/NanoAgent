@@ -6,6 +6,7 @@ using NanoAgent.Application.Tools.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Workspaces;
 using Microsoft.Win32.SafeHandles;
+using System.Buffers;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Security.Cryptography;
@@ -184,7 +185,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             await WriteWorkspaceFileAsync(
                 fullPath,
                 state.Content!,
-                new FileEncodingInfo(WorkspaceTextEncoding.Utf8, "\n"),
+                CreateFileEncodingInfo(state.Encoding, state.NewLine),
                 expectedState: null,
                 cancellationToken);
         }
@@ -564,6 +565,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
         if (TryGetFileLength(fullPath, out long fileLength) && fileLength > LargeFileThresholdBytes)
         {
+            FileEncodingInfo fileEncoding = DetectFileEncoding(fullPath);
             await using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
             byte[] hashBytes = await SHA256.HashDataAsync(stream, cancellationToken);
             string hash = Convert.ToHexStringLower(hashBytes);
@@ -571,15 +573,20 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 ToWorkspaceRelativePath(fullPath),
                 exists: true,
                 content: null,
-                contentHash: hash);
+                contentHash: hash,
+                encoding: GetEncodingName(fileEncoding.Encoding),
+                newLine: fileEncoding.NewLine);
         }
 
+        FileEncodingInfo encoding = DetectFileEncoding(fullPath);
         string content = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
         return new WorkspaceFileEditState(
             ToWorkspaceRelativePath(fullPath),
             exists: true,
-            content);
+            content,
+            encoding: GetEncodingName(encoding.Encoding),
+            newLine: encoding.NewLine);
     }
 
     private async Task<WorkspaceApplyPatchFileResult> ApplyAddFileOperationAsync(
@@ -1818,7 +1825,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int sampleCount = await stream.ReadAsync(sampleBuffer, cancellationToken);
         ReadOnlySpan<byte> sample = sampleBuffer.AsSpan(0, sampleCount);
 
-        if (encoding == WorkspaceTextEncoding.Utf8 && !IsValidUtf8(sample))
+        if (encoding == WorkspaceTextEncoding.Utf8 && !IsValidUtf8Sample(sample))
         {
             throw new InvalidOperationException(
                 $"File '{Path.GetFileName(fullPath)}' is not valid UTF-8 text.");
@@ -2070,6 +2077,15 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         };
     }
 
+    private static FileEncodingInfo CreateFileEncodingInfo(
+        string? encodingName,
+        string? newLine)
+    {
+        return new FileEncodingInfo(
+            ParseWorkspaceTextEncoding(encodingName),
+            NormalizeNewLine(newLine));
+    }
+
     private static string GetEncodingName(WorkspaceTextEncoding encoding)
     {
         return encoding switch
@@ -2082,6 +2098,27 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             WorkspaceTextEncoding.Utf32BigEndian => "utf-32-be",
             _ => "utf-8"
         };
+    }
+
+    private static WorkspaceTextEncoding ParseWorkspaceTextEncoding(string? encodingName)
+    {
+        return encodingName?.Trim().ToLowerInvariant() switch
+        {
+            "utf-8" => WorkspaceTextEncoding.Utf8,
+            "utf-8-bom" => WorkspaceTextEncoding.Utf8Bom,
+            "utf-16-le" => WorkspaceTextEncoding.Utf16LittleEndian,
+            "utf-16-be" => WorkspaceTextEncoding.Utf16BigEndian,
+            "utf-32-le" => WorkspaceTextEncoding.Utf32LittleEndian,
+            "utf-32-be" => WorkspaceTextEncoding.Utf32BigEndian,
+            _ => WorkspaceTextEncoding.Utf8
+        };
+    }
+
+    private static string NormalizeNewLine(string? newLine)
+    {
+        return string.Equals(newLine, "\r\n", StringComparison.Ordinal)
+            ? "\r\n"
+            : "\n";
     }
 
     private static int GetBomLength(WorkspaceTextEncoding encoding)
@@ -2121,17 +2158,22 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             extension.Equals(".otf", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool IsValidUtf8(ReadOnlySpan<byte> bytes)
+    private static bool IsValidUtf8Sample(ReadOnlySpan<byte> bytes)
     {
-        try
+        int offset = 0;
+        while (offset < bytes.Length)
         {
-            StrictUtf8NoBom.GetString(bytes);
-            return true;
+            OperationStatus status = Rune.DecodeFromUtf8(bytes[offset..], out _, out int bytesConsumed);
+            if (status == OperationStatus.Done)
+            {
+                offset += bytesConsumed;
+                continue;
+            }
+
+            return status == OperationStatus.NeedMoreData;
         }
-        catch (DecoderFallbackException)
-        {
-            return false;
-        }
+
+        return true;
     }
 
     private static bool HasBytePrefix(
@@ -3546,7 +3588,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                     match.StartIndex,
                     pattern.Length,
                     replacementLines,
-                    hunk,
+                    hunk.Lines,
                     match.MatchStyle),
                 hunk,
                 match.MatchStyle));
@@ -3616,7 +3658,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             replacements.Add(new PatchReplacement(
                 match.StartIndex,
                 group.BeforeLines.Count,
-                group.AfterLines,
+                AdjustReplacementLinesForMatchStyle(
+                    originalLines,
+                    match.StartIndex,
+                    group.BeforeLines.Count,
+                    group.AfterLines,
+                    group.Lines,
+                    match.MatchStyle),
                 hunk,
                 match.MatchStyle));
         }
@@ -3710,6 +3758,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 return [];
             }
 
+            int groupStartIndex = index;
             List<string> beforeLines = [];
             while (index < hunk.Lines.Count &&
                    hunk.Lines[index].Kind == PatchLineKind.Removal)
@@ -3739,7 +3788,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
 
             groups.Add(new PatchIndependentReplacementGroup(
                 beforeLines,
-                afterLines));
+                afterLines,
+                hunk.Lines
+                    .Skip(groupStartIndex)
+                    .Take(index - groupStartIndex)
+                    .ToArray()));
         }
 
         return groups;
@@ -4033,11 +4086,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         int startIndex,
         int oldLineCount,
         IReadOnlyList<string> replacementLines,
-        PatchHunk hunk,
+        IReadOnlyList<PatchLine> patchLines,
         string matchStyle)
     {
-        if (!string.Equals(matchStyle, "normalized indentation", StringComparison.Ordinal) ||
-            oldLineCount <= 0)
+        bool preserveMatchedContext = !string.Equals(matchStyle, "exact text", StringComparison.Ordinal);
+        bool normalizeIndentation = string.Equals(matchStyle, "normalized indentation", StringComparison.Ordinal);
+        if ((!preserveMatchedContext && !normalizeIndentation) || oldLineCount <= 0)
         {
             return replacementLines;
         }
@@ -4049,13 +4103,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         List<string> adjustedLines = [];
         int matchedLineIndex = 0;
         int hunkIndex = 0;
+        string? previousMatchedLine = null;
 
-        while (hunkIndex < hunk.Lines.Count)
+        while (hunkIndex < patchLines.Count)
         {
-            PatchLine line = hunk.Lines[hunkIndex];
+            PatchLine line = patchLines[hunkIndex];
             if (line.Kind == PatchLineKind.Context)
             {
-                adjustedLines.Add(matchedLines[matchedLineIndex]);
+                string matchedLine = matchedLines[matchedLineIndex];
+                adjustedLines.Add(preserveMatchedContext ? matchedLine : line.Text);
+                previousMatchedLine = matchedLine;
                 matchedLineIndex++;
                 hunkIndex++;
                 continue;
@@ -4064,52 +4121,144 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
             if (line.Kind == PatchLineKind.Removal)
             {
                 List<string> removedLines = [];
-                while (hunkIndex < hunk.Lines.Count &&
-                       hunk.Lines[hunkIndex].Kind == PatchLineKind.Removal)
+                while (hunkIndex < patchLines.Count &&
+                       patchLines[hunkIndex].Kind == PatchLineKind.Removal)
                 {
-                    removedLines.Add(matchedLines[matchedLineIndex]);
+                    string matchedLine = matchedLines[matchedLineIndex];
+                    removedLines.Add(matchedLine);
+                    previousMatchedLine = matchedLine;
                     matchedLineIndex++;
                     hunkIndex++;
                 }
 
                 List<string> addedLines = [];
-                while (hunkIndex < hunk.Lines.Count &&
-                       hunk.Lines[hunkIndex].Kind == PatchLineKind.Addition)
+                while (hunkIndex < patchLines.Count &&
+                       patchLines[hunkIndex].Kind == PatchLineKind.Addition)
                 {
-                    addedLines.Add(hunk.Lines[hunkIndex].Text);
+                    addedLines.Add(patchLines[hunkIndex].Text);
                     hunkIndex++;
                 }
 
-                adjustedLines.AddRange(ApplyMatchedIndentation(removedLines, addedLines));
+                adjustedLines.AddRange(normalizeIndentation
+                    ? ApplyMatchedIndentation(removedLines, addedLines)
+                    : addedLines);
                 continue;
             }
 
-            adjustedLines.Add(line.Text);
-            hunkIndex++;
+            List<string> insertedLines = [];
+            while (hunkIndex < patchLines.Count &&
+                   patchLines[hunkIndex].Kind == PatchLineKind.Addition)
+            {
+                insertedLines.Add(patchLines[hunkIndex].Text);
+                hunkIndex++;
+            }
+
+            if (insertedLines.Count == 0)
+            {
+                continue;
+            }
+
+            IReadOnlyList<string> referenceLines =
+                previousMatchedLine is null && matchedLineIndex >= matchedLines.Length
+                    ? []
+                    : previousMatchedLine is null
+                        ? [matchedLines[matchedLineIndex]]
+                        : matchedLineIndex >= matchedLines.Length
+                            ? [previousMatchedLine]
+                            : [previousMatchedLine, matchedLines[matchedLineIndex]];
+
+            adjustedLines.AddRange(normalizeIndentation
+                ? ApplyMatchedIndentation(referenceLines, insertedLines)
+                : insertedLines);
         }
 
         return adjustedLines;
     }
 
     private static IReadOnlyList<string> ApplyMatchedIndentation(
-        IReadOnlyList<string> removedLines,
+        IReadOnlyList<string> referenceLines,
         IReadOnlyList<string> addedLines)
     {
-        if (removedLines.Count == 0 || addedLines.Count == 0)
+        if (referenceLines.Count == 0 || addedLines.Count == 0)
         {
             return addedLines;
         }
 
         string[] adjusted = new string[addedLines.Count];
+        string sourceIndent = GetSharedIndentation(referenceLines);
+        string patchIndent = GetSharedIndentation(addedLines);
         for (int index = 0; index < addedLines.Count; index++)
         {
-            string addedLine = addedLines[index];
-            string sourceIndent = GetLeadingWhitespace(removedLines[Math.Min(index, removedLines.Count - 1)]);
-            string patchIndent = GetLeadingWhitespace(addedLine);
-            adjusted[index] = sourceIndent + addedLine[patchIndent.Length..];
+            adjusted[index] = RebaseIndentation(addedLines[index], patchIndent, sourceIndent);
         }
 
         return adjusted;
+    }
+
+    private static string GetSharedIndentation(IReadOnlyList<string> lines)
+    {
+        string? sharedIndentation = null;
+        foreach (string line in lines)
+        {
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            string indentation = GetLeadingWhitespace(line);
+            sharedIndentation = sharedIndentation is null
+                ? indentation
+                : GetCommonWhitespacePrefix(sharedIndentation, indentation);
+        }
+
+        if (sharedIndentation is not null)
+        {
+            return sharedIndentation;
+        }
+
+        return lines.Count == 0
+            ? string.Empty
+            : GetLeadingWhitespace(lines[0]);
+    }
+
+    private static string GetCommonWhitespacePrefix(
+        string left,
+        string right)
+    {
+        int index = 0;
+        int maxLength = Math.Min(left.Length, right.Length);
+        while (index < maxLength && left[index] == right[index])
+        {
+            index++;
+        }
+
+        return index == 0
+            ? string.Empty
+            : left[..index];
+    }
+
+    private static string RebaseIndentation(
+        string line,
+        string fromIndent,
+        string toIndent)
+    {
+        if (string.IsNullOrEmpty(line))
+        {
+            return string.Empty;
+        }
+
+        string leadingWhitespace = GetLeadingWhitespace(line);
+        string remainder = line[leadingWhitespace.Length..];
+        if (remainder.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        string relativeIndent = leadingWhitespace.StartsWith(fromIndent, StringComparison.Ordinal)
+            ? leadingWhitespace[fromIndent.Length..]
+            : leadingWhitespace;
+
+        return toIndent + relativeIndent + remainder;
     }
 
     private static string GetLeadingWhitespace(string value)
@@ -4257,7 +4406,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 return new PatchRetryMatch(
                     retryMatch.StartIndex,
                     retryWindow.BeforeLines.Count,
-                    retryWindow.AfterLines,
+                    AdjustReplacementLinesForMatchStyle(
+                        originalLines,
+                        retryMatch.StartIndex,
+                        retryWindow.BeforeLines.Count,
+                        retryWindow.AfterLines,
+                        retryWindow.Lines,
+                        retryMatch.MatchStyle),
                     retryMatch.MatchStyle);
             }
         }
@@ -4320,16 +4475,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
                 .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Removal)
                 .Select(static line => line.Text)
                 .ToArray();
-        string[] afterLines = removalsOnly
+        PatchLine[] effectiveLines = removalsOnly
             ? workingLines
+                .Where(static line => line.Kind is PatchLineKind.Removal or PatchLineKind.Addition)
+                .ToArray()
+            : workingLines.ToArray();
+        string[] afterLines = removalsOnly
+            ? effectiveLines
                 .Where(static line => line.Kind == PatchLineKind.Addition)
                 .Select(static line => line.Text)
                 .ToArray()
-            : workingLines
+            : effectiveLines
                 .Where(static line => line.Kind is PatchLineKind.Context or PatchLineKind.Addition)
                 .Select(static line => line.Text)
                 .ToArray();
-        return new PatchRetryWindow(beforeLines, beforeLineKinds, afterLines);
+        return new PatchRetryWindow(beforeLines, beforeLineKinds, afterLines, effectiveLines);
     }
 
     private static string DescribeCandidateLines(
@@ -4589,11 +4749,13 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService
         string MatchStyle);
     private readonly record struct PatchIndependentReplacementGroup(
         IReadOnlyList<string> BeforeLines,
-        IReadOnlyList<string> AfterLines);
+        IReadOnlyList<string> AfterLines,
+        IReadOnlyList<PatchLine> Lines);
     private readonly record struct PatchRetryWindow(
         IReadOnlyList<string> BeforeLines,
         IReadOnlyList<PatchLineKind> BeforeLineKinds,
-        IReadOnlyList<string> AfterLines);
+        IReadOnlyList<string> AfterLines,
+        IReadOnlyList<PatchLine> Lines);
 
     private readonly record struct PatchSequenceSearchResult(
         PatchSequenceSearchStatus Status,

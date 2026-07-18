@@ -315,6 +315,25 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadFileAsync_Should_AllowUtf8SampleEndingMidCodePoint()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "boundary.txt");
+        string content = new string('a', 4_092) + "\n🙂";
+
+        await File.WriteAllTextAsync(filePath, content, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "boundary.txt",
+            offset: 2,
+            limit: 1,
+            CancellationToken.None);
+
+        result.Content.Should().Be("2: 🙂");
+        result.Encoding.Should().Be("utf-8");
+    }
+
+    [Fact]
     public async Task DeleteFileAsync_Should_DeleteFileAndReturnPreview()
     {
         WorkspaceFileService sut = CreateSut();
@@ -1931,6 +1950,60 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveCanonicalUnicodeContext_When_UsingRelaxedMatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "unicode.txt");
+        await File.WriteAllTextAsync(
+            filePath,
+            "Cafe\u0301\nvalue = old;\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: unicode.txt
+            @@
+             Café
+            -value = old;
+            +value = new;
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("Cafe\u0301\nvalue = new;\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveTrailingWhitespaceContext_When_UsingRelaxedMatch()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "TrailingContext.cs");
+        await File.WriteAllTextAsync(
+            filePath,
+            "value = old;\nkeep();   \n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: TrailingContext.cs
+            @@
+            -value = old;
+            +value = new;
+             keep();
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("value = new;\nkeep();   \n");
+    }
+
+    [Fact]
     public async Task ApplyPatchAsync_Should_MatchBlankContextLine_BetweenContentLines()
     {
         WorkspaceFileService sut = CreateSut();
@@ -2087,6 +2160,90 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         (await File.ReadAllTextAsync(filePath, CancellationToken.None))
             .Should()
             .Be("def check(flag):\n    if flag:\n        return 2\n    return 0\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveRelativeIndentation_ForRetryMatchAdditions()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "retry-indent.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "header changed\n        if ready:\n            return old\nfooter changed\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: retry-indent.py
+            @@
+             header
+            -    if ready:
+            -        return old
+            +    if ready:
+            +        return new
+            +        log_change()
+             footer
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("header changed\n        if ready:\n            return new\n            log_change()\nfooter changed\n");
+    }
+
+    [Fact]
+    public async Task ApplyPatchAsync_Should_PreserveRelativeIndentation_ForIndependentReplacementMatches()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "independent-indent.py");
+        await File.WriteAllTextAsync(
+            filePath,
+            "header changed\n        if ready:\n            return old\nfooter changed\n",
+            CancellationToken.None);
+
+        await sut.ApplyPatchAsync(
+            """
+            *** Begin Patch
+            *** Update File: independent-indent.py
+            @@
+             stale header
+            -    if ready:
+            -        return old
+            +    if ready:
+            +        return new
+            +        log_change()
+             stale footer
+            *** End Patch
+            """,
+            CancellationToken.None);
+
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("header changed\n        if ready:\n            return new\n            log_change()\nfooter changed\n");
+    }
+
+    [Fact]
+    public async Task ApplyFileEditStatesAsync_Should_PreserveEncodingAndLineEndingsDuringUndo()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "undo.txt");
+        byte[] originalBytes = Encoding.Unicode.GetPreamble()
+            .Concat(Encoding.Unicode.GetBytes("alpha\r\nbeta\r\n"))
+            .ToArray();
+        await File.WriteAllBytesAsync(filePath, originalBytes, CancellationToken.None);
+
+        WorkspaceFileWriteExecutionResult result = await sut.WriteFileWithTrackingAsync(
+            "undo.txt",
+            "changed\ncontent\n",
+            overwrite: true,
+            CancellationToken.None);
+
+        await sut.ApplyFileEditStatesAsync(result.EditTransaction.BeforeStates, CancellationToken.None);
+
+        byte[] restoredBytes = await File.ReadAllBytesAsync(filePath, CancellationToken.None);
+        restoredBytes.Should().Equal(originalBytes);
     }
 
     public void Dispose()

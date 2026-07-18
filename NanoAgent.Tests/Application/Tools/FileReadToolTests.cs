@@ -47,6 +47,36 @@ public sealed class FileReadToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_NotSerializeDuplicateContentProperties()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ReadFileAsync("README.md", 1, 2_000, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WorkspaceFileReadResult(
+                "README.md",
+                rawContent: "1: hello",
+                displayContent: "1: hello",
+                startLine: 1,
+                endLine: 1,
+                totalLines: 1,
+                truncated: false,
+                nextOffset: null,
+                sha256: "abc123",
+                encoding: "utf-8"));
+
+        FileReadTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": "README.md" }"""),
+            CancellationToken.None);
+
+        using JsonDocument jsonResult = JsonDocument.Parse(result.JsonResult);
+        jsonResult.RootElement.TryGetProperty("Content", out _).Should().BeFalse();
+        jsonResult.RootElement.GetProperty("RawContent").GetString().Should().Be("1: hello");
+        jsonResult.RootElement.GetProperty("DisplayContent").GetString().Should().Be("1: hello");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_RedactEnvironmentFileContents()
     {
         bool originalValue = NanoAgent.Application.Utilities.SecretRedactor.IsEnabled;
