@@ -21,21 +21,6 @@ public static partial class Program
     private const int ClipboardReadTimeoutMilliseconds = 2000;
     private const int MaxSlashCommandSuggestionCount = 8;
     private const int TerminalSequenceReadTimeoutMilliseconds = 25;
-    private const string EnableAlternateScreenSequence = "\u001b[?1049h";
-    private const string DisableAlternateScreenSequence = "\u001b[?1049l";
-    private const string EnableBracketedPasteSequence = "\u001b[?2004h";
-    private const string DisableBracketedPasteSequence = "\u001b[?2004l";
-    private const string DisableWheelScrollingSequence = "\u001b[?1007l";
-    // Any-event tracking (?1003h) plus SGR extended coordinates (?1006h): reports
-    // clicks, hover/motion, and wheel events with row/column so selection modals can
-    // follow the pointer in real time. This captures the mouse, so native drag-select
-    // needs Shift+drag (or Reader View / Copy mode) -- an accepted trade-off for
-    // richer in-app mouse interaction.
-    private const string EnableMouseTrackingSequence = "\u001b[?1003h\u001b[?1006h";
-    private const string DisableMouseTrackingSequence = "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l";
-    private const int StdInputHandle = -10;
-    private const uint EnableVirtualTerminalInput = 0x0200;
-    private static uint? s_originalInputMode;
     private static readonly string[] Spinner =
     [
         "⠋",
@@ -288,8 +273,7 @@ public static partial class Program
 
         try
         {
-            Console.CursorVisible = false;
-            EnableTerminalWheelScrolling();
+            using TerminalSession terminal = TerminalSession.EnterInteractiveMode();
 
             UiBridge uiBridge = new(providerAuthKey);
             BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
@@ -355,9 +339,6 @@ public static partial class Program
             finally
             {
                 AnsiConsole.Clear();
-                DisableTerminalWheelScrolling();
-                Console.CursorVisible = true;
-                Console.ResetColor();
                 if (state is not null)
                 {
                     state.LifetimeCancellation.Dispose();
