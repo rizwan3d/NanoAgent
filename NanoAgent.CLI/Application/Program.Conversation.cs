@@ -693,7 +693,7 @@ public static partial class Program
         state.FileEditsSummaryMessage.FileEdits = files;
     }
 
-    private static void UpdateStreaming(AppState state)
+    internal static void UpdateStreaming(AppState state)
     {
         state.SpinnerFrame++;
 
