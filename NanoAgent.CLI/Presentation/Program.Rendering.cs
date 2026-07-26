@@ -19,7 +19,7 @@ public static partial class Program
     private const string BusyStatusText = "NanoAgent is working";
     private const string InputSelectionMarkupStyle = "black on grey70";
 
-    private static IRenderable BuildUi(AppState state)
+    internal static IRenderable BuildUi(AppState state)
     {
         return BuildUi(state, GetWindowWidth(), GetWindowHeight());
     }

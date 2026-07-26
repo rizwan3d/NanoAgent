@@ -9,7 +9,7 @@ namespace NanoAgent.CLI;
 
 public static partial class Program
 {
-    private static void HandleInput(AppState state)
+    internal static void HandleInput(AppState state)
     {
         bool appendedInputInBatch = false;
         int pastedLineBreaksInBatch = 0;

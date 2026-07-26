@@ -1,8 +1,6 @@
-﻿using NanoAgent.Application.Backend;
-using NanoAgent.Application.Commands;
+using NanoAgent.Application.Backend;
 using NanoAgent.Application.Exceptions;
 using NanoAgent.Application.Models;
-using NanoAgent.Infrastructure.WindowsSandbox;
 using NanoAgent.Infrastructure.Telemetry;
 using Spectre.Console;
 using System.Text;
@@ -34,510 +32,21 @@ public static partial class Program
         "⠇",
         "⠏"
     ];
-    public static async Task<int> Main(string[]? args)
+
+    public static Task<int> Main(string[]? args)
     {
         Console.OutputEncoding = Encoding.UTF8;
-        string[] effectiveArgs = args ?? [];
-        if (TryHandleWindowsSandboxSpecialInvocation(effectiveArgs, out int specialExitCode))
-        {
-            return specialExitCode;
-        }
-
-        CliInvocation invocation;
-        try
-        {
-            invocation = CliInvocation.Parse(
-                effectiveArgs,
-                Console.IsInputRedirected,
-                Console.In.ReadToEnd);
-        }
-        catch (ArgumentException exception)
-        {
-            Console.Error.WriteLine(exception.Message);
-            Console.Error.WriteLine();
-            WriteUsage(Console.Error);
-            return 2;
-        }
-
-        if (invocation.ShowHelp)
-        {
-            WriteUsage(Console.Out);
-            return 0;
-        }
-
-        if (invocation.ShowVersion)
-        {
-            Console.Out.WriteLine(GetVersionText());
-            return 0;
-        }
-
-        if (invocation.Mode == CliMode.SingleTurn)
-        {
-            return await RunSingleTurnAsync(
-                invocation.RuntimeArguments.WithDefaults(
-                    BackendRuntimeOptions.CliSurface),
-                invocation.ProviderAuthKey,
-                invocation.Prompt ?? string.Empty,
-                invocation.JsonOutput,
-                invocation.AutoApproveAllTools);
-        }
-
-        if (invocation.Mode == CliMode.Acp)
-        {
-            return await RunAcpAsync(
-                invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface).RawArgs,
-                invocation.ProviderAuthKey,
-                invocation.NoOldReader,
-                invocation.AutoApproveAllTools);
-        }
-
-        await RunInteractiveAsync(
-            invocation.RuntimeArguments.WithDefaults(BackendRuntimeOptions.CliSurface),
-            invocation.ProviderAuthKey,
-            invocation.NoOldReader,
-            invocation.AutoApproveAllTools);
-        return 0;
+        return CliApplication.RunAsync(args ?? []);
     }
 
     internal static bool TryHandleWindowsSandboxSpecialInvocation(
         IReadOnlyList<string> args,
         out int exitCode)
     {
-        if (TryHandleWindowsSandboxSetupInvocation(args, out exitCode))
-        {
-            return true;
-        }
-
-        return TryHandleWindowsSandboxRunnerInvocation(args, out exitCode);
+        return SandboxInvocationParser.TryHandleSpecialInvocation(args, out exitCode);
     }
 
-    private static bool TryHandleWindowsSandboxSetupInvocation(
-        IReadOnlyList<string> args,
-        out int exitCode)
-    {
-        exitCode = 0;
-
-        int commandIndex = -1;
-        for (int index = 0; index < args.Count; index++)
-        {
-            if (string.Equals(
-                    args[index],
-                    WindowsSandboxSetupOrchestrator.SetupCommandArgument,
-                    StringComparison.Ordinal))
-            {
-                commandIndex = index;
-                break;
-            }
-        }
-
-        if (commandIndex < 0)
-        {
-            return false;
-        }
-
-        int payloadIndex = commandIndex + 1;
-        if (payloadIndex >= args.Count || string.IsNullOrWhiteSpace(args[payloadIndex]))
-        {
-            Console.Error.WriteLine("Missing setup payload for Windows sandbox setup mode.");
-            exitCode = 2;
-            return true;
-        }
-
-        exitCode = WindowsSandboxSetupOrchestrator.RunEncodedSetupPayload(args[payloadIndex]);
-        return true;
-    }
-
-    private static bool TryHandleWindowsSandboxRunnerInvocation(
-        IReadOnlyList<string> args,
-        out int exitCode)
-    {
-        exitCode = 0;
-
-        if (!args.Any(arg => string.Equals(
-                arg,
-                WindowsSandboxProcessRunner.RunnerCommandArgument,
-                StringComparison.Ordinal)))
-        {
-            return false;
-        }
-
-        if (!TryReadRunnerPipeArgument(args, "--pipe-in", out string? pipeIn) ||
-            !TryReadRunnerPipeArgument(args, "--pipe-out", out string? pipeOut))
-        {
-            Console.Error.WriteLine("Missing required pipe arguments for Windows sandbox runner mode.");
-            exitCode = 2;
-            return true;
-        }
-
-        exitCode = WindowsSandboxProcessRunner.RunPipeRunner(
-            WindowsSandboxRunnerClient.ParsePipeArgument(pipeIn!),
-            WindowsSandboxRunnerClient.ParsePipeArgument(pipeOut!));
-        return true;
-    }
-
-    private static bool TryReadRunnerPipeArgument(
-        IReadOnlyList<string> args,
-        string optionName,
-        out string? value)
-    {
-        value = null;
-
-        for (int index = 0; index < args.Count; index++)
-        {
-            string arg = args[index];
-            if (string.Equals(arg, optionName, StringComparison.OrdinalIgnoreCase))
-            {
-                int valueIndex = index + 1;
-                if (valueIndex >= args.Count || string.IsNullOrWhiteSpace(args[valueIndex]))
-                {
-                    return false;
-                }
-
-                value = args[valueIndex].Trim();
-                return true;
-            }
-
-            string prefix = optionName + "=";
-            if (!arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            string candidate = arg[prefix.Length..].Trim();
-            if (string.IsNullOrWhiteSpace(candidate))
-            {
-                return false;
-            }
-
-            value = candidate;
-            return true;
-        }
-
-        return false;
-    }
-
-    private static async Task<int> RunAcpAsync(
-        string[] args,
-        string? providerAuthKey,
-        bool noOldReader,
-        bool autoApproveAllTools)
-    {
-        AcpServer server = new(
-            Console.In,
-            Console.Out,
-            Console.Error,
-            args,
-            providerAuthKey,
-            noOldReader,
-            autoApproveAllTools);
-
-        using CancellationTokenSource cancellation = new();
-        ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancellation.Cancel();
-        };
-
-        Console.CancelKeyPress += cancelKeyPressHandler;
-
-        try
-        {
-            await server.RunAsync(cancellation.Token);
-            return 0;
-        }
-        catch (OperationCanceledException)
-        {
-            return 130;
-        }
-        catch (Exception exception)
-        {
-            Console.Error.WriteLine($"NanoAgent ACP error: {exception.Message}");
-            return 1;
-        }
-        finally
-        {
-            Console.CancelKeyPress -= cancelKeyPressHandler;
-            await server.DisposeAsync();
-        }
-    }
-
-    private static async Task RunInteractiveAsync(
-        BackendRuntimeArguments runtimeArguments,
-        string? providerAuthKey,
-        bool noOldReader,
-        bool autoApproveAllTools)
-    {
-        ConsoleCancelEventHandler? cancelKeyPressHandler = null;
-        INanoAgentBackend? backend = null;
-        AppState? state = null;
-
-        try
-        {
-            using TerminalSession terminal = TerminalSession.EnterInteractiveMode();
-
-            UiBridge uiBridge = new(providerAuthKey);
-            BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
-                    EnsureStartupPromptsArg(runtimeArguments.RawArgs, enabled: true))
-                .WithDefaults(
-                    runtimeArguments.EffectiveAppSurface(BackendRuntimeOptions.CliSurface),
-                    runtimeArguments.SkipUpdateCheck);
-            backend = new NanoAgentBackend(
-                interactiveRuntimeArguments,
-                sessionMcpServers: [],
-                autoApproveAllTools);
-            state = new AppState(uiBridge, backend);
-            cancelKeyPressHandler = (_, eventArgs) =>
-            {
-                eventArgs.Cancel = true;
-                state.Running = false;
-            };
-
-            Console.CancelKeyPress += cancelKeyPressHandler;
-            StartInitialization(state, noOldReader);
-
-            await AnsiConsole
-                .Live(BuildUi(state))
-                .StartAsync(async context =>
-                {
-                    while (state.Running)
-                    {
-                        state.UiBridge.ApplyPending(state);
-                        HandleInput(state);
-                        UpdateModal(state);
-                        UpdateStreaming(state);
-
-                        // While the reader view is open we leave the screen untouched
-                        // unless it has been marked dirty (entered or scrolled), so a
-                        // native terminal text selection is not wiped by the next frame.
-                        if (!state.IsReaderViewActive || state.ReaderViewDirty)
-                        {
-                            context.UpdateTarget(BuildUi(state));
-                            context.Refresh();
-                            state.ReaderViewDirty = false;
-                        }
-
-                        await Task.Delay(16);
-                    }
-                });
-        }
-        finally
-        {
-            if (cancelKeyPressHandler is not null)
-            {
-                Console.CancelKeyPress -= cancelKeyPressHandler;
-            }
-
-            state?.LifetimeCancellation.Cancel();
-
-            try
-            {
-                if (backend is not null)
-                {
-                    await backend.DisposeAsync();
-                }
-            }
-            finally
-            {
-                AnsiConsole.Clear();
-                if (state is not null)
-                {
-                    state.LifetimeCancellation.Dispose();
-                    WriteFatalExitMessage(state);
-                    WriteExitResumeHint(state);
-                }
-            }
-        }
-    }
-
-    private static async Task<int> RunSingleTurnAsync(
-        BackendRuntimeArguments runtimeArguments,
-        string? providerAuthKey,
-        string prompt,
-        bool jsonOutput,
-        bool autoApproveAllTools)
-    {
-        if (string.IsNullOrWhiteSpace(prompt))
-        {
-            WriteSingleTurnError(jsonOutput, "missing_prompt", "No prompt was provided.");
-            return 2;
-        }
-
-        ConsoleBridge uiBridge = new(providerAuthKey);
-        await using INanoAgentBackend backend = new NanoAgentBackend(
-            runtimeArguments,
-            sessionMcpServers: [],
-            autoApproveAllTools);
-        using CancellationTokenSource cancellation = new();
-        ConsoleCancelEventHandler cancelKeyPressHandler = (_, eventArgs) =>
-        {
-            eventArgs.Cancel = true;
-            cancellation.Cancel();
-        };
-
-        Console.CancelKeyPress += cancelKeyPressHandler;
-
-        try
-        {
-            BackendSessionInfo sessionInfo = await backend.InitializeAsync(uiBridge, cancellation.Token);
-
-            string normalizedPrompt = prompt.Trim();
-            if (normalizedPrompt.StartsWith("/", StringComparison.Ordinal))
-            {
-                if (CustomSlashCommandService.TryExpand(
-                        Directory.GetCurrentDirectory(),
-                        normalizedPrompt,
-                        out CustomSlashCommandResolution? customCommand,
-                        out string? customCommandError))
-                {
-                    if (customCommand is null)
-                    {
-                        WriteSingleTurnError(
-                            jsonOutput,
-                            "custom_command_error",
-                            customCommandError ?? "Custom command could not be expanded.");
-                        return 1;
-                    }
-
-                    ConversationTurnResult customResult = await backend.RunTurnAsync(
-                        customCommand.ExpandedPrompt,
-                        uiBridge,
-                        cancellation.Token);
-
-                    Console.WriteLine(jsonOutput
-                        ? CliJsonOutputWriter.FormatTurn(customResult, sessionInfo)
-                        : customResult.ResponseText);
-                    return 0;
-                }
-
-                BackendCommandResult commandResult = await backend.RunCommandAsync(
-                    normalizedPrompt,
-                    cancellation.Token);
-
-                if (jsonOutput)
-                {
-                    Console.WriteLine(CliJsonOutputWriter.FormatCommand(commandResult));
-                }
-                else
-                {
-                    WriteCommandResult(commandResult.CommandResult);
-                }
-
-                return commandResult.CommandResult.FeedbackKind == ReplFeedbackKind.Error ? 1 : 0;
-            }
-
-            ConversationTurnResult result = await backend.RunTurnAsync(
-                normalizedPrompt,
-                uiBridge,
-                cancellation.Token);
-
-            Console.WriteLine(jsonOutput
-                ? CliJsonOutputWriter.FormatTurn(result, sessionInfo)
-                : result.ResponseText);
-            return 0;
-        }
-        catch (PromptCancelledException exception)
-        {
-            WriteSingleTurnError(jsonOutput, "prompt_cancelled", exception.Message);
-            return 1;
-        }
-        catch (OperationCanceledException)
-        {
-            WriteSingleTurnError(jsonOutput, "cancelled", "Cancelled.");
-            return 130;
-        }
-        catch (Exception exception)
-        {
-            WriteSingleTurnError(jsonOutput, "error", exception.Message);
-            return 1;
-        }
-        finally
-        {
-            Console.CancelKeyPress -= cancelKeyPressHandler;
-        }
-    }
-
-    private static void WriteSingleTurnError(
-        bool jsonOutput,
-        string errorCode,
-        string message)
-    {
-        if (jsonOutput)
-        {
-            Console.WriteLine(CliJsonOutputWriter.FormatError(errorCode, message));
-            return;
-        }
-
-        Console.Error.WriteLine(errorCode == "error"
-            ? $"NanoAgent error: {message}"
-            : message);
-    }
-
-    private static void WriteCommandResult(ReplCommandResult result)
-    {
-        if (string.IsNullOrWhiteSpace(result.Message))
-        {
-            return;
-        }
-
-        TextWriter writer = result.FeedbackKind == ReplFeedbackKind.Info
-            ? Console.Out
-            : Console.Error;
-
-        string prefix = result.FeedbackKind switch
-        {
-            ReplFeedbackKind.Error => "Error: ",
-            ReplFeedbackKind.Warning => "Warning: ",
-            _ => string.Empty
-        };
-
-        writer.WriteLine(prefix + result.Message.Trim());
-    }
-
-    private static void WriteUsage(TextWriter writer)
-    {
-        writer.WriteLine(
-            $"""
-            {GetVersionText()}
-
-            Usage:
-              nanoai [options]                    Start the interactive terminal UI
-              nanoai [options] "<prompt>"         Run one prompt and print the response
-              nanoai [options] --prompt "<text>"  Run one prompt and print the response
-              echo "<prompt>" | nanoai [options]  Run one prompt from standard input
-              nanoai --acp [options]              Run an Agent Client Protocol server
-
-            Options:
-              --acp                Speak ACP over stdin/stdout for compatible editors
-              --interactive        Start the terminal UI explicitly
-              --stdin              Read the one-shot prompt from standard input
-              --json               Write one-shot result as a JSON object
-              -y, --yes            Approve promptable tool requests for this run
-              -p, --prompt <text>  One-shot prompt text
-              --sandbox-mode <mode>
-                                   Override sandbox mode: read-only, workspace-write, or danger-full-access
-              --provider-auth-key <key>
-                                   Use this key for provider API-key onboarding
-              --section <id>       Resume an existing section
-              --session <id>       Alias for --section
-              --no-update-check    Skip checking for application updates on startup
-              --no-old-reader      Resume a section without replaying old messages to the screen
-              --profile <name>     Use an agent profile
-              --thinking <on|off>  Override thinking mode
-              -v, --version        Show version
-              -h, --help           Show help
-              --doctor             Run system diagnostics and print doctor report
-
-            Note:
-              Run nanoai once to complete provider setup before using one-shot prompts.
-            """);
-    }
-
-    private static string GetVersionText()
-    {
-        return $"NanoAgent CLI {ProductTelemetryHelpers.GetNanoAgentVersion()}";
-    }
-
-    private static void WriteFatalExitMessage(AppState state)
+    internal static void WriteFatalExitMessage(AppState state)
     {
         if (string.IsNullOrWhiteSpace(state.FatalExitMessage))
         {
@@ -547,9 +56,8 @@ public static partial class Program
         Console.WriteLine(state.FatalExitMessage.Trim());
     }
 
-    private static void WriteExitResumeHint(AppState state)
+    internal static void WriteExitResumeHint(AppState state)
     {
-        // Wordmark on top every time we exit
         AnsiConsole.Write(new Markup(CliBranding.BuildHeaderBodyMarkup()));
         Console.WriteLine();
 
@@ -577,7 +85,7 @@ public static partial class Program
         return state.HasMadeFirstLlmCall ? 3 : 9;
     }
 
-    private static void StartInitialization(
+    internal static void StartInitialization(
         AppState state,
         bool noOldReader = false)
     {
@@ -635,7 +143,7 @@ public static partial class Program
         });
     }
 
-    private static void ApplySessionInfo(
+    internal static void ApplySessionInfo(
        AppState state,
        BackendSessionInfo sessionInfo)
    {
@@ -715,7 +223,7 @@ public static partial class Program
         }
     }
 
-    private static string[] EnsureStartupPromptsArg(
+    internal static string[] EnsureStartupPromptsArg(
         IReadOnlyList<string> args,
         bool enabled)
     {
