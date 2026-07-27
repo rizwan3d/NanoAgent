@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Logging;
 using NanoAgent.Application.Abstractions;
-using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
 using System.Text.Json;
 
@@ -8,9 +7,9 @@ namespace NanoAgent.Infrastructure.CustomTools;
 
 internal sealed class CustomToolDynamicProvider : IDynamicToolProvider
 {
+    private readonly CustomToolProcessExecutor _processExecutor;
     private readonly IUserDataPathProvider _userDataPathProvider;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
-    private readonly IProcessRunner _processRunner;
     private readonly ILogger<CustomToolDynamicProvider> _logger;
     private readonly object _gate = new();
     private bool _initialized;
@@ -20,12 +19,12 @@ internal sealed class CustomToolDynamicProvider : IDynamicToolProvider
     public CustomToolDynamicProvider(
         IUserDataPathProvider userDataPathProvider,
         IWorkspaceRootProvider workspaceRootProvider,
-        IProcessRunner processRunner,
+        CustomToolProcessExecutor processExecutor,
         ILogger<CustomToolDynamicProvider> logger)
     {
         _userDataPathProvider = userDataPathProvider;
         _workspaceRootProvider = workspaceRootProvider;
-        _processRunner = processRunner;
+        _processExecutor = processExecutor;
         _logger = logger;
     }
 
@@ -68,9 +67,12 @@ internal sealed class CustomToolDynamicProvider : IDynamicToolProvider
         List<ITool> tools = [];
         List<DynamicToolProviderStatus> statuses = [];
         HashSet<string> usedToolNames = new(StringComparer.Ordinal);
+        string workspaceRoot = Path.GetFullPath(_workspaceRootProvider.GetWorkspaceRoot());
 
         foreach (CustomToolConfiguration configuration in configurations)
         {
+            configuration.UntrustedWorkspaceDefinition = IsWorkspaceDefined(configuration.SourcePath, workspaceRoot);
+
             if (!configuration.Enabled)
             {
                 statuses.Add(CreateStatus(configuration, enabled: false, available: false, toolCount: 0, "disabled"));
@@ -93,7 +95,7 @@ internal sealed class CustomToolDynamicProvider : IDynamicToolProvider
             {
                 string toolName = CustomToolName.Create(configuration.Name, usedToolNames);
                 usedToolNames.Add(toolName);
-                tools.Add(new CustomTool(toolName, configuration, _processRunner));
+                tools.Add(new CustomTool(toolName, configuration, _processExecutor));
                 statuses.Add(CreateStatus(configuration, enabled: true, available: true, toolCount: 1, configuration.Command));
             }
             catch (Exception exception)
@@ -145,5 +147,23 @@ internal sealed class CustomToolDynamicProvider : IDynamicToolProvider
             available,
             toolCount,
             details);
+    }
+
+    private static bool IsWorkspaceDefined(
+        string? sourcePath,
+        string workspaceRoot)
+    {
+        if (string.IsNullOrWhiteSpace(sourcePath))
+        {
+            return false;
+        }
+
+        string normalizedSourcePath = Path.GetFullPath(sourcePath);
+        string normalizedWorkspaceRoot = Path.GetFullPath(workspaceRoot)
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string workspacePrefix = normalizedWorkspaceRoot + Path.DirectorySeparatorChar;
+
+        return string.Equals(normalizedSourcePath, normalizedWorkspaceRoot, StringComparison.OrdinalIgnoreCase) ||
+               normalizedSourcePath.StartsWith(workspacePrefix, StringComparison.OrdinalIgnoreCase);
     }
 }

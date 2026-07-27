@@ -73,6 +73,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();
         services.AddSingleton<IToolAuditLogService, WorkspaceToolAuditLogService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
+        services.AddSingleton<CustomToolProcessExecutor>();
         services.AddSingleton<NanoAgentMcpConfigLoader>();
         services.AddSingleton<IDynamicToolProvider, CustomToolDynamicProvider>();
         services.AddSingleton<IDynamicToolProvider, McpDynamicToolProvider>();

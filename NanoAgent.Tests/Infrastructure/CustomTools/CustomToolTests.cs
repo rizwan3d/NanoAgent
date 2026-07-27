@@ -1,7 +1,9 @@
 using FluentAssertions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Abstractions;
 using NanoAgent.Infrastructure.CustomTools;
 using NanoAgent.Infrastructure.Secrets;
+using NanoAgent.Infrastructure.WindowsSandbox;
 using System.Text.Json;
 
 namespace NanoAgent.Tests.Infrastructure.CustomTools;
@@ -44,7 +46,10 @@ public sealed class CustomToolTests
             Cwd = workspacePath
         };
         configuration.Args.Add("tools/count.py");
-        CustomTool sut = new("custom__word_count", configuration, processRunner);
+        CustomTool sut = new(
+            "custom__word_count",
+            configuration,
+            CreateExecutor(processRunner, workspacePath));
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext("""{ "text": "hello world" }""", workspacePath),
@@ -67,7 +72,10 @@ public sealed class CustomToolTests
         {
             Command = "node"
         };
-        CustomTool sut = new("custom__lint", configuration, processRunner);
+        CustomTool sut = new(
+            "custom__lint",
+            configuration,
+            CreateExecutor(processRunner));
 
         ToolResult result = await sut.ExecuteAsync(
             CreateContext("{}"),
@@ -86,12 +94,62 @@ public sealed class CustomToolTests
         {
             Command = "node"
         };
-        CustomTool sut = new("custom__lint", configuration, new FakeProcessRunner(_ =>
-            new ProcessExecutionResult(0, string.Empty, string.Empty)));
+        CustomTool sut = new(
+            "custom__lint",
+            configuration,
+            CreateExecutor(new FakeProcessRunner(_ =>
+                new ProcessExecutionResult(0, string.Empty, string.Empty))));
 
         sut.PermissionRequirements.Should().Contain("RequireApproval");
         sut.PermissionRequirements.Should().Contain("custom_tool");
         sut.PermissionRequirements.Should().Contain("custom:lint");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ExposeSandboxMetadataToProcessEnvironment()
+    {
+        string workspacePath = Path.Combine(Path.GetTempPath(), "NanoAgent-CustomToolTest");
+        Directory.CreateDirectory(workspacePath);
+        ProcessExecutionRequest? capturedRequest = null;
+        FakeProcessRunner processRunner = new(request =>
+        {
+            capturedRequest = request;
+            return new ProcessExecutionResult(0, "{}", string.Empty);
+        });
+        FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new(request =>
+        {
+            capturedRequest = request;
+            return new ProcessExecutionResult(0, "{}", string.Empty);
+        });
+        CustomToolConfiguration configuration = new("lint")
+        {
+            Command = "node",
+            Cwd = workspacePath
+        };
+        CustomTool sut = new(
+            "custom__lint",
+            configuration,
+            CreateExecutor(
+                processRunner,
+                workspacePath,
+                new PermissionSettings
+                {
+                    SandboxMode = ToolSandboxMode.ReadOnly
+                },
+                windowsSandboxProcessRunner));
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("{}", workspacePath),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        capturedRequest.Should().NotBeNull();
+        capturedRequest!.EnvironmentVariables.Should().NotBeNull();
+        capturedRequest.EnvironmentVariables!["NANOAGENT_SANDBOX_MODE"].Should().Be("read-only");
+        capturedRequest.EnvironmentVariables["NANOAGENT_SANDBOX_EFFECTIVE_MODE"].Should().Be("read-only");
+        capturedRequest.EnvironmentVariables["NANOAGENT_SANDBOX_PERMISSIONS"].Should().Be("use_default");
+        capturedRequest.EnvironmentVariables["NANOAGENT_CUSTOM_TOOL_TRUSTED"].Should().Be("1");
+        capturedRequest.EnvironmentVariables["NANOAGENT_WORKSPACE_ROOT"].Should().Be(Path.GetFullPath(workspacePath));
     }
 
     private static ToolExecutionContext CreateContext(string argumentsJson)
@@ -99,6 +157,23 @@ public sealed class CustomToolTests
         return CreateContext(
             argumentsJson,
             Path.Combine(Path.GetTempPath(), "NanoAgent-CustomToolTest"));
+    }
+
+    private static CustomToolProcessExecutor CreateExecutor(
+        IProcessRunner processRunner,
+        string? workspacePath = null,
+        PermissionSettings? permissionSettings = null,
+        IWindowsSandboxProcessRunner? windowsSandboxProcessRunner = null)
+    {
+        string root = workspacePath ?? Path.Combine(Path.GetTempPath(), "NanoAgent-CustomToolTest");
+        return new CustomToolProcessExecutor(
+            processRunner,
+            new StubWorkspaceRootProvider(root),
+            permissionSettings ?? new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            },
+            windowsSandboxProcessRunner);
     }
 
     private static ToolExecutionContext CreateContext(
@@ -133,6 +208,47 @@ public sealed class CustomToolTests
             CancellationToken cancellationToken)
         {
             return Task.FromResult(_handler(request));
+        }
+    }
+
+    private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
+    {
+        private readonly string _workspaceRoot;
+
+        public StubWorkspaceRootProvider(string workspaceRoot)
+        {
+            _workspaceRoot = workspaceRoot;
+        }
+
+        public string GetWorkspaceRoot()
+        {
+            return _workspaceRoot;
+        }
+    }
+
+    private sealed class FakeWindowsSandboxProcessRunner : IWindowsSandboxProcessRunner
+    {
+        private readonly Func<ProcessExecutionRequest, ProcessExecutionResult> _handler;
+
+        public FakeWindowsSandboxProcessRunner(Func<ProcessExecutionRequest, ProcessExecutionResult> handler)
+        {
+            _handler = handler;
+        }
+
+        public Task<ProcessExecutionResult> RunAsync(
+            ProcessExecutionRequest request,
+            WindowsSandboxExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(_handler(request));
+        }
+
+        public Task<IBackgroundProcessHandle> StartBackgroundAsync(
+            ProcessExecutionRequest request,
+            WindowsSandboxExecutionContext context,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
         }
     }
 }
