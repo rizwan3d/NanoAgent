@@ -11,21 +11,21 @@ internal sealed class CustomTool : ITool
     private const int MaxRenderTextLength = 4000;
 
     private readonly CustomToolConfiguration _configuration;
-    private readonly IProcessRunner _processRunner;
+    private readonly CustomToolProcessExecutor _processExecutor;
     private readonly string _permissionRequirements;
 
     public CustomTool(
         string toolName,
         CustomToolConfiguration configuration,
-        IProcessRunner processRunner)
+        CustomToolProcessExecutor processExecutor)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
         ArgumentNullException.ThrowIfNull(configuration);
-        ArgumentNullException.ThrowIfNull(processRunner);
+        ArgumentNullException.ThrowIfNull(processExecutor);
 
         Name = toolName.Trim();
         _configuration = configuration;
-        _processRunner = processRunner;
+        _processExecutor = processExecutor;
         Description = configuration.GetDescription();
         Schema = configuration.GetSchema();
         _permissionRequirements = CustomToolJson.CreatePermissionRequirements(
@@ -64,14 +64,9 @@ internal sealed class CustomTool : ITool
         ProcessExecutionResult processResult;
         try
         {
-            processResult = await _processRunner.RunAsync(
-                new ProcessExecutionRequest(
-                    _configuration.Command!,
-                    _configuration.Args,
-                    StandardInput: CustomToolJson.CreateToolInput(context, _configuration.Name),
-                    WorkingDirectory: GetWorkingDirectory(context),
-                    MaxOutputCharacters: _configuration.MaxOutputChars,
-                    EnvironmentVariables: CreateEnvironment(context)),
+            processResult = await _processExecutor.ExecuteAsync(
+                _configuration,
+                context,
                 timeoutSource.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -183,27 +178,6 @@ internal sealed class CustomTool : ITool
             payload,
             ToolJsonContext.Default.JsonElement,
             renderPayload);
-    }
-
-    private string GetWorkingDirectory(ToolExecutionContext context)
-    {
-        return string.IsNullOrWhiteSpace(_configuration.Cwd)
-            ? context.Session.WorkspacePath
-            : _configuration.Cwd!;
-    }
-
-    private IReadOnlyDictionary<string, string> CreateEnvironment(ToolExecutionContext context)
-    {
-        Dictionary<string, string> environment = new(_configuration.Env, StringComparer.Ordinal)
-        {
-            ["NANOAGENT_TOOL_NAME"] = Name,
-            ["NANOAGENT_CUSTOM_TOOL_NAME"] = _configuration.Name,
-            ["NANOAGENT_SESSION_ID"] = context.Session.SessionId,
-            ["NANOAGENT_WORKSPACE_PATH"] = context.Session.WorkspacePath,
-            ["NANOAGENT_WORKING_DIRECTORY"] = context.Session.WorkingDirectory
-        };
-
-        return environment;
     }
 
     private static bool TryParseJsonObject(
