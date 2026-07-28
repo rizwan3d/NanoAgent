@@ -21,7 +21,11 @@ internal sealed class TerminalSession : IDisposable
     private const string DisableMouseTrackingSequence = "\u001b[?1000l\u001b[?1002l\u001b[?1003l\u001b[?1006l";
     private const int StdInputHandle = -10;
     private const uint EnableVirtualTerminalInput = 0x0200;
+    private static readonly object s_sync = new();
     private static uint? s_originalInputMode;
+    private static bool s_terminalStateActive;
+    private static bool s_cleanupHandlersRegistered;
+    private static bool s_restoreCursorVisibilityRequested;
 
     private readonly bool _restoreCursorVisibility;
     private readonly bool _restoreTerminalState;
@@ -35,6 +39,8 @@ internal sealed class TerminalSession : IDisposable
 
     public static TerminalSession EnterInteractiveMode()
     {
+        EnsureCleanupHandlersRegistered();
+
         bool restoreCursorVisibility = false;
 
         try
@@ -64,6 +70,19 @@ internal sealed class TerminalSession : IDisposable
             // the alternate-scroll mode (?1007h) -- enabling both would double-count the wheel.
             Console.Write(EnableMouseTrackingSequence);
             restoreTerminalState = true;
+
+            lock (s_sync)
+            {
+                s_terminalStateActive = true;
+            }
+        }
+
+        if (restoreCursorVisibility)
+        {
+            lock (s_sync)
+            {
+                s_restoreCursorVisibilityRequested = true;
+            }
         }
 
         return new TerminalSession(restoreCursorVisibility, restoreTerminalState);
@@ -78,13 +97,65 @@ internal sealed class TerminalSession : IDisposable
 
         _disposed = true;
 
-        if (_restoreTerminalState && !Console.IsOutputRedirected)
+        RestoreProcessTerminalState(_restoreCursorVisibility, _restoreTerminalState);
+    }
+
+    private static void EnsureCleanupHandlersRegistered()
+    {
+        lock (s_sync)
         {
-            Console.Write(DisableWheelScrollingSequence);
-            Console.Write(DisableBracketedPasteSequence);
-            Console.Write(DisableMouseTrackingSequence);
-            Console.Write(DisableAlternateScreenSequence);
-            Console.Write(ResetBackgroundSequence);
+            if (s_cleanupHandlersRegistered)
+            {
+                return;
+            }
+
+            AppDomain.CurrentDomain.ProcessExit += (_, _) => RestoreProcessTerminalState(
+                restoreCursorVisibility: true,
+                restoreTerminalState: true);
+            AppDomain.CurrentDomain.UnhandledException += (_, _) => RestoreProcessTerminalState(
+                restoreCursorVisibility: true,
+                restoreTerminalState: true);
+            s_cleanupHandlersRegistered = true;
+        }
+    }
+
+    private static void RestoreProcessTerminalState(
+        bool restoreCursorVisibility,
+        bool restoreTerminalState)
+    {
+        bool shouldRestoreTerminalState;
+        bool shouldRestoreCursorVisibility;
+
+        lock (s_sync)
+        {
+            shouldRestoreTerminalState = restoreTerminalState && s_terminalStateActive;
+            shouldRestoreCursorVisibility = restoreCursorVisibility && s_restoreCursorVisibilityRequested;
+
+            if (shouldRestoreTerminalState)
+            {
+                s_terminalStateActive = false;
+            }
+
+            if (shouldRestoreCursorVisibility)
+            {
+                s_restoreCursorVisibilityRequested = false;
+            }
+        }
+
+        if (shouldRestoreTerminalState && !Console.IsOutputRedirected)
+        {
+            try
+            {
+                Console.Write(DisableWheelScrollingSequence);
+                Console.Write(DisableBracketedPasteSequence);
+                Console.Write(DisableMouseTrackingSequence);
+                Console.Write(DisableAlternateScreenSequence);
+                Console.Write(ResetBackgroundSequence);
+                Console.Out.Flush();
+            }
+            catch
+            {
+            }
         }
 
         if (OperatingSystem.IsWindows())
@@ -92,9 +163,15 @@ internal sealed class TerminalSession : IDisposable
             TryRestoreInputMode();
         }
 
-        Console.ResetColor();
+        try
+        {
+            Console.ResetColor();
+        }
+        catch
+        {
+        }
 
-        if (_restoreCursorVisibility)
+        if (shouldRestoreCursorVisibility)
         {
             try
             {
