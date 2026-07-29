@@ -5,6 +5,7 @@ using NanoAgent.CLI;
 using Moq;
 using NanoAgent.Infrastructure.WindowsSandbox;
 using Spectre.Console;
+using System.Diagnostics;
 using System.Reflection;
 using System.Collections;
 
@@ -791,6 +792,58 @@ public sealed class ProgramTests
         modal.Value.ToString().Should().Be("feat: add AI commit suggestions");
     }
 
+    [Fact]
+    public void ReadGitStatus_Should_KeepWorktreeOnlyChangesOutOfStagedList()
+    {
+        string repositoryPath = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-git-sidebar-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(repositoryPath);
+
+        try
+        {
+            RunGitCommand(repositoryPath, "init");
+            RunGitCommand(repositoryPath, "config", "user.name", "NanoAgent Tests");
+            RunGitCommand(repositoryPath, "config", "user.email", "tests@nanoagent.local");
+
+            string filePath = Path.Combine(repositoryPath, "sidebar.txt");
+            File.WriteAllText(filePath, "line 1\n");
+            RunGitCommand(repositoryPath, "add", "sidebar.txt");
+            RunGitCommand(repositoryPath, "commit", "-m", "initial");
+
+            File.WriteAllText(filePath, "line 1\nline 2\n");
+
+            MethodInfo readGitStatus = typeof(Program).GetMethod(
+                "ReadGitStatus",
+                BindingFlags.NonPublic | BindingFlags.Static)!;
+
+            (List<(string Code, string Rel)> Staged, List<(string Code, string Rel)> Changes) result =
+                ((List<(string Code, string Rel)> Staged, List<(string Code, string Rel)> Changes))
+                readGitStatus.Invoke(null, [repositoryPath])!;
+
+            result.Staged.Should().BeEmpty();
+            result.Changes
+                .Should()
+                .ContainSingle()
+                .Which
+                .Should()
+                .Be(("M", "sidebar.txt"));
+        }
+        finally
+        {
+            if (Directory.Exists(repositoryPath))
+            {
+                foreach (string path in Directory.EnumerateFileSystemEntries(repositoryPath, "*", SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(path, FileAttributes.Normal);
+                }
+
+                File.SetAttributes(repositoryPath, FileAttributes.Normal);
+                Directory.Delete(repositoryPath, recursive: true);
+            }
+        }
+    }
+
     private static string[] RenderConversationMarkup(AppState state)
     {
         MethodInfo buildConversationLines = typeof(Program).GetMethod(
@@ -838,5 +891,32 @@ public sealed class ProgramTests
         }
 
         return values.ToArray();
+    }
+
+    private static void RunGitCommand(string workingDirectory, params string[] arguments)
+    {
+        ProcessStartInfo startInfo = new()
+        {
+            FileName = "git",
+            WorkingDirectory = workingDirectory,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        foreach (string argument in arguments)
+        {
+            startInfo.ArgumentList.Add(argument);
+        }
+
+        using Process process = Process.Start(startInfo)!;
+        string output = process.StandardOutput.ReadToEnd();
+        string error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        process.ExitCode.Should().Be(
+            0,
+            $"git {string.Join(' ', arguments)} should succeed but failed with:{Environment.NewLine}{output}{error}");
     }
 }
