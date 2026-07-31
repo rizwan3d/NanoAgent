@@ -106,6 +106,30 @@ internal sealed class WorkspaceSettingsWriter : IWorkspaceSettingsWriter
             cancellationToken);
     }
 
+    public async Task SaveAutoCommitEnabledAsync(
+        string workspacePath,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string filePath = Path.Combine(
+            Path.GetFullPath(workspacePath),
+            WorkspaceConfigurationDirectoryName,
+            WorkspaceConfigurationFileName);
+        JsonObject root = await LoadRootAsync(filePath, cancellationToken);
+        JsonObject application = GetOrCreateObject(root, "Application");
+        JsonObject git = GetOrCreateObject(application, "Git");
+        git["AutoCommitAfterAiChanges"] = enabled;
+
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
+        await File.WriteAllTextAsync(
+            filePath,
+            root.ToJsonString(JsonOptions) + Environment.NewLine,
+            cancellationToken);
+    }
+
     private static async Task<JsonObject> LoadRootAsync(
         string filePath,
         CancellationToken cancellationToken)

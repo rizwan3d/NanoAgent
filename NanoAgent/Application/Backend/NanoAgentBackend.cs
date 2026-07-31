@@ -25,6 +25,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IAgentProfileResolver? _profileResolver;
     private IHost? _host;
     private IProviderSetupService? _providerSetupService;
+    private IAutoCommitService? _autoCommitService;
     private IShellCommandService? _shellCommandService;
     private IReplCommandDispatcher? _commandDispatcher;
     private IReplCommandParser? _commandParser;
@@ -128,6 +129,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             _autoApproveAllTools,
             _configureServices);
         _providerSetupService = _host.Services.GetRequiredService<IProviderSetupService>();
+        _autoCommitService = _host.Services.GetRequiredService<IAutoCommitService>();
         _shellCommandService = _host.Services.GetRequiredService<IShellCommandService>();
         _sessionAppService = _host.Services.GetRequiredService<ISessionAppService>();
         _sessionEventLogService = _host.Services.GetRequiredService<ISessionEventLogService>();
@@ -286,6 +288,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         _sessionAppService.EnsureTitleGenerationStarted(_session, input);
         await RecordUserInputAsync(_session, input, cancellationToken);
+        int priorEditCount = _session.SessionState.Edits.Count;
 
         bool isDirectShellCommand = TryParseDirectShellCommand(input, out string? directShellCommand);
         string? directShellWorkingDirectory = null;
@@ -340,6 +343,20 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         if (result.Kind == ConversationTurnResultKind.AssistantMessage)
         {
             await RecordAssistantOutputAsync(_session, result.ResponseText, cancellationToken);
+        }
+
+        if (_autoCommitService is not null)
+        {
+            IReadOnlyList<SessionEditContext> newEdits = _session.SessionState.Edits
+                .Skip(priorEditCount)
+                .ToArray();
+            if (newEdits.Count > 0)
+            {
+                await _autoCommitService.TryAutoCommitAsync(
+                    _session,
+                    newEdits,
+                    cancellationToken);
+            }
         }
 
         await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
