@@ -6,16 +6,16 @@ using NanoAgent.Domain.Models;
 
 namespace NanoAgent.Tests.Application.Commands;
 
-public sealed class DisableAnalyticsCommandHandlerTests
+public sealed class AutoCommitCommandHandlerTests
 {
     [Fact]
-    public async Task ExecuteAsync_Should_SaveDisabledTelemetryToWorkspaceProfile()
+    public async Task ExecuteAsync_Should_SaveDisabledAutoCommitToWorkspaceProfile()
     {
         CapturingWorkspaceSettingsWriter workspaceSettingsWriter = new();
-        DisableAnalyticsCommandHandler sut = new(workspaceSettingsWriter);
+        AutoCommitCommandHandler sut = new(workspaceSettingsWriter);
         string workspacePath = Path.Combine(
             Path.GetTempPath(),
-            "nanoagent-disable-analytics-tests-" + Guid.NewGuid().ToString("N"));
+            "nanoagent-autocommit-tests-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(workspacePath);
         ReplSessionContext session = CreateSession(workspacePath);
 
@@ -23,10 +23,10 @@ public sealed class DisableAnalyticsCommandHandlerTests
         {
             ReplCommandResult result = await sut.ExecuteAsync(
                 new ReplCommandContext(
-                    "disableanalytics",
-                    string.Empty,
-                    [],
-                    "/disableanalytics",
+                    "autocommit",
+                    "off",
+                    ["off"],
+                    "/autocommit off",
                     session),
                 CancellationToken.None);
 
@@ -45,21 +45,21 @@ public sealed class DisableAnalyticsCommandHandlerTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Should_RejectArguments()
+    public async Task ExecuteAsync_Should_RejectUnknownArgument()
     {
-        DisableAnalyticsCommandHandler sut = new(new CapturingWorkspaceSettingsWriter());
+        AutoCommitCommandHandler sut = new(new CapturingWorkspaceSettingsWriter());
 
         ReplCommandResult result = await sut.ExecuteAsync(
             new ReplCommandContext(
-                "disableanalytics",
-                "now",
-                ["now"],
-                "/disableanalytics now",
+                "autocommit",
+                "later",
+                ["later"],
+                "/autocommit later",
                 CreateSession(Path.GetTempPath())),
             CancellationToken.None);
 
         result.FeedbackKind.Should().Be(ReplFeedbackKind.Error);
-        result.Message.Should().Be("Usage: /disableanalytics");
+        result.Message.Should().Be("Usage: /autocommit [on|off|status]");
     }
 
     private static ReplSessionContext CreateSession(string workspacePath)
@@ -98,8 +98,6 @@ public sealed class DisableAnalyticsCommandHandlerTests
             bool enabled,
             CancellationToken cancellationToken)
         {
-            WorkspacePath = workspacePath;
-            Enabled = enabled;
             return Task.CompletedTask;
         }
 
@@ -108,6 +106,8 @@ public sealed class DisableAnalyticsCommandHandlerTests
             bool enabled,
             CancellationToken cancellationToken)
         {
+            WorkspacePath = workspacePath;
+            Enabled = enabled;
             return Task.CompletedTask;
         }
     }

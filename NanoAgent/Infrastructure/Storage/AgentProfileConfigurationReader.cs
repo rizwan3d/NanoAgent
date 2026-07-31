@@ -81,6 +81,42 @@ internal static class AgentProfileConfigurationReader
         return NormalizeToolAuditSettings(settings);
     }
 
+    public static GitAutomationSettings LoadGitAutomationSettings(
+        IUserDataPathProvider userDataPathProvider,
+        IWorkspaceRootProvider workspaceRootProvider)
+    {
+        ArgumentNullException.ThrowIfNull(userDataPathProvider);
+        ArgumentNullException.ThrowIfNull(workspaceRootProvider);
+
+        GitAutomationSettings settings = new();
+        foreach (AgentProfileConfigurationDocument document in LoadDocuments(
+                     userDataPathProvider,
+                     workspaceRootProvider))
+        {
+            if (document.Application?.Git?.AutoCommitAfterAiChanges is bool enabled)
+            {
+                settings.AutoCommitAfterAiChanges = enabled;
+            }
+        }
+
+        return settings;
+    }
+
+    public static GitAutomationSettings LoadWorkspaceGitAutomationSettings(string workspacePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(workspacePath);
+
+        string filePath = GetWorkspaceConfigurationFilePath(Path.GetFullPath(workspacePath));
+        AgentProfileConfigurationDocument? document = LoadDocument(filePath);
+        GitAutomationSettings settings = new();
+        if (document?.Application?.Git?.AutoCommitAfterAiChanges is bool enabled)
+        {
+            settings.AutoCommitAfterAiChanges = enabled;
+        }
+
+        return settings;
+    }
+
     public static IReadOnlyList<McpServerConfiguration> LoadMcpServers(
         IUserDataPathProvider userDataPathProvider,
         IWorkspaceRootProvider workspaceRootProvider)

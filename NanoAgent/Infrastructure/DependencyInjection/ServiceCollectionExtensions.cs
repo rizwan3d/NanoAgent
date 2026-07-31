@@ -11,6 +11,7 @@ using NanoAgent.Infrastructure.CodeIntelligence;
 using NanoAgent.Infrastructure.Configuration;
 using NanoAgent.Infrastructure.Conversation;
 using NanoAgent.Infrastructure.CustomTools;
+using NanoAgent.Infrastructure.Git;
 using NanoAgent.Infrastructure.GitHub;
 using NanoAgent.Infrastructure.Hooks;
 using NanoAgent.Infrastructure.Logging;
@@ -56,6 +57,10 @@ public static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IUserDataPathProvider>(),
                 serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
         services.AddSingleton(static serviceProvider =>
+            AgentProfileConfigurationReader.LoadGitAutomationSettings(
+                serviceProvider.GetRequiredService<IUserDataPathProvider>(),
+                serviceProvider.GetRequiredService<IWorkspaceRootProvider>()));
+        services.AddSingleton(static serviceProvider =>
             ApplicationSettingsFactory.CreateToolExecutionSettings(
                 serviceProvider.GetRequiredService<IOptions<ApplicationOptions>>().Value));
         services.AddSingleton<IWorkspaceFileService, WorkspaceFileService>();
@@ -73,6 +78,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ILessonMemoryService, WorkspaceLessonMemoryService>();
         services.AddSingleton<IToolAuditLogService, WorkspaceToolAuditLogService>();
         services.AddSingleton<IShellCommandService, ShellCommandService>();
+        services.AddSingleton<IAutoCommitService, GitAutoCommitService>();
         services.AddSingleton<CustomToolProcessExecutor>();
         services.AddSingleton<NanoAgentMcpConfigLoader>();
         services.AddSingleton<IDynamicToolProvider, CustomToolDynamicProvider>();

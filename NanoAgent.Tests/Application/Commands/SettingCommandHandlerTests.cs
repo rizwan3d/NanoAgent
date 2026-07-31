@@ -390,6 +390,14 @@ public sealed class SettingCommandHandlerTests
         {
             return Task.CompletedTask;
         }
+
+        public Task SaveAutoCommitEnabledAsync(
+            string workspacePath,
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class CapturingWorkspaceSettingsWriter : IWorkspaceSettingsWriter
@@ -431,6 +439,15 @@ public sealed class SettingCommandHandlerTests
         }
 
         public Task SaveTelemetryEnabledAsync(
+            string workspacePath,
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            WorkspacePath = workspacePath;
+            return Task.CompletedTask;
+        }
+
+        public Task SaveAutoCommitEnabledAsync(
             string workspacePath,
             bool enabled,
             CancellationToken cancellationToken)

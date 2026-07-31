@@ -10,6 +10,7 @@ internal static class ReplCommandCatalog
         Create<AgentCommandHandler>("agent", "List available subagents for delegated work.", "/agent"),
         Create<AgentAliasCommandHandler>("a", "Alias for /agent.", "/a"),
         Create<AllowCommandHandler>("allow", "Add a session-scoped allow override for a tool/tag and optional target pattern.", "/allow <tool-or-tag> [pattern]", requiresArgument: true),
+        Create<AutoCommitCommandHandler>("autocommit", "Show or toggle automatic git commits for AI-made workspace changes.", "/autocommit [on|off|status]"),
         Create<BudgetCommandHandler>("budget", "Show or configure budget controls from local or cloud settings.", "/budget [status|local [path]|cloud]"),
         Create<CloneCommandHandler>("clone", "Duplicate the current session at the current position.", "/clone"),
         Create<CodebaseIndexCommandHandler>("index", "Update, rebuild, inspect, or list the local codebase index.", "/index [update|status|rebuild|list] [limit]"),

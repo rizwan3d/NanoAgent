@@ -7,6 +7,8 @@ namespace NanoAgent.Infrastructure.Storage;
 
 internal sealed class AgentProfileConfigurationDocument
 {
+    public ApplicationProfileDocument? Application { get; set; }
+
     public string? ActiveProviderName { get; set; }
 
     public AgentProviderProfile? ProviderProfile { get; set; }
@@ -37,6 +39,23 @@ internal sealed class AgentProfileConfigurationDocument
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+}
+
+internal sealed class ApplicationProfileDocument
+{
+    public TelemetryProfileDocument? Telemetry { get; set; }
+
+    public GitAutomationProfileDocument? Git { get; set; }
+}
+
+internal sealed class TelemetryProfileDocument
+{
+    public bool? Enabled { get; set; }
+}
+
+internal sealed class GitAutomationProfileDocument
+{
+    public bool? AutoCommitAfterAiChanges { get; set; }
 }
 
 internal sealed class ProviderProfileConfigurationDocument

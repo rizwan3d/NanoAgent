@@ -18,4 +18,9 @@ public interface IWorkspaceSettingsWriter
         string workspacePath,
         bool enabled,
         CancellationToken cancellationToken);
+
+    Task SaveAutoCommitEnabledAsync(
+        string workspacePath,
+        bool enabled,
+        CancellationToken cancellationToken);
 }
