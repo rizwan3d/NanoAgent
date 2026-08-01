@@ -288,7 +288,6 @@ public sealed class NanoAgentBackend : INanoAgentBackend
 
         _sessionAppService.EnsureTitleGenerationStarted(_session, input);
         await RecordUserInputAsync(_session, input, cancellationToken);
-        int priorEditCount = _session.SessionState.Edits.Count;
 
         bool isDirectShellCommand = TryParseDirectShellCommand(input, out string? directShellCommand);
         string? directShellWorkingDirectory = null;
@@ -343,20 +342,6 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         if (result.Kind == ConversationTurnResultKind.AssistantMessage)
         {
             await RecordAssistantOutputAsync(_session, result.ResponseText, cancellationToken);
-        }
-
-        if (_autoCommitService is not null)
-        {
-            IReadOnlyList<SessionEditContext> newEdits = _session.SessionState.Edits
-                .Skip(priorEditCount)
-                .ToArray();
-            if (newEdits.Count > 0)
-            {
-                await _autoCommitService.TryAutoCommitAsync(
-                    _session,
-                    newEdits,
-                    cancellationToken);
-            }
         }
 
         await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
@@ -417,6 +402,14 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         {
             try
             {
+                if (_autoCommitService is not null)
+                {
+                    await _autoCommitService.TryAutoCommitAsync(
+                        _session,
+                        _session.SessionState.Edits,
+                        CancellationToken.None);
+                }
+
                 await _sessionAppService.StopAsync(_session, CancellationToken.None);
             }
             catch
