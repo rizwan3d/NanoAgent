@@ -36,6 +36,18 @@ public interface IWorkspaceFileService
         string path,
         CancellationToken cancellationToken);
 
+    Task<WorkspaceFileInsertResult> InsertContentAsync(
+        string path,
+        int line,
+        string content,
+        CancellationToken cancellationToken);
+
+    Task<WorkspaceFileInsertExecutionResult> InsertContentWithTrackingAsync(
+        string path,
+        int line,
+        string content,
+        CancellationToken cancellationToken);
+
     Task<WorkspaceFileReadResult> ReadFileAsync(
         string path,
         int offset,

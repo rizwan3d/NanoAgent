@@ -821,6 +821,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                 AgentToolNames.ApplyPatch => SummarizePatchArguments(arguments),
                 AgentToolNames.FileRead => SummarizePathArguments(arguments, "file_read"),
                 AgentToolNames.FileDelete => SummarizePathArguments(arguments, "file_delete"),
+                AgentToolNames.InsertContent => SummarizeInsertContentArguments(arguments),
                 AgentToolNames.FileWrite => SummarizeFileWriteArguments(arguments),
                 AgentToolNames.DirectoryList => SummarizeDirectoryListArguments(arguments),
                 AgentToolNames.SearchFiles => SummarizeSearchArguments(arguments, "search_files"),
@@ -877,6 +878,18 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             ? "missing content"
             : $"{content.Length.ToString(CultureInfo.InvariantCulture)} chars";
         return $"file_write path `{path}`, {contentLength}, overwrite {overwrite}";
+    }
+
+    private static string SummarizeInsertContentArguments(JsonElement arguments)
+    {
+        string path = GetString(arguments, "path") ?? "<missing>";
+        int? line = GetInt32(arguments, "line");
+        string? content = GetString(arguments, "content");
+        string contentLength = content is null
+            ? "missing content"
+            : $"{content.Length.ToString(CultureInfo.InvariantCulture)} chars";
+        string lineText = line?.ToString(CultureInfo.InvariantCulture) ?? "<missing>";
+        return $"insert_content path `{path}`, line {lineText}, {contentLength}";
     }
 
     private static string SummarizeDirectoryListArguments(JsonElement arguments)

@@ -45,6 +45,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"text search: \"{query}\"",
             "file_write" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file write: {path}",
+            "insert_content" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string insertPath) =>
+                $"insert content: {insertPath}",
             "codebase_index" when TryGetArgumentString(toolCall.ArgumentsJson, "query", out string indexQuery) =>
                 $"codebase index: \"{indexQuery}\"",
             "codebase_index" when TryGetArgumentString(toolCall.ArgumentsJson, "action", out string indexAction) =>
@@ -211,6 +213,12 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 case "file_write":
                     AddNamedArgumentLine(root, lines, "path");
                     AddNamedArgumentLine(root, lines, "overwrite");
+                    AddContentArgumentPreview(root, lines, "content", "content");
+                    break;
+
+                case "insert_content":
+                    AddNamedArgumentLine(root, lines, "path");
+                    AddNamedArgumentLine(root, lines, "line");
                     AddContentArgumentPreview(root, lines, "content", "content");
                     break;
 
@@ -1201,6 +1209,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
 
         return invocationResult.Result.IsSuccess &&
             (string.Equals(invocationResult.ToolName, "file_write", StringComparison.Ordinal) ||
+             string.Equals(invocationResult.ToolName, "insert_content", StringComparison.Ordinal) ||
              string.Equals(invocationResult.ToolName, "file_delete", StringComparison.Ordinal)) &&
             TryParseFileWriteResult(invocationResult.Result.JsonResult, out edit);
     }

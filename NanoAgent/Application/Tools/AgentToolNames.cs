@@ -13,6 +13,7 @@ internal static class AgentToolNames
     public const string CodeIntelligence = "code_intelligence";
     public const string DirectoryList = "directory_list";
     public const string FileDelete = "file_delete";
+    public const string InsertContent = "insert_content";
     public const string FileRead = "file_read";
     public const string HeadlessBrowser = "headless_browser";
     public const string PlanningMode = "planning_mode";

@@ -15,6 +15,7 @@ internal static class ToolCatalog
         static services => services.AddSingleton<ITool, CodeIntelligenceTool>(),
         static services => services.AddSingleton<ITool, FileDeleteTool>(),
         static services => services.AddSingleton<ITool, FileReadTool>(),
+        static services => services.AddSingleton<ITool, InsertContentTool>(),
         static services => services.AddSingleton<ITool, DirectoryListTool>(),
         static services => services.AddSingleton<ITool, HeadlessBrowserTool>(),
         static services => services.AddSingleton<ITool, PlanningModeTool>(),

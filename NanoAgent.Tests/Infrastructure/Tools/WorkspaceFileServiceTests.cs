@@ -357,6 +357,66 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task InsertContentAsync_Should_InsertBeforeRequestedLine()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Program.cs");
+        await File.WriteAllTextAsync(filePath, "class Program {}\n", CancellationToken.None);
+
+        WorkspaceFileInsertResult result = await sut.InsertContentAsync(
+            "Program.cs",
+            1,
+            "using System;\n",
+            CancellationToken.None);
+
+        result.Path.Should().Be("Program.cs");
+        result.Line.Should().Be(1);
+        result.InsertedLineCount.Should().Be(1);
+        result.AddedLineCount.Should().Be(1);
+        result.RemovedLineCount.Should().Be(0);
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("using System;\nclass Program {}\n");
+    }
+
+    [Fact]
+    public async Task InsertContentAsync_Should_Append_When_LineIsAfterLastLine()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Program.cs");
+        await File.WriteAllTextAsync(filePath, "line1\r\nline2\r\n", CancellationToken.None);
+
+        WorkspaceFileInsertResult result = await sut.InsertContentAsync(
+            "Program.cs",
+            3,
+            "line3\nline4\n",
+            CancellationToken.None);
+
+        result.InsertedLineCount.Should().Be(2);
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("line1\r\nline2\r\nline3\r\nline4\r\n");
+    }
+
+    [Fact]
+    public async Task InsertContentAsync_Should_RejectLineBeyondEndOfFilePlusOne()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Program.cs");
+        await File.WriteAllTextAsync(filePath, "line1\nline2\n", CancellationToken.None);
+
+        Func<Task> act = () => sut.InsertContentAsync(
+            "Program.cs",
+            4,
+            "line3\n",
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*file has 2 lines*");
+    }
+
+    [Fact]
     public async Task DeleteFileAsync_Should_DenySymlinkDirectoryBreakout()
     {
         WorkspaceFileService sut = CreateSut();
