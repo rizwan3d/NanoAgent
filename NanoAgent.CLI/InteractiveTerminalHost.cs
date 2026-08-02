@@ -15,10 +15,11 @@ internal static class InteractiveTerminalHost
         ConsoleCancelEventHandler? cancelKeyPressHandler = null;
         INanoAgentBackend? backend = null;
         AppState? state = null;
+        TerminalSession? terminal = null;
 
         try
         {
-            using TerminalSession terminal = TerminalSession.EnterInteractiveMode();
+            terminal = TerminalSession.EnterInteractiveMode();
 
             UiBridge uiBridge = new(providerAuthKey);
             BackendRuntimeArguments interactiveRuntimeArguments = BackendRuntimeArguments.Parse(
@@ -82,6 +83,7 @@ internal static class InteractiveTerminalHost
             }
             finally
             {
+                terminal?.Dispose();
                 AnsiConsole.Clear();
                 if (state is not null)
                 {
