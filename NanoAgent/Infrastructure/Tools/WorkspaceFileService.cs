@@ -288,6 +288,20 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             cancellationToken);
     }
 
+    public async Task<WorkspaceFileInsertExecutionResult> InsertContentWithTrackingAsync(
+        string path,
+        int line,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        return await ExecuteTrackedSingleFileEditAsync(
+            path,
+            (service, trackedPath, token) => service.InsertContentAsync(trackedPath, line, content, token),
+            static result => $"insert_content ({result.Path})",
+            static (result, transaction) => new WorkspaceFileInsertExecutionResult(result, transaction),
+            cancellationToken);
+    }
+
     public async Task<WorkspaceFileDeleteExecutionResult> DeleteFileWithTrackingAsync(
         string path,
         CancellationToken cancellationToken)
@@ -468,6 +482,50 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         return new WorkspaceFileDeleteResult(
             ToWorkspaceRelativePath(fullPath),
             previousContent.Length,
+            preview.AddedLineCount,
+            preview.RemovedLineCount,
+            preview.Lines,
+            preview.RemainingPreviewLineCount);
+    }
+
+    public async Task<WorkspaceFileInsertResult> InsertContentAsync(
+        string path,
+        int line,
+        string content,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(content);
+
+        if (line <= 0)
+        {
+            throw new InvalidOperationException("Insert line must be a positive 1-based integer.");
+        }
+
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
+        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
+        string currentContent = InsertContentAtLine(previousContent, line, content, out int insertedLineCount);
+
+        WorkspaceFileEditState expectedState = new(
+            ToWorkspaceRelativePath(fullPath),
+            exists: true,
+            previousContent);
+
+        FileEncodingInfo encoding = DetectFileEncoding(fullPath);
+        await WriteWorkspaceFileAsync(
+            fullPath,
+            currentContent,
+            encoding,
+            expectedState,
+            cancellationToken);
+
+        FileWritePreview preview = BuildFileWritePreview(previousContent, currentContent);
+        return new WorkspaceFileInsertResult(
+            ToWorkspaceRelativePath(fullPath),
+            line,
+            insertedLineCount,
+            content.Length,
             preview.AddedLineCount,
             preview.RemovedLineCount,
             preview.Lines,
@@ -5180,6 +5238,44 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         }
 
         return rawLines;
+    }
+
+    private static string InsertContentAtLine(
+        string previousContent,
+        int line,
+        string content,
+        out int insertedLineCount)
+    {
+        string[] existingLines = SplitLines(previousContent);
+        int totalLines = existingLines.Length;
+        if (line > totalLines + 1)
+        {
+            throw new InvalidOperationException(
+                $"Cannot insert at line {line.ToString(CultureInfo.InvariantCulture)} because '{line - 1}' is beyond the end of the file. The file has {totalLines.ToString(CultureInfo.InvariantCulture)} {(totalLines == 1 ? "line" : "lines")}.");
+        }
+
+        string[] insertedLines = SplitLines(content);
+        insertedLineCount = insertedLines.Length;
+
+        List<string> combinedLines = new(totalLines + insertedLines.Length);
+        int insertIndex = line - 1;
+        combinedLines.AddRange(existingLines.Take(insertIndex));
+        combinedLines.AddRange(insertedLines);
+        combinedLines.AddRange(existingLines.Skip(insertIndex));
+
+        bool previousEndedWithNewLine = previousContent.Length > 0 &&
+                                        (previousContent.EndsWith("\r\n", StringComparison.Ordinal) ||
+                                         previousContent.EndsWith('\n') ||
+                                         previousContent.EndsWith('\r'));
+        bool insertedEndsWithNewLine = content.Length > 0 &&
+                                       (content.EndsWith("\r\n", StringComparison.Ordinal) ||
+                                        content.EndsWith('\n') ||
+                                        content.EndsWith('\r'));
+        bool trailingNewLine = insertedLineCount > 0
+            ? insertedEndsWithNewLine || (previousEndedWithNewLine && insertIndex < totalLines)
+            : previousEndedWithNewLine;
+
+        return JoinLines(combinedLines, trailingNewLine);
     }
 
     private static IReadOnlyList<PreviewDiffLine> SelectPreviewLines(

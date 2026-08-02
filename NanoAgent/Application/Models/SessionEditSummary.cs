@@ -70,7 +70,7 @@ public static class SessionEditSummary
     }
 
     // Edit descriptions are formatted by SessionStateToolRecorder, e.g. "file_write created (x)",
-    // "apply_patch (add x)", "file_delete (x)". Anything else is a plain edit.
+    // "insert_content (x)", "apply_patch (add x)", "file_delete (x)". Anything else is a plain edit.
     private static string DeriveAction(string? description)
     {
         string d = description ?? string.Empty;

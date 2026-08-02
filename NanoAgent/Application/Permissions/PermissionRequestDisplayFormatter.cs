@@ -16,6 +16,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.ApplyPatch => "Approve patch changes?",
             AgentToolNames.DirectoryList => "Approve directory listing?",
             AgentToolNames.FileDelete => "Approve file delete?",
+            AgentToolNames.InsertContent => "Approve file insert?",
             AgentToolNames.FileRead => "Approve file read?",
             AgentToolNames.FileWrite => "Approve file write?",
             AgentToolNames.HeadlessBrowser => "Approve browser request?",
@@ -44,6 +45,7 @@ internal static class PermissionRequestDisplayFormatter
             AgentToolNames.ApplyPatch => "modify patch target",
             AgentToolNames.DirectoryList => "list path",
             AgentToolNames.FileDelete => "delete file",
+            AgentToolNames.InsertContent => "insert file content",
             AgentToolNames.FileRead => "read file",
             AgentToolNames.FileWrite => "write file",
             AgentToolNames.HeadlessBrowser => "open browser target",
@@ -103,6 +105,7 @@ internal static class PermissionRequestDisplayFormatter
 
             case AgentToolNames.FileRead:
             case AgentToolNames.FileDelete:
+            case AgentToolNames.InsertContent:
             case AgentToolNames.FileWrite:
                 singularLabel = "File path";
                 pluralLabel = "File paths";
