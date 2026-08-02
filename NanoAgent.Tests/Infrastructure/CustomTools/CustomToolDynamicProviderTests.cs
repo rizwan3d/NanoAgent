@@ -61,13 +61,42 @@ public sealed class CustomToolDynamicProviderTests : IDisposable
             .Should()
             .BeTrue();
         registration!.Tool.Description.Should().Be("Count words.");
-        registration.PermissionPolicy.ApprovalMode.Should().Be(ToolApprovalMode.Automatic);
+        registration.PermissionPolicy.ApprovalMode.Should().Be(ToolApprovalMode.RequireApproval);
         registration.PermissionPolicy.ToolTags.Should().Contain("custom_tool");
         provider.GetStatuses().Should().ContainSingle(status =>
             status.Name == "word_count" &&
             status.Kind == "custom" &&
             status.IsAvailable &&
             status.ToolCount == 1);
+    }
+
+    [Fact]
+    public void GetTools_Should_PreserveAutomaticApproval_ForUserDefinedCustomTools()
+    {
+        WriteFile(
+            _userProfilePath,
+            """
+            {
+              "customTools": {
+                "word_count": {
+                  "description": "Count words.",
+                  "command": "python",
+                  "approvalMode": "auto"
+                }
+              }
+            }
+            """);
+
+        CustomToolDynamicProvider provider = CreateProvider();
+        ToolRegistry registry = new(
+            [],
+            new ToolPermissionParser(),
+            [provider]);
+
+        registry.TryResolve("custom__word_count", out ToolRegistration? registration)
+            .Should()
+            .BeTrue();
+        registration!.PermissionPolicy.ApprovalMode.Should().Be(ToolApprovalMode.Automatic);
     }
 
     [Fact]
@@ -109,7 +138,10 @@ public sealed class CustomToolDynamicProviderTests : IDisposable
         return new CustomToolDynamicProvider(
             new StubUserDataPathProvider(_userProfilePath),
             new StubWorkspaceRootProvider(_workspaceRoot),
-            new FakeProcessRunner(),
+            new CustomToolProcessExecutor(
+                new FakeProcessRunner(),
+                new StubWorkspaceRootProvider(_workspaceRoot),
+                new PermissionSettings()),
             NullLogger<CustomToolDynamicProvider>.Instance);
     }
 

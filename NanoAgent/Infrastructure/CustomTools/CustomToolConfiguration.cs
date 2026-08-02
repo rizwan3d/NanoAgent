@@ -36,8 +36,15 @@ internal sealed class CustomToolConfiguration
 
     public int TimeoutSeconds { get; set; } = 30;
 
+    public bool UntrustedWorkspaceDefinition { get; set; }
+
     public ToolApprovalMode GetApprovalMode()
     {
+        if (UntrustedWorkspaceDefinition)
+        {
+            return ToolApprovalMode.RequireApproval;
+        }
+
         return ApprovalMode?.Trim().ToLowerInvariant() switch
         {
             "approve" or "auto" or "automatic" => ToolApprovalMode.Automatic,
