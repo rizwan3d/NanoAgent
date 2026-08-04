@@ -2912,8 +2912,8 @@ public static partial class Program
                 return (false, null, "git timed out.");
             }
 
-            string output = outputTask.GetAwaiter().GetResult().Trim();
-            string error = errorTask.GetAwaiter().GetResult().Trim();
+            string output = outputTask.GetAwaiter().GetResult().TrimEnd();
+            string error = errorTask.GetAwaiter().GetResult().TrimEnd();
             return (process.ExitCode == 0, output, error);
         }
         catch (Exception exception)
