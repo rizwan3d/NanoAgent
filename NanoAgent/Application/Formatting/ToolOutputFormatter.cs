@@ -45,6 +45,8 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                 $"text search: \"{query}\"",
             "file_write" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string path) =>
                 $"file write: {path}",
+            "search_and_replace" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string replacePath) =>
+                $"search and replace: {replacePath}",
             "insert_content" when TryGetArgumentString(toolCall.ArgumentsJson, "path", out string insertPath) =>
                 $"insert content: {insertPath}",
             "codebase_index" when TryGetArgumentString(toolCall.ArgumentsJson, "query", out string indexQuery) =>
@@ -214,6 +216,14 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
                     AddNamedArgumentLine(root, lines, "path");
                     AddNamedArgumentLine(root, lines, "overwrite");
                     AddContentArgumentPreview(root, lines, "content", "content");
+                    break;
+
+                case "search_and_replace":
+                    AddNamedArgumentLine(root, lines, "path");
+                    AddNamedArgumentLine(root, lines, "useRegex");
+                    AddNamedArgumentLine(root, lines, "caseSensitive");
+                    AddNamedArgumentLine(root, lines, "search");
+                    AddNamedArgumentLine(root, lines, "replace");
                     break;
 
                 case "insert_content":
@@ -1209,6 +1219,7 @@ public sealed class ToolOutputFormatter : IToolOutputFormatter
 
         return invocationResult.Result.IsSuccess &&
             (string.Equals(invocationResult.ToolName, "file_write", StringComparison.Ordinal) ||
+             string.Equals(invocationResult.ToolName, "search_and_replace", StringComparison.Ordinal) ||
              string.Equals(invocationResult.ToolName, "insert_content", StringComparison.Ordinal) ||
              string.Equals(invocationResult.ToolName, "file_delete", StringComparison.Ordinal)) &&
             TryParseFileWriteResult(invocationResult.Result.JsonResult, out edit);

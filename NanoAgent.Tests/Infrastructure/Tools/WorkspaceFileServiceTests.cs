@@ -399,6 +399,94 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchAndReplaceAsync_Should_ReplaceAllLiteralMatches()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "Program.cs");
+        await File.WriteAllTextAsync(filePath, "oldName = 1;\noldName++;\n", CancellationToken.None);
+
+        WorkspaceSearchAndReplaceResult result = await sut.SearchAndReplaceAsync(
+            "Program.cs",
+            "oldName",
+            "newName",
+            useRegex: false,
+            caseSensitive: true,
+            CancellationToken.None);
+
+        result.Path.Should().Be("Program.cs");
+        result.ReplacementCount.Should().Be(2);
+        result.UseRegex.Should().BeFalse();
+        result.CaseSensitive.Should().BeTrue();
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("newName = 1;\nnewName++;\n");
+    }
+
+    [Fact]
+    public async Task SearchAndReplaceAsync_Should_SupportRegexBackreferences()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "names.txt");
+        await File.WriteAllTextAsync(filePath, "user_1\nuser_2\n", CancellationToken.None);
+
+        WorkspaceSearchAndReplaceResult result = await sut.SearchAndReplaceAsync(
+            "names.txt",
+            "user_(\\d+)",
+            "member_$1",
+            useRegex: true,
+            caseSensitive: true,
+            CancellationToken.None);
+
+        result.ReplacementCount.Should().Be(2);
+        result.UseRegex.Should().BeTrue();
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("member_1\nmember_2\n");
+    }
+
+    [Fact]
+    public async Task SearchAndReplaceAsync_Should_ReturnZeroMatchesWithoutMutatingFile()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "README.md");
+        await File.WriteAllTextAsync(filePath, "alpha\nbeta\n", CancellationToken.None);
+
+        WorkspaceSearchAndReplaceResult result = await sut.SearchAndReplaceAsync(
+            "README.md",
+            "gamma",
+            "delta",
+            useRegex: false,
+            caseSensitive: true,
+            CancellationToken.None);
+
+        result.ReplacementCount.Should().Be(0);
+        result.PreviewLines.Should().BeEmpty();
+        (await File.ReadAllTextAsync(filePath, CancellationToken.None))
+            .Should()
+            .Be("alpha\nbeta\n");
+    }
+
+    [Fact]
+    public async Task SearchAndReplaceAsync_Should_RejectInvalidRegexPattern()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "README.md");
+        await File.WriteAllTextAsync(filePath, "alpha\nbeta\n", CancellationToken.None);
+
+        Func<Task> act = () => sut.SearchAndReplaceAsync(
+            "README.md",
+            "(",
+            "delta",
+            useRegex: true,
+            caseSensitive: true,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<ArgumentException>()
+            .WithMessage("*invalid regex pattern*");
+    }
+
+    [Fact]
     public async Task InsertContentAsync_Should_RejectLineBeyondEndOfFilePlusOne()
     {
         WorkspaceFileService sut = CreateSut();
