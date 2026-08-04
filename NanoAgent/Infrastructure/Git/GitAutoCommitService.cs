@@ -9,6 +9,8 @@ namespace NanoAgent.Infrastructure.Git;
 internal sealed class GitAutoCommitService : IAutoCommitService
 {
     private const int MaxCommitSuggestionSeconds = 20;
+    private const string AutoCommitFallbackMessage = "chore: apply NanoAgent changes";
+    private const string AutoCommitCoAuthorTrailer = "Co-authored-by: NanoAgentAi <313132566+NanoAgentAi@users.noreply.github.com>";
     private const string SystemPrompt =
         """
         You write git commit subjects for coding changes.
@@ -76,10 +78,13 @@ internal sealed class GitAutoCommitService : IAutoCommitService
         string message = await BuildCommitMessageAsync(session, repositoryRoot, cancellationToken);
         if (string.IsNullOrWhiteSpace(message))
         {
-            message = "chore: apply NanoAgent changes";
+            message = AutoCommitFallbackMessage;
         }
 
-        await RunGitAsync(repositoryRoot, ["commit", "-m", message], cancellationToken);
+        await RunGitAsync(
+            repositoryRoot,
+            ["commit", "-m", message, "-m", AutoCommitCoAuthorTrailer],
+            cancellationToken);
     }
 
     private async Task<string> BuildCommitMessageAsync(
@@ -90,7 +95,7 @@ internal sealed class GitAutoCommitService : IAutoCommitService
         string? apiKey = await LoadProviderSecretAsync(session, cancellationToken);
         if (string.IsNullOrWhiteSpace(apiKey))
         {
-            return "chore: apply NanoAgent changes";
+            return AutoCommitFallbackMessage;
         }
 
         string stagedFiles = await GetGitOutputAsync(
