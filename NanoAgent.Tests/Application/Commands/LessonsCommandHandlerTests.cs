@@ -186,6 +186,14 @@ public sealed class LessonsCommandHandlerTests : IDisposable
         {
             return Task.CompletedTask;
         }
+
+        public Task SaveAutoCommitEnabledAsync(
+            string workspacePath,
+            bool enabled,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class InMemoryLessonMemoryService : ILessonMemoryService
