@@ -823,6 +823,7 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
                 AgentToolNames.FileDelete => SummarizePathArguments(arguments, "file_delete"),
                 AgentToolNames.InsertContent => SummarizeInsertContentArguments(arguments),
                 AgentToolNames.FileWrite => SummarizeFileWriteArguments(arguments),
+                AgentToolNames.SearchAndReplace => SummarizeSearchAndReplaceArguments(arguments),
                 AgentToolNames.DirectoryList => SummarizeDirectoryListArguments(arguments),
                 AgentToolNames.SearchFiles => SummarizeSearchArguments(arguments, "search_files"),
                 AgentToolNames.TextSearch => SummarizeSearchArguments(arguments, "text_search"),
@@ -890,6 +891,16 @@ internal sealed partial class WorkspaceLessonMemoryService : ILessonMemoryServic
             : $"{content.Length.ToString(CultureInfo.InvariantCulture)} chars";
         string lineText = line?.ToString(CultureInfo.InvariantCulture) ?? "<missing>";
         return $"insert_content path `{path}`, line {lineText}, {contentLength}";
+    }
+
+    private static string SummarizeSearchAndReplaceArguments(JsonElement arguments)
+    {
+        string path = GetString(arguments, "path") ?? "<missing>";
+        string search = GetString(arguments, "search") ?? "<missing>";
+        string replace = GetString(arguments, "replace") ?? "<missing>";
+        string useRegex = FormatBoolean(GetBoolean(arguments, "useRegex"), defaultValue: "false");
+        string caseSensitive = FormatBoolean(GetBoolean(arguments, "caseSensitive"), defaultValue: "true");
+        return $"search_and_replace path `{path}`, search `{TrimForPrompt(search)}`, replace `{TrimForPrompt(replace)}`, useRegex {useRegex}, caseSensitive {caseSensitive}";
     }
 
     private static string SummarizeDirectoryListArguments(JsonElement arguments)

@@ -158,6 +158,31 @@ internal static class SessionStateToolRecorder
             result.RemovedLineCount));
     }
 
+    public static void RecordSearchAndReplace(
+        ReplSessionContext session,
+        WorkspaceSearchAndReplaceResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string preview = FormatPreview(result.PreviewLines, result.RemainingPreviewLineCount);
+        DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
+        string mode = result.UseRegex ? "regex" : "text";
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "edited",
+            observedAtUtc,
+            $"updated by search_and_replace ({mode}, {result.ReplacementCount} {(result.ReplacementCount == 1 ? "match" : "matches")}, +{result.AddedLineCount} -{result.RemovedLineCount}). Preview: {preview}"));
+
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc,
+            $"search_and_replace ({result.Path})",
+            [result.Path],
+            result.AddedLineCount,
+            result.RemovedLineCount));
+    }
+
     public static void RecordFileDelete(
         ReplSessionContext session,
         WorkspaceFileDeleteResult result)

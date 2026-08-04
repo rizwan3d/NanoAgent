@@ -15,6 +15,7 @@ internal static class AgentToolNames
     public const string FileDelete = "file_delete";
     public const string InsertContent = "insert_content";
     public const string FileRead = "file_read";
+    public const string SearchAndReplace = "search_and_replace";
     public const string HeadlessBrowser = "headless_browser";
     public const string PlanningMode = "planning_mode";
     public const string RepoMemory = "repo_memory";
