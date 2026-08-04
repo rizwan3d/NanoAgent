@@ -288,6 +288,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                 break;
 
             case AgentToolNames.FileWrite:
+            case AgentToolNames.InsertContent:
             case AgentToolNames.ApplyPatch:
                 events.Add(before ? LifecycleHookEvents.BeforeFileWrite : LifecycleHookEvents.AfterFileWrite);
                 break;
@@ -450,6 +451,7 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
         {
             AgentToolNames.FileRead or
             AgentToolNames.FileWrite or
+            AgentToolNames.InsertContent or
             AgentToolNames.FileDelete or
             AgentToolNames.DirectoryList or
             AgentToolNames.SearchFiles or
