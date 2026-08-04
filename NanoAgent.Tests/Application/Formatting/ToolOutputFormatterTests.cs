@@ -62,6 +62,32 @@ public sealed class ToolOutputFormatterTests
     }
 
     [Fact]
+    public void FormatCallPreview_ShouldShowStructuredPreview_ForSavedSearchAndReplaceCall()
+    {
+        ConversationToolCall toolCall = new(
+            "call-1",
+            "search_and_replace",
+            """
+            {
+              "path": "src/app.txt",
+              "search": "oldName",
+              "replace": "newName",
+              "useRegex": false,
+              "caseSensitive": true
+            }
+            """);
+
+        string preview = _sut.FormatCallPreview(toolCall);
+
+        preview.Should().Contain("Previewed saved tool call: search and replace: src/app.txt");
+        preview.Should().Contain("path: src/app.txt");
+        preview.Should().Contain("search: oldName");
+        preview.Should().Contain("replace: newName");
+        preview.Should().Contain("useRegex: false");
+        preview.Should().Contain("caseSensitive: true");
+    }
+
+    [Fact]
     public void FormatCallPreview_ShouldFallBackToArgumentsPreview_WhenArgumentsJsonIsInvalid()
     {
         ConversationToolCall toolCall = new(
@@ -100,6 +126,20 @@ public sealed class ToolOutputFormatterTests
                 }
                 """),
             CreateResult(
+                "search_and_replace",
+                """
+                {
+                  "Path": "src/Program.cs",
+                  "AddedLineCount": 1,
+                  "RemovedLineCount": 1,
+                  "PreviewLines": [
+                    { "LineNumber": 7, "Kind": "remove", "Text": "oldName++;" },
+                    { "LineNumber": 7, "Kind": "add", "Text": "newName++;" }
+                  ],
+                  "RemainingPreviewLineCount": 0
+                }
+                """),
+            CreateResult(
                 "file_delete",
                 """
                 {
@@ -117,10 +157,13 @@ public sealed class ToolOutputFormatterTests
         IReadOnlyList<string> messages = _sut.FormatResults(batch);
 
         messages.Should().HaveCount(1);
-        messages[0].Should().Contain("Edited 2 files (+3 -3)");
+        messages[0].Should().Contain("Edited 3 files (+4 -4)");
         messages[0].Should().Contain("src/new-file.cs (+3 -1)");
+        messages[0].Should().Contain("src/Program.cs (+1 -1)");
         messages[0].Should().Contain("10 +var answer = 42;");
         messages[0].Should().Contain("11 -return 0;");
+        messages[0].Should().Contain("7 -oldName++;");
+        messages[0].Should().Contain("7 +newName++;");
         messages[0].Should().Contain("... +1 lines");
         messages[0].Should().Contain("src/old.cs -> src/renamed.cs (+0 -2)");
     }

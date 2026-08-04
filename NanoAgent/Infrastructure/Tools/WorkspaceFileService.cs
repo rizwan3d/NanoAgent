@@ -314,6 +314,40 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             cancellationToken);
     }
 
+    public async Task<WorkspaceSearchAndReplaceExecutionResult> SearchAndReplaceWithTrackingAsync(
+        string path,
+        string search,
+        string replace,
+        bool useRegex,
+        bool caseSensitive,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        WorkspaceFileEditState beforeState = await CaptureFileStateAsync(path, cancellationToken);
+
+        WorkspaceSearchAndReplaceResult result = await SearchAndReplaceAsync(
+            path,
+            search,
+            replace,
+            useRegex,
+            caseSensitive,
+            cancellationToken);
+
+        if (result.ReplacementCount == 0)
+        {
+            return new WorkspaceSearchAndReplaceExecutionResult(result, null);
+        }
+
+        WorkspaceFileEditState afterState = await CaptureFileStateAsync(path, cancellationToken);
+        return new WorkspaceSearchAndReplaceExecutionResult(
+            result,
+            new WorkspaceFileEditTransaction(
+                $"search_and_replace ({result.Path})",
+                [beforeState],
+                [afterState]));
+    }
+
     private async Task<WorkspaceApplyPatchExecutionResult> ApplyPatchWithTrackingAsync(
         PatchDocument document,
         string[] trackedPaths,
@@ -593,6 +627,70 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             request.Query,
             ToWorkspaceRelativePath(fullPath),
             await SearchTextManagedAsync(fullPath, request, ignoreMatcher, cancellationToken));
+    }
+
+    public async Task<WorkspaceSearchAndReplaceResult> SearchAndReplaceAsync(
+        string path,
+        string search,
+        string replace,
+        bool useRegex,
+        bool caseSensitive,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentException.ThrowIfNullOrWhiteSpace(search);
+        ArgumentNullException.ThrowIfNull(replace);
+
+        string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
+        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
+
+        (string currentContent, int replacementCount) = useRegex
+            ? ReplaceRegexOccurrences(previousContent, search, replace, caseSensitive)
+            : ReplaceLiteralOccurrences(previousContent, search, replace, caseSensitive);
+
+        if (replacementCount == 0)
+        {
+            return new WorkspaceSearchAndReplaceResult(
+                ToWorkspaceRelativePath(fullPath),
+                search,
+                replace,
+                useRegex,
+                caseSensitive,
+                0,
+                previousContent.Length,
+                0,
+                0,
+                [],
+                0);
+        }
+
+        WorkspaceFileEditState expectedState = new(
+            ToWorkspaceRelativePath(fullPath),
+            exists: true,
+            previousContent);
+
+        FileEncodingInfo encoding = DetectFileEncoding(fullPath);
+        await WriteWorkspaceFileAsync(
+            fullPath,
+            currentContent,
+            encoding,
+            expectedState,
+            cancellationToken);
+
+        FileWritePreview preview = BuildFileWritePreview(previousContent, currentContent);
+        return new WorkspaceSearchAndReplaceResult(
+            ToWorkspaceRelativePath(fullPath),
+            search,
+            replace,
+            useRegex,
+            caseSensitive,
+            replacementCount,
+            currentContent.Length,
+            preview.AddedLineCount,
+            preview.RemovedLineCount,
+            preview.Lines,
+            preview.RemainingPreviewLineCount);
     }
 
     public async Task<WorkspaceFileWriteResult> WriteFileAsync(
@@ -5276,6 +5374,72 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             : previousEndedWithNewLine;
 
         return JoinLines(combinedLines, trailingNewLine);
+    }
+
+    private static (string Content, int ReplacementCount) ReplaceLiteralOccurrences(
+        string content,
+        string search,
+        string replace,
+        bool caseSensitive)
+    {
+        StringComparison comparison = caseSensitive
+            ? StringComparison.Ordinal
+            : StringComparison.OrdinalIgnoreCase;
+        int searchLength = search.Length;
+        int startIndex = 0;
+        int replacementCount = 0;
+        StringBuilder builder = new();
+
+        while (true)
+        {
+            int matchIndex = content.IndexOf(search, startIndex, comparison);
+            if (matchIndex < 0)
+            {
+                builder.Append(content, startIndex, content.Length - startIndex);
+                break;
+            }
+
+            builder.Append(content, startIndex, matchIndex - startIndex);
+            builder.Append(replace);
+            startIndex = matchIndex + searchLength;
+            replacementCount++;
+        }
+
+        return (replacementCount == 0 ? content : builder.ToString(), replacementCount);
+    }
+
+    private static (string Content, int ReplacementCount) ReplaceRegexOccurrences(
+        string content,
+        string search,
+        string replace,
+        bool caseSensitive)
+    {
+        RegexOptions options = RegexOptions.CultureInvariant;
+        if (!caseSensitive)
+        {
+            options |= RegexOptions.IgnoreCase;
+        }
+
+        Regex regex;
+        try
+        {
+            regex = new Regex(search, options, TimeSpan.FromSeconds(2));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new ArgumentException(
+                $"Tool 'search_and_replace' received an invalid regex pattern: {exception.Message}",
+                nameof(search),
+                exception);
+        }
+
+        MatchCollection matches = regex.Matches(content);
+        if (matches.Count == 0)
+        {
+            return (content, 0);
+        }
+
+        return (regex.Replace(content, replace), matches.Count);
     }
 
     private static IReadOnlyList<PreviewDiffLine> SelectPreviewLines(

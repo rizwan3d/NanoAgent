@@ -58,6 +58,22 @@ public interface IWorkspaceFileService
         WorkspaceFileSearchRequest request,
         CancellationToken cancellationToken);
 
+    Task<WorkspaceSearchAndReplaceResult> SearchAndReplaceAsync(
+        string path,
+        string search,
+        string replace,
+        bool useRegex,
+        bool caseSensitive,
+        CancellationToken cancellationToken);
+
+    Task<WorkspaceSearchAndReplaceExecutionResult> SearchAndReplaceWithTrackingAsync(
+        string path,
+        string search,
+        string replace,
+        bool useRegex,
+        bool caseSensitive,
+        CancellationToken cancellationToken);
+
     Task<WorkspaceTextSearchResult> SearchTextAsync(
         WorkspaceTextSearchRequest request,
         CancellationToken cancellationToken);

@@ -39,6 +39,8 @@ namespace NanoAgent.Application.Tools.Serialization;
 [JsonSerializable(typeof(WorkspaceFileReadResult))]
 [JsonSerializable(typeof(WorkspaceFileSearchMatch))]
 [JsonSerializable(typeof(WorkspaceFileSearchResult))]
+[JsonSerializable(typeof(WorkspaceSearchAndReplaceResult))]
+[JsonSerializable(typeof(WorkspaceSearchAndReplaceExecutionResult))]
 [JsonSerializable(typeof(WorkspaceFileWritePreviewLine))]
 [JsonSerializable(typeof(WorkspaceFileWriteResult))]
 [JsonSerializable(typeof(WorkspaceSkillLoadResult))]
