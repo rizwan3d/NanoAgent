@@ -115,6 +115,11 @@ internal sealed class GitAutoCommitService : IAutoCommitService
                 ["commit", "-m", message, "-m", AutoCommitCoAuthorTrailer],
                 cancellationToken,
                 gitEnvironment);
+
+            await RunGitAsync(
+                repositoryRoot,
+                ["reset", "--mixed", "HEAD"],
+                cancellationToken);
         }
         finally
         {

@@ -30,6 +30,7 @@ public sealed class GitAutoCommitServiceTests
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(1, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
 
             GitAutoCommitService sut = new(
                 CreateSecretStoreMock().Object,
@@ -141,6 +142,7 @@ public sealed class GitAutoCommitServiceTests
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(1, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
 
             GitAutoCommitService sut = new(
                 CreateSecretStoreMock().Object,
@@ -196,6 +198,7 @@ public sealed class GitAutoCommitServiceTests
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(1, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
 
             GitAutoCommitService sut = new(
                 CreateSecretStoreMock().Object,
@@ -221,6 +224,63 @@ public sealed class GitAutoCommitServiceTests
                            request.Arguments[0] == "add").Subject;
 
             addRequest.Arguments.Should().Equal("add", "-A", "--", "old.txt", "new.txt");
+        }
+        finally
+        {
+            if (Directory.Exists(workspacePath))
+            {
+                Directory.Delete(workspacePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TryAutoCommitAsync_Should_ResetNormalIndexAfterTemporaryIndexCommit()
+    {
+        string workspacePath = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-autocommit-service-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspacePath);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "true", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, workspacePath, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "head", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(1, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+
+            GitAutoCommitService sut = new(
+                CreateSecretStoreMock().Object,
+                new Mock<IConversationProviderClient>(MockBehavior.Strict).Object,
+                new Mock<IConversationResponseMapper>(MockBehavior.Strict).Object,
+                CreateConversationConfigurationAccessorMock().Object,
+                processRunner);
+
+            ReplSessionContext session = new(
+                new AgentProviderProfile(ProviderKind.OpenAi, null),
+                "model-a",
+                ["model-a"],
+                workspacePath: workspacePath);
+
+            await sut.TryAutoCommitAsync(
+                session,
+                [new SessionEditContext(DateTimeOffset.UtcNow, "edit", ["src/test.txt"], 1, 0)],
+                CancellationToken.None);
+
+            ProcessExecutionRequest resetRequest = processRunner.Requests.Should().ContainSingle(
+                request => request.FileName == "git" &&
+                           request.Arguments.Count == 3 &&
+                           request.Arguments[0] == "reset" &&
+                           request.Arguments[1] == "--mixed" &&
+                           request.Arguments[2] == "HEAD").Subject;
+
+            resetRequest.EnvironmentVariables.Should().BeNull();
         }
         finally
         {

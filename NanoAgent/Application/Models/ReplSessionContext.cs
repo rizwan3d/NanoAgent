@@ -31,6 +31,7 @@ public sealed class ReplSessionContext
     private readonly List<ConversationRequestMessage> _conversationHistory = [];
     private readonly List<ConversationSectionTurn> _conversationTurns = [];
     private readonly List<SessionEditContext> _editContexts = [];
+    private readonly List<SessionEditContext> _recordedEdits = [];
     private readonly List<SessionFileContext> _fileContexts = [];
     private readonly List<WorkspaceFileEditTransaction> _expiredFileEditTransactions = [];
     private readonly Stack<WorkspaceFileEditTransaction> _redoFileEditTransactions = new();
@@ -888,6 +889,7 @@ public sealed class ReplSessionContext
 
         lock (_syncRoot)
         {
+            _recordedEdits.Add(normalizedContext);
             _editContexts.Add(normalizedContext);
             _totalRecordedEditCount++;
             TrimOldest(_editContexts, MaxEditContextEntries);
@@ -908,15 +910,13 @@ public sealed class ReplSessionContext
         lock (_syncRoot)
         {
             int normalizedStartingIndex = Math.Max(0, startingEditIndex);
-            int newEditCount = Math.Max(0, _totalRecordedEditCount - normalizedStartingIndex);
-            if (newEditCount == 0 || _editContexts.Count == 0)
+            if (normalizedStartingIndex >= _recordedEdits.Count)
             {
                 return [];
             }
 
-            int skipCount = Math.Max(0, _editContexts.Count - newEditCount);
-            return _editContexts
-                .Skip(skipCount)
+            return _recordedEdits
+                .Skip(normalizedStartingIndex)
                 .ToArray();
         }
     }
@@ -1584,7 +1584,7 @@ public sealed class ReplSessionContext
                 continue;
             }
 
-            _editContexts.Add(context with
+            SessionEditContext normalizedContext = context with
             {
                 Description = NormalizeStateText(context.Description, MaxPromptFieldCharacters),
                 Paths = (context.Paths ?? [])
@@ -1594,10 +1594,12 @@ public sealed class ReplSessionContext
                     .ToArray(),
                 AddedLineCount = Math.Max(0, context.AddedLineCount),
                 RemovedLineCount = Math.Max(0, context.RemovedLineCount)
-            });
+            };
+            _editContexts.Add(normalizedContext);
+            _recordedEdits.Add(normalizedContext);
         }
 
-        _totalRecordedEditCount = _editContexts.Count;
+        _totalRecordedEditCount = _recordedEdits.Count;
 
         foreach (SessionTerminalCommand command in (sessionState.TerminalHistory ?? []).Where(static command => command is not null))
         {
