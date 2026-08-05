@@ -1,5 +1,6 @@
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Models;
+using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
 using System.Text;
@@ -62,13 +63,16 @@ internal sealed class GitAutoCommitService : IAutoCommitService
             return;
         }
 
-        string[] changedPaths = CollectChangedPaths(newEdits);
+        string repositoryRoot = await GetRepositoryRootAsync(workspacePath, cancellationToken);
+        string[] changedPaths = ConvertToRepositoryRelativePaths(
+            workspacePath,
+            repositoryRoot,
+            CollectChangedPaths(newEdits));
         if (changedPaths.Length == 0)
         {
             return;
         }
 
-        string repositoryRoot = await GetRepositoryRootAsync(workspacePath, cancellationToken);
         string[] stagedPaths = await GetStagedPathsAsync(repositoryRoot, cancellationToken);
         if (HasUnrelatedStagedChanges(stagedPaths, changedPaths))
         {
@@ -322,6 +326,18 @@ internal sealed class GitAutoCommitService : IAutoCommitService
                     ? trimmed[(trimmed.LastIndexOf("->", StringComparison.Ordinal) + 2)..].Trim()
                     : trimmed;
             })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static string[] ConvertToRepositoryRelativePaths(
+        string workspacePath,
+        string repositoryRoot,
+        IReadOnlyList<string> changedPaths)
+    {
+        return changedPaths
+            .Select(path => WorkspacePath.Resolve(workspacePath, path))
+            .Select(path => Path.GetRelativePath(repositoryRoot, path).Replace('\\', '/'))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }

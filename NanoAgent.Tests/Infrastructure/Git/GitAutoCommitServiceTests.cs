@@ -121,6 +121,62 @@ public sealed class GitAutoCommitServiceTests
         }
     }
 
+    [Fact]
+    public async Task TryAutoCommitAsync_Should_StagePaths_RelativeToRepositoryRoot_WhenWorkspaceIsSubdirectory()
+    {
+        string repositoryRoot = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-autocommit-service-tests-" + Guid.NewGuid().ToString("N"));
+        string workspacePath = Path.Combine(repositoryRoot, "src", "app");
+        Directory.CreateDirectory(workspacePath);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "true", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, repositoryRoot, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "head", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(1, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+
+            GitAutoCommitService sut = new(
+                CreateSecretStoreMock().Object,
+                new Mock<IConversationProviderClient>(MockBehavior.Strict).Object,
+                new Mock<IConversationResponseMapper>(MockBehavior.Strict).Object,
+                CreateConversationConfigurationAccessorMock().Object,
+                processRunner);
+
+            ReplSessionContext session = new(
+                new AgentProviderProfile(ProviderKind.OpenAi, null),
+                "model-a",
+                ["model-a"],
+                workspacePath: workspacePath);
+
+            await sut.TryAutoCommitAsync(
+                session,
+                [new SessionEditContext(DateTimeOffset.UtcNow, "edit", ["Program.cs"], 1, 0)],
+                CancellationToken.None);
+
+            ProcessExecutionRequest addRequest = processRunner.Requests.Should().ContainSingle(
+                request => request.FileName == "git" &&
+                           request.Arguments.Count >= 1 &&
+                           request.Arguments[0] == "add").Subject;
+
+            addRequest.WorkingDirectory.Should().Be(repositoryRoot);
+            addRequest.Arguments.Should().Equal("add", "-A", "--", "src/app/Program.cs");
+        }
+        finally
+        {
+            if (Directory.Exists(repositoryRoot))
+            {
+                Directory.Delete(repositoryRoot, recursive: true);
+            }
+        }
+    }
+
     private static Mock<IApiKeySecretStore> CreateSecretStoreMock()
     {
         Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
