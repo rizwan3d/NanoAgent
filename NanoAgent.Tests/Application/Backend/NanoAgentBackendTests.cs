@@ -77,6 +77,41 @@ public sealed class NanoAgentBackendTests
     }
 
     [Fact]
+    public void GetFileEditSummary_Should_IncludeEditsOlderThanDisplayHistoryLimit()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        NanoAgentBackend backend = new([], [], autoApproveAllTools: false, workspace.Path);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "model-a",
+            ["model-a"],
+            workspacePath: workspace.Path);
+
+        for (int index = 0; index < 41; index++)
+        {
+            session.RecordEditContext(new SessionEditContext(
+                DateTimeOffset.UtcNow,
+                $"file_write created (src/file-{index:D2}.cs)",
+                [$"src/file-{index:D2}.cs"],
+                1,
+                0));
+        }
+
+        typeof(NanoAgentBackend)
+            .GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, session);
+        typeof(NanoAgentBackend)
+            .GetField("_editListStartIndex", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, 0);
+
+        IReadOnlyList<FileEditSummary> summary = backend.GetFileEditSummary();
+
+        summary.Should().HaveCount(41);
+        summary.Should().Contain(item => item.DisplayPath == "src/file-00.cs");
+        summary.Should().Contain(item => item.DisplayPath == "src/file-40.cs");
+    }
+
+    [Fact]
     public async Task DisposeAsync_Should_StopSession_WhenAutoCommitThrows()
     {
         using TempWorkspace workspace = TempWorkspace.Create();
