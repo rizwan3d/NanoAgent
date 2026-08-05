@@ -407,16 +407,21 @@ public sealed class NanoAgentBackend : INanoAgentBackend
             {
                 if (_autoCommitService is not null)
                 {
-                    await _autoCommitService.TryAutoCommitAsync(
-                        _session,
-                        _session.GetEditsSince(_editListStartIndex),
-                        CancellationToken.None);
+                    try
+                    {
+                        await _autoCommitService.TryAutoCommitAsync(
+                            _session,
+                            _session.GetEditsSince(_editListStartIndex),
+                            CancellationToken.None);
+                    }
+                    catch
+                    {
+                    }
                 }
-
-                await _sessionAppService.StopAsync(_session, CancellationToken.None);
             }
-            catch
+            finally
             {
+                await _sessionAppService.StopAsync(_session, CancellationToken.None);
             }
         }
 
