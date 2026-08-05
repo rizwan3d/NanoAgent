@@ -319,12 +319,20 @@ internal sealed class GitAutoCommitService : IAutoCommitService
         return edits
             .SelectMany(static edit => edit.Paths ?? [])
             .Where(static path => !string.IsNullOrWhiteSpace(path))
-            .Select(static path =>
+            .SelectMany(static path =>
             {
                 string trimmed = path.Trim();
-                return trimmed.Contains("->", StringComparison.Ordinal)
-                    ? trimmed[(trimmed.LastIndexOf("->", StringComparison.Ordinal) + 2)..].Trim()
-                    : trimmed;
+                if (!trimmed.Contains("->", StringComparison.Ordinal))
+                {
+                    return [trimmed];
+                }
+
+                int renameSeparatorIndex = trimmed.LastIndexOf("->", StringComparison.Ordinal);
+                string sourcePath = trimmed[..renameSeparatorIndex].Trim();
+                string destinationPath = trimmed[(renameSeparatorIndex + 2)..].Trim();
+
+                return new[] { sourcePath, destinationPath }
+                    .Where(static candidate => !string.IsNullOrWhiteSpace(candidate));
             })
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
