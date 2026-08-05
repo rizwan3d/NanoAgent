@@ -74,7 +74,7 @@ internal sealed class GitAutoCommitService : IAutoCommitService
         }
 
         string[] stagedPaths = await GetStagedPathsAsync(repositoryRoot, cancellationToken);
-        if (HasUnrelatedStagedChanges(stagedPaths, changedPaths))
+        if (stagedPaths.Length > 0)
         {
             return;
         }
@@ -378,19 +378,6 @@ internal sealed class GitAutoCommitService : IAutoCommitService
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
-    }
-
-    private static bool HasUnrelatedStagedChanges(
-        IReadOnlyList<string> stagedPaths,
-        IReadOnlyList<string> changedPaths)
-    {
-        if (stagedPaths.Count == 0)
-        {
-            return false;
-        }
-
-        HashSet<string> changedPathSet = changedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        return stagedPaths.Any(path => !changedPathSet.Contains(path));
     }
 
     private static IReadOnlyDictionary<string, string> CreateGitEnvironmentVariables(string indexPath)

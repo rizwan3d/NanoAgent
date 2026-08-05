@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NanoAgent.Application.Abstractions;
 using NanoAgent.Application.Backend;
 using NanoAgent.Application.Models;
@@ -105,6 +106,36 @@ public sealed class NanoAgentBackendTests
         sessionAppService.StoppedSession.Should().BeSameAs(session);
     }
 
+    [Fact]
+    public async Task DisposeAsync_Should_DisposeHost_WhenSessionStopThrows()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        NanoAgentBackend backend = new([], [], autoApproveAllTools: false, workspace.Path);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "model-a",
+            ["model-a"],
+            workspacePath: workspace.Path);
+        ThrowingSessionAppService sessionAppService = new();
+        RecordingAsyncDisposableHost host = new();
+
+        typeof(NanoAgentBackend)
+            .GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, session);
+        typeof(NanoAgentBackend)
+            .GetField("_sessionAppService", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, sessionAppService);
+        typeof(NanoAgentBackend)
+            .GetField("_host", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, host);
+
+        Func<Task> act = async () => await backend.DisposeAsync().AsTask();
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Stop failed.");
+        host.DisposeAsyncCallCount.Should().Be(1);
+    }
+
     private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
     {
         private readonly string _workspaceRoot;
@@ -187,6 +218,83 @@ public sealed class NanoAgentBackendTests
             StopCallCount++;
             StoppedSession = session;
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class ThrowingSessionAppService : ISessionAppService
+    {
+        public Task<ReplSessionContext> CreateAsync(
+            CreateSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+            ReplSessionContext currentSession,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public void EnsureTitleGenerationStarted(
+            ReplSessionContext session,
+            string firstUserPrompt)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<SessionSummary>> ListAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> ResumeAsync(
+            ResumeSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task SaveIfDirtyAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task StopAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            throw new InvalidOperationException("Stop failed.");
+        }
+    }
+
+    private sealed class RecordingAsyncDisposableHost : IHost, IAsyncDisposable
+    {
+        public int DisposeAsyncCallCount { get; private set; }
+
+        public IServiceProvider Services => throw new NotSupportedException();
+
+        public void Dispose()
+        {
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            DisposeAsyncCallCount++;
+            return ValueTask.CompletedTask;
+        }
+
+        public Task StartAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
         }
     }
 

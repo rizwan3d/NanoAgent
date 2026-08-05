@@ -71,7 +71,7 @@ public sealed class GitAutoCommitServiceTests
     }
 
     [Fact]
-    public async Task TryAutoCommitAsync_Should_Refuse_When_UnrelatedChangesAreAlreadyStaged()
+    public async Task TryAutoCommitAsync_Should_Refuse_When_AnyChangesAreAlreadyStaged()
     {
         string workspacePath = Path.Combine(
             Path.GetTempPath(),
@@ -83,7 +83,7 @@ public sealed class GitAutoCommitServiceTests
             FakeProcessRunner processRunner = new();
             processRunner.EnqueueResult(new ProcessExecutionResult(0, "true", string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, workspacePath, string.Empty));
-            processRunner.EnqueueResult(new ProcessExecutionResult(0, "docs/already-staged.md", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "src/test.txt", string.Empty));
 
             GitAutoCommitService sut = new(
                 CreateSecretStoreMock().Object,
