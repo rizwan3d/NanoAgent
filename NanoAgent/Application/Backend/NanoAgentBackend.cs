@@ -39,6 +39,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     private IProductTelemetry? _telemetry;
     private IWindowsSandboxStartupService? _windowsSandboxStartupService;
     private bool _updatePromptShown;
+    private int _editListStartIndex;
 
     public NanoAgentBackend(string[] args)
         : this(
@@ -179,6 +180,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         }
 
         await PromptForUpdateIfAvailableAsync(options.SkipUpdateCheck, cancellationToken);
+        _editListStartIndex = _session.GetRecordedEditCount();
 
         return CreateSessionInfo(_session, _profileResolver);
     }
@@ -227,6 +229,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         {
             await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
             _session = result.SessionOverride;
+            _editListStartIndex = _session.GetRecordedEditCount();
         }
 
         await _sessionAppService.SaveIfDirtyAsync(_session, cancellationToken);
@@ -388,7 +391,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
         return session is null
             ? []
             : SessionEditSummary.Build(
-                session.SessionState.Edits,
+                session.GetEditsSince(_editListStartIndex),
                 path => NanoAgent.Application.Utilities.WorkspacePath.Resolve(
                     session.WorkspacePath,
                     session.ResolvePathFromWorkingDirectory(path)));
@@ -406,7 +409,7 @@ public sealed class NanoAgentBackend : INanoAgentBackend
                 {
                     await _autoCommitService.TryAutoCommitAsync(
                         _session,
-                        _session.SessionState.Edits,
+                        _session.GetEditsSince(_editListStartIndex),
                         CancellationToken.None);
                 }
 

@@ -11,6 +11,7 @@ internal sealed class GitAutoCommitService : IAutoCommitService
     private const int MaxCommitSuggestionSeconds = 20;
     private const string AutoCommitFallbackMessage = "chore: apply NanoAgent changes";
     private const string AutoCommitCoAuthorTrailer = "Co-authored-by: NanoAgentAi <313132566+NanoAgentAi@users.noreply.github.com>";
+    private const string GitIndexFileEnvironmentVariable = "GIT_INDEX_FILE";
     private const string SystemPrompt =
         """
         You write git commit subjects for coding changes.
@@ -68,29 +69,60 @@ internal sealed class GitAutoCommitService : IAutoCommitService
         }
 
         string repositoryRoot = await GetRepositoryRootAsync(workspacePath, cancellationToken);
-        await StagePathsAsync(repositoryRoot, changedPaths, cancellationToken);
-
-        if (!await HasStagedChangesAsync(repositoryRoot, cancellationToken))
+        string[] stagedPaths = await GetStagedPathsAsync(repositoryRoot, cancellationToken);
+        if (HasUnrelatedStagedChanges(stagedPaths, changedPaths))
         {
             return;
         }
 
-        string message = await BuildCommitMessageAsync(session, repositoryRoot, cancellationToken);
-        if (string.IsNullOrWhiteSpace(message))
-        {
-            message = AutoCommitFallbackMessage;
-        }
+        string temporaryIndexPath = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-autocommit-index-" + Guid.NewGuid().ToString("N"));
 
-        await RunGitAsync(
-            repositoryRoot,
-            ["commit", "-m", message, "-m", AutoCommitCoAuthorTrailer],
-            cancellationToken);
+        try
+        {
+            IReadOnlyDictionary<string, string> gitEnvironment =
+                CreateGitEnvironmentVariables(temporaryIndexPath);
+
+            if (await HasHeadCommitAsync(repositoryRoot, cancellationToken))
+            {
+                await RunGitAsync(
+                    repositoryRoot,
+                    ["read-tree", "HEAD"],
+                    cancellationToken,
+                    gitEnvironment);
+            }
+
+            await StagePathsAsync(repositoryRoot, changedPaths, cancellationToken, gitEnvironment);
+
+            if (!await HasStagedChangesAsync(repositoryRoot, cancellationToken, gitEnvironment))
+            {
+                return;
+            }
+
+            string message = await BuildCommitMessageAsync(session, repositoryRoot, cancellationToken, gitEnvironment);
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                message = AutoCommitFallbackMessage;
+            }
+
+            await RunGitAsync(
+                repositoryRoot,
+                ["commit", "-m", message, "-m", AutoCommitCoAuthorTrailer],
+                cancellationToken,
+                gitEnvironment);
+        }
+        finally
+        {
+            TryDeleteTemporaryIndex(temporaryIndexPath);
+        }
     }
 
     private async Task<string> BuildCommitMessageAsync(
         ReplSessionContext session,
         string repositoryRoot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
         string? apiKey = await LoadProviderSecretAsync(session, cancellationToken);
         if (string.IsNullOrWhiteSpace(apiKey))
@@ -101,8 +133,12 @@ internal sealed class GitAutoCommitService : IAutoCommitService
         string stagedFiles = await GetGitOutputAsync(
             repositoryRoot,
             ["diff", "--cached", "--name-only"],
-            cancellationToken);
-        string diffSummary = await BuildCommitMessageDiffSummaryAsync(repositoryRoot, cancellationToken);
+            cancellationToken,
+            environmentVariables);
+        string diffSummary = await BuildCommitMessageDiffSummaryAsync(
+            repositoryRoot,
+            cancellationToken,
+            environmentVariables);
         string prompt = BuildCommitMessageSuggestionPrompt(stagedFiles, diffSummary);
 
         ConversationSettings settings = _configurationAccessor.GetSettings();
@@ -172,21 +208,26 @@ internal sealed class GitAutoCommitService : IAutoCommitService
     private async Task StagePathsAsync(
         string repositoryRoot,
         IReadOnlyList<string> changedPaths,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
         List<string> arguments = ["add", "-A", "--"];
         arguments.AddRange(changedPaths);
-        await RunGitAsync(repositoryRoot, arguments, cancellationToken);
+        await RunGitAsync(repositoryRoot, arguments, cancellationToken, environmentVariables);
     }
 
-    private async Task<bool> HasStagedChangesAsync(string repositoryRoot, CancellationToken cancellationToken)
+    private async Task<bool> HasStagedChangesAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
         ProcessExecutionResult result = await _processRunner.RunAsync(
             new ProcessExecutionRequest(
                 "git",
                 ["diff", "--cached", "--quiet"],
                 WorkingDirectory: repositoryRoot,
-                MaxOutputCharacters: 0),
+                MaxOutputCharacters: 0,
+                EnvironmentVariables: environmentVariables),
             cancellationToken);
 
         return result.ExitCode == 1;
@@ -194,16 +235,19 @@ internal sealed class GitAutoCommitService : IAutoCommitService
 
     private async Task<string> BuildCommitMessageDiffSummaryAsync(
         string repositoryRoot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
         string stats = await GetGitOutputAsync(
             repositoryRoot,
             ["diff", "--cached", "--stat", "--summary", "--find-renames"],
-            cancellationToken);
+            cancellationToken,
+            environmentVariables);
         string patch = await GetGitOutputAsync(
             repositoryRoot,
             ["diff", "--cached", "--unified=0", "--no-ext-diff", "--no-color", "--minimal"],
-            cancellationToken);
+            cancellationToken,
+            environmentVariables);
 
         string combined = string.IsNullOrWhiteSpace(patch)
             ? stats
@@ -229,23 +273,30 @@ internal sealed class GitAutoCommitService : IAutoCommitService
     private async Task<string> GetGitOutputAsync(
         string repositoryRoot,
         IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
-        ProcessExecutionResult result = await RunGitAsync(repositoryRoot, arguments, cancellationToken);
+        ProcessExecutionResult result = await RunGitAsync(
+            repositoryRoot,
+            arguments,
+            cancellationToken,
+            environmentVariables);
         return result.StandardOutput ?? string.Empty;
     }
 
     private async Task<ProcessExecutionResult> RunGitAsync(
         string workingDirectory,
         IReadOnlyList<string> arguments,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environmentVariables = null)
     {
         ProcessExecutionResult result = await _processRunner.RunAsync(
             new ProcessExecutionRequest(
                 "git",
                 arguments,
                 WorkingDirectory: workingDirectory,
-                MaxOutputCharacters: 20000),
+                MaxOutputCharacters: 20000,
+                EnvironmentVariables: environmentVariables),
             cancellationToken);
 
         if (result.ExitCode != 0)
@@ -273,6 +324,74 @@ internal sealed class GitAutoCommitService : IAutoCommitService
             })
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private async Task<bool> HasHeadCommitAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        ProcessExecutionResult result = await _processRunner.RunAsync(
+            new ProcessExecutionRequest(
+                "git",
+                ["rev-parse", "--verify", "HEAD"],
+                WorkingDirectory: repositoryRoot,
+                MaxOutputCharacters: 256),
+            cancellationToken);
+
+        return result.ExitCode == 0;
+    }
+
+    private async Task<string[]> GetStagedPathsAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        string output = await GetGitOutputAsync(
+            repositoryRoot,
+            ["diff", "--cached", "--name-only"],
+            cancellationToken);
+
+        return output
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool HasUnrelatedStagedChanges(
+        IReadOnlyList<string> stagedPaths,
+        IReadOnlyList<string> changedPaths)
+    {
+        if (stagedPaths.Count == 0)
+        {
+            return false;
+        }
+
+        HashSet<string> changedPathSet = changedPaths.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return stagedPaths.Any(path => !changedPathSet.Contains(path));
+    }
+
+    private static IReadOnlyDictionary<string, string> CreateGitEnvironmentVariables(string indexPath)
+    {
+        return new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [GitIndexFileEnvironmentVariable] = indexPath
+        };
+    }
+
+    private static void TryDeleteTemporaryIndex(string indexPath)
+    {
+        try
+        {
+            if (File.Exists(indexPath))
+            {
+                File.Delete(indexPath);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static string BuildCommitMessageSuggestionPrompt(string stagedFiles, string diffSummary)

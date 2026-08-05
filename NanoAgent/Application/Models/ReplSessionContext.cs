@@ -36,6 +36,7 @@ public sealed class ReplSessionContext
     private readonly Stack<WorkspaceFileEditTransaction> _redoFileEditTransactions = new();
     private readonly List<SessionTerminalCommand> _terminalHistory = [];
     private readonly List<TemporaryArtifactReference> _temporaryArtifacts = [];
+    private int _totalRecordedEditCount;
     private bool _sectionTitleGenerationStarted;
     private readonly Stack<WorkspaceFileEditTransaction> _undoFileEditTransactions = new();
     private readonly List<PermissionRule> _permissionOverrides = [];
@@ -888,8 +889,35 @@ public sealed class ReplSessionContext
         lock (_syncRoot)
         {
             _editContexts.Add(normalizedContext);
+            _totalRecordedEditCount++;
             TrimOldest(_editContexts, MaxEditContextEntries);
             IsPersistedStateDirty = true;
+        }
+    }
+
+    internal int GetRecordedEditCount()
+    {
+        lock (_syncRoot)
+        {
+            return _totalRecordedEditCount;
+        }
+    }
+
+    internal IReadOnlyList<SessionEditContext> GetEditsSince(int startingEditIndex)
+    {
+        lock (_syncRoot)
+        {
+            int normalizedStartingIndex = Math.Max(0, startingEditIndex);
+            int newEditCount = Math.Max(0, _totalRecordedEditCount - normalizedStartingIndex);
+            if (newEditCount == 0 || _editContexts.Count == 0)
+            {
+                return [];
+            }
+
+            int skipCount = Math.Max(0, _editContexts.Count - newEditCount);
+            return _editContexts
+                .Skip(skipCount)
+                .ToArray();
         }
     }
 
@@ -1568,6 +1596,8 @@ public sealed class ReplSessionContext
                 RemovedLineCount = Math.Max(0, context.RemovedLineCount)
             });
         }
+
+        _totalRecordedEditCount = _editContexts.Count;
 
         foreach (SessionTerminalCommand command in (sessionState.TerminalHistory ?? []).Where(static command => command is not null))
         {
