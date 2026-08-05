@@ -3,12 +3,17 @@ using NanoAgent.Application.Models;
 using NanoAgent.Application.Utilities;
 using NanoAgent.Infrastructure.Secrets;
 using NanoAgent.Infrastructure.Storage;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace NanoAgent.Infrastructure.Git;
 
 internal sealed class GitAutoCommitService : IAutoCommitService
 {
+    private sealed record GitRepositoryState(
+        string? HeadSha,
+        string? BranchReference);
+
     private const int MaxCommitSuggestionSeconds = 20;
     private const string AutoCommitFallbackMessage = "chore: apply NanoAgent changes";
     private const string AutoCommitCoAuthorTrailer = "Co-authored-by: NanoAgentAi <313132566+NanoAgentAi@users.noreply.github.com>";
@@ -79,6 +84,9 @@ internal sealed class GitAutoCommitService : IAutoCommitService
             return;
         }
 
+        string initialIndexTree = await GetIndexTreeAsync(repositoryRoot, cancellationToken);
+        GitRepositoryState initialRepositoryState = await GetRepositoryStateAsync(repositoryRoot, cancellationToken);
+
         string temporaryIndexPath = Path.Combine(
             Path.GetTempPath(),
             "nanoagent-autocommit-index-" + Guid.NewGuid().ToString("N"));
@@ -104,6 +112,19 @@ internal sealed class GitAutoCommitService : IAutoCommitService
                 return;
             }
 
+            if (!await IsRepositoryStateUnchangedAsync(
+                    repositoryRoot,
+                    initialRepositoryState,
+                    cancellationToken) ||
+                !await IsIndexTreeUnchangedAsync(
+                    repositoryRoot,
+                    initialIndexTree,
+                    cancellationToken) ||
+                !TryHasMatchingTrackedFileStates(session, changedPaths))
+            {
+                return;
+            }
+
             string message = await BuildCommitMessageAsync(session, repositoryRoot, cancellationToken, gitEnvironment);
             if (string.IsNullOrWhiteSpace(message))
             {
@@ -116,10 +137,13 @@ internal sealed class GitAutoCommitService : IAutoCommitService
                 cancellationToken,
                 gitEnvironment);
 
-            await RunGitAsync(
-                repositoryRoot,
-                ["reset", "--mixed", "HEAD"],
-                cancellationToken);
+            if (await IsIndexTreeUnchangedAsync(repositoryRoot, initialIndexTree, cancellationToken))
+            {
+                await RunGitAsync(
+                    repositoryRoot,
+                    ["reset", "--mixed", "HEAD"],
+                    cancellationToken);
+            }
         }
         finally
         {
@@ -383,6 +407,168 @@ internal sealed class GitAutoCommitService : IAutoCommitService
             .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private async Task<string> GetIndexTreeAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        ProcessExecutionResult result = await RunGitAsync(
+            repositoryRoot,
+            ["write-tree"],
+            cancellationToken);
+
+        return result.StandardOutput.Trim();
+    }
+
+    private async Task<GitRepositoryState> GetRepositoryStateAsync(
+        string repositoryRoot,
+        CancellationToken cancellationToken)
+    {
+        string? headSha = await TryGetGitOutputAsync(
+            repositoryRoot,
+            ["rev-parse", "--verify", "HEAD"],
+            cancellationToken);
+        string? branchReference = await TryGetGitOutputAsync(
+            repositoryRoot,
+            ["symbolic-ref", "-q", "HEAD"],
+            cancellationToken);
+
+        return new GitRepositoryState(
+            NormalizeGitOutput(headSha),
+            NormalizeGitOutput(branchReference));
+    }
+
+    private async Task<string?> TryGetGitOutputAsync(
+        string repositoryRoot,
+        IReadOnlyList<string> arguments,
+        CancellationToken cancellationToken)
+    {
+        ProcessExecutionResult result = await _processRunner.RunAsync(
+            new ProcessExecutionRequest(
+                "git",
+                arguments,
+                WorkingDirectory: repositoryRoot,
+                MaxOutputCharacters: 256),
+            cancellationToken);
+
+        return result.ExitCode == 0
+            ? result.StandardOutput
+            : null;
+    }
+
+    private async Task<bool> IsRepositoryStateUnchangedAsync(
+        string repositoryRoot,
+        GitRepositoryState expectedState,
+        CancellationToken cancellationToken)
+    {
+        GitRepositoryState currentState = await GetRepositoryStateAsync(repositoryRoot, cancellationToken);
+        return string.Equals(currentState.HeadSha, expectedState.HeadSha, StringComparison.Ordinal) &&
+               string.Equals(currentState.BranchReference, expectedState.BranchReference, StringComparison.Ordinal);
+    }
+
+    private async Task<bool> IsIndexTreeUnchangedAsync(
+        string repositoryRoot,
+        string expectedIndexTree,
+        CancellationToken cancellationToken)
+    {
+        string currentIndexTree = await GetIndexTreeAsync(repositoryRoot, cancellationToken);
+        return string.Equals(currentIndexTree, expectedIndexTree, StringComparison.Ordinal);
+    }
+
+    private static string? NormalizeGitOutput(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value.Trim();
+    }
+
+    private static bool TryHasMatchingTrackedFileStates(
+        ReplSessionContext session,
+        IReadOnlyList<string> changedPaths)
+    {
+        if (!session.TryCreateFileEditTransactionSnapshot(
+                "auto-commit snapshot",
+                out WorkspaceFileEditTransaction? transaction) ||
+            transaction is null)
+        {
+            return true;
+        }
+
+        StringComparer pathComparer = WorkspacePath.GetPathComparer();
+        HashSet<string> changedPathSet = new(
+            changedPaths
+                .Where(static path => !string.IsNullOrWhiteSpace(path))
+                .Select(static path => path.Trim()),
+            pathComparer);
+        HashSet<string> trackedPaths = new(
+            transaction.BeforeStates.Select(static state => state.Path)
+                .Concat(transaction.AfterStates.Select(static state => state.Path))
+                .Where(static path => !string.IsNullOrWhiteSpace(path)),
+            pathComparer);
+
+        if (!changedPathSet.IsSubsetOf(trackedPaths))
+        {
+            return true;
+        }
+
+        Dictionary<string, WorkspaceFileEditState> afterStatesByPath = transaction.AfterStates
+            .Where(static state => !string.IsNullOrWhiteSpace(state.Path))
+            .GroupBy(static state => state.Path, pathComparer)
+            .ToDictionary(static group => group.Key, static group => group.Last(), pathComparer);
+
+        foreach (string changedPath in changedPathSet)
+        {
+            if (!afterStatesByPath.TryGetValue(changedPath, out WorkspaceFileEditState? expectedState))
+            {
+                if (File.Exists(WorkspacePath.Resolve(session.WorkspacePath, changedPath)))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!MatchesWorkspaceFileState(session.WorkspacePath, expectedState))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool MatchesWorkspaceFileState(
+        string workspacePath,
+        WorkspaceFileEditState expectedState)
+    {
+        string fullPath = WorkspacePath.Resolve(workspacePath, expectedState.Path);
+        bool fileExists = File.Exists(fullPath);
+
+        if (!expectedState.Exists)
+        {
+            return !fileExists;
+        }
+
+        if (!fileExists)
+        {
+            return false;
+        }
+
+        if (expectedState.Content is not null)
+        {
+            string currentContent = File.ReadAllText(fullPath);
+            return string.Equals(currentContent, expectedState.Content, StringComparison.Ordinal);
+        }
+
+        if (string.IsNullOrWhiteSpace(expectedState.ContentHash))
+        {
+            return true;
+        }
+
+        using FileStream stream = new(fullPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        string currentHash = Convert.ToHexStringLower(SHA256.HashData(stream));
+        return string.Equals(currentHash, expectedState.ContentHash, StringComparison.Ordinal);
     }
 
     private static IReadOnlyDictionary<string, string> CreateGitEnvironmentVariables(string indexPath)
