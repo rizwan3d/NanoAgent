@@ -25,6 +25,9 @@ public sealed class GitAutoCommitServiceTests
             processRunner.EnqueueResult(new ProcessExecutionResult(0, "true", string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, workspacePath, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "head", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(1, string.Empty, string.Empty));
             processRunner.EnqueueResult(new ProcessExecutionResult(0, string.Empty, string.Empty));
 
@@ -57,6 +60,57 @@ public sealed class GitAutoCommitServiceTests
                 "chore: apply NanoAgent changes",
                 "-m",
                 "Co-authored-by: NanoAgentAi <313132566+NanoAgentAi@users.noreply.github.com>");
+        }
+        finally
+        {
+            if (Directory.Exists(workspacePath))
+            {
+                Directory.Delete(workspacePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TryAutoCommitAsync_Should_Refuse_When_UnrelatedChangesAreAlreadyStaged()
+    {
+        string workspacePath = Path.Combine(
+            Path.GetTempPath(),
+            "nanoagent-autocommit-service-tests-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(workspacePath);
+
+        try
+        {
+            FakeProcessRunner processRunner = new();
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "true", string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, workspacePath, string.Empty));
+            processRunner.EnqueueResult(new ProcessExecutionResult(0, "docs/already-staged.md", string.Empty));
+
+            GitAutoCommitService sut = new(
+                CreateSecretStoreMock().Object,
+                new Mock<IConversationProviderClient>(MockBehavior.Strict).Object,
+                new Mock<IConversationResponseMapper>(MockBehavior.Strict).Object,
+                CreateConversationConfigurationAccessorMock().Object,
+                processRunner);
+
+            ReplSessionContext session = new(
+                new AgentProviderProfile(ProviderKind.OpenAi, null),
+                "model-a",
+                ["model-a"],
+                workspacePath: workspacePath);
+
+            await sut.TryAutoCommitAsync(
+                session,
+                [new SessionEditContext(DateTimeOffset.UtcNow, "edit", ["src/test.txt"], 1, 0)],
+                CancellationToken.None);
+
+            processRunner.Requests.Should().NotContain(
+                request => request.FileName == "git" &&
+                           request.Arguments.Count >= 1 &&
+                           request.Arguments[0] == "commit");
+            processRunner.Requests.Should().NotContain(
+                request => request.FileName == "git" &&
+                           request.Arguments.Count >= 1 &&
+                           request.Arguments[0] == "add");
         }
         finally
         {
