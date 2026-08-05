@@ -401,37 +401,42 @@ public sealed class NanoAgentBackend : INanoAgentBackend
     {
         _telemetry?.TrackAppStopped();
 
-        if (_sessionAppService is not null && _session is not null)
+        try
         {
-            try
+            if (_sessionAppService is not null && _session is not null)
             {
-                if (_autoCommitService is not null)
+                try
                 {
-                    try
+                    if (_autoCommitService is not null)
                     {
-                        await _autoCommitService.TryAutoCommitAsync(
-                            _session,
-                            _session.GetEditsSince(_editListStartIndex),
-                            CancellationToken.None);
-                    }
-                    catch
-                    {
+                        try
+                        {
+                            await _autoCommitService.TryAutoCommitAsync(
+                                _session,
+                                _session.GetEditsSince(_editListStartIndex),
+                                CancellationToken.None);
+                        }
+                        catch
+                        {
+                        }
                     }
                 }
+                finally
+                {
+                    await _sessionAppService.StopAsync(_session, CancellationToken.None);
+                }
             }
-            finally
+        }
+        finally
+        {
+            if (_host is IAsyncDisposable asyncDisposable)
             {
-                await _sessionAppService.StopAsync(_session, CancellationToken.None);
+                await asyncDisposable.DisposeAsync();
             }
-        }
-
-        if (_host is IAsyncDisposable asyncDisposable)
-        {
-            await asyncDisposable.DisposeAsync();
-        }
-        else
-        {
-            _host?.Dispose();
+            else
+            {
+                _host?.Dispose();
+            }
         }
     }
 
