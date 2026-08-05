@@ -75,6 +75,36 @@ public sealed class NanoAgentBackendTests
         summary[0].RemovedLineCount.Should().Be(1);
     }
 
+    [Fact]
+    public async Task DisposeAsync_Should_StopSession_WhenAutoCommitThrows()
+    {
+        using TempWorkspace workspace = TempWorkspace.Create();
+        NanoAgentBackend backend = new([], [], autoApproveAllTools: false, workspace.Path);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "model-a",
+            ["model-a"],
+            workspacePath: workspace.Path);
+        ThrowingAutoCommitService autoCommitService = new();
+        RecordingSessionAppService sessionAppService = new();
+
+        typeof(NanoAgentBackend)
+            .GetField("_session", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, session);
+        typeof(NanoAgentBackend)
+            .GetField("_autoCommitService", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, autoCommitService);
+        typeof(NanoAgentBackend)
+            .GetField("_sessionAppService", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?.SetValue(backend, sessionAppService);
+
+        await backend.DisposeAsync();
+
+        autoCommitService.CallCount.Should().Be(1);
+        sessionAppService.StopCallCount.Should().Be(1);
+        sessionAppService.StoppedSession.Should().BeSameAs(session);
+    }
+
     private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
     {
         private readonly string _workspaceRoot;
@@ -87,6 +117,76 @@ public sealed class NanoAgentBackendTests
         public string GetWorkspaceRoot()
         {
             return _workspaceRoot;
+        }
+    }
+
+    private sealed class ThrowingAutoCommitService : IAutoCommitService
+    {
+        public int CallCount { get; private set; }
+
+        public Task TryAutoCommitAsync(
+            ReplSessionContext session,
+            IReadOnlyList<SessionEditContext> newEdits,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            throw new InvalidOperationException("Auto-commit failed.");
+        }
+    }
+
+    private sealed class RecordingSessionAppService : ISessionAppService
+    {
+        public int StopCallCount { get; private set; }
+
+        public ReplSessionContext? StoppedSession { get; private set; }
+
+        public Task<ReplSessionContext> CreateAsync(
+            CreateSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> CreateNewSectionInSessionAsync(
+            ReplSessionContext currentSession,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public void EnsureTitleGenerationStarted(
+            ReplSessionContext session,
+            string firstUserPrompt)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<IReadOnlyList<SessionSummary>> ListAsync(CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<ReplSessionContext> ResumeAsync(
+            ResumeSessionRequest request,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task SaveIfDirtyAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task StopAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            StopCallCount++;
+            StoppedSession = session;
+            return Task.CompletedTask;
         }
     }
 
