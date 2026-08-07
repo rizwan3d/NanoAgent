@@ -348,6 +348,7 @@ nanoai --session <session-guid>
 | `/models` | Choose the active model with the arrow-key picker. |
 | `/use <model>` | Switch directly to a model id. |
 | `/onboard` | Re-run provider onboarding through setup-type and provider submenus, then switch the active session. |
+| `/autocommit [on\|off\|status]` | Show or toggle automatic git commits for AI-made workspace changes in `.nanoagent/agent-profile.json`. |
 | `/plugin marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]` | Add or update a GitHub-backed plugin marketplace entry in `.nanoagent/plugins/marketplaces.json`. |
 | `/plugin marketplace remove <alias>` | Drop a configured plugin marketplace entry from `.nanoagent/plugins/marketplaces.json`. |
 | `/plugin browse <marketplaceAlias>` | List the plugins a marketplace offers, read from its `nanoagent-marketplace.json` index. |
@@ -372,6 +373,19 @@ nanoai --session <session-guid>
 | `/exit` | Exit the interactive shell. |
 
 Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
+
+## Tracked File Edits
+
+NanoAgent tracks edit transactions so `/undo` and `/redo` can revert or re-apply AI-made file changes when the edit happened through a tracked file tool.
+
+Built-in tracked edit tools include:
+
+- `file_write` for replacing or creating a whole file.
+- `apply_patch` for patch-style multi-file edits.
+- `insert_content` for inserting UTF-8 text before a specific 1-based line in an existing file. Use `totalLines + 1` to append at the end.
+- `search_and_replace` for single-file literal or regex replacements, with optional `caseSensitive: false` and `.NET` replacement groups such as `$1` in regex mode.
+
+`insert_content` and `search_and_replace` both preserve the normal tracked-edit flow: they record before/after file state, show compact diff previews, and participate in `/undo`, `/redo`, edit summaries, and automatic AI git commits.
 
 ### Custom Slash Commands
 
@@ -969,6 +983,37 @@ For trusted workspaces, you can disable approval prompts for all tools:
 This keeps workspace path checks, profile restrictions, sandbox-mode restrictions, and built-in deny rules active. Use explicit `rules` or shortcut settings when you need to override a specific deny policy.
 
 Memory writes still require approval by default through the memory policy, even in workspaces that auto-approve general tools.
+
+## Git Automation
+
+NanoAgent can automatically create a git commit for AI-made workspace edits.
+
+- Auto-commit is enabled by default for a workspace unless `.nanoagent/agent-profile.json` turns it off.
+- Commits are attempted at session shutdown after new tracked edits have been recorded.
+- NanoAgent skips auto-commit if the workspace is not a git repository or if you already have staged changes.
+- Staging is scoped to the files NanoAgent changed, including both sides of renames when needed.
+- NanoAgent uses a temporary git index and verifies the repo state and tracked file contents before committing, so concurrent changes do not get swept into the commit accidentally.
+- If commit-message generation cannot use the current provider credentials, NanoAgent falls back to `chore: apply NanoAgent changes`.
+
+Toggle the feature interactively:
+
+```text
+/autocommit status
+/autocommit off
+/autocommit on
+```
+
+Workspace config:
+
+```json
+{
+  "Application": {
+    "Git": {
+      "AutoCommitAfterAiChanges": true
+    }
+  }
+}
+```
 
 ## Workspace Files
 

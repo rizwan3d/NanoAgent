@@ -92,6 +92,7 @@ Use it when you want one agent experience across:
 - Use built-in LSP-powered code intelligence for symbols, definitions, references, diagnostics, and rename previews.
 - Turn feature requests and bug reports into concrete implementation plans.
 - Edit files, run checks, and iterate on a change without leaving your working tree.
+- Make surgical tracked edits with whole-file writes, patch application, line-based insertion, and single-file search/replace.
 - Review local diffs, files, pull requests, and merge requests with a findings-first workflow.
 - Switch between implementation, planning, review, exploration, and delegated work profiles.
 - Save repeatable prompts as slash commands in `.nanoagent/commands`.
@@ -215,6 +216,7 @@ Inside a session, a few useful commands are:
 | `/models` | Pick the active model. |
 | `/profile <name>` | Switch profiles such as implementation, planning, and review. |
 | `/permissions` | Review what runs automatically, asks first, or is denied. |
+| `/autocommit [on\|off\|status]` | Show or toggle automatic AI git commits for the current workspace. |
 | `/init` | Scaffold workspace-local `.nanoagent` files. |
 | `/undo` / `/redo` | Roll back or re-apply the most recent tracked edit. |
 
@@ -254,7 +256,8 @@ NanoAgent is designed for useful automation without silent surprises.
 - Profiles separate implementation, planning, review, exploration, and delegated work.
 - Permission rules control what runs automatically, what asks first, and what is denied.
 - Sensitive actions can require approval, including file edits, shell commands, network access, MCP tools, memory writes, and elevated operations.
-- Tracked file edits can be undone and redone.
+- Tracked file edits can be undone and redone, including targeted insertions and search/replace operations.
+- Automatic AI git commits are enabled by default, happen at session end, skip workspaces with existing staged changes, and stay scoped to files NanoAgent actually changed.
 - Secret redaction is off by default; when enabled, secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
 - Your workspace stays local. Only the prompt and selected context needed for a request are sent to the provider you configure.
 
@@ -307,7 +310,7 @@ Never collected:
 
 ## Documentation
 
-The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, VS Code and Visual Studio setup, ACP integration, CI review automation, LSP-powered code intelligence, graph-aware local codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
+The technical guide lives in [docs/documentation.md](docs/documentation.md). It covers installation details, first-run onboarding, desktop and terminal workflows, tracked edit tools, automatic git commits, VS Code and Visual Studio setup, ACP integration, CI review automation, LSP-powered code intelligence, graph-aware local codebase indexing, providers, permissions, MCP, memory, hooks, troubleshooting, release automation, and source builds.
 
 ## Contributing
 
