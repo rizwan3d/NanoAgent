@@ -779,11 +779,9 @@ public sealed class ProgramTests
         string[] lines = markup.Split('\n');
 
         lines.Should().HaveCount(3);
-        Markup.Remove(lines[0]).Should().Contain("❯");
-        Markup.Remove(lines[0]).Should().NotContain("hello");
+        Markup.Remove(lines[0]).Should().Be("    ");
         Markup.Remove(lines[1]).Should().Contain("hello");
-        Markup.Remove(lines[2]).Should().Contain("❯");
-        Markup.Remove(lines[2]).Should().NotContain("hello");
+        Markup.Remove(lines[2]).Should().Be("    ");
     }
 
     [Fact]
@@ -804,11 +802,9 @@ public sealed class ProgramTests
         string[] lines = markup.Split('\n');
 
         lines.Should().HaveCount(3);
-        Markup.Remove(lines[0]).Should().Contain("❯");
-        Markup.Remove(lines[0]).Should().NotContain("Enter a prompt and press Enter");
+        Markup.Remove(lines[0]).Should().Be("    ");
         Markup.Remove(lines[1]).Should().Contain("Enter a prompt and press Enter");
-        Markup.Remove(lines[2]).Should().Contain("❯");
-        Markup.Remove(lines[2]).Should().NotContain("Enter a prompt and press Enter");
+        Markup.Remove(lines[2]).Should().Be("    ");
     }
 
     [Fact]
