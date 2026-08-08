@@ -166,6 +166,8 @@ public sealed class AppState
 
     public string? ProviderName { get; set; }
 
+    public string? AgentProfileName { get; set; }
+
    public string? ReasoningEffort { get; set; }
 
     public string? ThinkingMode { get; set; }
@@ -185,12 +187,24 @@ public sealed class AppState
     // (if any) at each content row.
     public int GitSidebarContentTopRow { get; set; } = -1;
 
-    // Screen geometry for the working directory panel header row. Set during BuildUi()
-    // so a mouse click on that row shows a context action menu (Open in Explorer, Start Terminal).
-    public int WorkingDirectoryClickRow { get; set; } = -1;
+    // Screen geometry for the top BuildHeader working directory row. Set during BuildUi()
+    // so the working directory / git branch line is clickable like the messages panel header.
+    public int HeaderWorkingDirectoryClickRow { get; set; } = -1;
     // Screen geometry for the input panel header row. Set during BuildUi() so a mouse
     // click on the "Model: &lt;name&gt;" row opens the model selection interface.
     public int InputPanelHeaderRow { get; set; } = -1;
+    public int InputPanelHeaderLeftColumn { get; set; } = -1;
+    public int InputPanelHeaderRightColumn { get; set; } = -1;
+    public int InputProfileClickStartColumn { get; set; } = -1;
+    public int InputProfileClickEndColumn { get; set; } = -1;
+    public int InputModelClickStartColumn { get; set; } = -1;
+    public int InputModelClickEndColumn { get; set; } = -1;
+    public int InputReasoningClickStartColumn { get; set; } = -1;
+    public int InputReasoningClickEndColumn { get; set; } = -1;
+    public int InputProviderClickStartColumn { get; set; } = -1;
+    public int InputProviderClickEndColumn { get; set; } = -1;
+    public int InputThinkingClickStartColumn { get; set; } = -1;
+    public int InputThinkingClickEndColumn { get; set; } = -1;
 
     public int ModalContentTopRow { get; set; } = -1;
 

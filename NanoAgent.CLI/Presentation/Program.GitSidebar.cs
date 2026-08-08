@@ -33,6 +33,9 @@ public static partial class Program
 {
     private const int GitSidebarMinWindowWidth = 30;
     private const int GitSidebarCommitPageSize = 10;
+    private const string GitSidebarBackgroundMarkupStyle = "white on #1c1c1c";
+    private const int GitSidebarHorizontalPadding = 1;
+    private const int GitSidebarVerticalPadding = 1;
 
     private static bool TryGetGitSidebarWidth(AppState state, int windowWidth, out int width)
     {
@@ -64,7 +67,7 @@ public static partial class Program
     private static IRenderable BuildGitSidebarPanel(AppState state, int windowHeight)
     {
         IReadOnlyList<GitSidebarLine> lines = GetGitSidebarLines(state);
-        int viewportHeight = Math.Max(1, windowHeight - 2);
+        int viewportHeight = Math.Max(1, windowHeight - 1 - (GitSidebarVerticalPadding * 2));
 
         int maxScroll = Math.Max(0, lines.Count - viewportHeight);
         state.GitSidebarScrollOffset = Math.Clamp(state.GitSidebarScrollOffset, 0, maxScroll);
@@ -100,10 +103,28 @@ public static partial class Program
             ? $" [grey]{start + 1}-{Math.Min(lines.Count, start + viewportHeight)}/{lines.Count}[/]"
             : string.Empty;
 
-        return new Panel(new Markup(string.Join('\n', markup)))
-            .Header(SafeHeaderMarkup($"[bold]Git[/] [grey](F7)[/]{scrollHint}"))
-            .Border(BoxBorder.Square)
-            .Expand();
+        string paddingMarkup = ApplyGitSidebarBackground(string.Empty, state.GitSidebarWidth, GitSidebarHorizontalPadding);
+        string titleMarkup = ApplyGitSidebarBackground(
+            SafeHeaderMarkup($"[bold]Git[/] [grey](F7)[/]{scrollHint}"),
+            state.GitSidebarWidth,
+            GitSidebarHorizontalPadding);
+        string contentMarkup = ApplyGitSidebarBackground(string.Join('\n', markup), state.GitSidebarWidth, GitSidebarHorizontalPadding);
+        return new Markup($"{paddingMarkup}\n{titleMarkup}\n{contentMarkup}\n{paddingMarkup}");
+    }
+
+    private static string ApplyGitSidebarBackground(string markup, int contentWidth, int horizontalPadding = 0)
+    {
+        string[] lines = (markup ?? string.Empty).Split('\n');
+        int innerWidth = Math.Max(0, contentWidth - (horizontalPadding * 2));
+        for (int index = 0; index < lines.Length; index++)
+        {
+            string line = lines[index];
+            int visibleLength = Markup.Remove(line).Length;
+            int trailingSpaces = Math.Max(0, innerWidth - visibleLength);
+            lines[index] = $"[{GitSidebarBackgroundMarkupStyle}]{new string(' ', horizontalPadding)}{line}{new string(' ', trailingSpaces)}{new string(' ', horizontalPadding)}[/]";
+        }
+
+        return string.Join('\n', lines);
     }
 
     private static string HighlightGitSidebarMarkup(GitSidebarLine line)
@@ -221,7 +242,7 @@ public static partial class Program
 
     private static IReadOnlyList<GitSidebarLine> BuildGitSidebarLines(AppState state)
     {
-        int contentWidth = Math.Max(8, state.GitSidebarWidth - 4);
+        int contentWidth = Math.Max(8, state.GitSidebarWidth - (GitSidebarHorizontalPadding * 2));
         string root = state.RootDirectory;
         List<GitSidebarLine> lines = [];
 
