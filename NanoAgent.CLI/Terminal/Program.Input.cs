@@ -716,18 +716,19 @@ public static partial class Program
                return;
            }
 
-            // Click on the working directory panel header row opens an action menu.
-            if (state.WorkingDirectoryClickRow > 0 && row == state.WorkingDirectoryClickRow)
+            // Click on the header working directory row opens an action menu.
+            if (state.HeaderWorkingDirectoryClickRow > 0 && row == state.HeaderWorkingDirectoryClickRow)
             {
                 HandleWorkingDirectoryClick(state);
                 return;
             }
 
 
-            // Click on the input panel header row opens model/provider actions.
+            // Click on the input panel status row opens the matching selection for
+            // whichever visible label was clicked.
             if (state.InputPanelHeaderRow > 0 && row == state.InputPanelHeaderRow)
             {
-                HandleInputPanelHeaderClick(state);
+                HandleInputPanelHeaderClick(state, column);
                 return;
             }
             bool showFullOutput = (buttonCode & 0b1_1000) != 0;
@@ -2005,9 +2006,8 @@ public static partial class Program
     }
 
 
-    // Shows a selection modal with model and provider actions when the input panel
-    // header row (which displays the model and provider name) is clicked.
-    private static void HandleInputPanelHeaderClick(AppState state)
+    // Routes a click on the input status row to the matching setting picker.
+    private static void HandleInputPanelHeaderClick(AppState state, int column)
     {
         if (state.ActiveModal is not null ||
             state.IsReaderViewActive ||
@@ -2016,59 +2016,44 @@ public static partial class Program
             return;
         }
 
-        string rawModel = state.ActiveModelId ?? "n/a";
-        string modelName = rawModel.ToDisplayName();
-        string providerName = state.ProviderName ?? "n/a";
+        if (IsWithinClickZone(column, state.InputProfileClickStartColumn, state.InputProfileClickEndColumn))
+        {
+            HandleCommand(state, "/setting profile");
+            return;
+        }
 
-        string reasoningEffort = ReasoningEffortOptions.Format(state.ReasoningEffort);
-        string thinkingMode = ThinkingModeOptions.Format(state.ThinkingMode);
+        if (IsWithinClickZone(column, state.InputModelClickStartColumn, state.InputModelClickEndColumn))
+        {
+            RequestModelSelection(state);
+            return;
+        }
 
-       state.ActiveModal = SelectionModalState<string>.Create(
-           new NanoAgent.Application.Models.SelectionPromptRequest<string>(
-                "Model, Provider & Reasoning",
-               [
-                   new NanoAgent.Application.Models.SelectionPromptOption<string>(
-                       "Select Model",
-                       "model",
-                       "Switch the active model. Currently: " + modelName + "."),
-                   new NanoAgent.Application.Models.SelectionPromptOption<string>(
-                       "Select Provider",
-                       "provider",
-                        "Switch to another saved provider. Currently: " + providerName + "."),
-                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
-                        "Select Reasoning Effort",
-                        "reasoning",
-                        "Change the reasoning effort. Currently: " + reasoningEffort + "."),
-                    new NanoAgent.Application.Models.SelectionPromptOption<string>(
-                        "Select Thinking Mode",
-                        "thinking",
-                        "Toggle thinking on/off. Currently: " + thinkingMode + ".")
-               ],
-               "Choose an action. Enter confirms, Esc cancels.",
-               DefaultIndex: 0,
-               AllowCancellation: true,
-               DescriptionSupportsMarkup: true),
-           completionToken: new object(),
-           onSelected: action =>
-           {
-               switch (action)
-               {
-                   case "model":
-                       RequestModelSelection(state);
-                       break;
-                   case "provider":
-                       HandleCommand(state, "/provider");
-                       break;
-                    case "reasoning":
-                        HandleCommand(state, "/reasoning");
-                        break;
-                    case "thinking":
-                        OpenThinkingModeSelection(state);
-                        break;
-               }
-           },
-           onCancelled: _ => state.AddSystemMessage("Model/Provider action cancelled."));
-   }
+        if (IsWithinClickZone(column, state.InputReasoningClickStartColumn, state.InputReasoningClickEndColumn))
+        {
+            HandleCommand(state, "/reasoning");
+            return;
+        }
+
+        if (IsWithinClickZone(column, state.InputProviderClickStartColumn, state.InputProviderClickEndColumn))
+        {
+            HandleCommand(state, "/setting provider");
+            return;
+        }
+
+        if (IsWithinClickZone(column, state.InputThinkingClickStartColumn, state.InputThinkingClickEndColumn))
+        {
+            OpenThinkingModeSelection(state);
+            return;
+        }
+    }
+
+    private static bool IsWithinClickZone(int column, int startColumn, int endColumn)
+    {
+        return startColumn > 0 &&
+            endColumn >= startColumn &&
+            column >= startColumn &&
+            column <= endColumn;
+    }
 
     // Shows a selection modal to toggle thinking mode on/off.
     private static void OpenThinkingModeSelection(AppState state)
