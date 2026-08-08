@@ -762,6 +762,85 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public void BuildInputLineMarkup_Should_Render_OneBlankPromptRow_Above_And_Below_Input()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+
+        MethodInfo buildInputLineMarkup = typeof(Program).GetMethod(
+            "BuildInputLineMarkup",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        string markup = (string)buildInputLineMarkup.Invoke(
+            null,
+            [state, "hello", 5, null, "Enter a prompt and press Enter"])!;
+
+        string[] lines = markup.Split('\n');
+
+        lines.Should().HaveCount(3);
+        Markup.Remove(lines[0]).Should().Contain("❯");
+        Markup.Remove(lines[0]).Should().NotContain("hello");
+        Markup.Remove(lines[1]).Should().Contain("hello");
+        Markup.Remove(lines[2]).Should().Contain("❯");
+        Markup.Remove(lines[2]).Should().NotContain("hello");
+    }
+
+    [Fact]
+    public void BuildInputLineMarkup_Should_Render_Placeholder_With_OneBlankPromptRow_Above_And_Below()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object);
+
+        MethodInfo buildInputLineMarkup = typeof(Program).GetMethod(
+            "BuildInputLineMarkup",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        string markup = (string)buildInputLineMarkup.Invoke(
+            null,
+            [state, string.Empty, 0, null, "Enter a prompt and press Enter"])!;
+
+        string[] lines = markup.Split('\n');
+
+        lines.Should().HaveCount(3);
+        Markup.Remove(lines[0]).Should().Contain("❯");
+        Markup.Remove(lines[0]).Should().NotContain("Enter a prompt and press Enter");
+        Markup.Remove(lines[1]).Should().Contain("Enter a prompt and press Enter");
+        Markup.Remove(lines[2]).Should().Contain("❯");
+        Markup.Remove(lines[2]).Should().NotContain("Enter a prompt and press Enter");
+    }
+
+    [Fact]
+    public void GetInputPanelSize_Should_Match_RenderedInputMarkupLineCount()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<INanoAgentBackend>(MockBehavior.Strict).Object)
+        {
+            InputCursorIndex = "hello".Length
+        };
+        state.Input.Append("hello");
+
+        MethodInfo buildInputMarkup = typeof(Program).GetMethod(
+            "BuildInputMarkup",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+        MethodInfo getInputPanelSize = typeof(Program).GetMethod(
+            "GetInputPanelSize",
+            BindingFlags.NonPublic | BindingFlags.Static)!;
+
+        string markup = (string)buildInputMarkup.Invoke(null, [state])!;
+        int panelSize = (int)getInputPanelSize.Invoke(null, [state])!;
+        int expectedLineCount = markup
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Split('\n')
+            .Length;
+
+        panelSize.Should().Be(expectedLineCount);
+    }
+
+    [Fact]
     public void SanitizeCommitMessageSuggestion_Should_KeepSingleCleanSubjectLine()
     {
         MethodInfo sanitizeCommitMessageSuggestion = typeof(Program).GetMethod(

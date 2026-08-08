@@ -151,10 +151,13 @@ public sealed class SelectionModalState<T> : UiModalState
     {
         if (DeadlineUtc is not null)
         {
-            return $"[yellow]Selection prompt active.[/] Use [bold]Up/Down[/], hover, or click. Auto-select in [red]{GetRemainingSeconds()}s[/].";
+            return Program.BuildInputBoxMarkup(
+                Markup.Escape(
+                    $"Selection prompt active. Use Up/Down, hover, or click. Auto-select in {GetRemainingSeconds()}s."));
         }
 
-        return "[yellow]Selection prompt active.[/] Use [bold]Up/Down[/], hover, or click.";
+        return Program.BuildInputBoxMarkup(
+            Markup.Escape("Selection prompt active. Use Up/Down, hover, or click."));
     }
 
     public override void HandleKey(AppState state, ConsoleKeyInfo key)
