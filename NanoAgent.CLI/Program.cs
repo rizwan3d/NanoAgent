@@ -12,7 +12,7 @@ public static partial class Program
     private const double EstimatedLiveTokensPerSecond = 4d;
     private const int InputCursorBlinkIntervalMilliseconds = 500;
     private const int InputCursorColumnWidth = 1;
-    private const int MessageScrollbarColumnWidth = 2;
+    private const int MessageScrollbarColumnWidth = 0;
     private const int MouseWheelScrollLineCount = 3;
     private const int MultilinePastePreviewLineThreshold = 3;
     private const int PasteContinuationReadTimeoutMilliseconds = 40;
@@ -82,7 +82,7 @@ public static partial class Program
 
     private static int GetHeaderPanelSize(AppState state)
     {
-        return state.HasMadeFirstLlmCall ? 3 : 9;
+        return state.HasMadeFirstLlmCall ? 4 : 9;
     }
 
     internal static void StartInitialization(
@@ -149,6 +149,7 @@ public static partial class Program
    {
        state.SessionId = sessionInfo.SessionId;
        state.SectionResumeCommand = sessionInfo.SectionResumeCommand;
+       state.AgentProfileName = sessionInfo.AgentProfileName;
        state.ProviderName = sessionInfo.ProviderName;
        state.ActiveModelId = sessionInfo.ModelId;
        state.ActiveModelContextWindowTokens = sessionInfo.ActiveModelContextWindowTokens;

@@ -1,4 +1,5 @@
 using NanoAgent.Application.Utilities;
+using NanoAgent.Infrastructure.Telemetry;
 using Spectre.Console;
 using Spectre.Console.Rendering;
 using System.Text;
@@ -15,9 +16,15 @@ public static partial class Program
     private const int MinimumPanelHeight = 3;
     private const int MinimumStandardLayoutHeight = 10;
     private const int PanelChromeLineCount = 2;
+    private const int InputStatusLineSize = 1;
     private const int FooterPanelSize = 1;
     private const string BusyStatusText = "NanoAgent is working";
     private const string InputSelectionMarkupStyle = "black on grey70";
+    private const string InputPanelBackgroundMarkupStyle = "white on #1c1c1c";
+    private const string InputAccentMarkupStyle = "black on purple";
+    private const string InputPrefixMarkup = $" [{InputAccentMarkupStyle}] [/]  ";
+    private const int InputPrefixPlainWidth = 3;
+    private const int InputLeftGutterWidth = 1;
 
     internal static IRenderable BuildUi(AppState state)
     {
@@ -31,7 +38,11 @@ public static partial class Program
     {
         // Off-screen by default; only the standard layout below maps clicks to rows.
         state.MessagesContentTopRow = -1;
+        state.HeaderWorkingDirectoryClickRow = -1;
         state.InputPanelHeaderRow = -1;
+        state.InputPanelHeaderLeftColumn = -1;
+        state.InputPanelHeaderRightColumn = -1;
+        ResetInputPanelClickZones(state);
         state.ModalContentTopRow = -1;
         state.ModalContentBottomRow = -1;
         state.ModalContentLeftColumn = -1;
@@ -52,10 +63,11 @@ public static partial class Program
             : 0;
 
         int footerSize = FooterPanelSize;
-        int inputSize =Math.Max(MinimumPanelHeight, GetInputPanelSize(state));
+        int inputStatusSize = InputStatusLineSize;
+        int inputSize = Math.Max(1, GetInputPanelSize(state));
         int headerSize = GetHeaderPanelSize(state);
         int bodyMinimumSize = HasPinnedPlan(state) ? 8 : MinimumPanelHeight;
-        int totalFixedSize = headerSize + inputSize + footerSize;
+        int totalFixedSize = headerSize + inputStatusSize + inputSize + footerSize;
         if (totalFixedSize + bodyMinimumSize > windowHeight)
         {
             int overflow = totalFixedSize + bodyMinimumSize - windowHeight;
@@ -82,22 +94,22 @@ public static partial class Program
         // is one row, so the first visible conversation line is headerSize + 2 (1-based).
         state.MessagesContentTopRow = headerSize + 2;
 
-        // The working directory panel header row (the messages panel top border) is
-        // directly above the first conversation line, so clicking it shows actions.
-        state.WorkingDirectoryClickRow = headerSize + 1;
+        // The working-directory line shifts between the startup wordmark header and
+        // the compact header shown after the first model turn.
+        state.HeaderWorkingDirectoryClickRow = GetHeaderWorkingDirectoryClickRow(state) - 1;
 
-        // The input panel header row (its top border) displays the model name.
-        // Clicking on it opens the model selection interface.
-        // With header, body, input, and footer sections consecutively, the first
-        // row of the input section (including its panel border/header) is:
-        // headerSize rows (header) + bodyHeight rows (body) + 1 = input panel header.
-        int bodyHeight = windowHeight - headerSize - inputSize - footerSize;
+        int bodyHeight = windowHeight - headerSize - inputStatusSize - inputSize - footerSize;
         state.InputPanelHeaderRow = headerSize + bodyHeight + 1;
+        state.InputPanelHeaderLeftColumn = state.GitSidebarWidth > 0
+            ? state.GitSidebarWidth + 1
+            : 1;
+        state.InputPanelHeaderRightColumn = windowWidth;
 
         Layout root = new Layout("root");
             root.SplitRows(
                 new Layout("header").Size(headerSize),
                 new Layout("body").Ratio(1),
+                new Layout("input-status").Size(inputStatusSize),
                 new Layout("input").Size(inputSize),
                 new Layout("footer").Size(footerSize));
 
@@ -119,13 +131,14 @@ public static partial class Program
             root["body"].Update(BuildBodyPanel(state));
         }
 
+            root["input-status"].Update(new Markup(BuildInputStatusLineMarkup(state)));
             root["input"].Update(BuildInputPanel(state));
 
-        root["footer"].Update(new Markup(BuildFooterMarkup(state)));
+            root["footer"].Update(new Markup(" " + BuildFooterMarkup(state)));
 
         if (state.GitSidebarWidth > 0)
         {
-            state.GitSidebarContentTopRow = 2; // first row below the panel's top border
+            state.GitSidebarContentTopRow = 3; // header row plus one padded row above the first selectable line
 
             Layout shell = new Layout("shell").SplitColumns(
                 new Layout("sidebar").Size(state.GitSidebarWidth),
@@ -174,24 +187,48 @@ public static partial class Program
 
     private static IRenderable BuildHeader(AppState state)
     {
-        if (!state.HasMadeFirstLlmCall)
+        string version = ProductTelemetryHelpers.GetNanoAgentVersion().Split('+')[0];
+        string workingDirectory = state.RootDirectory ?? Directory.GetCurrentDirectory();
+        string? gitBranch = GetGitBranchName(workingDirectory);
+        string? directoryLink = BuildEditorLink(workingDirectory, vscode: false);
+        string displayWorkingDirectory = workingDirectory;
+        string workingDirectoryPlain = $"   {workingDirectory}{(gitBranch is not null ? $" ({gitBranch})" : string.Empty)}";
+        int headerWidth = Math.Max(1, GetMainPaneWidth(state));
+        int rightBudget = Math.Max(0, headerWidth - MessagesPanelScrollHint.Length - 1);
+
+        if (workingDirectoryPlain.Length > rightBudget)
         {
-            return new Panel(new Markup(CliBranding.BuildHeaderBodyMarkup()))
-                .Header(SafeHeaderMarkup(CliBranding.BuildStatusHeaderMarkup()))
-                .Border(BoxBorder.Square)
-                .Expand();
+            int pathBudget = Math.Max(0, rightBudget - 3 - (gitBranch is not null ? gitBranch.Length + 3 : 0));
+            displayWorkingDirectory = TruncateFromLeft(workingDirectory, pathBudget);
+            workingDirectoryPlain = $"   {displayWorkingDirectory}{(gitBranch is not null ? $" ({gitBranch})" : string.Empty)}";
         }
 
-        return new Panel(new Markup(CliBranding.BuildStatusHeaderMarkup()))
-            .Border(BoxBorder.Square)
-            .Expand();
+        string workingDirectoryMarkup = directoryLink is null
+            ? $"   [underline aqua]{Markup.Escape(displayWorkingDirectory)}[/]"
+            : $"   [link={directoryLink}][underline aqua]{Markup.Escape(displayWorkingDirectory)}[/][/]";
+        string branchMarkup = gitBranch is not null
+            ? directoryLink is null
+                ? $" [yellow]({Markup.Escape(gitBranch)})[/]"
+                : $" [link={directoryLink}][yellow]({Markup.Escape(gitBranch)})[/][/]"
+            : string.Empty;
+        int spacerLength = Math.Max(1, headerWidth - workingDirectoryPlain.Length - MessagesPanelScrollHint.Length);
+        spacerLength= !state.HasMadeFirstLlmCall ? spacerLength-2 : spacerLength;
+
+        return new Markup(
+            (!state.HasMadeFirstLlmCall ? CliBranding.BuildHeaderBodyMarkup() : 
+            $"\n [bold purple]›[/] [bold white]NANOAGENT[/] [grey]v{Markup.Escape(version)}[/]\n") +
+            $"{workingDirectoryMarkup}{branchMarkup}{new string(' ', spacerLength)}[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]\n") ;
+    }
+
+    private static int GetHeaderWorkingDirectoryClickRow(AppState state)
+    {
+        return state.HasMadeFirstLlmCall ? 3 : 9;
     }
 
     private static IRenderable BuildMessagesPanel(AppState state)
     {
         return new Panel(BuildMessagesPanelContent(state))
-            .Header(SafeHeaderMarkup(BuildMessagesPanelHeaderMarkup(state)))
-            .Border(BoxBorder.Square)
+            .Border(BoxBorder.None)
             .Expand();
     }
 
@@ -209,31 +246,6 @@ public static partial class Program
         content["messages"].Update(new Markup(BuildMessagesMarkup(state)));
         content["busy"].Update(BuildBusyStatusRenderable(state));
         return content;
-    }
-
-    private static string BuildMessagesPanelHeaderMarkup(AppState state)
-    {
-        const string leftPrefix = "Session ── Working: ";
-        int headerWidth = GetPanelHeaderWidth(state);
-        int leftBudget = Math.Max(0, headerWidth - MessagesPanelScrollHint.Length - 1);
-        string rootDirectory = state.RootDirectory ?? string.Empty;
-        string displayRootDirectory = rootDirectory;
-        string? gitBranch = GetGitBranchName(rootDirectory);
-        string plainGitSuffix = gitBranch is not null ? $" ({gitBranch})" : string.Empty;
-        string gitSuffix = gitBranch is not null ? $" [yellow]({Markup.Escape(gitBranch)})[/]" : string.Empty;
-
-        if (leftPrefix.Length + displayRootDirectory.Length + plainGitSuffix.Length > leftBudget)
-        {
-            int rootBudget = Math.Max(0, leftBudget - leftPrefix.Length - plainGitSuffix.Length);
-            displayRootDirectory = TruncateFromLeft(rootDirectory, rootBudget);
-        }
-
-        string leftPlain = leftPrefix + displayRootDirectory + plainGitSuffix;
-        int spacerLength = Math.Max(1, headerWidth - leftPlain.Length - MessagesPanelScrollHint.Length);
-
-        return $"[bold]Session[/] ──[grey] Working:[/] [underline aqua]{Markup.Escape(displayRootDirectory)}[/]{gitSuffix}" +
-            $"{new string('─', spacerLength)}" +
-            $"[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]";
     }
 
     private static string? GetGitBranchName(string directory)
@@ -334,17 +346,145 @@ public static partial class Program
     private static IRenderable BuildPromptPanel(UiModalState modal)
     {
         return new Panel(new Markup(modal.BuildBodyMarkup()))
-            .Header(SafeHeaderMarkup("[bold yellow]Action Required[/]"))
-            .Border(BoxBorder.Double)
+            .Header(SafeHeaderMarkup(""))
+            .Border(BoxBorder.None)
             .Expand();
     }
 
     private static IRenderable BuildInputPanel(AppState state)
     {
-        return new Panel(new Markup(BuildInputMarkup(state)))
-            .Header(SafeHeaderMarkup(BuildInputPanelHeaderMarkup(state)))
-            .Border(BoxBorder.Square)
-            .Expand();
+        return new Markup(ApplyInputPanelBackground(BuildInputMarkup(state), GetInputContentWidth(state) - 2, 2));
+    }
+
+    private static string ApplyInputPanelBackground(string markup, int contentWidth)
+    {
+        return ApplyInputPanelBackground(markup, contentWidth, 0);
+    }
+
+    private static string ApplyInputPanelBackground(string markup, int contentWidth, int skipCharsFromStart)
+    {
+        string[] lines = (markup ?? string.Empty).Split('\n');
+        int skippedVisibleChars = Math.Max(0, skipCharsFromStart);
+
+        for (int index = 0; index < lines.Length; index++)
+        {
+            string line = lines[index];
+            (string leadingSegment, string highlightedSegment) = SplitMarkupByVisibleCharacters(
+                line,
+                skippedVisibleChars);
+            int visibleLength = Markup.Remove(highlightedSegment).Length;
+            int trailingSpaces = Math.Max(0, contentWidth - visibleLength);
+            lines[index] = $"{leadingSegment}[{InputPanelBackgroundMarkupStyle}]{new string(' ', InputLeftGutterWidth)}{highlightedSegment}{new string(' ', trailingSpaces)}[/]";
+        }
+
+        return string.Join('\n', lines);
+    }
+
+    private static (string LeadingSegment, string TrailingSegment) SplitMarkupByVisibleCharacters(
+        string markup,
+        int visibleCharacterCount)
+    {
+        if (string.IsNullOrEmpty(markup) || visibleCharacterCount <= 0)
+        {
+            return (string.Empty, markup ?? string.Empty);
+        }
+
+        List<string> activeTags = [];
+        int visibleCharactersSeen = 0;
+
+        for (int index = 0; index < markup.Length; index++)
+        {
+            char current = markup[index];
+            if (current == '[')
+            {
+                if (index + 1 < markup.Length && markup[index + 1] == '[')
+                {
+                    visibleCharactersSeen++;
+                    if (visibleCharactersSeen >= visibleCharacterCount)
+                    {
+                        return BuildBalancedMarkupSplit(markup, index + 2, activeTags);
+                    }
+
+                    index++;
+                    continue;
+                }
+
+                int tagEndIndex = markup.IndexOf(']', index + 1);
+                if (tagEndIndex < 0)
+                {
+                    break;
+                }
+
+                string tagContent = markup.Substring(index + 1, tagEndIndex - index - 1);
+                UpdateMarkupTagStack(tagContent, activeTags);
+                index = tagEndIndex;
+                continue;
+            }
+
+            visibleCharactersSeen++;
+            if (visibleCharactersSeen >= visibleCharacterCount)
+            {
+                return BuildBalancedMarkupSplit(markup, index + 1, activeTags);
+            }
+        }
+
+        return (markup, string.Empty);
+    }
+
+    private static void UpdateMarkupTagStack(string tagContent, List<string> activeTags)
+    {
+        if (string.IsNullOrEmpty(tagContent))
+        {
+            return;
+        }
+
+        if (string.Equals(tagContent, "/", StringComparison.Ordinal))
+        {
+            if (activeTags.Count > 0)
+            {
+                activeTags.RemoveAt(activeTags.Count - 1);
+            }
+
+            return;
+        }
+
+        if (tagContent[0] == '/')
+        {
+            string closingTarget = tagContent[1..];
+            for (int index = activeTags.Count - 1; index >= 0; index--)
+            {
+                if (string.Equals(activeTags[index], closingTarget, StringComparison.Ordinal))
+                {
+                    activeTags.RemoveAt(index);
+                    break;
+                }
+            }
+
+            return;
+        }
+
+        if (tagContent[^1] != '/')
+        {
+            activeTags.Add(tagContent);
+        }
+    }
+
+    private static (string LeadingSegment, string TrailingSegment) BuildBalancedMarkupSplit(
+        string markup,
+        int splitIndex,
+        List<string> activeTags)
+    {
+        string leadingMarkup = markup[..splitIndex];
+        string trailingMarkup = markup[splitIndex..];
+
+        if (activeTags.Count == 0)
+        {
+            return (leadingMarkup, trailingMarkup);
+        }
+
+        string closingMarkup = string.Concat(Enumerable.Repeat("[/]", activeTags.Count));
+        string reopeningMarkup = string.Concat(activeTags.Select(static tag => $"[{tag}]"));
+        return (leadingMarkup + closingMarkup, reopeningMarkup + trailingMarkup);
     }
 
     private static string SafeHeaderMarkup(string markup)
@@ -362,6 +502,123 @@ public static partial class Program
         catch (InvalidOperationException)
         {
             return Markup.Escape(markup);
+        }
+    }
+
+    private static string BuildInputStatusLineMarkup(AppState state)
+    {
+        List<(string PlainText, string Markup, string? Key)> segments = [];
+
+        if (!string.IsNullOrWhiteSpace(state.AgentProfileName))
+        {
+            segments.Add((state.AgentProfileName, $"[green]{Markup.Escape(state.AgentProfileName.CapitalizeFirstOnly())}[/]", "profile"));
+        }
+
+        string modelName = (state.ActiveModelId ?? string.Empty).ToDisplayName();
+        segments.Add((modelName, $"[aqua]{Markup.Escape(modelName)}[/]", "model"));
+
+        if (!string.IsNullOrWhiteSpace(state.ReasoningEffort))
+        {
+            string reasoningText = state.ReasoningEffort.ToUpperInvariant();
+            segments.Add((reasoningText, $"[yellow]{Markup.Escape(reasoningText)}[/]", "reasoning"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ProviderName))
+        {
+            string providerText = $"({state.ProviderName})";
+            segments.Add((providerText, $"[grey]{Markup.Escape(providerText)}[/]", "provider"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.ThinkingMode))
+        {
+            bool isThinkingOn = string.Equals(state.ThinkingMode, "on", StringComparison.OrdinalIgnoreCase);
+            segments.Add((
+                "Thinking",
+                isThinkingOn ? "[bold grey]Thinking[/]" : "[grey]Thinking[/]",
+                "thinking"));
+        }
+
+        if (state.ActiveModelContextWindowTokens is int contextWindowTokens &&
+            contextWindowTokens > 0)
+        {
+            string contextText = $"Context: {FormatContextWindowTokens(contextWindowTokens)}";
+            segments.Add((contextText, $"[grey]Context:[/] {Markup.Escape(FormatContextWindowTokens(contextWindowTokens))}", null));
+        }
+
+        ResetInputPanelClickZones(state);
+        int currentColumn = state.InputPanelHeaderLeftColumn + InputLeftGutterWidth;
+        List<string> markupSegments = [];
+        foreach ((string segmentPlainText, string segmentMarkup, string? key) in segments)
+        {
+            if (markupSegments.Count > 0)
+            {
+                currentColumn++;
+            }
+
+            int startColumn = currentColumn;
+            int endColumn = currentColumn + segmentPlainText.Length - 1;
+            AssignInputPanelClickZone(state, key, startColumn, endColumn);
+
+            markupSegments.Add(segmentMarkup);
+            currentColumn = endColumn + 1;
+        }
+
+        string markup = string.Join(" ", markupSegments);
+        string plainText = Markup.Remove(markup);
+        int widthBudget = Math.Max(10, GetMainPaneWidth(state) - InputLeftGutterWidth);
+        string paddedMarkup = $"{new string(' ', InputLeftGutterWidth)}{markup}";
+        return plainText.Length <= widthBudget
+            ? paddedMarkup
+            : $"{new string(' ', InputLeftGutterWidth)}[grey]{Markup.Escape(TruncateFromRight(plainText, widthBudget))}[/]";
+    }
+
+    private static void ResetInputPanelClickZones(AppState state)
+    {
+        state.InputProfileClickStartColumn = -1;
+        state.InputProfileClickEndColumn = -1;
+        state.InputModelClickStartColumn = -1;
+        state.InputModelClickEndColumn = -1;
+        state.InputReasoningClickStartColumn = -1;
+        state.InputReasoningClickEndColumn = -1;
+        state.InputProviderClickStartColumn = -1;
+        state.InputProviderClickEndColumn = -1;
+        state.InputThinkingClickStartColumn = -1;
+        state.InputThinkingClickEndColumn = -1;
+    }
+
+    private static void AssignInputPanelClickZone(
+        AppState state,
+        string? key,
+        int startColumn,
+        int endColumn)
+    {
+        if (string.IsNullOrWhiteSpace(key) || startColumn > endColumn)
+        {
+            return;
+        }
+
+        switch (key)
+        {
+            case "profile":
+                state.InputProfileClickStartColumn = startColumn;
+                state.InputProfileClickEndColumn = endColumn;
+                break;
+            case "model":
+                state.InputModelClickStartColumn = startColumn;
+                state.InputModelClickEndColumn = endColumn;
+                break;
+            case "reasoning":
+                state.InputReasoningClickStartColumn = startColumn;
+                state.InputReasoningClickEndColumn = endColumn;
+                break;
+            case "provider":
+                state.InputProviderClickStartColumn = startColumn;
+                state.InputProviderClickEndColumn = endColumn;
+                break;
+            case "thinking":
+                state.InputThinkingClickStartColumn = startColumn;
+                state.InputThinkingClickEndColumn = endColumn;
+                break;
         }
     }
 
@@ -943,35 +1200,15 @@ public static partial class Program
         int startIndex,
         int contentWidth)
     {
-        int thumbHeight = totalLineCount <= viewportLineCount
-            ? viewportLineCount
-            : Math.Clamp(
-                (int)Math.Round(viewportLineCount * (viewportLineCount / (double)totalLineCount)),
-                1,
-                viewportLineCount);
-        int thumbTop = 0;
-
-        if (totalLineCount > viewportLineCount)
-        {
-            int maxStartIndex = Math.Max(1, totalLineCount - viewportLineCount);
-            int maxThumbTop = Math.Max(0, viewportLineCount - thumbHeight);
-            thumbTop = (int)Math.Round(startIndex / (double)maxStartIndex * maxThumbTop);
-        }
-
         List<string> renderedLines = [];
 
-        for (int index = 0; index < visibleLines.Count; index++)
+        foreach (ConversationLine line in visibleLines)
         {
-            ConversationLine line = visibleLines[index];
-            string scrollGlyph = index >= thumbTop && index < thumbTop + thumbHeight
-                ? "█"
-                : "│";
             int spacerWidth = Math.Max(
                 1,
                 contentWidth + MessageScrollbarColumnWidth - line.Plain.Length - 1);
 
-            renderedLines.Add(
-                $"{line.Markup}{new string(' ', spacerWidth)}[grey]{scrollGlyph}[/]");
+            renderedLines.Add($"{line.Markup}{new string(' ', spacerWidth)}");
         }
 
         return string.Join('\n', renderedLines);
@@ -1309,12 +1546,12 @@ public static partial class Program
 
         if (TryBuildPastedTextSummary(state, out string pastedTextSummary))
         {
-            lines.Add($"[grey]{Markup.Escape(pastedTextSummary)}[/]");
+            lines.Add($"{InputPrefixMarkup}[grey]{Markup.Escape(pastedTextSummary)}[/]");
         }
 
         if (TryBuildInputAttachmentSummary(state, out string attachmentSummary))
         {
-            lines.Add($"[grey]{Markup.Escape(attachmentSummary)}[/]");
+            lines.Add($"{InputPrefixMarkup}[grey]{Markup.Escape(attachmentSummary)}[/]");
         }
 
         return string.Join('\n', lines);
@@ -1343,7 +1580,7 @@ public static partial class Program
             string hint = state.InputAttachments.Count > 0
                 ? "Left/Right jumps block; Backspace/Delete removes at cursor"
                 : "Left/Right jumps block; F4 removes nearest";
-            summary = $"{blockLabel} ({lineLabel}) - {hint}";
+            summary = $"   {blockLabel} ({lineLabel}) - {hint}";
             return true;
         }
 
@@ -1441,13 +1678,17 @@ public static partial class Program
     {
         string normalizedInput = input ?? string.Empty;
         int normalizedCursorIndex = Math.Clamp(cursorIndex, 0, normalizedInput.Length);
-        const string promptPlain = "> ";
-        const string promptMarkup = "[bold green]❯[/] ";
+        const string promptPlain = " > ";
+        const string promptMarkup = InputPrefixMarkup;
 
         // Empty input + a placeholder (e.g. while busy): show the cursor then a grey hint.
         if (normalizedInput.Length == 0 && !string.IsNullOrEmpty(placeholder))
         {
-            return $"{promptMarkup}{BuildInputCursorMarkup()}[grey]{Markup.Escape(placeholder)}[/]";
+            return string.Join(
+                '\n',
+                promptMarkup,
+                $"{promptMarkup}{BuildInputCursorMarkup()}[grey]{Markup.Escape(placeholder)}[/]",
+                promptMarkup);
         }
 
         int contentWidth = GetInputContentWidth(state);
@@ -1459,18 +1700,20 @@ public static partial class Program
             normalizedCursorIndex,
             selectionAnchorIndex,
             maxInputLength,
-            Math.Max(1, contentWidth - 2 - InputCursorColumnWidth));
-        List<string> renderedLines = [];
+            Math.Max(1, contentWidth - InputPrefixPlainWidth - InputCursorColumnWidth));
+        List<string> renderedLines = [promptMarkup];
 
         for (int index = 0; index < inputLines.Count; index++)
         {
             InputRenderLine inputLine = inputLines[index];
             bool showPrompt = index == 0;
-            string prefixMarkup = showPrompt ? promptMarkup : "  ";
+            string prefixMarkup = showPrompt ? promptMarkup : InputPrefixMarkup;
             string lineMarkup = BuildInputRenderLineMarkup(inputLine);
 
             renderedLines.Add($"{prefixMarkup}{lineMarkup}");
         }
+
+        renderedLines.Add(promptMarkup);
 
         return string.Join('\n', renderedLines);
     }
@@ -1509,32 +1752,16 @@ public static partial class Program
             return 4;
         }
 
-        string input = state.Input.ToString();
-        bool isBusy = state.IsBusy || state.IsStreaming;
-        InputDisplayText inputDisplay = BuildInputDisplayText(
-            input,
-            state.InputCursorIndex,
-            state.CollapsedInputPastes,
-            state.InputSelectionAnchor);
-        string visibleInput = inputDisplay.HasCollapsedPastes
-            ? inputDisplay.Text
-            : input;
-        int bodyLineCount = !inputDisplay.HasCollapsedPastes &&
-            GetInputLogicalLineCount(input) > MultilinePastePreviewLineThreshold
-                ? 1
-                : WrapInputText(
-                        visibleInput,
-                        GetInputFirstLineTextWidth(state),
-                        GetInputContinuationLineTextWidth(state)).Count;
+        return Math.Max(1, CountRenderedLines(BuildInputMarkup(state)));
+    }
 
-        if (TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
-        {
-            bodyLineCount += GetSlashCommandSuggestionLineCount(suggestions);
-        }
+    private static int CountRenderedLines(string markup)
+    {
+        string normalized = (markup ?? string.Empty)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
 
-        bodyLineCount += GetPendingInputSummaryLineCount(state);
-
-        return Math.Max(3, bodyLineCount + 2);
+        return normalized.Split('\n').Length;
     }
 
     private static int GetPendingInputSummaryLineCount(AppState state)
@@ -1769,7 +1996,7 @@ public static partial class Program
 
     private static int GetInputFirstLineTextWidth(AppState state)
     {
-        const string promptPlain = "❯ ";
+        const string promptPlain = "   ";
         int contentWidth = GetInputContentWidth(state);
 
         return Math.Max(
@@ -1780,7 +2007,7 @@ public static partial class Program
     private static int GetInputContinuationLineTextWidth(AppState state)
     {
         int contentWidth = GetInputContentWidth(state);
-        return Math.Max(1, contentWidth - 2 - InputCursorColumnWidth);
+        return Math.Max(1, contentWidth - InputPrefixPlainWidth - InputCursorColumnWidth);
     }
 
     private static int GetMainPaneWidth(AppState state)
@@ -1803,7 +2030,7 @@ public static partial class Program
 
     private static int GetInputContentWidth(AppState state)
     {
-        return Math.Max(20, GetMainPaneWidth(state) - 10);
+        return Math.Max(20, GetMainPaneWidth(state) - InputLeftGutterWidth);
     }
 
     private static int GetWindowWidth()
@@ -1840,8 +2067,18 @@ public static partial class Program
             InputCursorBlinkIntervalMilliseconds;
 
         return blinkFrame % 2 == 0
-            ? "[green]█[/]"
+            ? "[white]█[/]"
             : " ";
+    }
+
+    internal static string BuildInputBoxMarkup(string contentMarkup)
+    {
+        const string promptMarkup = InputPrefixMarkup;
+        return string.Join(
+            '\n',
+            promptMarkup,
+            $"{promptMarkup}{contentMarkup}",
+            promptMarkup);
     }
 
     private static IReadOnlyList<string> WrapInputText(
@@ -2153,4 +2390,6 @@ public static partial class Program
             : "..." + value[^(maxLength - 3)..];
     }
 }
+
+
 
