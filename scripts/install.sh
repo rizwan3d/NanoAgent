@@ -17,7 +17,7 @@ readonly TOTAL_STEPS=7
 # or the cross-tool DO_NOT_TRACK convention.
 readonly TELEMETRY_HOST="https://us.i.posthog.com"
 readonly TELEMETRY_PROJECT_TOKEN="phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk"
-readonly TELEMETRY_EVENT="nanoagent cli installed"
+readonly TELEMETRY_EVENT="cli installed"
 
 TEMP_ROOT=""
 CURRENT_STEP=0
@@ -715,7 +715,7 @@ send_install_telemetry() {
   distinct_id="$(telemetry_distinct_id)"
 
   local payload
-  payload="$(printf '{"api_key":"%s","event":"%s","distinct_id":"%s","properties":{"$lib":"nanoagent-installer","install_method":"install.sh","nanoagent_version":"%s","os_family":"%s","platform":"%s","app_surface":"cli","execution_environment":"%s","is_ci":%s}}' \
+  payload="$(printf '{"api_key":"%s","event":"%s","distinct_id":"%s","properties":{"$lib":"installer","install_method":"install.sh","app_version":"%s","os_family":"%s","platform":"%s","app_surface":"cli","execution_environment":"%s","is_ci":%s}}' \
     "$TELEMETRY_PROJECT_TOKEN" "$TELEMETRY_EVENT" "$distinct_id" "$tag" "$os_family" "$platform" "$execution_environment" "$is_ci")"
 
   local endpoint="${TELEMETRY_HOST}/i/v0/e/"

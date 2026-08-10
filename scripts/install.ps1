@@ -47,7 +47,7 @@ $InstallActivity = "Installing $AppName"
 # or the cross-tool DO_NOT_TRACK convention.
 $TelemetryHost = 'https://us.i.posthog.com'
 $TelemetryProjectToken = 'phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk'
-$TelemetryEvent = 'nanoagent cli installed'
+$TelemetryEvent = 'cli installed'
 
 function Write-Status {
     param([string]$Message)
@@ -96,9 +96,9 @@ function Send-InstallTelemetry {
             event       = $TelemetryEvent
             distinct_id = [System.Guid]::NewGuid().ToString('N')
             properties  = @{
-                '$lib'                = 'nanoagent-installer'
+                '$lib'                = 'installer'
                 install_method        = 'install.ps1'
-                nanoagent_version     = if ([string]::IsNullOrWhiteSpace($Tag)) { 'unknown' } else { $Tag }
+                app_version           = if ([string]::IsNullOrWhiteSpace($Tag)) { 'unknown' } else { $Tag }
                 os_family             = 'windows'
                 platform              = 'win-x64'
                 app_surface           = 'cli'
