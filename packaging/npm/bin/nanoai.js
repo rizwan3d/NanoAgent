@@ -8,7 +8,7 @@ const { maybeUpdateBinary } = require("../scripts/update");
 const { trackInstall } = require("../scripts/telemetry");
 
 function log(message) {
-  console.error(`[nanoagent] ${message}`);
+  console.error(`[stemcodeagent] ${message}`);
 }
 
 function forwardSignal(child, signal) {
@@ -44,7 +44,7 @@ async function main() {
   }
 
   child.on("error", (error) => {
-    log(`Failed to start NanoAgent CLI: ${error.message}`);
+    log(`Failed to start stemcodeAgent CLI: ${error.message}`);
     process.exit(1);
   });
 

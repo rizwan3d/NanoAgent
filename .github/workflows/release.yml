@@ -31,7 +31,7 @@ env:
   NUGET_SOURCE: https://api.nuget.org/v3/index.json
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  SOLUTION_FILE: NanoAgent.CrossPlatform.slnx
+  SOLUTION_FILE: StemCode.CrossPlatform.slnx
 
 jobs:
   validate:
@@ -52,10 +52,10 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.Desktop/packages.lock.json
-            NanoAgent.Tests/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.Desktop/packages.lock.json
+            StemCode.Tests/packages.lock.json
 
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
@@ -109,7 +109,7 @@ jobs:
           retention-days: 14
 
   pack-nuget:
-    name: Pack NanoAgent NuGet package
+    name: Pack StemCode NuGet package
     needs: validate
     runs-on: ubuntu-24.04
     permissions:
@@ -129,30 +129,30 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.Desktop/packages.lock.json
-            NanoAgent.Tests/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.Desktop/packages.lock.json
+            StemCode.Tests/packages.lock.json
 
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
 
-      - name: Pack NanoAgent NuGet package
+      - name: Pack StemCode NuGet package
         run: |
-          dotnet pack NanoAgent/NanoAgent.csproj \
+          dotnet pack StemCode/StemCode.csproj \
             --configuration ${{ env.CONFIGURATION }} \
             --no-restore \
             --output ./artifacts/packages/nuget \
             /p:Version=${{ env.RELEASE_VERSION }} \
             /p:InformationalVersion=${{ env.RELEASE_TAG }}
 
-      - name: Upload NanoAgent NuGet package
+      - name: Upload StemCode NuGet package
         uses: actions/upload-artifact@v6
         with:
           name: nuget-packages
           path: |
-            ./artifacts/packages/nuget/NanoAgent.*.nupkg
-            ./artifacts/packages/nuget/NanoAgent.*.snupkg
+            ./artifacts/packages/nuget/StemCode.*.nupkg
+            ./artifacts/packages/nuget/StemCode.*.snupkg
           if-no-files-found: error
           retention-days: 14
 
@@ -168,80 +168,80 @@ jobs:
         include:
           - display_name: CLI
             app_id: cli
-            package_name: NanoAgent.CLI
-            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            package_name: StemCode.CLI
+            project: StemCode.CLI/StemCode.CLI.csproj
             runner: windows-2025
             rid: win-x64
             artifact_name: cli-win-x64
 
           - display_name: CLI
             app_id: cli
-            package_name: NanoAgent.CLI
-            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            package_name: StemCode.CLI
+            project: StemCode.CLI/StemCode.CLI.csproj
             runner: ubuntu-24.04
             rid: linux-x64
             artifact_name: cli-linux-x64
 
           - display_name: CLI
             app_id: cli
-            package_name: NanoAgent.CLI
-            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            package_name: StemCode.CLI
+            project: StemCode.CLI/StemCode.CLI.csproj
             runner: ubuntu-24.04-arm
             rid: linux-arm64
             artifact_name: cli-linux-arm64
 
           - display_name: CLI
             app_id: cli
-            package_name: NanoAgent.CLI
-            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            package_name: StemCode.CLI
+            project: StemCode.CLI/StemCode.CLI.csproj
             runner: macos-15-intel
             rid: osx-x64
             artifact_name: cli-osx-x64
 
           - display_name: CLI
             app_id: cli
-            package_name: NanoAgent.CLI
-            project: NanoAgent.CLI/NanoAgent.CLI.csproj
+            package_name: StemCode.CLI
+            project: StemCode.CLI/StemCode.CLI.csproj
             runner: macos-15
             rid: osx-arm64
             artifact_name: cli-osx-arm64
 
           - display_name: Desktop
             app_id: desktop
-            package_name: NanoAgent.Desktop
-            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            package_name: StemCode.Desktop
+            project: StemCode.Desktop/StemCode.Desktop.csproj
             runner: windows-2025
             rid: win-x64
             artifact_name: desktop-win-x64
 
           - display_name: Desktop
             app_id: desktop
-            package_name: NanoAgent.Desktop
-            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            package_name: StemCode.Desktop
+            project: StemCode.Desktop/StemCode.Desktop.csproj
             runner: ubuntu-24.04
             rid: linux-x64
             artifact_name: desktop-linux-x64
 
           - display_name: Desktop
             app_id: desktop
-            package_name: NanoAgent.Desktop
-            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            package_name: StemCode.Desktop
+            project: StemCode.Desktop/StemCode.Desktop.csproj
             runner: ubuntu-24.04-arm
             rid: linux-arm64
             artifact_name: desktop-linux-arm64
 
           - display_name: Desktop
             app_id: desktop
-            package_name: NanoAgent.Desktop
-            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            package_name: StemCode.Desktop
+            project: StemCode.Desktop/StemCode.Desktop.csproj
             runner: macos-15-intel
             rid: osx-x64
             artifact_name: desktop-osx-x64
 
           - display_name: Desktop
             app_id: desktop
-            package_name: NanoAgent.Desktop
-            project: NanoAgent.Desktop/NanoAgent.Desktop.csproj
+            package_name: StemCode.Desktop
+            project: StemCode.Desktop/StemCode.Desktop.csproj
             runner: macos-15
             rid: osx-arm64
             artifact_name: desktop-osx-arm64
@@ -258,10 +258,10 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.Desktop/packages.lock.json
-            NanoAgent.Tests/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.Desktop/packages.lock.json
+            StemCode.Tests/packages.lock.json
 
       - name: Prepare artifact directories
         shell: pwsh
@@ -305,27 +305,27 @@ jobs:
             $version = "0.0.0"
           }
 
-          $scriptPath = Join-Path $env:RUNNER_TEMP "NanoAgent.Desktop.iss"
+          $scriptPath = Join-Path $env:RUNNER_TEMP "StemCode.Desktop.iss"
           $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\', '\\')
           $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\', '\\')
-          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "NanoAgent.Desktop/Assets/logo.ico").Replace('\', '\\')
+          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "StemCode.Desktop/Assets/logo.ico").Replace('\', '\\')
 
           @"
-          #define MyAppName "NanoAgent Desktop"
+          #define MyAppName "StemCode Desktop"
           #define MyAppVersion "$version"
-          #define MyAppPublisher "NanoAgent"
-          #define MyAppExeName "NanoAgent.Desktop.exe"
+          #define MyAppPublisher "StemCode"
+          #define MyAppExeName "StemCode.Desktop.exe"
 
           [Setup]
           AppId={{99F60D6D-6C4D-4CB8-934F-03CBF59D34BC}
           AppName={#MyAppName}
           AppVersion={#MyAppVersion}
           AppPublisher={#MyAppPublisher}
-          DefaultDirName={autopf}\NanoAgent Desktop
-          DefaultGroupName=NanoAgent Desktop
+          DefaultDirName={autopf}\StemCode Desktop
+          DefaultGroupName=StemCode Desktop
           DisableProgramGroupPage=yes
           OutputDir=$outputDir
-          OutputBaseFilename=NanoAgent.Desktop-${{ matrix.rid }}-setup
+          OutputBaseFilename=StemCode.Desktop-${{ matrix.rid }}-setup
           SetupIconFile=$setupIconFile
           Compression=lzma
           SolidCompression=yes
@@ -337,14 +337,14 @@ jobs:
           Source: "$publishDir\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{autoprograms}\NanoAgent Desktop"; Filename: "{app}\{#MyAppExeName}"
-          Name: "{autodesktop}\NanoAgent Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+          Name: "{autoprograms}\StemCode Desktop"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\StemCode Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
           [Tasks]
           Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
           [Run]
-          Filename: "{app}\{#MyAppExeName}"; Description: "Launch NanoAgent Desktop"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\{#MyAppExeName}"; Description: "Launch StemCode Desktop"; Flags: nowait postinstall skipifsilent
           "@ | Set-Content -Path $scriptPath -Encoding UTF8
 
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $scriptPath
@@ -368,7 +368,7 @@ jobs:
           retention-days: 14
 
   publish-nuget:
-    name: Publish NanoAgent NuGet package
+    name: Publish StemCode NuGet package
     needs: pack-nuget
     environment:
       name: production-release
@@ -393,7 +393,7 @@ jobs:
           name: nuget-packages
           path: ./artifacts/packages/nuget
 
-      - name: Publish NanoAgent package to NuGet.org
+      - name: Publish StemCode package to NuGet.org
         shell: bash
         env:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
@@ -406,11 +406,11 @@ jobs:
           fi
 
           shopt -s nullglob
-          packages=(./artifacts/packages/nuget/NanoAgent.[0-9]*.nupkg)
-          symbols=(./artifacts/packages/nuget/NanoAgent.[0-9]*.snupkg)
+          packages=(./artifacts/packages/nuget/StemCode.[0-9]*.nupkg)
+          symbols=(./artifacts/packages/nuget/StemCode.[0-9]*.snupkg)
 
           if [[ "${#packages[@]}" -eq 0 ]]; then
-            echo "No NanoAgent NuGet packages were produced." >&2
+            echo "No StemCode NuGet packages were produced." >&2
             exit 1
           fi
 
@@ -523,7 +523,7 @@ jobs:
           )"
 
           {
-            echo "# NanoAgent $RELEASE_TAG"
+            echo "# StemCode $RELEASE_TAG"
             echo
             echo "## Release assets"
             echo
@@ -550,7 +550,7 @@ jobs:
           set -euo pipefail
 
           tag="$RELEASE_TAG"
-          title="NanoAgent $tag"
+          title="StemCode $tag"
           target_sha="$(git rev-parse HEAD)"
           mapfile -t assets < <(find "$GITHUB_WORKSPACE/artifacts/release-assets" -maxdepth 1 -type f | sort)
 

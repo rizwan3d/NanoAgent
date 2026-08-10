@@ -27,10 +27,10 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
-  EXTENSION_DIR: NanoAgent.VS
-  EXTENSION_PROJECT: NanoAgent.VS/NanoAgent.VS.csproj
-  EXTENSION_MANIFEST: NanoAgent.VS/source.extension.vsixmanifest
-  EXTENSION_OVERVIEW: NanoAgent.VS/overview.md
+  EXTENSION_DIR: StemCode.VS
+  EXTENSION_PROJECT: StemCode.VS/StemCode.VS.csproj
+  EXTENSION_MANIFEST: StemCode.VS/source.extension.vsixmanifest
+  EXTENSION_OVERVIEW: StemCode.VS/overview.md
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
 jobs:
@@ -55,16 +55,16 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.VS/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.VS/packages.lock.json
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build NanoAgent CLI payload
+      - name: Build StemCode CLI payload
         run: >
-          dotnet build NanoAgent.CLI/NanoAgent.CLI.csproj
+          dotnet build StemCode.CLI/StemCode.CLI.csproj
           --configuration ${{ env.CONFIGURATION }}
           --nologo
 
@@ -139,7 +139,7 @@ jobs:
           $identity.Publisher = $publisherName
           $manifest.Save((Resolve-Path $env:EXTENSION_MANIFEST))
 
-          $vsixName = "NanoAgent.VS-$version.vsix"
+          $vsixName = "StemCode.VS-$version.vsix"
           "extension_version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "vsix_name=$vsixName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
@@ -150,7 +150,7 @@ jobs:
           /restore
           /m
           /p:Configuration=${{ env.CONFIGURATION }}
-          /p:BuildNanoAgentCliProject=false
+          /p:BuildStemCodeCliProject=false
           /p:VisualStudioVersion=${{ steps.vs.outputs.visual_studio_version }}
           /p:DeployExtension=false
 
@@ -160,7 +160,7 @@ jobs:
           $artifactDir = Join-Path $env:GITHUB_WORKSPACE "artifacts/visual-studio"
           New-Item -ItemType Directory -Force -Path $artifactDir | Out-Null
 
-          $sourcePath = Join-Path $env:GITHUB_WORKSPACE "${{ env.EXTENSION_DIR }}/bin/${{ env.CONFIGURATION }}/NanoAgent.VS.vsix"
+          $sourcePath = Join-Path $env:GITHUB_WORKSPACE "${{ env.EXTENSION_DIR }}/bin/${{ env.CONFIGURATION }}/StemCode.VS.vsix"
           $destinationPath = Join-Path $artifactDir "${{ steps.version.outputs.vsix_name }}"
 
           if (-not (Test-Path $sourcePath)) {
@@ -231,14 +231,14 @@ jobs:
           }
 
           $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "rizwan3d" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
-          $extensionName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_EXTENSION_NAME)) { "nanoagent-vs" } else { $env:VS_MARKETPLACE_EXTENSION_NAME.Trim() }
+          $extensionName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_EXTENSION_NAME)) { "stemcode-vs" } else { $env:VS_MARKETPLACE_EXTENSION_NAME.Trim() }
           $vsixPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/visual-studio/${{ needs.package.outputs.vsix_name }}"
 
           if (-not (Test-Path $vsixPath)) {
             throw "The VSIX artifact was not found at $vsixPath."
           }
 
-          $publishDir = Join-Path $env:RUNNER_TEMP "nanoagent-vs-publish"
+          $publishDir = Join-Path $env:RUNNER_TEMP "stemcode-vs-publish"
           New-Item -ItemType Directory -Force -Path $publishDir | Out-Null
 
           $overviewPath = Join-Path $publishDir "overview.md"
@@ -257,7 +257,7 @@ jobs:
             "publisher": "$publisherName",
             "private": false,
             "qna": true,
-            "repo": "https://github.com/Rizwan3D/NanoAgent"
+            "repo": "https://github.com/Rizwan3D/StemCode"
           }
           "@ | Set-Content -Path $publishManifestPath -Encoding UTF8
 

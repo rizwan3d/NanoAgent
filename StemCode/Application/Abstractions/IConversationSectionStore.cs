@@ -1,0 +1,17 @@
+using StemCode.Application.Models;
+
+namespace StemCode.Application.Abstractions;
+
+public interface IConversationSectionStore
+{
+    Task<ConversationSectionSnapshot?> LoadAsync(
+        string sectionId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ConversationSectionSnapshot>> ListAsync(
+        CancellationToken cancellationToken);
+
+    Task SaveAsync(
+        ConversationSectionSnapshot snapshot,
+        CancellationToken cancellationToken);
+}

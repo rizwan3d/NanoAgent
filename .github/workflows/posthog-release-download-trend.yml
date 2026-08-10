@@ -29,9 +29,9 @@ jobs:
       POSTHOG_HOST: ${{ vars.POSTHOG_HOST || 'https://us.i.posthog.com' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPOSITORY: ${{ github.repository }}
-      NPM_PACKAGE_IDS: ${{ github.event.inputs.npm_package_ids || vars.NPM_PACKAGE_IDS || 'nanoai-cli' }}
+      NPM_PACKAGE_IDS: ${{ github.event.inputs.npm_package_ids || vars.NPM_PACKAGE_IDS || 'stemcode-cli' }}
       NUGET_PACKAGE_IDS: ${{ github.event.inputs.nuget_package_ids || vars.NUGET_PACKAGE_IDS || '' }}
-      VSCODE_EXTENSION_IDS: ${{ github.event.inputs.vscode_extension_ids || vars.VSCODE_EXTENSION_IDS || 'rizwan3d.nanoagent,rizwan3d.nanoagent-vs' }}
+      VSCODE_EXTENSION_IDS: ${{ github.event.inputs.vscode_extension_ids || vars.VSCODE_EXTENSION_IDS || 'rizwan3d.stemcode,rizwan3d.stemcode-vs' }}
     steps:
       - name: Send GitHub release download snapshots to PostHog
         shell: bash
@@ -46,7 +46,7 @@ jobs:
           // Shared identity fields so every event this workflow emits stays
           // uniform (same $lib/CI fields) across the GitHub, npm, and NuGet steps.
           const commonProperties = {
-            '$lib': 'nanoagent-release-trend',
+            '$lib': 'stemcode-release-trend',
             source: 'github-actions',
             app_surface: 'github_actions',
             execution_environment: 'ci',
@@ -103,7 +103,7 @@ jobs:
             const releaseTotal = assets.reduce((sum, asset) => sum + (asset.download_count || 0), 0)
             repoTotal += releaseTotal
 
-            await posthogCapture('nanoagent release download snapshot', {
+            await posthogCapture('stemcode release download snapshot', {
               repository: REPOSITORY,
               release_id: release.id,
               release_tag: release.tag_name,
@@ -119,7 +119,7 @@ jobs:
 
             for (const asset of assets) {
               assetEvents += 1
-              await posthogCapture('nanoagent release asset download snapshot', {
+              await posthogCapture('stemcode release asset download snapshot', {
                 repository: REPOSITORY,
                 release_id: release.id,
                 release_tag: release.tag_name,
@@ -138,7 +138,7 @@ jobs:
             }
           }
 
-          await posthogCapture('nanoagent repository release download snapshot', {
+          await posthogCapture('stemcode repository release download snapshot', {
             repository: REPOSITORY,
             repository_download_count: repoTotal,
             release_count: releases.length,
@@ -164,7 +164,7 @@ jobs:
           // Same identity shape as the GitHub release step so every event this
           // workflow emits stays uniform (same $lib/CI fields and event prefix).
           const commonProperties = {
-            '$lib': 'nanoagent-release-trend',
+            '$lib': 'stemcode-release-trend',
             source: 'github-actions',
             app_surface: 'github_actions',
             execution_environment: 'ci',
@@ -240,7 +240,7 @@ jobs:
             )
 
             if (!packageResult) {
-              await posthogCapture('nanoagent nuget package lookup failed', {
+              await posthogCapture('stemcode nuget package lookup failed', {
                 repository: REPOSITORY,
                 package_id: configuredPackageId,
                 collected_at: collectedAt,
@@ -259,7 +259,7 @@ jobs:
             totalDownloads += packageTotalDownloads
             totalVersionEvents += versions.length
 
-            await posthogCapture('nanoagent nuget package install snapshot', {
+            await posthogCapture('stemcode nuget package install snapshot', {
               repository: REPOSITORY,
               package_id: packageId,
               package_title: packageResult.title || packageId,
@@ -279,7 +279,7 @@ jobs:
             }, `nuget-package:${packageId.toLowerCase()}`)
 
             for (const versionInfo of versions) {
-              await posthogCapture('nanoagent nuget package version install snapshot', {
+              await posthogCapture('stemcode nuget package version install snapshot', {
                 repository: REPOSITORY,
                 package_id: packageId,
                 package_version: versionInfo.version,
@@ -290,7 +290,7 @@ jobs:
             }
           }
 
-          await posthogCapture('nanoagent nuget tracked packages install snapshot', {
+          await posthogCapture('stemcode nuget tracked packages install snapshot', {
             repository: REPOSITORY,
             package_ids: packageIds,
             tracked_package_count: trackedPackages,
@@ -317,7 +317,7 @@ jobs:
           // Same identity shape as the GitHub release, NuGet, and VS Code steps
           // so every event this workflow emits stays uniform (same $lib/CI fields).
           const commonProperties = {
-            '$lib': 'nanoagent-release-trend',
+            '$lib': 'stemcode-release-trend',
             source: 'github-actions',
             app_surface: 'github_actions',
             execution_environment: 'ci',
@@ -400,7 +400,7 @@ jobs:
             try {
               metadata = await npmRegistryPackage(configuredPackageId)
             } catch (error) {
-              await posthogCapture('nanoagent npm package lookup failed', {
+              await posthogCapture('stemcode npm package lookup failed', {
                 repository: REPOSITORY,
                 package_id: configuredPackageId,
                 collected_at: collectedAt,
@@ -437,7 +437,7 @@ jobs:
             totalLastWeekDownloads += packageLastWeekDownloads
             totalLastMonthDownloads += packageLastMonthDownloads
 
-            await posthogCapture('nanoagent npm package install snapshot', {
+            await posthogCapture('stemcode npm package install snapshot', {
               repository: REPOSITORY,
               package_id: packageId,
               package_description: latestManifest && latestManifest.description ? latestManifest.description : null,
@@ -466,7 +466,7 @@ jobs:
             }, `npm-package:${packageId.toLowerCase()}`)
           }
 
-          await posthogCapture('nanoagent npm tracked packages install snapshot', {
+          await posthogCapture('stemcode npm tracked packages install snapshot', {
             repository: REPOSITORY,
             package_ids: packageIds,
             tracked_package_count: trackedPackages,
@@ -495,7 +495,7 @@ jobs:
           // Same identity shape as the GitHub release and NuGet steps so every
           // event this workflow emits stays uniform (same $lib/CI fields).
           const commonProperties = {
-            '$lib': 'nanoagent-release-trend',
+            '$lib': 'stemcode-release-trend',
             source: 'github-actions',
             app_surface: 'github_actions',
             execution_environment: 'ci',
@@ -569,7 +569,7 @@ jobs:
             const extension = await queryExtension(configuredExtensionId)
 
             if (!extension) {
-              await posthogCapture('nanoagent vscode extension lookup failed', {
+              await posthogCapture('stemcode vscode extension lookup failed', {
                 repository: REPOSITORY,
                 extension_id: configuredExtensionId,
                 collected_at: collectedAt,
@@ -593,7 +593,7 @@ jobs:
             trackedExtensions += 1
             totalInstalls += installCount
 
-            await posthogCapture('nanoagent vscode extension install snapshot', {
+            await posthogCapture('stemcode vscode extension install snapshot', {
               repository: REPOSITORY,
               extension_id: fullExtensionId,
               extension_name: extension.extensionName,
@@ -617,7 +617,7 @@ jobs:
             }, `vscode-extension:${fullExtensionId.toLowerCase()}`)
           }
 
-          await posthogCapture('nanoagent vscode tracked extensions install snapshot', {
+          await posthogCapture('stemcode vscode tracked extensions install snapshot', {
             repository: REPOSITORY,
             extension_ids: extensionIds,
             tracked_extension_count: trackedExtensions,

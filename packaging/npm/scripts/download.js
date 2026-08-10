@@ -1,6 +1,6 @@
 "use strict";
 
-// Downloads, verifies, and extracts the NanoAgent CLI binary from the matching
+// Downloads, verifies, and extracts the StemCode CLI binary from the matching
 // GitHub release. Shared by the postinstall step and the runtime launcher so the
 // CLI self-heals on first run even when a package manager skips lifecycle
 // scripts (notably `bun install`, which does not run postinstall by default).
@@ -15,7 +15,7 @@ const platform = require("./platform");
 async function fetchBuffer(url) {
   if (typeof fetch !== "function") {
     throw new Error(
-      "Global fetch is unavailable. NanoAgent's npm package requires Node.js 18 or newer."
+      "Global fetch is unavailable. StemCode's npm package requires Node.js 18 or newer."
     );
   }
 
@@ -112,7 +112,7 @@ async function ensureBinary(options = {}) {
     );
   }
 
-  log("Extracting NanoAgent CLI...");
+  log("Extracting StemCode CLI...");
   // Extract to a temp file first, then rename so concurrent runs never observe
   // a partially written executable.
   const tempPath = path.join(
@@ -122,7 +122,7 @@ async function ensureBinary(options = {}) {
   extractExecutable(archiveBuffer, tempPath);
   fs.renameSync(tempPath, binaryPath);
 
-  log(`Installed NanoAgent CLI to ${binaryPath}.`);
+  log(`Installed StemCode CLI to ${binaryPath}.`);
 
   // Fire once per genuine install. Updates pass force=true and are intentionally
   // excluded so they are not counted as new installs.
@@ -141,8 +141,8 @@ module.exports = { ensureBinary, parseExpectedChecksum };
 
 // Allow `node scripts/download.js` for manual/forced reinstall.
 if (require.main === module) {
-  ensureBinary({ force: true, log: (m) => console.error(`[nanoagent] ${m}`) }).catch((err) => {
-    console.error(`[nanoagent] ${err.message}`);
+  ensureBinary({ force: true, log: (m) => console.error(`[stemcode] ${m}`) }).catch((err) => {
+    console.error(`[stemcode] ${err.message}`);
     process.exit(1);
   });
 }

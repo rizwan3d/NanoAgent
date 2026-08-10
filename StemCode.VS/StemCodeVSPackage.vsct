@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+
+  <Symbols>
+    <!-- Package GUID (must match VSPackage.PackageGuidString) -->
+    <GuidSymbol name="guidStemCodeVsPkg" value="{08b5699b-4adb-4433-9b60-bc4f5a3807df}"/>
+
+    <!-- Custom command set: groups and command IDs -->
+    <GuidSymbol name="guidStemCodeVsCmdSet" value="{0A1B2C3D-4E5F-6789-0ABC-DEF012345678}">
+      <IDSymbol name="OtherWindowsGroup" value="0x1000" />
+      <IDSymbol name="ViewMenuGroup" value="0x1001" />
+      <IDSymbol name="ToolsMenuGroup" value="0x1002" />
+      <IDSymbol name="EditorContextGroup" value="0x1003" />
+      <IDSymbol name="StemCodeSubMenu" value="0x1100" />
+      <IDSymbol name="StemCodeSubMenuGroup" value="0x1101" />
+
+      <IDSymbol name="cmdidShowChatWindow" value="0x0100" />
+      <IDSymbol name="cmdidNewChat" value="0x0101" />
+      <IDSymbol name="cmdidSendSelection" value="0x0102" />
+      <IDSymbol name="cmdidExplainSelection" value="0x0103" />
+      <IDSymbol name="cmdidSendCurrentFile" value="0x0104" />
+      <IDSymbol name="cmdidReviewCurrentFile" value="0x0105" />
+      <IDSymbol name="cmdidReviewGitDiff" value="0x0106" />
+      <IDSymbol name="cmdidPlanChanges" value="0x0107" />
+      <IDSymbol name="cmdidApplySuggestedChanges" value="0x0108" />
+      <IDSymbol name="cmdidShowTerminals" value="0x0109" />
+    </GuidSymbol>
+  </Symbols>
+
+  <Commands package="guidStemCodeVsPkg">
+    <Menus>
+      <!-- "StemCode" submenu shown in the editor context menu. -->
+      <Menu guid="guidStemCodeVsCmdSet" id="StemCodeSubMenu" priority="0x0500" type="Menu">
+        <Parent guid="guidStemCodeVsCmdSet" id="EditorContextGroup"/>
+        <Strings>
+          <ButtonText>StemCode</ButtonText>
+          <CommandName>StemCode</CommandName>
+        </Strings>
+      </Menu>
+    </Menus>
+
+    <Groups>
+      <!-- Primary location: View -> Other Windows. -->
+      <Group guid="guidStemCodeVsCmdSet" id="OtherWindowsGroup" priority="0x0100">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1"/>
+      </Group>
+
+      <!-- Diagnostic fallback: directly on View menu. If this appears but Other Windows does not, the issue is submenu placement/cache. -->
+      <Group guid="guidStemCodeVsCmdSet" id="ViewMenuGroup" priority="0x7000">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_VIEW"/>
+      </Group>
+
+      <!-- Tools menu. -->
+      <Group guid="guidStemCodeVsCmdSet" id="ToolsMenuGroup" priority="0x7000">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_MENU_TOOLS"/>
+      </Group>
+
+      <!-- Editor context menu: holds the StemCode submenu. -->
+      <Group guid="guidStemCodeVsCmdSet" id="EditorContextGroup" priority="0x0500">
+        <Parent guid="guidSHLMainMenu" id="IDM_VS_CTXT_CODEWIN"/>
+      </Group>
+
+      <!-- Commands inside the StemCode submenu. -->
+      <Group guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup" priority="0x0100">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenu"/>
+      </Group>
+    </Groups>
+
+    <Buttons>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidShowChatWindow" priority="0x0100" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="OtherWindowsGroup"/>
+        <Strings>
+          <ButtonText>StemCode Chat</ButtonText>
+          <CommandName>StemCode.Chat.Show</CommandName>
+        </Strings>
+      </Button>
+
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidNewChat" priority="0x0101" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>New Chat</ButtonText><CommandName>StemCode.NewChat</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidSendSelection" priority="0x0102" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Send Selection to StemCode</ButtonText><CommandName>StemCode.SendSelection</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidExplainSelection" priority="0x0103" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Explain Selection</ButtonText><CommandName>StemCode.ExplainSelection</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidSendCurrentFile" priority="0x0104" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Send Current File</ButtonText><CommandName>StemCode.SendCurrentFile</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidReviewCurrentFile" priority="0x0105" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Review Current File</ButtonText><CommandName>StemCode.ReviewCurrentFile</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidReviewGitDiff" priority="0x0106" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Review Git Diff</ButtonText><CommandName>StemCode.ReviewGitDiff</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidPlanChanges" priority="0x0107" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Plan Changes</ButtonText><CommandName>StemCode.PlanChanges</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidApplySuggestedChanges" priority="0x0108" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Apply Suggested Changes</ButtonText><CommandName>StemCode.ApplySuggestedChanges</CommandName></Strings>
+      </Button>
+      <Button guid="guidStemCodeVsCmdSet" id="cmdidShowTerminals" priority="0x0109" type="Button">
+        <Parent guid="guidStemCodeVsCmdSet" id="StemCodeSubMenuGroup"/>
+        <Strings><ButtonText>Show Background Terminals</ButtonText><CommandName>StemCode.ShowTerminals</CommandName></Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <CommandPlacements>
+    <CommandPlacement guid="guidStemCodeVsCmdSet" id="cmdidShowChatWindow" priority="0x0100">
+      <Parent guid="guidStemCodeVsCmdSet" id="ViewMenuGroup"/>
+    </CommandPlacement>
+    <CommandPlacement guid="guidStemCodeVsCmdSet" id="cmdidShowChatWindow" priority="0x0100">
+      <Parent guid="guidStemCodeVsCmdSet" id="ToolsMenuGroup"/>
+    </CommandPlacement>
+    <!-- Also surface the StemCode submenu under the Tools menu. -->
+    <CommandPlacement guid="guidStemCodeVsCmdSet" id="StemCodeSubMenu" priority="0x0600">
+      <Parent guid="guidStemCodeVsCmdSet" id="ToolsMenuGroup"/>
+    </CommandPlacement>
+  </CommandPlacements>
+
+</CommandTable>

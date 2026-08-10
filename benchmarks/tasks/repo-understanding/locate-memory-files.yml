@@ -7,7 +7,7 @@
   "profile": "plan",
   "prompt": "Where should I look to understand team memory files and memory write permissions?",
   "response": {
-    "containsAny": [".nanoagent/memory", "memory", "ToolPermissionEvaluator.cs", "Memory"],
+    "containsAny": [".stemcode/memory", "memory", "ToolPermissionEvaluator.cs", "Memory"],
     "containsAtLeast": 2
   }
 }

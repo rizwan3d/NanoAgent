@@ -7,11 +7,11 @@ pipelines:
   pull-requests:
     "**":
       - step:
-          name: NanoAI PR review
+          name: stemcode PR review
           script:
             - apt-get update
             - apt-get install -y --no-install-recommends bash ca-certificates curl git python3
-            - curl -fsSL https://raw.githubusercontent.com/rizwan3d/NanoAgent/master/scripts/install.sh | bash
-            - bash .bitbucket/nanoai-bitbucket-review.sh
+            - curl -fsSL https://raw.githubusercontent.com/rizwan3d/StemCode/master/scripts/install.sh | bash
+            - bash .bitbucket/stemcode-bitbucket-review.sh
           artifacts:
-            - artifacts/nanoai-review/**
+            - artifacts/stemcode-review/**

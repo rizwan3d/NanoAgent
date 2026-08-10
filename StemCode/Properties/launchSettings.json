@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "StemCode": {
+      "commandName": "Project",
+      "workingDirectory": "C:\\Users\\allga\\source\\repos\\FinalAgent\\StemCode\\bin\\Debug\\net10.0\\code"
+    }
+  }
+}

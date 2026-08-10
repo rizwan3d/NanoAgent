@@ -1,0 +1,80 @@
+name: stemcode issue handler
+
+on:
+  issues:
+    types:
+      - labeled
+
+concurrency:
+  group: stemcode-issue-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ secrets.stemcode_GITHUB_TOKEN || github.token }}
+  STEMCODE_API_KEY: ${{ secrets.STEMCODE_API_KEY }}
+  STEMCODE_BASE_URL: ${{ vars.STEMCODE_BASE_URL }}
+  STEMCODE_MODEL: ${{ vars.STEMCODE_MODEL || 'gpt-5.4' }}
+  STEMCODE_PROVIDER: ${{ vars.STEMCODE_PROVIDER || 'openai' }}
+  STEMCODE_THINKING: ${{ vars.STEMCODE_THINKING || 'off' }}
+  Application__Permissions__auto_approve_all_tools: "true"
+
+jobs:
+  handle:
+    name: stemcode issue automation
+    if: ${{ github.event.label.name == 'stemcode' }}
+    runs-on: ubuntu-24.04
+    environment: production-release
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          token: ${{ env.GH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Install OS sandbox dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap uidmap
+
+          if sudo sysctl kernel.unprivileged_userns_clone >/dev/null 2>&1; then
+            sudo sysctl -w kernel.unprivileged_userns_clone=1
+          fi
+
+          if sudo sysctl user.max_user_namespaces >/dev/null 2>&1; then
+            sudo sysctl -w user.max_user_namespaces=28633
+          fi
+
+          if sudo sysctl kernel.apparmor_restrict_unprivileged_userns >/dev/null 2>&1; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+
+          if ! bwrap --die-with-parent --unshare-all --share-net --proc /proc --dev /dev --ro-bind / / true; then
+            echo "Bubblewrap sandbox is unavailable on this runner; disabling OS-level sandbox enforcement for stemcode." >&2
+            echo "Application__Permissions__SandboxMode=DangerFullAccess" >> "$GITHUB_ENV"
+          fi
+
+      - name: Install stemcode
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rizwan3d/StemCode/master/scripts/install.sh | bash
+
+      - name: Handle issue with stemcode
+        env:
+          stemcode_ARTIFACTS_DIR: ${{ runner.temp }}/stemcode-issue-handler
+          stemcode_ISSUE_NUMBER: ${{ github.event.issue.number }}
+          stemcode_BASE_BRANCH: ${{ github.event.repository.default_branch }}
+        run: bash .github/stemcode-issue-handler.sh
+
+      - name: Upload stemcode artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stemcode-issue-handler
+          path: ${{ runner.temp }}/stemcode-issue-handler
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,65 @@
+name: stemcode-review
+
+# on:
+#   pull_request_target:
+#     types:
+#       - opened
+#       - reopened
+#       - review_requested
+#       - synchronize
+#       - ready_for_review
+
+concurrency:
+  group: stemcode-review-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  GH_TOKEN: ${{ github.token }}
+  STEMCODE_API_KEY: ${{ secrets.STEMCODE_API_KEY }}
+  STEMCODE_BASE_URL: ${{ vars.STEMCODE_BASE_URL }}
+  STEMCODE_MODEL: ${{ vars.STEMCODE_MODEL || 'gpt-5.4' }}
+  STEMCODE_PROVIDER: ${{ vars.STEMCODE_PROVIDER || 'openai' }}
+  STEMCODE_THINKING: ${{ vars.STEMCODE_THINKING || 'off' }}
+
+jobs:
+  review:
+    name: stemcode review
+    runs-on: ubuntu-24.04
+    environment: production-release
+    if: ${{ github.event_name != 'pull_request_target' || github.event.pull_request.draft == false }}
+
+    steps:
+      - name: Checkout trusted code
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.base.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Install stemcode
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/rizwan3d/StemCode/master/scripts/install.sh | bash
+
+      - name: Review pull request
+        if: ${{ github.event_name == 'pull_request_target' }}
+        env:
+          stemcode_REVIEW_MODE: pr
+          stemcode_PR_NUMBER: ${{ github.event.pull_request.number }}
+          stemcode_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          stemcode_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          stemcode_HEAD_REPO_FULL_NAME: ${{ github.event.pull_request.head.repo.full_name }}
+          stemcode_HEAD_REPO_URL: ${{ github.event.pull_request.head.repo.clone_url }}
+        run: bash .github/stemcode-github-review.sh
+
+      - name: Upload review artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: stemcode-review
+          path: artifacts/stemcode-review
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,94 @@
+using StemCode.Domain.Abstractions;
+using StemCode.Domain.Models;
+
+namespace StemCode.Domain.Services;
+
+internal sealed class AgentProviderProfileFactory : IAgentProviderProfileFactory
+{
+    public AgentProviderProfile CreateOpenAi()
+    {
+        return new AgentProviderProfile(ProviderKind.OpenAi, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateOpenAiChatGptAccount()
+    {
+        return new AgentProviderProfile(ProviderKind.OpenAiChatGptAccount, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateAnthropicClaudeAccount()
+    {
+        return new AgentProviderProfile(ProviderKind.AnthropicClaudeAccount, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateGitHubCopilot()
+    {
+        return new AgentProviderProfile(ProviderKind.GitHubCopilot, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateOpenRouter()
+    {
+        return new AgentProviderProfile(ProviderKind.OpenRouter, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateKiloCode()
+    {
+        return new AgentProviderProfile(ProviderKind.KiloCode, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateOllama()
+    {
+        return new AgentProviderProfile(ProviderKind.Ollama, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateLmStudio(string? baseUrl = null)
+    {
+        string? normalizedBaseUrl = string.IsNullOrWhiteSpace(baseUrl)
+            ? null
+            : CompatibleProviderBaseUrlNormalizer.Normalize(baseUrl);
+
+        return new AgentProviderProfile(ProviderKind.LmStudio, normalizedBaseUrl);
+    }
+
+    public AgentProviderProfile CreateOllamaCloud()
+    {
+        return new AgentProviderProfile(ProviderKind.OllamaCloud, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateCerebras()
+    {
+        return new AgentProviderProfile(ProviderKind.Cerebras, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateGroq()
+    {
+        return new AgentProviderProfile(ProviderKind.Groq, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateOpenCodeZen()
+    {
+        return new AgentProviderProfile(ProviderKind.OpenCodeZen, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateDeepSeek()
+    {
+        return new AgentProviderProfile(ProviderKind.DeepSeek, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateGoogleAiStudio()
+    {
+        return new AgentProviderProfile(ProviderKind.GoogleAiStudio, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateAnthropic()
+    {
+        return new AgentProviderProfile(ProviderKind.Anthropic, BaseUrl: null);
+    }
+
+    public AgentProviderProfile CreateCompatible(string baseUrl)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseUrl);
+
+        string normalizedBaseUrl = CompatibleProviderBaseUrlNormalizer.Normalize(baseUrl);
+        return new AgentProviderProfile(ProviderKind.OpenAiCompatible, normalizedBaseUrl);
+    }
+}

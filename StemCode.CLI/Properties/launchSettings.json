@@ -1,0 +1,7 @@
+{
+  "profiles": {
+    "StemCode.CLI": {
+      "commandName": "Project"
+    }
+  }
+}

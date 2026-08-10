@@ -23,7 +23,7 @@ concurrency:
 permissions: {}
 
 env:
-  EXTENSION_DIR: NanoAgent.VsCode
+  EXTENSION_DIR: StemCode.VsCode
   NODE_VERSION: 20.x
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
@@ -82,7 +82,7 @@ jobs:
           fi
 
           resolved_version="$(node -p "require('./package.json').version")"
-          vsix_name="nanoagent-${resolved_version}.vsix"
+          vsix_name="stemcode-${resolved_version}.vsix"
 
           {
             echo "extension_version=$resolved_version"

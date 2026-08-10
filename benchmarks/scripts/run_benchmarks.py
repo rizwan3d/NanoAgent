@@ -93,7 +93,7 @@ class AgentSettings:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run NanoAgent benchmark tasks and write scored results.")
+        description="Run StemCode benchmark tasks and write scored results.")
     parser.add_argument("--manifest", default=str(DEFAULT_MANIFEST_PATH))
     parser.add_argument("--all", action="store_true", help="Run all discovered tasks.")
     parser.add_argument("--suite", action="append", default=[], help="Run only one suite id.")
@@ -101,25 +101,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--list", action="store_true", help="List discovered tasks and exit.")
     parser.add_argument("--dry-run", action="store_true", help="Show selected tasks but do not run them.")
     parser.add_argument("--keep-temp", action="store_true", help="Keep isolated task workspaces.")
-    parser.add_argument("--skip-preflight", action="store_true", help="Skip the NanoAgent connectivity preflight and start tasks immediately.")
-    parser.add_argument("--preflight-timeout", type=int, default=60, help="Seconds to wait for the NanoAgent preflight before failing fast.")
-    parser.add_argument("--stream-agent-output", action="store_true", help="Stream NanoAgent stdout/stderr live while still saving it in results.")
-    parser.add_argument("--system", action="store_true", help="Use the system-installed nanoai command and bypass NanoAgent provider/model/key environment wiring.")
-    parser.add_argument("--provider", help="Provider name passed through NANOAGENT_PROVIDER.")
-    parser.add_argument("--provider-key", dest="provider_key", help="Provider API key forwarded to NanoAgent.")
+    parser.add_argument("--skip-preflight", action="store_true", help="Skip the StemCode connectivity preflight and start tasks immediately.")
+    parser.add_argument("--preflight-timeout", type=int, default=60, help="Seconds to wait for the StemCode preflight before failing fast.")
+    parser.add_argument("--stream-agent-output", action="store_true", help="Stream StemCode stdout/stderr live while still saving it in results.")
+    parser.add_argument("--system", action="store_true", help="Use the system-installed stemcode command and bypass StemCode provider/model/key environment wiring.")
+    parser.add_argument("--provider", help="Provider name passed through STEMCODE_PROVIDER.")
+    parser.add_argument("--provider-key", dest="provider_key", help="Provider API key forwarded to StemCode.")
     parser.add_argument("--provide-key", dest="provider_key_alias", help="Alias for --provider-key.")
-    parser.add_argument("--model", help="Model id passed through NANOAGENT_MODEL.")
-    parser.add_argument("--thinking", help="Optional NanoAgent thinking effort override.")
+    parser.add_argument("--model", help="Model id passed through STEMCODE_MODEL.")
+    parser.add_argument("--thinking", help="Optional StemCode thinking effort override.")
     parser.add_argument("--profile", help="Override the task profile for every run.")
     parser.add_argument(
         "--agent-command",
-        help='Base command for NanoAgent, for example `nanoai` or `dotnet run --project ".../NanoAgent.CLI.csproj" --`.',
+        help='Base command for StemCode, for example `stemcode` or `dotnet run --project ".../StemCode.CLI.csproj" --`.',
     )
     parser.add_argument(
         "--agent-prompt-mode",
         choices=("auto", "option", "positional"),
         default="auto",
-        help="How to pass the prompt to NanoAgent. auto uses a positional prompt for `nanoai` and `--prompt` for the dotnet runner.",
+        help="How to pass the prompt to StemCode. auto uses a positional prompt for `stemcode` and `--prompt` for the dotnet runner.",
     )
     parser.add_argument("--release-tag", help="Optional release tag for the output metadata.")
     parser.add_argument("--output-json", help="Explicit JSON output path.")
@@ -270,7 +270,7 @@ def run_process_streaming(
     # Always reap the child process before reading returncode.
     # process.returncode is None until poll()/wait() observes process exit; the
     # previous version returned None after stdout/stderr closed, causing a
-    # successful nanoai preflight to be reported as failed.
+    # successful stemcode preflight to be reported as failed.
     if timed_out:
         try:
             process.kill()
@@ -508,7 +508,7 @@ def default_agent_command() -> list[str]:
         "dotnet",
         "run",
         "--project",
-        str(REPO_ROOT / "NanoAgent.CLI" / "NanoAgent.CLI.csproj"),
+        str(REPO_ROOT / "StemCode.CLI" / "StemCode.CLI.csproj"),
         "--configuration",
         "Release",
         "--verbosity",
@@ -519,7 +519,7 @@ def default_agent_command() -> list[str]:
 
 def build_agent_command(args: argparse.Namespace) -> list[str]:
     if getattr(args, "system", False):
-        return ["nanoai"]
+        return ["stemcode"]
     if not args.agent_command:
         return default_agent_command()
     return shlex.split(args.agent_command, posix=(os.name != "nt"))
@@ -537,10 +537,10 @@ def resolve_agent_settings(args: argparse.Namespace) -> AgentSettings:
     provider_key = (
         args.provider_key
         or args.provider_key_alias
-        or os.environ.get("NANOAGENT_PROVIDER_AUTH_KEY")
+        or os.environ.get("STEMCODE_PROVIDER_AUTH_KEY")
         or os.environ.get("OPENAI_API_KEY")
     )
-    provider = args.provider or os.environ.get("NANOAGENT_PROVIDER")
+    provider = args.provider or os.environ.get("STEMCODE_PROVIDER")
     if provider_key and not provider:
         provider = "openai"
 
@@ -554,7 +554,7 @@ def resolve_agent_settings(args: argparse.Namespace) -> AgentSettings:
 
 def build_system_agent_env() -> dict[str, str]:
     # Keep only the OS variables needed to locate and launch the installed CLI.
-    # Do not forward provider/model/API-key variables; nanoai should use its own
+    # Do not forward provider/model/API-key variables; stemcode should use its own
     # system/user configuration when --system is selected.
     keep_names_upper = {
         "PATH",
@@ -585,11 +585,11 @@ def build_agent_env(agent_settings: AgentSettings, *, system: bool = False) -> d
 
     agent_env = os.environ.copy()
     if agent_settings.model:
-        agent_env["NANOAGENT_MODEL"] = agent_settings.model
+        agent_env["STEMCODE_MODEL"] = agent_settings.model
     if agent_settings.provider:
-        agent_env["NANOAGENT_PROVIDER"] = agent_settings.provider
+        agent_env["STEMCODE_PROVIDER"] = agent_settings.provider
     if agent_settings.provider_key:
-        agent_env["NANOAGENT_API_KEY"] = agent_settings.provider_key
+        agent_env["STEMCODE_API_KEY"] = agent_settings.provider_key
     return agent_env
 
 
@@ -605,7 +605,7 @@ def infer_agent_prompt_mode(agent_base_command: list[str], requested_mode: str =
     if requested_mode != "auto":
         return requested_mode
     executable = command_executable_name(agent_base_command)
-    if executable in {"nanoai", "nanoai.exe"}:
+    if executable in {"stemcode", "stemcode.exe"}:
         return "positional"
     return "option"
 
@@ -691,7 +691,7 @@ def parse_agent_error(cli_payload: dict[str, Any] | None) -> str | None:
         return message
     if error_code:
         return error_code
-    return "NanoAgent returned an error response."
+    return "StemCode returned an error response."
 
 
 def create_temp_dir(prefix: str) -> Path:
@@ -716,8 +716,8 @@ def copy_workspace_to_temp(source: Path, destination: Path) -> None:
 
 def initialize_git_baseline(workspace: Path) -> None:
     run_process(["git", "init", "-q"], workspace)
-    run_process(["git", "config", "user.email", "benchmarks@nanoagent.local"], workspace)
-    run_process(["git", "config", "user.name", "NanoAgent Benchmarks"], workspace)
+    run_process(["git", "config", "user.email", "benchmarks@stemcode.local"], workspace)
+    run_process(["git", "config", "user.name", "StemCode Benchmarks"], workspace)
     run_process(["git", "add", "-A"], workspace)
     run_process(["git", "commit", "-q", "-m", "benchmark baseline"], workspace)
 
@@ -798,7 +798,7 @@ def is_transient_diff_path(path: str) -> bool:
 
 
 def parse_cli_json(stdout: str) -> dict[str, Any]:
-    # NanoAI may print human-readable thinking/log lines before the final JSON.
+    # stemcode may print human-readable thinking/log lines before the final JSON.
     # Prefer the last complete JSON object in stdout instead of assuming stdout is JSON-only.
     lines = [line.strip() for line in stdout.splitlines() if line.strip()]
     for line in reversed(lines):
@@ -821,7 +821,7 @@ def parse_cli_json(stdout: str) -> dict[str, Any]:
         if isinstance(payload, dict):
             return payload
 
-    raise RuntimeError("NanoAgent did not emit a parseable JSON object.")
+    raise RuntimeError("StemCode did not emit a parseable JSON object.")
 
 
 def evaluate_text_expectation(
@@ -940,7 +940,7 @@ def build_task_workspace(task: TaskDefinition, keep_temp: bool) -> tuple[Path, P
     if task.isolation == "in_place":
         return task.workspace, None
 
-    temp_root = create_temp_dir(prefix=f"nanoagent-benchmark-{task.id}-")
+    temp_root = create_temp_dir(prefix=f"stemcode-benchmark-{task.id}-")
     destination = temp_root / "workspace"
     copy_workspace_to_temp(task.workspace, destination)
     return destination, temp_root
@@ -1226,7 +1226,7 @@ def run_preflight(
     agent_base_command: list[str],
     agent_settings: AgentSettings,
 ) -> tuple[bool, str | None]:
-    temp_root = create_temp_dir(prefix="nanoagent-benchmark-preflight-")
+    temp_root = create_temp_dir(prefix="stemcode-benchmark-preflight-")
     try:
         agent_env = build_agent_env(agent_settings, system=args.system)
         command = build_agent_prompt_command(
@@ -1295,7 +1295,7 @@ def main() -> int:
     agent_base_command = build_agent_command(args)
     agent_settings = resolve_agent_settings(args)
     if args.system:
-        log_progress("System mode enabled: using nanoai with --json, --profile, and positional prompt; provider/model/key env wiring is bypassed.")
+        log_progress("System mode enabled: using stemcode with --json, --profile, and positional prompt; provider/model/key env wiring is bypassed.")
     if not args.refresh_latest:
         log_progress("This run will not refresh benchmarks/results/latest.json or latest.md unless --refresh-latest is provided.")
     if args.skip_preflight:
@@ -1313,7 +1313,7 @@ def main() -> int:
             if preflight_error:
                 print(preflight_error, file=sys.stderr, flush=True)
             print(
-                "Provide valid provider credentials, or pass --provider-key / set NANOAGENT_PROVIDER_AUTH_KEY, then rerun.",
+                "Provide valid provider credentials, or pass --provider-key / set STEMCODE_PROVIDER_AUTH_KEY, then rerun.",
                 file=sys.stderr,
                 flush=True,
             )
@@ -1344,7 +1344,7 @@ def main() -> int:
         "generatedAtUtc": generated_at,
         "manifestPath": to_rel_path(manifest_path),
         "resultsPath": to_rel_path(json_path),
-        "releaseAssetBaseName": manifest.get("releaseAssetBaseName", "NanoAgent-benchmarks"),
+        "releaseAssetBaseName": manifest.get("releaseAssetBaseName", "StemCode-benchmarks"),
         "resultsPresent": True,
         "results": {
             "status": "measured",

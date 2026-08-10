@@ -1,41 +1,41 @@
 [CmdletBinding()]
 param(
-    [string]$Tag = $env:NanoAgent_TAG,
+    [string]$Tag = $env:StemCode_TAG,
     [string]$InstallDir,
     [string]$CommandName,
-    [string]$WaitForProcessId = $env:NanoAgent_WAIT_FOR_PROCESS_ID
+    [string]$WaitForProcessId = $env:StemCode_WAIT_FOR_PROCESS_ID
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 
-# Resolve the install directory: explicit -InstallDir wins, then NanoAgent_INSTALL_DIR
+# Resolve the install directory: explicit -InstallDir wins, then StemCode_INSTALL_DIR
 # (used by '/update' to replace the running binary in place), then the default location.
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
-    $InstallDir = if (-not [string]::IsNullOrWhiteSpace($env:NanoAgent_INSTALL_DIR)) {
-        $env:NanoAgent_INSTALL_DIR
+    $InstallDir = if (-not [string]::IsNullOrWhiteSpace($env:StemCode_INSTALL_DIR)) {
+        $env:StemCode_INSTALL_DIR
     }
     else {
-        Join-Path $env:LOCALAPPDATA 'Programs\NanoAgent\bin'
+        Join-Path $env:LOCALAPPDATA 'Programs\StemCode\bin'
     }
 }
 
 # Resolve the installed command name the same way so '/update' keeps the running
 # binary's filename. The '.exe' extension is appended below.
 if ([string]::IsNullOrWhiteSpace($CommandName)) {
-    $CommandName = if (-not [string]::IsNullOrWhiteSpace($env:NanoAgent_COMMAND_NAME)) {
-        $env:NanoAgent_COMMAND_NAME
+    $CommandName = if (-not [string]::IsNullOrWhiteSpace($env:StemCode_COMMAND_NAME)) {
+        $env:StemCode_COMMAND_NAME
     }
     else {
-        'nanoai'
+        'stemcode'
     }
 }
 
 $Owner = 'rizwan3d'
-$Repo = 'NanoAgent'
-$AppName = 'NanoAgent.CLI'
-$ExecutableName = 'NanoAgent.CLI'
+$Repo = 'StemCode'
+$AppName = 'StemCode.CLI'
+$ExecutableName = 'StemCode.CLI'
 $AssetName = "$ExecutableName-win-x64.zip"
 $ChecksumsName = 'SHA256SUMS'
 $TotalSteps = 7
@@ -43,7 +43,7 @@ $CurrentStep = 0
 $InstallActivity = "Installing $AppName"
 
 # Anonymous install analytics. Mirrors the in-product PostHog defaults so installs
-# and usage land in the same project. Opt out with NANOAGENT_TELEMETRY_DISABLED=1
+# and usage land in the same project. Opt out with STEMCODE_TELEMETRY_DISABLED=1
 # or the cross-tool DO_NOT_TRACK convention.
 $TelemetryHost = 'https://us.i.posthog.com'
 $TelemetryProjectToken = 'phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk'
@@ -62,8 +62,8 @@ function Fail-Install {
 }
 
 function Test-TelemetryEnabled {
-    $optOut = if (-not [string]::IsNullOrWhiteSpace($env:NANOAGENT_TELEMETRY_DISABLED)) {
-        $env:NANOAGENT_TELEMETRY_DISABLED
+    $optOut = if (-not [string]::IsNullOrWhiteSpace($env:STEMCODE_TELEMETRY_DISABLED)) {
+        $env:STEMCODE_TELEMETRY_DISABLED
     }
     else {
         $env:DO_NOT_TRACK
@@ -116,7 +116,7 @@ function Send-InstallTelemetry {
 }
 
 function Test-ProgressEnabled {
-    $value = if ($env:NANOAGENT_NO_PROGRESS) { $env:NANOAGENT_NO_PROGRESS } else { $env:NanoAgent_NO_PROGRESS }
+    $value = if ($env:STEMCODE_NO_PROGRESS) { $env:STEMCODE_NO_PROGRESS } else { $env:StemCode_NO_PROGRESS }
     if ($value -in @('1', 'true', 'TRUE', 'True', 'yes', 'YES', 'Yes')) {
         return $false
     }
@@ -210,7 +210,7 @@ function Get-LatestTag {
         $response = Invoke-RestMethod -Uri $apiUrl -Headers @{ 'User-Agent' = "$AppName-installer" }
     }
     catch {
-        Fail-Install "Unable to resolve the latest release tag from $apiUrl. Set NanoAgent_TAG and try again. $($_.Exception.Message)"
+        Fail-Install "Unable to resolve the latest release tag from $apiUrl. Set StemCode_TAG and try again. $($_.Exception.Message)"
     }
 
     if ([string]::IsNullOrWhiteSpace($response.tag_name)) {
@@ -633,11 +633,11 @@ finally {
         $encodedCommand
     ) | Out-Null
 
-    Write-Status "Update staged. Exit NanoAgent to finish replacing '$CommandName.exe'."
+    Write-Status "Update staged. Exit StemCode to finish replacing '$CommandName.exe'."
     Write-Status "Deferred update log: $logPath"
 }
 
-Write-Status 'NanoAgent CLI Installer'
+Write-Status 'StemCode CLI Installer'
 Start-InstallStep 'Checking system requirements...'
 $architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
 if ($architecture -notin @('AMD64', 'x86_64')) {
@@ -705,7 +705,7 @@ try {
             Copy-Item -LiteralPath $sourcePath -Destination $destinationPath -Force
         }
         catch {
-            Fail-Install "Unable to replace '$destinationPath'. Close any running NanoAgent sessions and try again. $($_.Exception.Message)"
+            Fail-Install "Unable to replace '$destinationPath'. Close any running StemCode sessions and try again. $($_.Exception.Message)"
         }
 
         Write-Status "Installed '$CommandName.exe' to $destinationPath"
@@ -737,7 +737,7 @@ try {
 
     Complete-InstallStep 'Installation finished.'
     Complete-InstallerProgress
-    Write-Status "Done. Run '$CommandName' to start NanoAgent."
+    Write-Status "Done. Run '$CommandName' to start StemCode."
 }
 finally {
     if ($cleanupTempRoot -and (Test-Path -LiteralPath $tempRoot)) {

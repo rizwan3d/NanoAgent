@@ -1,5 +1,5 @@
 {
-  "releaseAssetBaseName": "NanoAgent-benchmarks",
+  "releaseAssetBaseName": "StemCode-benchmarks",
   "resultsPath": "benchmarks/results/public-latest.json",
   "taskRoot": "benchmarks/tasks",
   "regressionTag": "regression",

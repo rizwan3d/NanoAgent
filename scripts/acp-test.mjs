@@ -1,4 +1,4 @@
-// ACP smoke test for NanoAgent — exercises tool calls over the Agent Client Protocol.
+// ACP smoke test for StemCode — exercises tool calls over the Agent Client Protocol.
 //
 // Drives the JSON-RPC handshake over stdio:
 //   initialize -> session/new -> session/prompt (x N) -> session/close
@@ -13,8 +13,8 @@
 //   node scripts/acp-test.mjs                 # runs the 3 built-in scenarios
 //   node scripts/acp-test.mjs "your prompt"   # runs a single custom prompt
 //
-// Provider config comes from the environment (NANOAGENT_PROVIDER, NANOAGENT_MODEL,
-// NANOAGENT_THINKING, NANOAGENT_REASONING, NANOAGENT_API_KEY) — export those first.
+// Provider config comes from the environment (STEMCODE_PROVIDER, STEMCODE_MODEL,
+// STEMCODE_THINKING, STEMCODE_REASONING, STEMCODE_API_KEY) — export those first.
 
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -54,13 +54,13 @@ const scenarios = custom ? [{ name: "custom", prompt: custom }] : SCENARIOS;
 // ---------------------------------------------------------------------------
 const exe =
   [
-    path.join(cwd, "NanoAgent.CLI", "bin", "Release", "net10.0", "NanoAgent.CLI.exe"),
-    path.join(cwd, "NanoAgent.CLI", "bin", "Debug", "net10.0", "NanoAgent.CLI.exe"),
+    path.join(cwd, "StemCode.CLI", "bin", "Release", "net10.0", "StemCode.CLI.exe"),
+    path.join(cwd, "StemCode.CLI", "bin", "Debug", "net10.0", "StemCode.CLI.exe"),
   ].find(existsSync) ?? null;
 
 const [command, args] = exe
   ? [exe, ["--acp"]]
-  : ["dotnet", ["run", "--project", path.join(cwd, "NanoAgent.CLI"), "--", "--acp"]];
+  : ["dotnet", ["run", "--project", path.join(cwd, "StemCode.CLI"), "--", "--acp"]];
 
 console.log(`launching: ${command} ${args.join(" ")}\n`);
 const child = spawn(command, args, { stdio: ["pipe", "pipe", "inherit"] });

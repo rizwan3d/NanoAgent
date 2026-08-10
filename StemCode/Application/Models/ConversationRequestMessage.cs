@@ -1,0 +1,209 @@
+using StemCode.Application.Utilities;
+
+namespace StemCode.Application.Models;
+
+public sealed class ConversationRequestMessage
+{
+    private const string AssistantRole = "assistant";
+    private const string ToolRole = "tool";
+    private const string UserRole = "user";
+
+    private ConversationRequestMessage(
+        string role,
+        string? content,
+        string? toolCallId,
+        IReadOnlyList<ConversationToolCall>? toolCalls,
+        IReadOnlyList<ConversationAttachment>? attachments,
+        string? reasoningContent = null,
+        string? reasoningDetailsJson = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(role);
+
+        string normalizedRole = role.Trim();
+        IReadOnlyList<ConversationAttachment> normalizedAttachments = attachments is null
+            ? []
+            : attachments
+                .Where(static attachment => attachment is not null)
+                .ToArray();
+        IReadOnlyList<ConversationToolCall> normalizedToolCalls = toolCalls is null
+            ? []
+            : toolCalls
+                .Where(static toolCall => toolCall is not null)
+                .Select(static toolCall => new ConversationToolCall(
+                    toolCall.Id,
+                    toolCall.Name,
+                    SecretRedactor.Redact(toolCall.ArgumentsJson)))
+                .ToArray();
+
+        switch (normalizedRole)
+        {
+            case UserRole:
+                if (string.IsNullOrWhiteSpace(content) && normalizedAttachments.Count == 0)
+                {
+                    throw new ArgumentException(
+                        "User messages must include content or at least one attachment.",
+                        nameof(content));
+                }
+
+                EnsureNoToolMetadata(toolCallId, normalizedToolCalls, normalizedRole);
+                EnsureNoReasoningMetadata(reasoningContent, reasoningDetailsJson, normalizedRole);
+                break;
+
+            case AssistantRole:
+                if (string.IsNullOrWhiteSpace(content) && normalizedToolCalls.Count == 0)
+                {
+                    throw new ArgumentException(
+                        "Assistant messages must include content or at least one tool call.",
+                        nameof(content));
+                }
+
+                if (!string.IsNullOrWhiteSpace(toolCallId))
+                {
+                    throw new ArgumentException(
+                        "Assistant messages cannot include a tool call id.",
+                        nameof(toolCallId));
+                }
+
+                EnsureNoAttachments(normalizedAttachments, normalizedRole);
+                break;
+
+            case ToolRole:
+                ArgumentException.ThrowIfNullOrWhiteSpace(content);
+                ArgumentException.ThrowIfNullOrWhiteSpace(toolCallId);
+                if (normalizedToolCalls.Count > 0)
+                {
+                    throw new ArgumentException(
+                        "Tool messages cannot include assistant tool call definitions.",
+                        nameof(toolCalls));
+                }
+
+                EnsureNoAttachments(normalizedAttachments, normalizedRole);
+                EnsureNoReasoningMetadata(reasoningContent, reasoningDetailsJson, normalizedRole);
+                break;
+
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(role),
+                    normalizedRole,
+                    "Unsupported conversation message role.");
+        }
+
+        Role = normalizedRole;
+        Content = string.IsNullOrWhiteSpace(content)
+            ? null
+            : SecretRedactor.Redact(content.Trim());
+        ToolCallId = string.IsNullOrWhiteSpace(toolCallId)
+            ? null
+            : toolCallId.Trim();
+        ReasoningContent = reasoningContent;
+        ReasoningDetailsJson = reasoningDetailsJson;
+        Attachments = normalizedAttachments;
+        ToolCalls = normalizedToolCalls;
+    }
+
+    public IReadOnlyList<ConversationAttachment> Attachments { get; }
+
+    public string? Content { get; }
+
+    public string? ReasoningContent { get; }
+
+    public string? ReasoningDetailsJson { get; }
+
+    public string Role { get; }
+
+    public string? ToolCallId { get; }
+
+    public IReadOnlyList<ConversationToolCall> ToolCalls { get; }
+
+    public static ConversationRequestMessage AssistantMessage(
+        string content,
+        string? reasoningContent = null,
+        string? reasoningDetailsJson = null)
+    {
+        return new ConversationRequestMessage(
+            AssistantRole,
+            content,
+            null,
+            null,
+            null,
+            reasoningContent,
+            reasoningDetailsJson);
+    }
+
+    public static ConversationRequestMessage AssistantToolCalls(
+        IReadOnlyList<ConversationToolCall> toolCalls,
+        string? content = null,
+        string? reasoningContent = null,
+        string? reasoningDetailsJson = null)
+    {
+        ArgumentNullException.ThrowIfNull(toolCalls);
+
+        return new ConversationRequestMessage(
+            AssistantRole,
+            content,
+            null,
+            toolCalls,
+            null,
+            reasoningContent,
+            reasoningDetailsJson);
+    }
+
+    public static ConversationRequestMessage ToolResult(
+        string toolCallId,
+        string content)
+    {
+        return new ConversationRequestMessage(ToolRole, content, toolCallId, null, null);
+    }
+
+    public static ConversationRequestMessage User(
+        string content,
+        IReadOnlyList<ConversationAttachment>? attachments = null)
+    {
+        return new ConversationRequestMessage(UserRole, content, null, null, attachments);
+    }
+
+    private static void EnsureNoToolMetadata(
+        string? toolCallId,
+        IReadOnlyList<ConversationToolCall> toolCalls,
+        string role)
+    {
+        if (!string.IsNullOrWhiteSpace(toolCallId))
+        {
+            throw new ArgumentException(
+                $"{role} messages cannot include a tool call id.",
+                nameof(toolCallId));
+        }
+
+        if (toolCalls.Count > 0)
+        {
+            throw new ArgumentException(
+                $"{role} messages cannot include assistant tool call definitions.",
+                nameof(toolCalls));
+        }
+    }
+
+    private static void EnsureNoAttachments(
+        IReadOnlyList<ConversationAttachment> attachments,
+        string role)
+    {
+        if (attachments.Count > 0)
+        {
+            throw new ArgumentException(
+                $"{role} messages cannot include attachments.",
+                nameof(attachments));
+        }
+    }
+
+    private static void EnsureNoReasoningMetadata(
+        string? reasoningContent,
+        string? reasoningDetailsJson,
+        string role)
+    {
+        if (reasoningContent is not null || reasoningDetailsJson is not null)
+        {
+            throw new ArgumentException(
+                $"{role} messages cannot include provider reasoning metadata.",
+                nameof(reasoningContent));
+        }
+    }
+}

@@ -2,18 +2,18 @@
 set -euo pipefail
 
 readonly OWNER="rizwan3d"
-readonly REPO="NanoAgent"
-readonly APP_NAME="NanoAgent.CLI"
-readonly EXECUTABLE_NAME="NanoAgent.CLI"
-# Installed command name: '/update' sets NanoAgent_COMMAND_NAME so the running
+readonly REPO="StemCode"
+readonly APP_NAME="StemCode.CLI"
+readonly EXECUTABLE_NAME="StemCode.CLI"
+# Installed command name: '/update' sets StemCode_COMMAND_NAME so the running
 # binary's filename is preserved when replacing it in place.
-readonly COMMAND_NAME="${NANOAGENT_COMMAND_NAME:-${NanoAgent_COMMAND_NAME:-nanoai}}"
+readonly COMMAND_NAME="${STEMCODE_COMMAND_NAME:-${StemCode_COMMAND_NAME:-stemcode}}"
 readonly CHECKSUMS_NAME="SHA256SUMS"
 readonly POSIX_DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 readonly TOTAL_STEPS=7
 
 # Anonymous install analytics. Mirrors the in-product PostHog defaults so installs
-# and usage land in the same project. Opt out with NANOAGENT_TELEMETRY_DISABLED=1
+# and usage land in the same project. Opt out with STEMCODE_TELEMETRY_DISABLED=1
 # or the cross-tool DO_NOT_TRACK convention.
 readonly TELEMETRY_HOST="https://us.i.posthog.com"
 readonly TELEMETRY_PROJECT_TOKEN="phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk"
@@ -48,7 +48,7 @@ require_command() {
 }
 
 progress_enabled() {
-  local value="${NANOAGENT_NO_PROGRESS:-${NanoAgent_NO_PROGRESS:-}}"
+  local value="${STEMCODE_NO_PROGRESS:-${StemCode_NO_PROGRESS:-}}"
 
   case "$value" in
     1|true|TRUE|True|yes|YES|Yes)
@@ -104,10 +104,10 @@ resolve_default_install_dir() {
   fi
 
   if [[ -z "$local_app_data" ]]; then
-    fail "Unable to determine LOCALAPPDATA for the default Windows install directory. Set NANOAGENT_INSTALL_DIR and try again."
+    fail "Unable to determine LOCALAPPDATA for the default Windows install directory. Set STEMCODE_INSTALL_DIR and try again."
   fi
 
-  to_posix_path "${local_app_data}\\Programs\\NanoAgent\\bin"
+  to_posix_path "${local_app_data}\\Programs\\StemCode\\bin"
 }
 
 normalize_install_dir() {
@@ -346,14 +346,14 @@ resolve_latest_tag() {
 
   if ! download_to_file "$api_url" "$metadata"; then
     rm -f "$metadata"
-    fail "Unable to determine the latest release tag from GitHub. Set NANOAGENT_TAG and try again."
+    fail "Unable to determine the latest release tag from GitHub. Set STEMCODE_TAG and try again."
   fi
 
   tag="$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$metadata" | head -n 1)"
   rm -f "$metadata"
 
   if [[ -z "$tag" ]]; then
-    fail "Unable to determine the latest release tag from GitHub. Set NANOAGENT_TAG and try again."
+    fail "Unable to determine the latest release tag from GitHub. Set STEMCODE_TAG and try again."
   fi
 
   printf '%s\n' "$tag"
@@ -474,7 +474,7 @@ append_posix_path_entry() {
   quoted_path_match="$(single_quote ":${install_dir}:")"
 
   {
-    printf '\n# Added by NanoAgent CLI installer\n'
+    printf '\n# Added by StemCode CLI installer\n'
     printf "if [ -d %s ] && ! printf '%%s' \":\$PATH:\" | grep -qF -- %s; then\n" "$quoted_install_dir" "$quoted_path_match"
     printf '  export PATH=%s:$PATH\n' "$quoted_install_dir"
     printf 'fi\n'
@@ -489,7 +489,7 @@ append_fish_path_entry() {
   quoted_install_dir="$(fish_quote "$install_dir")"
 
   {
-    printf '\n# Added by NanoAgent CLI installer\n'
+    printf '\n# Added by StemCode CLI installer\n'
     printf 'if test -d %s; and not contains -- %s $PATH\n' "$quoted_install_dir" "$quoted_install_dir"
     printf '    set -gx PATH %s $PATH\n' "$quoted_install_dir"
     printf 'end\n'
@@ -595,7 +595,7 @@ windows_user_path_contains_directory() {
 
   install_dir_windows="$(to_windows_path "$install_dir")"
 
-  NANOAGENT_INSTALL_DIR_WIN="$install_dir_windows" powershell.exe -NoProfile -Command "\$target = [System.IO.Path]::GetFullPath(\$env:NANOAGENT_INSTALL_DIR_WIN).TrimEnd('\\'); \$current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ([string]::IsNullOrWhiteSpace(\$current)) { exit 1 }; foreach (\$entry in (\$current -split ';')) { if ([string]::IsNullOrWhiteSpace(\$entry)) { continue }; try { \$candidate = [System.IO.Path]::GetFullPath(\$entry).TrimEnd('\\') } catch { continue }; if ([string]::Equals(\$candidate, \$target, [StringComparison]::OrdinalIgnoreCase)) { exit 0 } }; exit 1" >/dev/null 2>&1
+  STEMCODE_INSTALL_DIR_WIN="$install_dir_windows" powershell.exe -NoProfile -Command "\$target = [System.IO.Path]::GetFullPath(\$env:STEMCODE_INSTALL_DIR_WIN).TrimEnd('\\'); \$current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ([string]::IsNullOrWhiteSpace(\$current)) { exit 1 }; foreach (\$entry in (\$current -split ';')) { if ([string]::IsNullOrWhiteSpace(\$entry)) { continue }; try { \$candidate = [System.IO.Path]::GetFullPath(\$entry).TrimEnd('\\') } catch { continue }; if ([string]::Equals(\$candidate, \$target, [StringComparison]::OrdinalIgnoreCase)) { exit 0 } }; exit 1" >/dev/null 2>&1
 }
 
 add_install_dir_to_windows_user_path() {
@@ -608,7 +608,7 @@ add_install_dir_to_windows_user_path() {
 
   install_dir_windows="$(to_windows_path "$install_dir")"
 
-  NANOAGENT_INSTALL_DIR_WIN="$install_dir_windows" powershell.exe -NoProfile -Command "\$target = \$env:NANOAGENT_INSTALL_DIR_WIN; \$current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ([string]::IsNullOrWhiteSpace(\$current)) { \$newPath = \$target } else { \$newPath = \$current.TrimEnd(';') + ';' + \$target }; [Environment]::SetEnvironmentVariable('Path', \$newPath, 'User')"
+  STEMCODE_INSTALL_DIR_WIN="$install_dir_windows" powershell.exe -NoProfile -Command "\$target = \$env:STEMCODE_INSTALL_DIR_WIN; \$current = [Environment]::GetEnvironmentVariable('Path', 'User'); if ([string]::IsNullOrWhiteSpace(\$current)) { \$newPath = \$target } else { \$newPath = \$current.TrimEnd(';') + ';' + \$target }; [Environment]::SetEnvironmentVariable('Path', \$newPath, 'User')"
 }
 
 make_command_available() {
@@ -667,7 +667,7 @@ make_command_available() {
 }
 
 telemetry_enabled() {
-  case "${NANOAGENT_TELEMETRY_DISABLED:-${DO_NOT_TRACK:-}}" in
+  case "${STEMCODE_TELEMETRY_DISABLED:-${DO_NOT_TRACK:-}}" in
     1|true|TRUE|True|yes|YES|Yes|on|ON|On)
       return 1
       ;;
@@ -730,8 +730,8 @@ send_install_telemetry() {
 }
 
 main() {
-  local requested_install_dir="${NANOAGENT_INSTALL_DIR:-${NanoAgent_INSTALL_DIR:-}}"
-  local requested_tag="${NANOAGENT_TAG:-${NanoAgent_TAG:-${1:-}}}"
+  local requested_install_dir="${STEMCODE_INSTALL_DIR:-${StemCode_INSTALL_DIR:-}}"
+  local requested_tag="${STEMCODE_TAG:-${StemCode_TAG:-${1:-}}}"
   local tag="$requested_tag"
   local platform
   local install_dir
@@ -744,7 +744,7 @@ main() {
   local source_binary_name
   local destination_file_name
 
-  log "NanoAgent CLI Installer"
+  log "StemCode CLI Installer"
   start_step "Checking system requirements..."
   require_command unzip
   require_command mktemp
@@ -812,7 +812,7 @@ main() {
   send_install_telemetry "$platform" "$tag"
 
   if make_command_available "$destination_binary" "$install_dir" "$platform"; then
-    log "Done. Run '${COMMAND_NAME}' to start NanoAgent."
+    log "Done. Run '${COMMAND_NAME}' to start StemCode."
   elif [[ "$COMMAND_AVAILABLE_SCOPE" == "ci" ]]; then
     log "Done. '${COMMAND_NAME}' will be available in later GitHub Actions steps."
   else

@@ -18,9 +18,9 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
-  SOLUTION_FILE: NanoAgent.CrossPlatform.slnx
-  TEST_PROJECT: NanoAgent.Tests/NanoAgent.Tests.csproj
-  CLI_PROJECT: NanoAgent.CLI/NanoAgent.CLI.csproj
+  SOLUTION_FILE: StemCode.CrossPlatform.slnx
+  TEST_PROJECT: StemCode.Tests/StemCode.Tests.csproj
+  CLI_PROJECT: StemCode.CLI/StemCode.CLI.csproj
   COVERAGE_THRESHOLD: 60
 
 jobs:
@@ -38,10 +38,10 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.Desktop/packages.lock.json
-            NanoAgent.Tests/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.Desktop/packages.lock.json
+            StemCode.Tests/packages.lock.json
 
       - name: Restore
         run: >
@@ -54,8 +54,8 @@ jobs:
 
       - name: Pack NuGet packages
         run: |
-          dotnet pack NanoAgent/NanoAgent.csproj --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts/packages/nuget
-          dotnet pack NanoAgent.CLI/NanoAgent.CLI.csproj --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts/packages/nuget
+          dotnet pack StemCode/StemCode.csproj --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts/packages/nuget
+          dotnet pack StemCode.CLI/StemCode.CLI.csproj --configuration ${{ env.CONFIGURATION }} --no-build --output ./artifacts/packages/nuget
 
       - name: Test with coverage
         run: >
@@ -149,10 +149,10 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.Desktop/packages.lock.json
-            NanoAgent.Tests/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.Desktop/packages.lock.json
+            StemCode.Tests/packages.lock.json
 
       - name: Publish CLI test build
         run: >

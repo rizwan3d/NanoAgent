@@ -3,14 +3,14 @@
 // Best-effort, anonymous PostHog "installed" event shared by the postinstall step
 // and the runtime first-run download (covers `bun add`, which skips postinstall).
 // Telemetry must never affect installation: every failure is swallowed and the
-// network call is bounded by a short timeout. Opt out with NANOAGENT_TELEMETRY_DISABLED
+// network call is bounded by a short timeout. Opt out with STEMCODE_TELEMETRY_DISABLED
 // or the cross-tool DO_NOT_TRACK convention.
 
 const crypto = require("crypto");
 
 const platform = require("./platform");
 
-// Mirrors NanoAgent.Infrastructure.Configuration.TelemetryOptions so install and
+// Mirrors StemCode.Infrastructure.Configuration.TelemetryOptions so install and
 // in-product analytics land in the same PostHog project.
 const TELEMETRY_HOST = "https://us.i.posthog.com";
 const TELEMETRY_PROJECT_TOKEN = "phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk";
@@ -23,7 +23,7 @@ function isTruthy(value) {
 }
 
 function telemetryEnabled() {
-  if (isTruthy(process.env.NANOAGENT_TELEMETRY_DISABLED) || isTruthy(process.env.DO_NOT_TRACK)) {
+  if (isTruthy(process.env.STEMCODE_TELEMETRY_DISABLED) || isTruthy(process.env.DO_NOT_TRACK)) {
     return false;
   }
   return Boolean(TELEMETRY_PROJECT_TOKEN);

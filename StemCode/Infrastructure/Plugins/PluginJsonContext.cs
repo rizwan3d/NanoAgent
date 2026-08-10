@@ -1,0 +1,19 @@
+using StemCode.Application.Models;
+using System.Text.Json.Serialization;
+
+namespace StemCode.Infrastructure.Plugins;
+
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    WriteIndented = true)]
+[JsonSerializable(typeof(PluginMarketplaceConfig))]
+[JsonSerializable(typeof(PluginMarketplaceEntry))]
+[JsonSerializable(typeof(PluginManifest))]
+[JsonSerializable(typeof(PluginManifestFile))]
+[JsonSerializable(typeof(PluginMarketplaceIndex))]
+[JsonSerializable(typeof(PluginIndexEntry))]
+[JsonSerializable(typeof(InstalledPluginLock))]
+[JsonSerializable(typeof(InstalledPluginEntry))]
+internal sealed partial class PluginJsonContext : JsonSerializerContext
+{
+}
