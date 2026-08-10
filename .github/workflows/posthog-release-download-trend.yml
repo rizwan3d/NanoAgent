@@ -29,7 +29,7 @@ jobs:
       POSTHOG_HOST: ${{ vars.POSTHOG_HOST || 'https://us.i.posthog.com' }}
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       REPOSITORY: ${{ github.repository }}
-      NPM_PACKAGE_IDS: ${{ github.event.inputs.npm_package_ids || vars.NPM_PACKAGE_IDS || 'stemcode-cli' }}
+      NPM_PACKAGE_IDS: ${{ github.event.inputs.npm_package_ids || vars.NPM_PACKAGE_IDS || 'stemcode' }}
       NUGET_PACKAGE_IDS: ${{ github.event.inputs.nuget_package_ids || vars.NUGET_PACKAGE_IDS || '' }}
       VSCODE_EXTENSION_IDS: ${{ github.event.inputs.vscode_extension_ids || vars.VSCODE_EXTENSION_IDS || 'rizwan3d.stemcode,rizwan3d.stemcode-vs' }}
     steps:

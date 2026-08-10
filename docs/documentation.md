@@ -75,14 +75,14 @@ The installers show step status and download progress when run in an interactive
 #### npm, bun, and pnpm
 
 ```bash
-npm install -g stemcode-cli
+npm install -g stemcode
 # or
-bun add -g stemcode-cli
+bun add -g stemcode
 # or
-pnpm add -g stemcode-cli
+pnpm add -g stemcode
 ```
 
-The [`stemcode-cli`](packaging/npm) package is a thin installer. On `postinstall` (or on the first `stemcode` run) it downloads the matching `StemCode.CLI-<rid>.zip` release asset, verifies it against the published `SHA256SUMS`, and unpacks the binary — no .NET toolchain required. Because `bun install` skips `postinstall` scripts by default, bun fetches the binary lazily the first time you run `stemcode`. Supported targets: `win-x64`, `osx-x64`, `osx-arm64`, `linux-x64`, `linux-arm64`. Useful overrides: `STEMCODE_SKIP_DOWNLOAD=1`, `STEMCODE_CLI_TAG`, `STEMCODE_CLI_BASE_URL`.
+The [`stemcode`](packaging/npm) package is a thin installer. On `postinstall` (or on the first `stemcode` run) it downloads the matching `StemCode.CLI-<rid>.zip` release asset, verifies it against the published `SHA256SUMS`, and unpacks the binary — no .NET toolchain required. Because `bun install` skips `postinstall` scripts by default, bun fetches the binary lazily the first time you run `stemcode`. Supported targets: `win-x64`, `osx-x64`, `osx-arm64`, `linux-x64`, `linux-arm64`. Useful overrides: `STEMCODE_SKIP_DOWNLOAD=1`, `STEMCODE_CLI_TAG`, `STEMCODE_CLI_BASE_URL`.
 
 #### NuGet library
 

@@ -1,6 +1,6 @@
-# stemcode-cli
+# stemcode
 
-`stemcode-cli` installs the StemCode CLI as the `stemcode` command.
+`stemcode` installs the StemCode CLI as the `stemcode` command.
 
 StemCode is a local AI coding agent for terminal workflows, ACP-compatible editors, and automation. This npm package is a thin installer: it downloads the matching self-contained StemCode release for your platform, verifies it against the published `SHA256SUMS`, and launches it without requiring a .NET toolchain.
 
@@ -15,11 +15,11 @@ StemCode is a local AI coding agent for terminal workflows, ACP-compatible edito
 ## Install
 
 ```bash
-npm install -g stemcode-cli
+npm install -g stemcode
 # or
-pnpm add -g stemcode-cli
+pnpm add -g stemcode
 # or
-bun add -g stemcode-cli
+bun add -g stemcode
 ```
 
 Start StemCode:
@@ -53,7 +53,7 @@ If the download is skipped or fails during `postinstall`, installation still suc
 To fetch it eagerly after installing with bun, run:
 
 ```bash
-bunx stemcode-cli --version
+bunx stemcode --version
 ```
 
 ## Supported platforms
@@ -98,7 +98,7 @@ STEMCODE_SKIP_UPDATE_CHECK=1 stemcode
 If you need to force a fresh binary download for a local install, run:
 
 ```bash
-node ./node_modules/stemcode-cli/scripts/download.js
+node ./node_modules/stemcode/scripts/download.js
 ```
 
 If the package was installed globally, reinstalling the package is usually the simplest way to refresh the bundled launcher files.

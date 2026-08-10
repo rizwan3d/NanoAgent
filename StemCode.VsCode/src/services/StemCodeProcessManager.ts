@@ -202,7 +202,7 @@ export class StemCodeProcessManager extends EventEmitter {
         return spawnSync(probe, ['stemcode'], { shell: false }).status === 0;
     }
 
-    // stemcode not found anywhere. Ask consent, then `npm install -g stemcode-cli`.
+    // stemcode not found anywhere. Ask consent, then `npm install -g stemcode`.
     // Returns the resolved command on success, or null if declined/failed.
     private async ensureInstalled(): Promise<string | null> {
         const existing = this.resolveCommand('stemcode');
@@ -226,7 +226,7 @@ export class StemCodeProcessManager extends EventEmitter {
     private async ensureInstalledCore(): Promise<string | null> {
         const choice = await vscode.window.showWarningMessage(
             'StemCode CLI (stemcode) was not found. Install it globally via npm?',
-            { modal: true, detail: 'Runs: npm install -g stemcode-cli' },
+            { modal: true, detail: 'Runs: npm install -g stemcode' },
             'Install'
         );
         if (choice !== 'Install') {
@@ -238,7 +238,7 @@ export class StemCodeProcessManager extends EventEmitter {
             { location: vscode.ProgressLocation.Notification, title: 'Installing StemCode CLI…' },
             () => new Promise<boolean>((resolve) => {
                 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                const proc = spawn(npm, ['install', '-g', 'stemcode-cli'], { shell: process.platform === 'win32' });
+                const proc = spawn(npm, ['install', '-g', 'stemcode'], { shell: process.platform === 'win32' });
                 proc.stdout?.on('data', (d) => this.logService.info(`npm: ${d.toString().trim()}`));
                 proc.stderr?.on('data', (d) => this.logService.warn(`npm: ${d.toString().trim()}`));
                 proc.on('error', (err) => {
@@ -250,7 +250,7 @@ export class StemCodeProcessManager extends EventEmitter {
         );
 
         if (!ok) {
-            vscode.window.showErrorMessage('Failed to install stemcode. Run "npm install -g stemcode-cli" manually. See logs for details.');
+            vscode.window.showErrorMessage('Failed to install stemcode. Run "npm install -g stemcode" manually. See logs for details.');
             return null;
         }
 
@@ -339,7 +339,7 @@ export class StemCodeProcessManager extends EventEmitter {
 
         try {
             const current = this.parseVersion(spawnSync(this.prepareCommandForSpawn(command), ['--version'], { shell: process.platform === 'win32' }).stdout?.toString());
-            const latest = this.parseVersion(spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', 'stemcode-cli', 'version'], { shell: process.platform === 'win32' }).stdout?.toString());
+            const latest = this.parseVersion(spawnSync(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['view', 'stemcode', 'version'], { shell: process.platform === 'win32' }).stdout?.toString());
             if (!current || !latest || this.compareVersions(latest, current) <= 0) {
                 return; // up to date, or couldn't determine — stay quiet.
             }
@@ -357,7 +357,7 @@ export class StemCodeProcessManager extends EventEmitter {
                 { location: vscode.ProgressLocation.Notification, title: 'Updating StemCode CLI…' },
                 () => new Promise<boolean>((resolve) => {
                     const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-                    const proc = spawn(npm, ['install', '-g', 'stemcode-cli@latest'], { shell: process.platform === 'win32' });
+                    const proc = spawn(npm, ['install', '-g', 'stemcode@latest'], { shell: process.platform === 'win32' });
                     proc.stdout?.on('data', (d) => this.logService.info(`npm: ${d.toString().trim()}`));
                     proc.stderr?.on('data', (d) => this.logService.warn(`npm: ${d.toString().trim()}`));
                     proc.on('error', (err) => { this.logService.error('npm update failed to start.', err); resolve(false); });

@@ -1,6 +1,6 @@
 {
-  "name": "stemcode-cli",
-  "version": "1.0.7",
+  "name": "stemcode",
+  "version": "1.1.8",
   "description": "Terminal UI, ACP server, and automation-friendly CLI for StemCode.",
   "keywords": [
     "stemcode",
