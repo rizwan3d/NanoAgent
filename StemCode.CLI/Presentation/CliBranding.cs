@@ -4,31 +4,31 @@ namespace StemCode.CLI;
 
 internal static class CliBranding
 {
-    private static readonly (string StemCode, string Agent)[] Wordmark =
+    private static readonly (string Stem, string Code)[] Wordmark =
     [
         (
-            "███╗   ██╗  █████╗  ███╗   ██╗  ██████╗",
-            "  █████╗   ██████╗   ███████╗  ███╗   ██╗  ████████╗"
+            "███████╗ ████████╗ ███████╗ ███╗   ███╗",
+            "  ██████╗  ██████╗  ██████╗  ███████╗"
         ),
         (
-            "████╗  ██║ ██╔══██╗ ████╗  ██║ ██╔═══██╗",
-            " ██╔══██╗ ██╔════╝  ██╔════╝  ████╗  ██║  ╚══██╔══╝"
+            "██╔════╝ ╚══██╔══╝ ██╔════╝ ████╗ ████║",
+            " ██╔════╝ ██╔═══██╗ ██╔══██╗ ██╔════╝"
         ),
         (
-            "██╔██╗ ██║ ███████║ ██╔██╗ ██║ ██║   ██║",
-            " ███████║ ██║  ███╗ █████╗    ██╔██╗ ██║     ██║"
+            "███████╗    ██║    █████╗   ██╔████╔██║",
+            " ██║      ██║   ██║ ██║  ██║ █████╗"
         ),
         (
-            "██║╚██╗██║ ██╔══██║ ██║╚██╗██║ ██║   ██║",
-            " ██╔══██║ ██║   ██║ ██╔══╝    ██║╚██╗██║     ██║"
+            "╚════██║    ██║    ██╔══╝   ██║╚██╔╝██║",
+            " ██║      ██║   ██║ ██║  ██║ ██╔══╝"
         ),
         (
-            "██║ ╚████║ ██║  ██║ ██║ ╚████║ ╚██████╔╝",
-            " ██║  ██║ ╚██████╔╝ ███████╗  ██║ ╚████║     ██║"
+            "███████║    ██║    ███████╗ ██║ ╚═╝ ██║",
+            " ╚██████╗ ╚██████╔╝ ██████╔╝ ███████╗"
         ),
         (
-            "╚═╝  ╚═══╝ ╚═╝  ╚═╝ ╚═╝  ╚═══╝  ╚═════╝",
-            "  ╚═╝  ╚═╝  ╚═════╝  ╚══════╝  ╚═╝  ╚═══╝     ╚═╝"
+            "╚══════╝    ╚═╝    ╚══════╝ ╚═╝     ╚═╝",
+            "  ╚═════╝  ╚═════╝  ╚═════╝  ╚══════╝"
         )
     ];
 
@@ -37,11 +37,13 @@ internal static class CliBranding
         List<string> lines = [];
 
         lines.Add("[grey]  [/]");
-        for (int index = 0; index < Wordmark.Length; index++)
+
+        foreach ((string stem, string code) in Wordmark)
         {
-            string accentColor = index < 3 ? "fuchsia" : "purple";
             lines.Add(
-                $"[grey]  [/][{accentColor}] [/][white]{Markup.Escape(Wordmark[index].StemCode)}[/][fuchsia]{Markup.Escape(Wordmark[index].Agent)}[/]");
+                $"[grey]  [/]" +
+                $"[white]{Markup.Escape(stem)}[/]" +
+                $"[aqua]{Markup.Escape(code)}[/]");
         }
 
         lines.Add("[grey]  [/]");
