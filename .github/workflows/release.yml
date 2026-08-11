@@ -375,6 +375,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: read
+      id-token: write
 
     steps:
       - name: Checkout
@@ -393,17 +394,16 @@ jobs:
           name: nuget-packages
           path: ./artifacts/packages/nuget
 
+      - name: NuGet login (OIDC -> temp API key)
+        id: nuget_login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Publish StemCode package to NuGet.org
         shell: bash
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
           set -euo pipefail
-
-          if [[ -z "${NUGET_API_KEY:-}" ]]; then
-            echo "NUGET_API_KEY is required to publish NuGet packages." >&2
-            exit 1
-          fi
 
           shopt -s nullglob
           packages=(./artifacts/packages/nuget/StemCode.[0-9]*.nupkg)
@@ -416,14 +416,14 @@ jobs:
 
           for package_path in "${packages[@]}"; do
             dotnet nuget push "$package_path" \
-              --api-key "$NUGET_API_KEY" \
+              --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
               --source "${{ env.NUGET_SOURCE }}" \
               --skip-duplicate
           done
 
           for symbol_path in "${symbols[@]}"; do
             dotnet nuget push "$symbol_path" \
-              --api-key "$NUGET_API_KEY" \
+              --api-key "${{ steps.nuget_login.outputs.NUGET_API_KEY }}" \
               --source "${{ env.NUGET_SOURCE }}" \
               --skip-duplicate
           done
