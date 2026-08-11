@@ -11,12 +11,11 @@ public enum OnboardingProviderChoice
     AnthropicClaudeAccount = 6,
     GitHubCopilot = 7,
     KiloCode = 8,
-    StemCodeEnterprise = 9,
-    Ollama = 10,
-    OllamaCloud = 11,
-    Cerebras = 12,
-    Groq = 13,
-    OpenCodeZen = 14,
-    LmStudio = 15,
-    DeepSeek = 16
+    Ollama = 9,
+    OllamaCloud = 10,
+    Cerebras = 11,
+    Groq = 12,
+    OpenCodeZen = 13,
+    LmStudio = 14,
+    DeepSeek = 15
 }

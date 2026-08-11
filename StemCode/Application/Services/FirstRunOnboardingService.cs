@@ -10,14 +10,8 @@ namespace StemCode.Application.Services;
 
 internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 {
-    private const string StemCodeEnterpriseBaseUrl = "https://app.getstemcode.com/v1";
-
     private static readonly SelectionPromptOption<OnboardingProviderSetupChoice>[] ProviderSetupOptions =
     [
-        new(
-            "StemCode Enterprise",
-            OnboardingProviderSetupChoice.StemCodeEnterprise,
-            "Use your StemCode Enterprise deployment directly without opening a provider subpage."),
         new(
             "Subscription accounts",
             OnboardingProviderSetupChoice.SubscriptionAccount,
@@ -120,7 +114,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
     private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
     private readonly IGitHubCopilotAuthenticator? _gitHubCopilotAuthenticator;
-    private readonly IStemCodeEnterpriseAuthenticator? _stemCodeEnterpriseAuthenticator;
     private readonly ILogger<FirstRunOnboardingService> _logger;
 
     public FirstRunOnboardingService(
@@ -136,8 +129,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         ILogger<FirstRunOnboardingService> logger,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
-        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
-        IStemCodeEnterpriseAuthenticator? stemCodeEnterpriseAuthenticator = null)
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -151,7 +143,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
         _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
         _gitHubCopilotAuthenticator = gitHubCopilotAuthenticator;
-        _stemCodeEnterpriseAuthenticator = stemCodeEnterpriseAuthenticator;
         _logger = logger;
     }
 
@@ -289,8 +280,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                                 promptCancellationToken),
                             _inputValidator.ValidateBaseUrl,
                             cancellationToken)),
-                    OnboardingProviderChoice.StemCodeEnterprise => _profileFactory.CreateCompatible(
-                        StemCodeEnterpriseBaseUrl),
                     _ => throw new InvalidOperationException($"Unsupported provider choice '{providerChoice}'.")
                 };
 
@@ -303,8 +292,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                             await AuthenticateAnthropicClaudeAccountAsync(cancellationToken),
                         OnboardingProviderChoice.GitHubCopilot =>
                             await AuthenticateGitHubCopilotAsync(cancellationToken),
-                        OnboardingProviderChoice.StemCodeEnterprise =>
-                            await AuthenticateStemCodeEnterpriseAsync(profile, cancellationToken),
                         _ => await PromptUntilValidAsync(
                                 cancellationToken => _secretPrompt.PromptAsync(
                                     new SecretPromptRequest(
@@ -367,7 +354,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return CreateProviderName(
             profile,
             GetProviderDisplayName(providerChoice, profile),
-            includeCompatibleHostSuffix: providerChoice != OnboardingProviderChoice.StemCodeEnterprise);
+            includeCompatibleHostSuffix: true);
     }
 
     private static string CreateProviderName(AgentProviderProfile profile)
@@ -405,11 +392,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                     ProviderSetupOptions,
                     "Pick the kind of provider setup you want to configure on this machine."),
                 cancellationToken);
-
-            if (setupChoice == OnboardingProviderSetupChoice.StemCodeEnterprise)
-            {
-                return OnboardingProviderChoice.StemCodeEnterprise;
-            }
 
             if (setupChoice == OnboardingProviderSetupChoice.OpenAiCompatible)
             {
@@ -485,21 +467,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return await _gitHubCopilotAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
-    private async Task<string> AuthenticateStemCodeEnterpriseAsync(
-        AgentProviderProfile profile,
-        CancellationToken cancellationToken)
-    {
-        if (_stemCodeEnterpriseAuthenticator is null)
-        {
-            throw new InvalidOperationException(
-                "StemCode Enterprise authentication is unavailable in this runtime.");
-        }
-
-        return await _stemCodeEnterpriseAuthenticator.AuthenticateAsync(
-            profile.ResolveBaseUrl(),
-            cancellationToken);
-    }
-
     private async Task<string> PromptUntilValidAsync(
         Func<CancellationToken, Task<string>> promptValue,
         Func<string?, InputValidationResult> validate,
@@ -532,8 +499,6 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         OnboardingProviderChoice providerChoice,
         AgentProviderProfile profile)
     {
-        return providerChoice == OnboardingProviderChoice.StemCodeEnterprise
-            ? "StemCode Enterprise"
-            : profile.ProviderKind.ToDisplayName();
+        return profile.ProviderKind.ToDisplayName();
     }
 }
