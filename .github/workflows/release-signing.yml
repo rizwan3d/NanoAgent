@@ -704,7 +704,7 @@ jobs:
         id: nuget_login
         uses: NuGet/login@v1
         with:
-          user: ${{ secrets.NUGET_USER }}
+          user: ${{ secrets.NUGET_USER || vars.NUGET_USER || github.repository_owner }}
 
       - name: Publish StemCode package to NuGet.org
         shell: bash
