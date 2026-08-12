@@ -37,7 +37,7 @@ Finish provider setup in the terminal before using the VS Code extension.
 Install from the Visual Studio Marketplace:
 
 ```text
-ext install rizwan3d.stemcode
+ext install growbitlab.stemcode
 ```
 
 Then open the StemCode view in VS Code or run `StemCode: Open Chat` from the Command Palette.

@@ -580,14 +580,14 @@ The release workflow `.github/workflows/release.yml` packages the extension as `
 
 The Marketplace CD workflow `.github/workflows/vscode-extension-cd.yml` publishes the extension to the Visual Studio Marketplace. It runs for `v*` tags and manual dispatch. For tag builds, the workflow removes the leading `v` and applies that value to `StemCode.VsCode/package.json` with `npm version --no-git-tag-version` before packaging.
 
-Required repository secret:
+Required repository configuration:
 
 ```text
-NUGET_API_KEY
+NUGET_USER
 VSCE_PAT
 ```
 
-Create `NUGET_API_KEY` in NuGet.org with push permission for the target packages. Create `VSCE_PAT` in Azure DevOps with Marketplace Manage scope and access to the `rizwan3d` Visual Studio Marketplace publisher. The release workflow publishes NuGet packages with `dotnet nuget push`, and the Marketplace workflow publishes through `@vscode/vsce`, uploads the generated `.vsix` artifact, and uses the `vscode-marketplace` GitHub environment for deployment approval or environment-level protection rules if configured.
+Create `NUGET_USER` in GitHub repository secrets or variables with the NuGet.org profile name that owns the target packages when it differs from the GitHub repository owner. If it is unset, the release workflows default to `github.repository_owner`. In NuGet.org, create a Trusted Publishing policy for this repository and workflow file name (`release.yml` and `release-signing.yml`; include `production-release` as the environment if you want the policy restricted to that GitHub Actions environment). The release workflow requests `id-token: write`, uses `NuGet/login@v1` to exchange the GitHub Actions OIDC token for a short-lived NuGet API key, and then publishes with `dotnet nuget push`. Create `VSCE_PAT` in Azure DevOps with Marketplace Manage scope and access to the `rizwan3d` Visual Studio Marketplace publisher. The Marketplace workflow publishes through `@vscode/vsce`, uploads the generated `.vsix` artifact, and uses the `vscode-marketplace` GitHub environment for deployment approval or environment-level protection rules if configured.
 
 ## Visual Studio Extension
 

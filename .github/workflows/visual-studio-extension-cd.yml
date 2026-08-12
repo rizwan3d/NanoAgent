@@ -102,7 +102,7 @@ jobs:
         run: |
           [xml]$manifest = Get-Content $env:EXTENSION_MANIFEST
           $identity = $manifest.PackageManifest.Metadata.Identity
-          $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "rizwan3d" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
+          $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "growbitlab" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
 
           $version = $env:INPUT_VERSION
           $releaseRef = $env:RELEASE_REF
@@ -230,7 +230,7 @@ jobs:
             throw "VS_MARKETPLACE_PAT is required to publish the Visual Studio extension."
           }
 
-          $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "rizwan3d" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
+          $publisherName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_PUBLISHER)) { "growbitlab" } else { $env:VS_MARKETPLACE_PUBLISHER.Trim() }
           $extensionName = if ([string]::IsNullOrWhiteSpace($env:VS_MARKETPLACE_EXTENSION_NAME)) { "stemcode-vs" } else { $env:VS_MARKETPLACE_EXTENSION_NAME.Trim() }
           $vsixPath = Join-Path $env:GITHUB_WORKSPACE "artifacts/visual-studio/${{ needs.package.outputs.vsix_name }}"
 

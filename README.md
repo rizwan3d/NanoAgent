@@ -34,10 +34,10 @@
    <a href="#desktop-app">
     <img src="https://img.shields.io/badge/Install-Desktop-0969da?style=for-the-badge" alt="Install StemCode Desktop">
   </a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.stemcode">
+  <a href="https://marketplace.visualstudio.com/items?itemName=growbitlab.stemcode">
     <img src="https://img.shields.io/badge/Install-VS_Code-0969da?style=for-the-badge" alt="Install StemCode VS Code extension">
   </a>
-  <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.stemcode-vs">
+  <a href="https://marketplace.visualstudio.com/items?itemName=growbitlab.stemcode-vs">
     <img src="https://img.shields.io/badge/Install-Visual_Studio-0969da?style=for-the-badge" alt="Install StemCode Visual Studio extension">
   </a>
   <a href="https://www.npmjs.com/package/stemcode">
