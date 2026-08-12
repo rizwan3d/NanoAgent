@@ -261,11 +261,26 @@ jobs:
           }
           "@ | Set-Content -Path $publishManifestPath -Encoding UTF8
 
-          & "${{ steps.vs.outputs.vsix_publisher_path }}" publish `
+          $publishOutput = & "${{ steps.vs.outputs.vsix_publisher_path }}" publish `
             -payload $vsixPath `
             -publishManifest $publishManifestPath `
-            -personalAccessToken $env:VS_MARKETPLACE_PAT
+            -personalAccessToken $env:VS_MARKETPLACE_PAT 2>&1
 
-          if ($LASTEXITCODE -ne 0) {
+          $publishExitCode = $LASTEXITCODE
+          $publishOutputText = ($publishOutput | ForEach-Object { "$_" }) -join [Environment]::NewLine
+
+          if (-not [string]::IsNullOrWhiteSpace($publishOutputText)) {
+            $publishOutputText | Write-Host
+          }
+
+          $uploadedSuccessfully = $publishOutputText -match "VsixPub0038\s*:\s*Uploaded '.+' to the marketplace\."
+          $knownTelemetryFailure = $publishOutputText -match "Microsoft\.VisualStudio\.Sdk\.VsixPublisher\.TelemetryLogger\.get_TelemetrySession" -or `
+            $publishOutputText -match "Could not load file or assembly 'System\.Memory"
+
+          if ($publishExitCode -ne 0 -and -not ($uploadedSuccessfully -and $knownTelemetryFailure)) {
             throw "VsixPublisher.exe failed to publish the extension."
+          }
+
+          if ($publishExitCode -ne 0 -and $uploadedSuccessfully -and $knownTelemetryFailure) {
+            Write-Warning "VsixPublisher.exe returned exit code $publishExitCode after a successful upload because of a known telemetry assembly-loading failure. Treating publish as successful."
           }
