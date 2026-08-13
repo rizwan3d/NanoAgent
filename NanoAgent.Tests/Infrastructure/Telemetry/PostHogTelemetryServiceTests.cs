@@ -37,8 +37,8 @@ public sealed class PostHogTelemetryServiceTests
         using JsonDocument featureRequest = ParseBody(handler.Requests[2]);
 
         identifyRequest.RootElement.GetProperty("event").GetString().Should().Be("$identify");
-        appStartedRequest.RootElement.GetProperty("event").GetString().Should().Be("nanoagent app started");
-        featureRequest.RootElement.GetProperty("event").GetString().Should().Be("nanoagent feature used");
+        appStartedRequest.RootElement.GetProperty("event").GetString().Should().Be("app started");
+        featureRequest.RootElement.GetProperty("event").GetString().Should().Be("feature used");
 
         string identifySessionId = identifyRequest.RootElement
             .GetProperty("properties")
@@ -64,7 +64,7 @@ public sealed class PostHogTelemetryServiceTests
         personProperties.GetProperty("execution_environment").GetString().Should().Be("local");
         personProperties.GetProperty("is_ci").GetBoolean().Should().BeFalse();
         personProperties.GetProperty("os_family").GetString().Should().Be(ProductTelemetryHelpers.GetOsFamily());
-        personProperties.GetProperty("nanoagent_version").GetString().Should().NotBeNullOrWhiteSpace();
+        personProperties.GetProperty("app_version").GetString().Should().NotBeNullOrWhiteSpace();
 
         JsonElement appStartedProperties = appStartedRequest.RootElement.GetProperty("properties");
         appStartedProperties.GetProperty("app_surface").GetString().Should().Be("desktop");
@@ -97,7 +97,7 @@ public sealed class PostHogTelemetryServiceTests
         using JsonDocument featureRequest = ParseBody(handler.Requests[1]);
 
         identifyRequest.RootElement.GetProperty("event").GetString().Should().Be("$identify");
-        featureRequest.RootElement.GetProperty("event").GetString().Should().Be("nanoagent feature used");
+        featureRequest.RootElement.GetProperty("event").GetString().Should().Be("feature used");
         identifyRequest.RootElement
             .GetProperty("properties")
             .GetProperty("$set")

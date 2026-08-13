@@ -14,7 +14,7 @@ const platform = require("./platform");
 // in-product analytics land in the same PostHog project.
 const TELEMETRY_HOST = "https://us.i.posthog.com";
 const TELEMETRY_PROJECT_TOKEN = "phc_AKZFSyU239kkQ5GQ2y4idb8MtFX96kVekgezgnsELHRk";
-const TELEMETRY_EVENT = "nanoagent cli installed";
+const TELEMETRY_EVENT = "cli installed";
 const TIMEOUT_MS = 5000;
 
 function isTruthy(value) {
@@ -85,9 +85,9 @@ async function trackInstall(options = {}) {
       event: TELEMETRY_EVENT,
       distinct_id: crypto.randomUUID(),
       properties: {
-        $lib: "nanoagent-installer",
+        $lib: "installer",
         install_method: options.method || detectInstallMethod(),
-        nanoagent_version: resolveQuietly(() => platform.resolveTag(), "unknown"),
+        app_version: resolveQuietly(() => platform.resolveTag(), "unknown"),
         os_family: osFamily(),
         platform: resolveQuietly(() => platform.resolveRid(), "unknown"),
         app_surface: "cli",

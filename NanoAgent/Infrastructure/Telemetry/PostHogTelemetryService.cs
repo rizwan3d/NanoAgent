@@ -11,6 +11,10 @@ namespace NanoAgent.Infrastructure.Telemetry;
 
 internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposable
 {
+    private const string AppStartedEventName = "app started";
+    private const string AppStoppedEventName = "app stopped";
+    private const string FeatureUsedEventName = "feature used";
+
     private readonly HttpClient _httpClient;
     private readonly Channel<TelemetryEnvelope>? _queue;
     private readonly string _appSurface;
@@ -99,7 +103,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
         EnsurePersonIdentified();
         _startedAtUtc = _timeProvider.GetUtcNow();
         Enqueue(
-            "nanoagent app started",
+            AppStartedEventName,
             ProductTelemetryHelpers.CreateAppStartedProperties(
                 _version,
                 _osFamily,
@@ -118,7 +122,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
         EnsurePersonIdentified();
         TimeSpan usageTime = _timeProvider.GetUtcNow() - startedAtUtc;
         Enqueue(
-            "nanoagent app stopped",
+            AppStoppedEventName,
             ProductTelemetryHelpers.CreateAppStoppedProperties(
                 _version,
                 _osFamily,
@@ -144,7 +148,7 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
 
         EnsurePersonIdentified();
         Enqueue(
-            "nanoagent feature used",
+            FeatureUsedEventName,
             ProductTelemetryHelpers.CreateFeatureProperties(
                 _version,
                 _osFamily,
