@@ -1,5 +1,5 @@
 {
-  "name": "stemcode",
+  "name": "stemcode-vscode",
   "displayName": "StemCode",
   "description": "Use StemCode inside VS Code through ACP mode.",
   "version": "0.0.1",
