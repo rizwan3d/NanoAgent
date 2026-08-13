@@ -230,7 +230,7 @@ internal static class ProductTelemetryHelpers
     {
         Dictionary<string, object> properties = new(StringComparer.Ordinal)
         {
-            ["nanoagent_version"] = string.IsNullOrWhiteSpace(version) ? "0.0.0" : version.Trim(),
+            ["app_version"] = string.IsNullOrWhiteSpace(version) ? "0.0.0" : version.Trim(),
             ["os_family"] = string.IsNullOrWhiteSpace(osFamily) ? "other" : osFamily.Trim().ToLowerInvariant(),
             ["app_surface"] = string.IsNullOrWhiteSpace(appSurface) ? "cli" : appSurface.Trim().ToLowerInvariant(),
             ["execution_environment"] = string.IsNullOrWhiteSpace(executionEnvironment)

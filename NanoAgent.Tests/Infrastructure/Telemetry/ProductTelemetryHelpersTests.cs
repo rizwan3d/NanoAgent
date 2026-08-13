@@ -35,7 +35,7 @@ public sealed class ProductTelemetryHelpersTests
 
         properties.Keys.Should().BeEquivalentTo(
             [
-                "nanoagent_version",
+                "app_version",
                 "os_family",
                 "app_surface",
                 "execution_environment",

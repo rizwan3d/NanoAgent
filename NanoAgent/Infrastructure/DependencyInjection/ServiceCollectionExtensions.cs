@@ -193,6 +193,8 @@ public static class ServiceCollectionExtensions
                 client,
                 serviceProvider.GetRequiredService<ToolExecutionSettings>(),
                 TimeSpan.FromSeconds(5));
+            client.DefaultRequestHeaders.UserAgent.Clear();
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("telemetry-client/1.0");
         });
         services.AddSingleton<IProductTelemetry>(serviceProvider =>
             serviceProvider.GetRequiredService<PostHogTelemetryService>());
