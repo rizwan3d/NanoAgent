@@ -1,5 +1,5 @@
 <p align="center">
-  <img src=".github/stemcode.gif" alt="StemCode" width="800">
+  <img src=".github/stemcode.jpg" alt="StemCode" width="800">
 </p>
 
 <h1 align="center">StemCode</h1>
