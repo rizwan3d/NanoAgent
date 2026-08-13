@@ -1,6 +1,6 @@
 {
   "name": "stemcode-vscode",
-  "displayName": "StemCode",
+  "displayName": "StemCode for VS Code",
   "description": "Use StemCode inside VS Code through ACP mode.",
   "version": "0.0.1",
   "icon": "resources/logo.png",
