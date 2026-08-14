@@ -21,16 +21,12 @@ public static partial class Program
     private const int TerminalSequenceReadTimeoutMilliseconds = 25;
     private static readonly string[] Spinner =
     [
-        "⠋",
-        "⠙",
-        "⠹",
-        "⠸",
-        "⠼",
-        "⠴",
-        "⠦",
-        "⠧",
-        "⠇",
-        "⠏"
+        "●           ",
+        "● ●         ",
+        "● ● ●       ",
+        "● ● ● ●     ",
+        "● ● ● ● ●   ",
+        "● ● ● ● ● ● ",
     ];
 
     public static Task<int> Main(string[]? args)

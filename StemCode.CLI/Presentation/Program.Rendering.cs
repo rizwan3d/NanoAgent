@@ -18,7 +18,7 @@ public static partial class Program
     private const int PanelChromeLineCount = 2;
     private const int InputStatusLineSize = 1;
     private const int FooterPanelSize = 1;
-    private const string BusyStatusText = "StemCode is working";
+    private const string BusyStatusText = "Thinking";
     private const string InputSelectionMarkupStyle = "black on grey70";
     private const string InputPanelBackgroundMarkupStyle = "white on #1c1c1c";
     private const string InputAccentMarkupStyle = "black on #7FE7F2";
@@ -1319,12 +1319,10 @@ public static partial class Program
 
     private static IRenderable BuildBusyStatusRenderable(AppState state)
     {
-        string spinner = Spinner[state.SpinnerFrame / 4 % Spinner.Length];
+        string spinner = Spinner[state.SpinnerFrame / 12 % Spinner.Length];
         string busyStatusText = BuildBusyStatusText(state);
         StringBuilder markup = new();
-        markup.Append("[bold aqua]")
-            .Append(Markup.Escape($"{spinner} "))
-            .Append("[/]");
+
 
         double animationTime = state.SpinnerFrame / 8d;
         for (int index = 0; index < busyStatusText.Length; index++)
@@ -1344,6 +1342,11 @@ public static partial class Program
                 .Append(Markup.Escape(character.ToString()))
                 .Append("[/]");
         }
+
+        markup.Append(' ')
+            .Append("[bold aqua]")
+            .Append(Markup.Escape(spinner))
+            .Append("[/]");
 
         return new Markup(markup.ToString());
     }
