@@ -1,0 +1,144 @@
+using StemCode.Application.Abstractions;
+using StemCode.Application.Exceptions;
+using StemCode.Application.Models;
+using StemCode.Application.Utilities;
+using StemCode.Domain.Models;
+
+namespace StemCode.Application.Commands;
+
+internal sealed class OnboardCommandHandler : IReplCommandHandler
+{
+    private readonly IAgentConfigurationStore _configurationStore;
+    private readonly IFirstRunOnboardingService _onboardingService;
+    private readonly IModelDiscoveryService _modelDiscoveryService;
+
+    public OnboardCommandHandler(
+        IFirstRunOnboardingService onboardingService,
+        IModelDiscoveryService modelDiscoveryService,
+        IAgentConfigurationStore configurationStore)
+    {
+        _onboardingService = onboardingService;
+        _modelDiscoveryService = modelDiscoveryService;
+        _configurationStore = configurationStore;
+    }
+
+    public string CommandName => "onboard";
+
+    public string Description => "Re-run provider onboarding and switch the active session to the new provider.";
+
+    public string Usage => "/onboard";
+
+    public async Task<ReplCommandResult> ExecuteAsync(
+        ReplCommandContext context,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (!string.IsNullOrWhiteSpace(context.ArgumentText))
+        {
+            return ReplCommandResult.Continue(
+                "Usage: /onboard",
+                ReplFeedbackKind.Error);
+        }
+
+        OnboardingResult onboardingResult;
+        try
+        {
+            onboardingResult = await _onboardingService.ReconfigureAsync(cancellationToken);
+        }
+        catch (PromptCancelledException)
+        {
+            return ReplCommandResult.Continue(
+                "Provider onboarding cancelled.",
+                ReplFeedbackKind.Warning);
+        }
+
+        ModelDiscoveryResult modelResult;
+        try
+        {
+            modelResult = await _modelDiscoveryService.DiscoverAndSelectAsync(cancellationToken);
+        }
+        catch (Exception exception) when (exception is ModelDiscoveryException or ModelProviderException or HttpRequestException or InvalidOperationException)
+        {
+            return ReplCommandResult.Continue(
+                $"Provider onboarding saved credentials, but validation failed: {exception.Message}",
+                ReplFeedbackKind.Error);
+        }
+
+        string[] availableModelIds = modelResult.AvailableModels
+            .Select(static model => model.Id)
+            .ToArray();
+
+        context.Session.ReplaceProviderConfiguration(
+            onboardingResult.Profile,
+            modelResult.SelectedModelId,
+            availableModelIds,
+            CreateModelContextWindowMap(modelResult.AvailableModels),
+            CreateModelContextMetadataMap(modelResult.AvailableModels),
+            onboardingResult.ActiveProviderName);
+
+        await _configurationStore.SaveAsync(
+            new AgentConfiguration(
+                context.Session.ProviderProfile,
+                context.Session.ActiveModelId,
+                context.Session.ReasoningEffort,
+                onboardingResult.ActiveProviderName,
+                context.Session.ThinkingMode),
+            cancellationToken);
+
+        return ReplCommandResult.Continue(
+            "Provider onboarding complete.\n" +
+            $"Saved provider: {onboardingResult.ActiveProviderName ?? context.Session.ProviderName}\n" +
+            $"Provider: {context.Session.ProviderName}\n" +
+            $"Active model: {context.Session.ActiveModelId.ToDisplayNameWithProvider(context.Session.ProviderName)}\n" +
+            $"Available models: {context.Session.AvailableModelIds.Count}\n" +
+            "Use the model picker to switch models.");
+    }
+
+    private static IReadOnlyDictionary<string, int> CreateModelContextWindowMap(
+        IEnumerable<AvailableModel> models)
+    {
+        Dictionary<string, int> contextWindowTokens = new(StringComparer.Ordinal);
+        foreach (AvailableModel model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Id) ||
+                model.ContextWindowTokens is not > 0)
+            {
+                continue;
+            }
+
+            contextWindowTokens[model.Id.Trim()] = model.ContextWindowTokens.Value;
+        }
+
+        return contextWindowTokens;
+    }
+
+    private static IReadOnlyDictionary<string, ModelContextMetadata> CreateModelContextMetadataMap(
+        IEnumerable<AvailableModel> models)
+    {
+        Dictionary<string, ModelContextMetadata> metadata = new(StringComparer.Ordinal);
+        foreach (AvailableModel model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Id))
+            {
+                continue;
+            }
+
+            ModelContextMetadata? modelMetadata = model.ContextMetadata;
+            if (modelMetadata is null)
+            {
+                if (model.ContextWindowTokens is not > 0)
+                {
+                    continue;
+                }
+
+                modelMetadata = new ModelContextMetadata(model.ContextWindowTokens.Value);
+            }
+
+            metadata[model.Id.Trim()] = modelMetadata;
+        }
+
+        return metadata;
+    }
+}

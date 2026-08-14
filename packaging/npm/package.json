@@ -1,30 +1,30 @@
 {
-  "name": "nanoai-cli",
+  "name": "stemcode-cli",
   "version": "1.0.7",
-  "description": "Terminal UI, ACP server, and automation-friendly CLI for NanoAgent.",
+  "description": "Terminal UI, ACP server, and automation-friendly CLI for StemCode.",
   "keywords": [
-    "nanoagent",
-    "nanoai",
+    "stemcode",
+    "stemcode",
     "ai",
     "agent",
     "cli",
     "acp",
     "coding-agent"
   ],
-  "homepage": "https://github.com/rizwan3d/NanoAgent#readme",
+  "homepage": "https://github.com/rizwan3d/StemCode#readme",
   "bugs": {
-    "url": "https://github.com/rizwan3d/NanoAgent/issues"
+    "url": "https://github.com/rizwan3d/StemCode/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rizwan3d/NanoAgent.git",
+    "url": "git+https://github.com/rizwan3d/StemCode.git",
     "directory": "packaging/npm"
   },
   "license": "Apache-2.0",
-  "author": "NanoAgent",
+  "author": "StemCode",
   "type": "commonjs",
   "bin": {
-    "nanoai": "bin/nanoai.js"
+    "stemcode": "bin/stemcode.js"
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.js"

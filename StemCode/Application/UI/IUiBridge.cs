@@ -1,0 +1,39 @@
+using StemCode.Application.Models;
+
+namespace StemCode.Application.UI;
+
+public interface IUiBridge
+{
+    Task<T> RequestSelectionAsync<T>(
+        SelectionPromptRequest<T> request,
+        CancellationToken cancellationToken);
+
+    Task<string> RequestTextAsync(
+        TextPromptRequest request,
+        bool isSecret,
+        CancellationToken cancellationToken);
+
+    void ShowError(string message);
+
+    void ShowInfo(string message);
+
+    void ShowSuccess(string message);
+
+    void ShowAssistantMessageChunk(string text)
+    {
+    }
+
+    void ShowAssistantReasoning(string reasoningText);
+
+    void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls);
+
+    void ShowToolResults(ToolExecutionBatchResult toolExecutionResult);
+
+    void ShowExecutionPlan(ExecutionPlanProgress progress);
+
+    // Optional: surface a provider request retry (e.g. "Trying 1/10"). Bridges
+    // that do not render live activity can keep the default no-op.
+    void ShowProviderRetry(ProviderRetryProgress progress)
+    {
+    }
+}

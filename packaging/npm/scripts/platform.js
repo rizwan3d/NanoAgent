@@ -7,10 +7,10 @@ const os = require("os");
 const path = require("path");
 
 const OWNER = "rizwan3d";
-const REPO = "NanoAgent";
-const APP_NAME = "NanoAgent.CLI";
+const REPO = "StemCode";
+const APP_NAME = "StemCode.CLI";
 // Executable name inside the release archive (matches the AOT-published output).
-const EXECUTABLE_NAME = "NanoAgent.CLI";
+const EXECUTABLE_NAME = "StemCode.CLI";
 const CHECKSUMS_NAME = "SHA256SUMS";
 
 // Maps Node's process.platform/process.arch onto the .NET runtime identifiers
@@ -21,7 +21,7 @@ function resolveRid() {
 
   if (platform === "win32") {
     if (arch === "x64") return "win-x64";
-    throw new Error(`Unsupported Windows architecture '${arch}'. NanoAgent ships win-x64 only.`);
+    throw new Error(`Unsupported Windows architecture '${arch}'. StemCode ships win-x64 only.`);
   }
 
   if (platform === "darwin") {
@@ -46,7 +46,7 @@ function executableFileName() {
 // Version baked into package.json by the release workflow; the matching release
 // is tagged "v<version>".
 function resolveVersion() {
-  const override = process.env.NANOAGENT_CLI_VERSION;
+  const override = process.env.STEMCODE_CLI_VERSION;
   if (override && override.trim()) {
     return override.trim().replace(/^v/i, "");
   }
@@ -55,7 +55,7 @@ function resolveVersion() {
 }
 
 function resolveTag() {
-  const override = process.env.NANOAGENT_CLI_TAG;
+  const override = process.env.STEMCODE_CLI_TAG;
   if (override && override.trim()) {
     return override.trim();
   }
@@ -63,7 +63,7 @@ function resolveTag() {
 }
 
 function baseDownloadUrl(tagOverride) {
-  const override = process.env.NANOAGENT_CLI_BASE_URL;
+  const override = process.env.STEMCODE_CLI_BASE_URL;
   if (override && override.trim()) {
     return override.trim().replace(/\/+$/, "");
   }

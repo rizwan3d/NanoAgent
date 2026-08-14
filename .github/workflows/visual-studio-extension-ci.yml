@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/visual-studio-extension-ci.yml
-      - NanoAgent.VS/**
+      - StemCode.VS/**
   push:
     branches:
       - master
     paths:
       - .github/workflows/visual-studio-extension-ci.yml
-      - NanoAgent.VS/**
+      - StemCode.VS/**
 
 concurrency:
   group: visual-studio-extension-ci-${{ github.event.pull_request.number || github.ref }}
@@ -24,7 +24,7 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 1
   DOTNET_CLI_TELEMETRY_OPTOUT: 1
-  EXTENSION_PROJECT: NanoAgent.VS/NanoAgent.VS.csproj
+  EXTENSION_PROJECT: StemCode.VS/StemCode.VS.csproj
 
 jobs:
   build:
@@ -41,16 +41,16 @@ jobs:
           global-json-file: global.json
           cache: true
           cache-dependency-path: |
-            NanoAgent/packages.lock.json
-            NanoAgent.CLI/packages.lock.json
-            NanoAgent.VS/packages.lock.json
+            StemCode/packages.lock.json
+            StemCode.CLI/packages.lock.json
+            StemCode.VS/packages.lock.json
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Build NanoAgent CLI payload
+      - name: Build StemCode CLI payload
         run: >
-          dotnet build NanoAgent.CLI/NanoAgent.CLI.csproj
+          dotnet build StemCode.CLI/StemCode.CLI.csproj
           --configuration ${{ env.CONFIGURATION }}
           --nologo
 
@@ -78,7 +78,7 @@ jobs:
           /restore
           /m
           /p:Configuration=${{ env.CONFIGURATION }}
-          /p:BuildNanoAgentCliProject=false
+          /p:BuildStemCodeCliProject=false
           /p:VisualStudioVersion=${{ steps.vs.outputs.visual_studio_version }}
           /p:DeployExtension=false
 
@@ -86,6 +86,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: visual-studio-extension
-          path: NanoAgent.VS/bin/Release/NanoAgent.VS.vsix
+          path: StemCode.VS/bin/Release/StemCode.VS.vsix
           if-no-files-found: error
           retention-days: 14

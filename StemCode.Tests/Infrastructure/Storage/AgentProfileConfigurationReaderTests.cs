@@ -1,0 +1,262 @@
+using FluentAssertions;
+using StemCode.Application.Abstractions;
+using StemCode.Infrastructure.CodeIntelligence;
+using StemCode.Infrastructure.Storage;
+
+namespace StemCode.Tests.Infrastructure.Storage;
+
+public sealed class AgentProfileConfigurationReaderTests : IDisposable
+{
+    private readonly string _tempRoot;
+    private readonly string _userProfilePath;
+    private readonly string _workspaceRoot;
+
+    public AgentProfileConfigurationReaderTests()
+    {
+        _tempRoot = Path.Combine(
+            Path.GetTempPath(),
+            $"StemCode-AgentProfile-{Guid.NewGuid():N}");
+        _workspaceRoot = Path.Combine(_tempRoot, "workspace");
+        _userProfilePath = Path.Combine(_tempRoot, "appdata", "StemCode", "agent-profile.json");
+        Directory.CreateDirectory(_workspaceRoot);
+    }
+
+    [Fact]
+    public void LoadMemorySettings_Should_MergeUserAndWorkspaceAgentProfiles()
+    {
+        WriteFile(
+            _userProfilePath,
+            """
+            {
+              "memory": {
+                "requireApprovalForWrites": true,
+                "allowAutoFailureObservation": true,
+                "allowAutoManualLessons": false,
+                "lessonsEnabled": true,
+                "redactSecrets": true,
+                "maxEntries": 500,
+                "maxPromptChars": 12000,
+                "disabled": false
+              },
+              "toolAudit": {
+                "enabled": false,
+                "maxArgumentsChars": 4000,
+                "maxResultChars": 5000,
+                "redactSecrets": true
+              }
+            }
+            """);
+        WriteFile(
+            Path.Combine(_workspaceRoot, ".stemcode", "agent-profile.json"),
+            """
+            {
+              "memory": {
+                "maxEntries": 250,
+                "maxPromptChars": 6000
+              },
+              "toolAuditLog": {
+                "enabled": true,
+                "maxResultChars": 6000
+              }
+            }
+            """);
+
+        var settings = AgentProfileConfigurationReader.LoadMemorySettings(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        settings.RequireApprovalForWrites.Should().BeTrue();
+        settings.AllowAutoFailureObservation.Should().BeTrue();
+        settings.AllowAutoManualLessons.Should().BeFalse();
+        settings.LessonsEnabled.Should().BeTrue();
+        settings.RedactSecrets.Should().BeTrue();
+        settings.MaxEntries.Should().Be(250);
+        settings.MaxPromptChars.Should().Be(6000);
+        settings.Disabled.Should().BeFalse();
+
+        var auditSettings = AgentProfileConfigurationReader.LoadToolAuditSettings(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        auditSettings.Enabled.Should().BeTrue();
+        auditSettings.MaxArgumentsChars.Should().Be(4000);
+        auditSettings.MaxResultChars.Should().Be(6000);
+        auditSettings.RedactSecrets.Should().BeTrue();
+    }
+
+    [Fact]
+    public void LoadToolAuditSettings_Should_DefaultToDisabled()
+    {
+        var settings = AgentProfileConfigurationReader.LoadToolAuditSettings(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        settings.Enabled.Should().BeFalse();
+        settings.MaxArgumentsChars.Should().Be(12_000);
+        settings.MaxResultChars.Should().Be(12_000);
+        settings.RedactSecrets.Should().BeTrue();
+    }
+
+    [Fact]
+    public void LoadCustomTools_Should_LoadWorkspaceToolsAndResolveRelativePaths()
+    {
+        WriteFile(
+            Path.Combine(_workspaceRoot, ".stemcode", "agent-profile.json"),
+            """
+            {
+              "customTools": {
+                "word_count": {
+                  "description": "Count words.",
+                  "command": ".stemcode/tools/word_count.py",
+                  "args": ["--json"],
+                  "cwd": ".",
+                  "approvalMode": "auto",
+                  "timeoutSeconds": 15,
+                  "maxOutputChars": 3000,
+                  "schema": {
+                    "type": "object",
+                    "properties": {
+                      "text": { "type": "string" }
+                    },
+                    "required": ["text"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+            """);
+
+        var tools = AgentProfileConfigurationReader.LoadCustomTools(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        tools.Should().ContainSingle();
+        tools[0].Name.Should().Be("word_count");
+        tools[0].Description.Should().Be("Count words.");
+        tools[0].Command.Should().Be(Path.GetFullPath(Path.Combine(_workspaceRoot, ".stemcode/tools/word_count.py")));
+        tools[0].Args.Should().Equal("--json");
+        tools[0].Cwd.Should().Be(Path.GetFullPath(_workspaceRoot));
+        tools[0].ApprovalMode.Should().Be("auto");
+        tools[0].TimeoutSeconds.Should().Be(15);
+        tools[0].MaxOutputChars.Should().Be(3000);
+        tools[0].Schema.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void LoadLanguageServers_Should_MergeUserAndWorkspaceOverrides()
+    {
+        WriteFile(
+            _userProfilePath,
+            """
+            {
+              "languageServers": {
+                "python-pyright": {
+                  "language": "Python",
+                  "name": "Pyright",
+                  "command": "pyright-langserver",
+                  "args": ["--stdio"],
+                  "languageId": "python",
+                  "fileExtensions": [".py"],
+                  "priority": 100
+                }
+              }
+            }
+            """);
+        WriteFile(
+            Path.Combine(_workspaceRoot, ".stemcode", "agent-profile.json"),
+            """
+            {
+              "languageServers": {
+                "python-pyright": {
+                  "command": ".stemcode/tools/custom-pyright.cmd",
+                  "priority": 250
+                },
+                "python-ruff": {
+                  "language": "Python",
+                  "name": "Ruff LSP",
+                  "command": ".stemcode/tools/ruff-lsp.cmd",
+                  "args": ["serve"],
+                  "languageId": "python",
+                  "fileExtensions": ["pyi", ".py"],
+                  "priority": 300,
+                  "installHint": "pip install ruff-lsp"
+                }
+              }
+            }
+            """);
+
+        IReadOnlyList<LanguageServerProfileConfiguration> servers = AgentProfileConfigurationReader.LoadLanguageServers(
+            new StubUserDataPathProvider(_userProfilePath),
+            new StubWorkspaceRootProvider(_workspaceRoot));
+
+        servers.Should().HaveCount(2);
+        LanguageServerProfileConfiguration pyright = servers.Single(static server => server.Key == "python-pyright");
+        pyright.Command.Should().Be(Path.GetFullPath(Path.Combine(_workspaceRoot, ".stemcode/tools/custom-pyright.cmd")));
+        pyright.Args.Should().Equal("--stdio");
+        pyright.Priority.Should().Be(250);
+
+        LanguageServerProfileConfiguration ruff = servers.Single(static server => server.Key == "python-ruff");
+        ruff.FileExtensions.Should().Equal(".pyi", ".py");
+        ruff.InstallHint.Should().Be("pip install ruff-lsp");
+        ruff.Command.Should().Be(Path.GetFullPath(Path.Combine(_workspaceRoot, ".stemcode/tools/ruff-lsp.cmd")));
+    }
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_tempRoot))
+        {
+            Directory.Delete(_tempRoot, recursive: true);
+        }
+    }
+
+    private static void WriteFile(string path, string content)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+    }
+
+    private sealed class StubWorkspaceRootProvider : IWorkspaceRootProvider
+    {
+        private readonly string _workspaceRoot;
+
+        public StubWorkspaceRootProvider(string workspaceRoot)
+        {
+            _workspaceRoot = workspaceRoot;
+        }
+
+        public string GetWorkspaceRoot()
+        {
+            return _workspaceRoot;
+        }
+    }
+
+    private sealed class StubUserDataPathProvider : IUserDataPathProvider
+    {
+        private readonly string _profilePath;
+
+        public StubUserDataPathProvider(string profilePath)
+        {
+            _profilePath = profilePath;
+        }
+
+        public string GetConfigurationFilePath()
+        {
+            return _profilePath;
+        }
+
+        public string GetMcpConfigurationFilePath()
+        {
+            return _profilePath;
+        }
+
+        public string GetLogsDirectoryPath()
+        {
+            return Path.Combine(Path.GetDirectoryName(_profilePath)!, "logs");
+        }
+
+        public string GetSessionsDirectoryPath()
+        {
+            return Path.Combine(Path.GetDirectoryName(_profilePath)!, "sessions");
+        }
+    }
+}

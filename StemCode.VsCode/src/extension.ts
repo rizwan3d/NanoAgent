@@ -1,0 +1,53 @@
+import * as vscode from 'vscode';
+import { LogService } from './services/LogService';
+import { StemCodeProcessManager } from './services/StemCodeProcessManager';
+import { registerCommands } from './commands';
+import { SessionManager } from './services/SessionManager';
+import { registerChatCommands } from './commands/chat';
+import { ChatViewProvider } from './webviews/ChatViewProvider';
+
+let processManager: StemCodeProcessManager;
+let sessionManager: SessionManager;
+
+export function activate(context: vscode.ExtensionContext) {
+    const logService = LogService.getInstance();
+    logService.info(`StemCode extension activated (v${context.extension.packageJSON.version}).`);
+
+    processManager = new StemCodeProcessManager(context.globalState);
+    sessionManager = new SessionManager(processManager, context.secrets);
+    const chatViewProvider = new ChatViewProvider(sessionManager, context.extensionUri);
+
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            ChatViewProvider.viewType,
+            chatViewProvider,
+            {
+                webviewOptions: {
+                    retainContextWhenHidden: true
+                }
+            }
+        )
+    );
+
+    registerCommands(context, processManager, logService);
+    registerChatCommands(context, sessionManager, chatViewProvider);
+
+    // Check autoStart config
+    const config = vscode.workspace.getConfiguration('stemcode');
+    if (config.get<boolean>('autoStart', false)) {
+        processManager.start();
+    }
+
+    context.subscriptions.push({
+        dispose: () => {
+            processManager.stop();
+            logService.dispose();
+        }
+    });
+}
+
+export function deactivate() {
+    if (processManager) {
+        return processManager.stop();
+    }
+}

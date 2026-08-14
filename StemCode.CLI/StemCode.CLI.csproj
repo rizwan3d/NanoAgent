@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64;osx-x64;osx-arm64</RuntimeIdentifiers>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ApplicationIcon>Assets\logo.ico</ApplicationIcon>
+    <IsPackable>false</IsPackable>
+    <Description>Terminal UI, ACP server, and automation-friendly CLI for StemCode.</Description>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OptimizationPreference>Size</OptimizationPreference>
+    <MetadataUpdaterSupport>false</MetadataUpdaterSupport>
+    <Http3Support>false</Http3Support>
+    <TrimmerRemoveSymbols>true</TrimmerRemoveSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.54.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\StemCode\StemCode.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\StemCode\appsettings.json" Link="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

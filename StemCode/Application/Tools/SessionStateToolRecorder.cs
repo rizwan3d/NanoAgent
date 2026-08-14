@@ -1,0 +1,359 @@
+using StemCode.Application.Models;
+using StemCode.Application.Tools.Models;
+using StemCode.Application.Utilities;
+
+namespace StemCode.Application.Tools;
+
+internal static class SessionStateToolRecorder
+{
+    private const int MaxContentExcerptCharacters = 1_200;
+    private const int MaxListedItems = 25;
+    private const int MaxSearchMatches = 12;
+    private const int MaxPreviewLines = 8;
+    private const int MaxTerminalOutputCharacters = 1_200;
+
+    public static void RecordFileRead(
+        ReplSessionContext session,
+        WorkspaceFileReadResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "read",
+            DateTimeOffset.UtcNow,
+            $"Read lines {result.StartLine}-{result.EndLine} of {result.TotalLines}. Excerpt: {NormalizeForState(result.DisplayContent, MaxContentExcerptCharacters)}"));
+    }
+
+    public static void RecordDirectoryList(
+        ReplSessionContext session,
+        WorkspaceDirectoryListResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string entries = result.Entries.Count == 0
+            ? "(empty)"
+            : string.Join(
+                ", ",
+                result.Entries
+                    .Take(MaxListedItems)
+                    .Select(static entry => $"{entry.EntryType}:{entry.Path}"));
+
+        string suffix = result.Entries.Count > MaxListedItems
+            ? $", ... {result.Entries.Count - MaxListedItems} more"
+            : string.Empty;
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "listed directory",
+            DateTimeOffset.UtcNow,
+            $"Listed {result.Entries.Count} entries: {entries}{suffix}"));
+    }
+
+    public static void RecordFileSearch(
+        ReplSessionContext session,
+        WorkspaceFileSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string matches = FormatItems(
+            result.Matches.Select(static match => FormatFileSearchMatch(match)),
+            MaxSearchMatches);
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            $"file search '{result.Query}'",
+            DateTimeOffset.UtcNow,
+            $"Found {result.Matches.Count} matching files: {matches}"));
+    }
+
+    public static void RecordTextSearch(
+        ReplSessionContext session,
+        WorkspaceTextSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string matches = FormatItems(
+            result.Matches.Select(static match =>
+                $"{match.Path}:{match.LineNumber}: {NormalizeForState(match.LineText, 160)}"),
+            MaxSearchMatches);
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            $"text search '{result.Query}'",
+            DateTimeOffset.UtcNow,
+            $"Found {result.Matches.Count} text matches: {matches}"));
+    }
+
+    public static void RecordCodeIntelligence(
+        ReplSessionContext session,
+        CodeIntelligenceResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string summary = result.Items.Count == 0
+            ? string.IsNullOrWhiteSpace(result.HoverText)
+                ? "No results found."
+                : $"Hover text: {NormalizeForState(result.HoverText!, 240)}"
+            : $"Results: {FormatItems(result.Items.Select(FormatCodeIntelligenceItem), MaxSearchMatches)}";
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            $"code intelligence '{result.Action}'",
+            DateTimeOffset.UtcNow,
+            $"{result.ServerName} ({result.LanguageId}). {summary}"));
+    }
+
+    public static void RecordFileWrite(
+        ReplSessionContext session,
+        WorkspaceFileWriteResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string action = result.OverwroteExistingFile
+            ? "updated"
+            : "created";
+        string preview = FormatPreview(result.PreviewLines, result.RemainingPreviewLineCount);
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "edited",
+            DateTimeOffset.UtcNow,
+            $"{action} by file_write (+{result.AddedLineCount} -{result.RemovedLineCount}). Preview: {preview}"));
+
+        session.RecordEditContext(new SessionEditContext(
+            DateTimeOffset.UtcNow,
+            $"file_write {action} ({result.Path})",
+            [result.Path],
+            result.AddedLineCount,
+            result.RemovedLineCount));
+    }
+
+    public static void RecordFileInsert(
+        ReplSessionContext session,
+        WorkspaceFileInsertResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string preview = FormatPreview(result.PreviewLines, result.RemainingPreviewLineCount);
+        DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "edited",
+            observedAtUtc,
+            $"inserted by insert_content at line {result.Line} (+{result.AddedLineCount} -{result.RemovedLineCount}). Preview: {preview}"));
+
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc,
+            $"insert_content ({result.Path})",
+            [result.Path],
+            result.AddedLineCount,
+            result.RemovedLineCount));
+    }
+
+    public static void RecordSearchAndReplace(
+        ReplSessionContext session,
+        WorkspaceSearchAndReplaceResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string preview = FormatPreview(result.PreviewLines, result.RemainingPreviewLineCount);
+        DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
+        string mode = result.UseRegex ? "regex" : "text";
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "edited",
+            observedAtUtc,
+            $"updated by search_and_replace ({mode}, {result.ReplacementCount} {(result.ReplacementCount == 1 ? "match" : "matches")}, +{result.AddedLineCount} -{result.RemovedLineCount}). Preview: {preview}"));
+
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc,
+            $"search_and_replace ({result.Path})",
+            [result.Path],
+            result.AddedLineCount,
+            result.RemovedLineCount));
+    }
+
+    public static void RecordFileDelete(
+        ReplSessionContext session,
+        WorkspaceFileDeleteResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        string preview = FormatPreview(result.PreviewLines, result.RemainingPreviewLineCount);
+        DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
+
+        session.RecordFileContext(new SessionFileContext(
+            result.Path,
+            "deleted",
+            observedAtUtc,
+            $"deleted by file_delete (+{result.AddedLineCount} -{result.RemovedLineCount}). Preview: {preview}"));
+
+        session.RecordEditContext(new SessionEditContext(
+            observedAtUtc,
+            $"file_delete ({result.Path})",
+            [result.Path],
+            result.AddedLineCount,
+            result.RemovedLineCount));
+    }
+
+    public static void RecordApplyPatch(
+        ReplSessionContext session,
+        WorkspaceApplyPatchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        DateTimeOffset observedAtUtc = DateTimeOffset.UtcNow;
+
+        // record one edit per file so the per-file change table stays accurate;
+        // a single aggregate entry would lose which file got which +/- counts.
+        foreach (WorkspaceApplyPatchFileResult file in result.Files)
+        {
+            string path = file.PreviousPath is null
+                ? file.Path
+                : $"{file.PreviousPath} -> {file.Path}";
+
+            string preview = FormatPreview(file.PreviewLines, file.RemainingPreviewLineCount);
+            session.RecordFileContext(new SessionFileContext(
+                file.Path,
+                "edited",
+                observedAtUtc,
+                $"{file.Operation} by apply_patch (+{file.AddedLineCount} -{file.RemovedLineCount}). Preview: {preview}"));
+
+            session.RecordEditContext(new SessionEditContext(
+                observedAtUtc,
+                $"apply_patch ({file.Operation} {path})",
+                [path],
+                file.AddedLineCount,
+                file.RemovedLineCount));
+        }
+    }
+
+    public static void RecordShellCommand(
+        ReplSessionContext session,
+        ShellCommandExecutionResult result)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        ArgumentNullException.ThrowIfNull(result);
+
+        session.RecordTerminalCommand(new SessionTerminalCommand(
+            DateTimeOffset.UtcNow,
+            SuspiciousUnicodeText.RenderVisible(result.Command),
+            result.WorkingDirectory,
+            result.ExitCode,
+            NormalizeOptionalForState(result.StandardOutput, MaxTerminalOutputCharacters),
+            NormalizeOptionalForState(result.StandardError, MaxTerminalOutputCharacters),
+            result.Background,
+            result.TerminalId,
+            result.TerminalStatus));
+    }
+
+    private static string FormatPreview(
+        IReadOnlyList<WorkspaceFileWritePreviewLine> previewLines,
+        int remainingPreviewLineCount)
+    {
+        if (previewLines.Count == 0)
+        {
+            return "(no preview lines)";
+        }
+
+        string preview = string.Join(
+            " | ",
+            previewLines
+                .Take(MaxPreviewLines)
+                .Select(static line =>
+                    $"{line.Kind}@{line.LineNumber}: {NormalizePreviewLineForState(line.Text, 160)}"));
+
+        return remainingPreviewLineCount > 0
+            ? $"{preview} | ... {remainingPreviewLineCount} more"
+            : preview;
+    }
+
+    private static string FormatItems(
+        IEnumerable<string> values,
+        int maxCount)
+    {
+        string[] selectedValues = values
+            .Where(static value => !string.IsNullOrWhiteSpace(value))
+            .Take(maxCount + 1)
+            .ToArray();
+
+        if (selectedValues.Length == 0)
+        {
+            return "(none)";
+        }
+
+        string[] visibleValues = selectedValues.Take(maxCount).ToArray();
+        string formatted = string.Join(", ", visibleValues);
+        return selectedValues.Length > maxCount
+            ? $"{formatted}, ... more"
+            : formatted;
+    }
+
+    private static string FormatCodeIntelligenceItem(CodeIntelligenceItem item)
+    {
+        string name = string.IsNullOrWhiteSpace(item.Name)
+            ? item.Kind
+            : $"{item.Kind} {item.Name}";
+
+        return $"{name} at {item.Path}:{item.StartLine}";
+    }
+
+    private static string FormatFileSearchMatch(WorkspaceFileSearchMatch match)
+    {
+        return $"{match.Path} ({match.MatchKind}, score {match.Score})";
+    }
+
+    private static string? NormalizeOptionalForState(
+        string? value,
+        int maxCharacters)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : NormalizeForState(value, maxCharacters);
+    }
+
+    private static string NormalizeForState(
+        string value,
+        int maxCharacters)
+    {
+        string normalized = SuspiciousUnicodeText.RenderVisible(SecretRedactor.Redact(value))
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n')
+            .Trim();
+
+        if (normalized.Length <= maxCharacters)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(0, maxCharacters - 3)].TrimEnd() + "...";
+    }
+
+    private static string NormalizePreviewLineForState(
+        string value,
+        int maxCharacters)
+    {
+        string normalized = SuspiciousUnicodeText.RenderVisible(SecretRedactor.Redact(value))
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+
+        if (normalized.Length <= maxCharacters)
+        {
+            return normalized;
+        }
+
+        return normalized[..Math.Max(0, maxCharacters - 3)].TrimEnd() + "...";
+    }
+}

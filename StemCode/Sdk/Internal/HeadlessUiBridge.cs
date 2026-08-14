@@ -1,0 +1,123 @@
+using StemCode.Application.Models;
+using StemCode.Application.UI;
+using StemCode.Sdk.Events;
+
+namespace StemCode.Sdk.Internal;
+
+/// <summary>
+/// Bridges the agent's <see cref="IUiBridge"/> contract to the event-driven
+/// <see cref="StemCodeClient"/> surface: progress callbacks are forwarded as
+/// .NET events, while interactive prompts are routed to an optional
+/// <see cref="IAgentInteractionHandler"/> or rejected with a clear error so a
+/// headless host never blocks waiting on a console.
+/// </summary>
+internal sealed class HeadlessUiBridge : IUiBridge
+{
+    private readonly StemCodeClient _client;
+    private readonly IAgentInteractionHandler? _interactionHandler;
+    private int _assistantMessageChunkCount;
+
+    public HeadlessUiBridge(
+        StemCodeClient client,
+        IAgentInteractionHandler? interactionHandler)
+    {
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _interactionHandler = interactionHandler;
+    }
+
+    public Task<T> RequestSelectionAsync<T>(
+        SelectionPromptRequest<T> request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_interactionHandler is not null)
+        {
+            return _interactionHandler.ProvideSelectionAsync(request, cancellationToken);
+        }
+
+        throw new StemCodeInteractionRequiredException(
+            $"StemCode requested a selection ('{request.Title}') but the client is running headless. " +
+            "Configure the provider and API key on StemCodeClientBuilder so onboarding is skipped, " +
+            "or supply an IAgentInteractionHandler via UseInteractionHandler(...).");
+    }
+
+    public Task<string> RequestTextAsync(
+        TextPromptRequest request,
+        bool isSecret,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (_interactionHandler is not null)
+        {
+            return _interactionHandler.ProvideTextAsync(request, isSecret, cancellationToken);
+        }
+
+        throw new StemCodeInteractionRequiredException(
+            $"StemCode requested {(isSecret ? "a secret" : "text")} input ('{request.Label}') but the client is running headless. " +
+            "Configure the provider and API key on StemCodeClientBuilder so onboarding is skipped, " +
+            "or supply an IAgentInteractionHandler via UseInteractionHandler(...).");
+    }
+
+    public void ShowError(string message)
+    {
+        _client.RaiseStatus(StatusMessageSeverity.Error, message);
+    }
+
+    public void ShowInfo(string message)
+    {
+        _client.RaiseStatus(StatusMessageSeverity.Info, message);
+    }
+
+    public void ShowSuccess(string message)
+    {
+        _client.RaiseStatus(StatusMessageSeverity.Success, message);
+    }
+
+    public void ShowAssistantMessageChunk(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _assistantMessageChunkCount);
+        _client.RaiseAssistantMessageChunk(text);
+    }
+
+    public void ShowAssistantReasoning(string reasoningText)
+    {
+        _client.RaiseReasoning(reasoningText);
+    }
+
+    public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
+    {
+        _client.RaiseToolCalls(toolCalls);
+    }
+
+    public void ShowToolResults(ToolExecutionBatchResult toolExecutionResult)
+    {
+        _client.RaiseToolResults(toolExecutionResult);
+    }
+
+    public void ShowExecutionPlan(ExecutionPlanProgress progress)
+    {
+        _client.RaiseExecutionPlan(progress);
+    }
+
+    public void ShowProviderRetry(ProviderRetryProgress progress)
+    {
+        _client.RaiseProviderRetry(progress);
+    }
+
+    internal void ResetAssistantMessageChunkTracking()
+    {
+        Interlocked.Exchange(ref _assistantMessageChunkCount, 0);
+    }
+
+    internal bool HasObservedAssistantMessageChunks()
+    {
+        return Volatile.Read(ref _assistantMessageChunkCount) > 0;
+    }
+}

@@ -7,7 +7,7 @@ const platform = require("./platform");
 const { ensureBinary } = require("./download");
 
 const LatestReleaseApiUrl = `https://api.github.com/repos/${platform.OWNER}/${platform.REPO}/releases/latest`;
-const VersionPattern = /\b(?:NanoAgent\s+CLI\s+)?v?(\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/i;
+const VersionPattern = /\b(?:StemCode\s+CLI\s+)?v?(\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/i;
 
 function normalizeVersionText(value) {
   if (!value || !value.trim()) {
@@ -141,11 +141,11 @@ function readInstalledBinaryVersion(binaryPath) {
 }
 
 function shouldSkipRuntimeUpdateCheck() {
-  if (process.env.NANOAGENT_SKIP_UPDATE_CHECK === "1") {
+  if (process.env.STEMCODE_SKIP_UPDATE_CHECK === "1") {
     return true;
   }
 
-  if (process.env.NANOAGENT_CLI_TAG || process.env.NANOAGENT_CLI_BASE_URL || process.env.NANOAGENT_CLI_VERSION) {
+  if (process.env.STEMCODE_CLI_TAG || process.env.STEMCODE_CLI_BASE_URL || process.env.STEMCODE_CLI_VERSION) {
     return true;
   }
 
@@ -160,12 +160,12 @@ async function promptForUpdate(currentVersion, latestVersion) {
   const { default: select } = await import("@inquirer/select");
 
   return await select({
-    message: `NanoAgent ${latestVersion} is available. Update before launch?`,
+    message: `StemCode ${latestVersion} is available. Update before launch?`,
     choices: [
       {
         name: `Yes, update from ${currentVersion} to ${latestVersion}`,
         value: true,
-        description: "Downloads the latest NanoAgent CLI binary, then starts nanoai.",
+        description: "Downloads the latest StemCode CLI binary, then starts stemcode.",
       },
       {
         name: `No, continue with ${currentVersion}`,
@@ -216,7 +216,7 @@ async function maybeUpdateBinary(binaryPath, options = {}) {
     return binaryPath;
   }
 
-  log(`Updating NanoAgent CLI to ${latestRelease.tag}...`);
+  log(`Updating StemCode CLI to ${latestRelease.tag}...`);
 
   try {
     return await ensureBinary({
@@ -229,7 +229,7 @@ async function maybeUpdateBinary(binaryPath, options = {}) {
       ? error.message
       : String(error);
     log(`Update failed: ${message}`);
-    log("Starting the currently installed NanoAgent CLI instead.");
+    log("Starting the currently installed StemCode CLI instead.");
     return binaryPath;
   }
 }

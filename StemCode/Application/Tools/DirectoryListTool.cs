@@ -1,0 +1,85 @@
+using StemCode.Application.Abstractions;
+using StemCode.Application.Models;
+using StemCode.Application.Tools.Serialization;
+
+namespace StemCode.Application.Tools;
+
+internal sealed class DirectoryListTool : ITool
+{
+    private readonly IWorkspaceFileService _workspaceFileService;
+
+    public DirectoryListTool(IWorkspaceFileService workspaceFileService)
+    {
+        _workspaceFileService = workspaceFileService;
+    }
+
+    public string Description => "List files and directories from the current session working directory in the workspace.";
+
+    public string Name => AgentToolNames.DirectoryList;
+
+    public string PermissionRequirements => """
+        {
+          "approvalMode": "Automatic",
+          "toolTags": ["read"],
+          "filePaths": [
+            {
+              "argumentName": "path",
+              "kind": "List",
+              "allowedRoots": ["."]
+            }
+          ]
+        }
+        """;
+
+    public string Schema => """
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "description": "Directory path relative to the current session working directory. Defaults to the current session working directory."
+            },
+            "recursive": {
+              "type": "boolean",
+              "description": "Whether to include nested files and directories."
+            }
+          },
+          "additionalProperties": false
+        }
+        """;
+
+    public async Task<ToolResult> ExecuteAsync(
+        ToolExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string? path = ToolArguments.GetOptionalString(context.Arguments, "path");
+        bool recursive = ToolArguments.GetBoolean(context.Arguments, "recursive");
+        string safePath = context.Session.ResolvePathFromWorkingDirectory(path);
+
+        Application.Tools.Models.WorkspaceDirectoryListResult result = await _workspaceFileService.ListDirectoryAsync(
+            safePath,
+            recursive,
+            cancellationToken);
+        SessionStateToolRecorder.RecordDirectoryList(context.Session, result);
+
+        string[] entryLines = result.Entries
+            .Select(entry => $"{entry.EntryType}: {entry.Path}")
+            .ToArray();
+
+        string renderText = entryLines.Length == 0
+            ? "(empty)"
+            : string.Join(Environment.NewLine, entryLines);
+
+        return ToolResultFactory.Success(
+            $"Listed directory '{result.Path}'.",
+            result,
+            ToolJsonContext.Default.WorkspaceDirectoryListResult,
+            new ToolRenderPayload(
+                $"Directory listing: {result.Path}",
+                renderText));
+    }
+
+}

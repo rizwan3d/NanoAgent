@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/vscode-extension-ci.yml
-      - NanoAgent.VsCode/**
+      - StemCode.VsCode/**
   push:
     branches:
       - master
     paths:
       - .github/workflows/vscode-extension-ci.yml
-      - NanoAgent.VsCode/**
+      - StemCode.VsCode/**
 
 concurrency:
   group: vscode-extension-ci-${{ github.event.pull_request.number || github.ref }}
@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  EXTENSION_DIR: NanoAgent.VsCode
+  EXTENSION_DIR: StemCode.VsCode
   NODE_VERSION: 20.x
 
 jobs:
@@ -59,12 +59,12 @@ jobs:
           npx @vscode/vsce package
           --no-dependencies
           --githubBranch master
-          --out ../artifacts/vscode/nanoagent.vsix
+          --out ../artifacts/vscode/stemcode.vsix
 
       - name: Upload VSIX artifact
         uses: actions/upload-artifact@v6
         with:
           name: vscode-extension
-          path: artifacts/vscode/nanoagent.vsix
+          path: artifacts/vscode/stemcode.vsix
           if-no-files-found: error
           retention-days: 14

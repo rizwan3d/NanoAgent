@@ -1,0 +1,24 @@
+using StemCode.Application.Models;
+
+namespace StemCode.Application.Abstractions;
+
+public interface IToolExecutionPipeline
+{
+    Task<ToolExecutionBatchResult> ExecuteAsync(
+        IReadOnlyList<ConversationToolCall> toolCalls,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
+        CancellationToken cancellationToken);
+}
+
+public interface IStreamingToolExecutionPipeline : IToolExecutionPipeline
+{
+    Task<ToolExecutionBatchResult> ExecuteAsync(
+        IReadOnlyList<ConversationToolCall> toolCalls,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase,
+        IReadOnlySet<string> allowedToolNames,
+        CancellationToken cancellationToken,
+        Func<ToolInvocationResult, CancellationToken, Task> onToolResult);
+}

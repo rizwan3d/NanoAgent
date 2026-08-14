@@ -2,10 +2,10 @@
   <PropertyGroup>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
-    <Authors>NanoAgent Contributors</Authors>
-    <Company>NanoAgent</Company>
-    <Copyright>Copyright (c) NanoAgent Contributors</Copyright>
-    <RepositoryUrl>https://github.com/rizwan3d/NanoAgent</RepositoryUrl>
+    <Authors>StemCode Contributors</Authors>
+    <Company>StemCode</Company>
+    <Copyright>Copyright (c) StemCode Contributors</Copyright>
+    <RepositoryUrl>https://github.com/rizwan3d/StemCode</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>

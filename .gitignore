@@ -29,7 +29,7 @@ x86/
 bld/
 [Bb]in/
 !packaging/npm/bin/
-!packaging/npm/bin/nanoai.js
+!packaging/npm/bin/stemcode.js
 [Oo]bj/
 [Oo]ut/
 [Ll]og/
@@ -364,16 +364,16 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 
-# NanoAgent local runtime data
-.nanoagent/cache/
-.nanoagent/logs/
-.nanoagent/sessions/
-.nanoagent/tmp/
-.nanoagent/temp/
+# StemCode local runtime data
+.stemcode/cache/
+.stemcode/logs/
+.stemcode/sessions/
+.stemcode/tmp/
+.stemcode/temp/
 
 # JetBrains plugin build output
-NanoAgent.JetBrains/build/
-NanoAgent.JetBrains/.gradle/
-NanoAgent.JetBrains/.intellijPlatform/
-NanoAgent.JetBrains/.kotlin/
+StemCode.JetBrains/build/
+StemCode.JetBrains/.gradle/
+StemCode.JetBrains/.intellijPlatform/
+StemCode.JetBrains/.kotlin/
 .idea/

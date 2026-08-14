@@ -1,0 +1,46 @@
+using StemCode.Application.Abstractions;
+using StemCode.Application.Models;
+
+namespace StemCode.Application.Profiles;
+
+internal sealed class BuiltInAgentProfile : IAgentProfile
+{
+    public BuiltInAgentProfile(
+        string name,
+        AgentProfileMode mode,
+        string description,
+        string? systemPrompt,
+        IReadOnlySet<string> enabledTools,
+        AgentProfilePermissionOverlay permissionIntent,
+        bool? fullToolOutput = null)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(name);
+        ArgumentException.ThrowIfNullOrWhiteSpace(description);
+        ArgumentNullException.ThrowIfNull(enabledTools);
+        ArgumentNullException.ThrowIfNull(permissionIntent);
+
+        Name = name.Trim();
+        Mode = mode;
+        Description = description.Trim();
+        SystemPrompt = string.IsNullOrWhiteSpace(systemPrompt)
+            ? null
+            : systemPrompt.Trim();
+        EnabledTools = enabledTools;
+        PermissionIntent = permissionIntent;
+        FullToolOutput = fullToolOutput;
+    }
+
+    public string Name { get; }
+
+    public AgentProfileMode Mode { get; }
+
+    public string Description { get; }
+
+    public string? SystemPrompt { get; }
+
+    public IReadOnlySet<string> EnabledTools { get; }
+
+    public AgentProfilePermissionOverlay PermissionIntent { get; }
+
+    public bool? FullToolOutput { get; }
+}

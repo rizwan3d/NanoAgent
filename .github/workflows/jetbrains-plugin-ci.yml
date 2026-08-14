@@ -4,13 +4,13 @@ on:
   pull_request:
     paths:
       - .github/workflows/jetbrains-plugin-ci.yml
-      - NanoAgent.JetBrains/**
+      - StemCode.JetBrains/**
   push:
     branches:
       - master
     paths:
       - .github/workflows/jetbrains-plugin-ci.yml
-      - NanoAgent.JetBrains/**
+      - StemCode.JetBrains/**
 
 concurrency:
   group: jetbrains-plugin-ci-${{ github.event.pull_request.number || github.ref }}
@@ -20,7 +20,7 @@ permissions:
   contents: read
 
 env:
-  JETBRAINS_PLUGIN_DIR: NanoAgent.JetBrains
+  JETBRAINS_PLUGIN_DIR: StemCode.JetBrains
 
 jobs:
   build:
@@ -58,6 +58,6 @@ jobs:
         uses: actions/upload-artifact@v6
         with:
           name: jetbrains-plugin
-          path: NanoAgent.JetBrains/build/distributions/*.zip
+          path: StemCode.JetBrains/build/distributions/*.zip
           if-no-files-found: error
           retention-days: 14

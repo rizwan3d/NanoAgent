@@ -1,0 +1,167 @@
+using FluentAssertions;
+using Moq;
+using StemCode.Application.Abstractions;
+using StemCode.Application.Exceptions;
+using StemCode.Application.Models;
+using StemCode.Application.Services;
+using StemCode.Application.Utilities;
+using StemCode.Domain.Models;
+
+namespace StemCode.Tests.Application.Services;
+
+public sealed class InteractiveModelSelectionServiceTests
+{
+    [Fact]
+    public async Task SelectAsync_Should_PromptWithAvailableModelsAndSaveSelection()
+    {
+        CapturingSelectionPrompt selectionPrompt = new("model-b");
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        AgentProviderProfile providerProfile = new(ProviderKind.OpenAiCompatible, "https://provider.example.com/v1");
+        ReplSessionContext session = new(
+            providerProfile,
+            "model-a",
+            ["model-a", "model-b"],
+            thinkingMode: "on");
+
+        configurationStore
+            .Setup(store => store.SaveAsync(
+                new AgentConfiguration(providerProfile, "model-b", null, null, "on"),
+                It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        StubReasoningSelectionService reasoningSelectionService = new(
+            ReplCommandResult.Continue("Reasoning effort set to high."));
+
+        InteractiveModelSelectionService sut = new(
+            selectionPrompt,
+            new ModelActivationService(),
+            configurationStore.Object,
+            reasoningSelectionService);
+
+        ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
+
+        result.FeedbackKind.Should().Be(ReplFeedbackKind.Info);
+        result.Message.Should().Be(
+            $"Active model switched to '{"model-b".ToDisplayName()}'. Reasoning effort set to high.");
+        reasoningSelectionService.CallCount.Should().Be(1);
+        session.ActiveModelId.Should().Be("model-b");
+
+        SelectionPromptRequest<string> request = selectionPrompt.LastRequest!;
+        request.Title.Should().Be("Choose active model");
+        request.DefaultIndex.Should().Be(0);
+        request.Options.Select(option => option.Label).Should().Equal(
+            "model-a".ToDisplayName(),
+            "model-b".ToDisplayName());
+        request.Options.Select(option => option.Value).Should().Equal("model-a", "model-b");
+        request.Options[0].Description.Should().Be("Currently active.");
+        configurationStore.VerifyAll();
+    }
+
+    [Fact]
+    public async Task SelectAsync_Should_NotSave_When_SelectedModelIsAlreadyActive()
+    {
+        CapturingSelectionPrompt selectionPrompt = new("model-a");
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "model-a",
+            ["model-a", "model-b"]);
+
+        StubReasoningSelectionService reasoningSelectionService = new(
+            ReplCommandResult.Continue("Reasoning effort is already (provider default)."));
+
+        InteractiveModelSelectionService sut = new(
+            selectionPrompt,
+            new ModelActivationService(),
+            configurationStore.Object,
+            reasoningSelectionService);
+
+        ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
+
+        result.Message.Should().Be(
+            $"Already using '{"model-a".ToDisplayName()}'. Reasoning effort is already (provider default).");
+        reasoningSelectionService.CallCount.Should().Be(1);
+        session.ActiveModelId.Should().Be("model-a");
+        configurationStore.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task SelectAsync_Should_ReturnWarning_When_PromptIsCancelled()
+    {
+        CancellingSelectionPrompt selectionPrompt = new();
+        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
+        ReplSessionContext session = new(
+            new AgentProviderProfile(ProviderKind.OpenAi, null),
+            "model-a",
+            ["model-a", "model-b"]);
+
+        StubReasoningSelectionService reasoningSelectionService = new(
+            ReplCommandResult.Continue("should not be used"));
+
+        InteractiveModelSelectionService sut = new(
+            selectionPrompt,
+            new ModelActivationService(),
+            configurationStore.Object,
+            reasoningSelectionService);
+
+        ReplCommandResult result = await sut.SelectAsync(session, CancellationToken.None);
+
+        result.FeedbackKind.Should().Be(ReplFeedbackKind.Warning);
+        result.Message.Should().Be("Model selection cancelled.");
+        reasoningSelectionService.CallCount.Should().Be(0);
+        session.ActiveModelId.Should().Be("model-a");
+        configurationStore.VerifyNoOtherCalls();
+    }
+
+    private sealed class CapturingSelectionPrompt : ISelectionPrompt
+    {
+        private readonly string _selectedModelId;
+
+        public CapturingSelectionPrompt(string selectedModelId)
+        {
+            _selectedModelId = selectedModelId;
+        }
+
+        public SelectionPromptRequest<string>? LastRequest { get; private set; }
+
+        public Task<T> PromptAsync<T>(
+            SelectionPromptRequest<T> request,
+            CancellationToken cancellationToken)
+        {
+            LastRequest = request as SelectionPromptRequest<string>
+                ?? throw new InvalidOperationException("Unexpected prompt type.");
+
+            return Task.FromResult((T)(object)_selectedModelId);
+        }
+    }
+
+    private sealed class StubReasoningSelectionService : IInteractiveReasoningSelectionService
+    {
+        private readonly ReplCommandResult _result;
+
+        public StubReasoningSelectionService(ReplCommandResult result)
+        {
+            _result = result;
+        }
+
+        public int CallCount { get; private set; }
+
+        public Task<ReplCommandResult> SelectAsync(
+            ReplSessionContext session,
+            CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(_result);
+        }
+    }
+
+    private sealed class CancellingSelectionPrompt : ISelectionPrompt
+    {
+        public Task<T> PromptAsync<T>(
+            SelectionPromptRequest<T> request,
+            CancellationToken cancellationToken)
+        {
+            throw new PromptCancelledException();
+        }
+    }
+}
