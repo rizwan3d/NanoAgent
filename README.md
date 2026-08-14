@@ -342,10 +342,3 @@ Open an [issue](https://github.com/rizwan3d/StemCode/issues) to report bugs or p
 ## License
 
 Apache License 2.0. See [LICENSE.txt](LICENSE.txt).
-
----
-
-<p align="center">
-  Sponsored by<br>
-  <a href="https://alfain.co/"><img src="https://alfain.co/assets/images/logo-alfain.png" width="100" alt="ALFAIN Technologies (PVT) Limited"></a>
-</p>
