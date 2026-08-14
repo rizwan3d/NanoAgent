@@ -25,6 +25,7 @@ public static partial class Program
     private const string InputPrefixMarkup = $" [{InputAccentMarkupStyle}] [/]  ";
     private const int InputPrefixPlainWidth = 3;
     private const int InputLeftGutterWidth = 1;
+    private const int StickyLatestInputMaxLines = 4;
 
     internal static IRenderable BuildUi(AppState state)
     {
@@ -92,7 +93,7 @@ public static partial class Program
 
         // The message view sits directly under the header with no surrounding panel chrome,
         // so the first visible conversation line starts on the first body row (1-based).
-        state.MessagesContentTopRow = headerSize + 1;
+        state.MessagesContentTopRow = headerSize;
 
         // The working-directory line shifts between the startup wordmark header and
         // the compact header shown after the first model turn.
@@ -187,7 +188,7 @@ public static partial class Program
 
     private static IRenderable BuildHeader(AppState state)
     {
-        string version = ProductTelemetryHelpers.GetStemCodeVersion().Split('+')[0];
+        string version = ProductTelemetryHelpers.GetStemCodeVersion().Split('+')[0].Replace("v", "");
         string workingDirectory = state.RootDirectory ?? Directory.GetCurrentDirectory();
         string? gitBranch = GetGitBranchName(workingDirectory);
         string? directoryLink = BuildEditorLink(workingDirectory, vscode: false);
@@ -204,25 +205,26 @@ public static partial class Program
         }
 
         string workingDirectoryMarkup = directoryLink is null
-            ? $"   [underline aqua]{Markup.Escape(displayWorkingDirectory)}[/]"
-            : $"   [link={directoryLink}][underline aqua]{Markup.Escape(displayWorkingDirectory)}[/][/]";
+            ? $"[underline aqua]{Markup.Escape(displayWorkingDirectory)}[/]"
+            : $"[link={directoryLink}][underline aqua]{Markup.Escape(displayWorkingDirectory)}[/][/]";
         string branchMarkup = gitBranch is not null
             ? directoryLink is null
                 ? $" [yellow]({Markup.Escape(gitBranch)})[/]"
                 : $" [link={directoryLink}][yellow]({Markup.Escape(gitBranch)})[/][/]"
             : string.Empty;
         int spacerLength = Math.Max(1, headerWidth - workingDirectoryPlain.Length - MessagesPanelScrollHint.Length);
-        spacerLength= !state.HasMadeFirstLlmCall ? spacerLength-2 : spacerLength;
+        spacerLength = !state.HasMadeFirstLlmCall ? spacerLength - 2 : spacerLength;
+        spacerLength -= 14 + version.Length;
+        spacerLength = Math.Abs(spacerLength);
 
         return new Markup(
-            (!state.HasMadeFirstLlmCall ? CliBranding.BuildHeaderBodyMarkup() : 
-            $"\n [bold #7FE7F2]›[/] [bold white]STEMCODE[/] [grey]v{Markup.Escape(version)}[/]\n") +
-            $"{workingDirectoryMarkup}{branchMarkup}{new string(' ', spacerLength)}[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]\n") ;
+            (!state.HasMadeFirstLlmCall ? CliBranding.BuildHeaderBodyMarkup() :
+            $"\n [bold #7FE7F2]›[/] [bold white]STEMCODE[/] [grey]v{Markup.Escape(version)} - [/]{workingDirectoryMarkup}{branchMarkup}{new string(' ', spacerLength)}[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]\n"));
     }
 
     private static int GetHeaderWorkingDirectoryClickRow(AppState state)
     {
-        return state.HasMadeFirstLlmCall ? 3 : 9;
+        return state.HasMadeFirstLlmCall ? 2 : 9;
     }
 
     private static IRenderable BuildMessagesPanel(AppState state)
@@ -731,6 +733,12 @@ public static partial class Program
     {
         int viewportLineCount = GetMessageViewportLineCount(state);
         int contentWidth = GetMessageContentWidth(state);
+        ChatMessage? latestUserMessage = GetLatestSubmittedUserMessage(state);
+        List<ConversationLine> stickyLines = BuildStickyLatestUserLines(
+            state,
+            latestUserMessage,
+            contentWidth,
+            viewportLineCount);
         List<ConversationLine> lines = BuildConversationLines(state, contentWidth);
 
         if (lines.Count == 0)
@@ -744,20 +752,22 @@ public static partial class Program
             EnsureCopyCursorVisible(state, lines.Count, viewportLineCount);
         }
 
+        int transcriptViewportLineCount = Math.Max(1, viewportLineCount - stickyLines.Count);
         UpdateConversationViewportAfterContentChange(state, lines.Count);
 
-        int maxScrollOffset = Math.Max(0, lines.Count - viewportLineCount);
+        int maxScrollOffset = Math.Max(0, lines.Count - transcriptViewportLineCount);
         state.ConversationScrollOffset = Math.Clamp(
             state.ConversationScrollOffset,
             0,
             maxScrollOffset);
         int startIndex = Math.Max(
             0,
-            lines.Count - viewportLineCount - state.ConversationScrollOffset);
+            lines.Count - transcriptViewportLineCount - state.ConversationScrollOffset);
 
-        List<ConversationLine> visibleLines = lines
+        List<ConversationLine> visibleLines = stickyLines
+            .Concat(lines
             .Skip(startIndex)
-            .Take(viewportLineCount)
+            .Take(transcriptViewportLineCount))
             .ToList();
 
         // Snapshot which thinking block (if any) each on-screen row maps to, so a mouse
@@ -805,6 +815,124 @@ public static partial class Program
         }
 
         return lines;
+    }
+
+    private static ChatMessage? GetLatestSubmittedUserMessage(AppState state)
+    {
+        for (int index = state.Messages.Count - 1; index >= 0; index--)
+        {
+            if (state.Messages[index].Role == Role.User)
+            {
+                return state.Messages[index];
+            }
+        }
+
+        return null;
+    }
+
+    private static List<ConversationLine> BuildStickyLatestUserLines(
+        AppState state,
+        ChatMessage? latestUserMessage,
+        int contentWidth,
+        int viewportLineCount)
+    {
+        if (state.IsCopyModeActive ||
+            latestUserMessage is null ||
+            viewportLineCount < 2)
+        {
+            return [];
+        }
+
+        int maxStickyLines = Math.Min(
+            StickyLatestInputMaxLines,
+            Math.Max(1, viewportLineCount - 1));
+        if (maxStickyLines <= 0)
+        {
+            return [];
+        }
+
+        string stickyMarkup = BuildStickyLatestUserInputMarkup(
+            state,
+            latestUserMessage.Text,
+            maxStickyLines);
+        if (string.IsNullOrWhiteSpace(stickyMarkup))
+        {
+            return [];
+        }
+
+        return stickyMarkup
+            .Split('\n')
+            .Select(line => new ConversationLine(line, Markup.Remove(line)))
+            .ToList();
+
+        /*
+            string separator = new('─', Math.Max(1, contentWidth));
+            stickyLines.Add(ApplyStickyLatestUserBackground(new ConversationLine(
+                $"[grey58]{Markup.Escape(separator)}[/]",
+                separator), contentWidth));
+        }
+
+        return stickyLines;
+        */
+    }
+
+    private static string BuildStickyLatestUserInputMarkup(
+        AppState state,
+        string input,
+        int maxStickyLines)
+    {
+        if (maxStickyLines <= 0)
+        {
+            return string.Empty;
+        }
+
+        const string promptPlain = " > ";
+        int inputContentWidth = GetInputContentWidth(state);
+        IReadOnlyList<InputRenderLine> inputLines = WrapInputTextForCursor(
+            input,
+            input?.Length ?? 0,
+            selectionAnchorIndex: null,
+            Math.Max(1, inputContentWidth - promptPlain.Length - InputCursorColumnWidth),
+            Math.Max(1, inputContentWidth - InputPrefixPlainWidth - InputCursorColumnWidth));
+        List<string> renderedLines = [];
+
+        if (maxStickyLines >= 3)
+        {
+            renderedLines.Add(InputPrefixMarkup);
+        }
+
+        int contentLineBudget = maxStickyLines >= 3
+            ? maxStickyLines - 2
+            : maxStickyLines;
+        foreach (InputRenderLine line in inputLines.Take(contentLineBudget))
+        {
+            renderedLines.Add($"{InputPrefixMarkup}{BuildInputRenderLineMarkup(line, renderCursor: false)}");
+        }
+
+        if (maxStickyLines >= 2)
+        {
+            renderedLines.Add(InputPrefixMarkup);
+        }
+
+        if (renderedLines.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return ApplyInputPanelBackground(
+            string.Join('\n', renderedLines),
+            inputContentWidth - 2,
+            2);
+    }
+
+    private static void TrimTrailingBlankConversationLines(List<ConversationLine> lines)
+    {
+        while (lines.Count > 0 &&
+            string.IsNullOrEmpty(lines[^1].Plain) &&
+            string.IsNullOrEmpty(lines[^1].Markup))
+        {
+            lines.RemoveAt(lines.Count - 1);
+        }
     }
 
     private static void AddMessageLines(
@@ -1719,7 +1847,9 @@ public static partial class Program
         return string.Join('\n', renderedLines);
     }
 
-    private static string BuildInputRenderLineMarkup(InputRenderLine line)
+    private static string BuildInputRenderLineMarkup(
+        InputRenderLine line,
+        bool renderCursor = true)
     {
         if (line.SelectionStartColumn is int selectionStartColumn &&
             line.SelectionEndColumn is int selectionEndColumn)
@@ -1735,7 +1865,7 @@ public static partial class Program
                 Markup.Escape(afterSelection);
         }
 
-        if (line.CursorColumn is not int cursorColumn)
+        if (!renderCursor || line.CursorColumn is not int cursorColumn)
         {
             return Markup.Escape(line.Text);
         }

@@ -78,7 +78,7 @@ public static partial class Program
 
     private static int GetHeaderPanelSize(AppState state)
     {
-        return state.HasMadeFirstLlmCall ? 4 : 9;
+        return state.HasMadeFirstLlmCall ? 3 : 9;
     }
 
     internal static void StartInitialization(

@@ -729,6 +729,40 @@ public sealed class ProgramTests
     }
 
     [Fact]
+    public void BuildStickyLatestUserLines_Should_PinMostRecentSubmittedInput()
+    {
+        AppState state = new(
+            new UiBridge(),
+            new Mock<IStemCodeBackend>(MockBehavior.Strict).Object);
+        state.AddMessage(Role.User, "Earlier prompt");
+        state.AddMessage(Role.Assistant, "Working on it");
+        ChatMessage latestUserMessage = state.AddMessage(Role.User, "Latest prompt stays pinned");
+
+        MethodInfo buildStickyLatestUserLines = typeof(Program).GetMethod(
+            "BuildStickyLatestUserLines",
+            BindingFlags.NonPublic | BindingFlags.Static,
+            binder: null,
+            [typeof(AppState), typeof(ChatMessage), typeof(int), typeof(int)],
+            modifiers: null)!;
+
+        IEnumerable renderedLines = (IEnumerable)buildStickyLatestUserLines.Invoke(
+            null,
+            [state, latestUserMessage, 60, 10])!;
+        string[] plainLines = GetConversationLinePropertyValues(renderedLines, "Plain");
+        string[] markupLines = GetConversationLinePropertyValues(renderedLines, "Markup");
+
+        plainLines.Should().HaveCount(3);
+        plainLines[0].Trim().Should().BeEmpty();
+        plainLines.Should().Contain(line => line.Contains("Latest prompt stays pinned"));
+        plainLines.Should().NotContain(line => line.Contains("Earlier prompt"));
+#if false
+        plainLines[^1].Should().Contain("─");
+#endif
+        plainLines[^1].Trim().Should().BeEmpty();
+        markupLines.Should().Contain(line => line.Contains("white on #1c1c1c"));
+    }
+
+    [Fact]
     public void SafeHeaderMarkup_Should_EscapeInvalidMarkup()
     {
         MethodInfo safeHeaderMarkup = typeof(Program).GetMethod(
