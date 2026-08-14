@@ -152,7 +152,7 @@ namespace StemCode.VS.Services
             {
                 string current = ParseVersion(RunCaptured(command, "--version", out _));
                 string latest = ParseVersion(RunCaptured(IsWindows ? "cmd.exe" : "npm",
-                    IsWindows ? "/c npm view stemcode-cli version" : "view stemcode-cli version", out _));
+                    IsWindows ? "/c npm view stemcode version" : "view stemcode version", out _));
                 return (string.IsNullOrEmpty(current) ? null : current,
                         string.IsNullOrEmpty(latest) ? null : latest);
             }

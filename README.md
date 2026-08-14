@@ -40,7 +40,7 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=rizwan3d.stemcode-vs">
     <img src="https://img.shields.io/badge/Install-Visual_Studio-0969da?style=for-the-badge" alt="Install StemCode Visual Studio extension">
   </a>
-  <a href="https://www.npmjs.com/package/stemcode-cli">
+  <a href="https://www.npmjs.com/package/stemcode">
     <img src="https://img.shields.io/badge/Install-npm-0969da?style=for-the-badge" alt="Install StemCode from npm">
   </a>
   <a href="https://www.nuget.org/packages/StemCode/">
@@ -147,11 +147,11 @@ On Windows, both scripts install the same `stemcode` CLI. The Bash installer dow
 #### npm / pnpm / bun
 
 ```bash
-npm install -g stemcode-cli
+npm install -g stemcode
 # or
-pnpm add -g stemcode-cli
+pnpm add -g stemcode
 # or
-bun add -g stemcode-cli
+bun add -g stemcode
 ```
 
 The npm package downloads the matching release binary and verifies it against published `SHA256SUMS`. If `postinstall` is skipped or the download fails, the binary is fetched automatically the first time you run `stemcode`.

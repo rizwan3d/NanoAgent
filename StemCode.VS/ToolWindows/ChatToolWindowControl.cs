@@ -175,20 +175,20 @@ namespace StemCode.VS.ToolWindows
 
             if (!(options?.AutoInstall ?? true) || VSPackage.Instance?.Confirm(
                     "Install StemCode CLI",
-                    "StemCode CLI (stemcode) was not found.\n\nInstall it globally now? Runs: npm install -g stemcode-cli") != true)
+                    "StemCode CLI (stemcode) was not found.\n\nInstall it globally now? Runs: npm install -g stemcode") != true)
             {
-                AddSystemMessage("StemCode CLI 'stemcode' was not found. Install it (npm install -g stemcode-cli) or set its path in Tools → Options → StemCode.");
+                AddSystemMessage("StemCode CLI 'stemcode' was not found. Install it (npm install -g stemcode) or set its path in Tools → Options → StemCode.");
                 return null;
             }
 
             SetStatus("Installing...", "#FFCCA700");
             AddSystemMessage("Installing StemCode CLI via npm…");
-            bool ok = await StemCodeCli.NpmInstallAsync("stemcode-cli", _log);
+            bool ok = await StemCodeCli.NpmInstallAsync("stemcode", _log);
 
             command = StemCodeCli.ResolveCommand("stemcode", _log);
             if (!ok || !StemCodeCli.IsAvailable(command))
             {
-                AddSystemMessage("Failed to install stemcode. Run 'npm install -g stemcode-cli' manually (Node.js/npm required), then restart Visual Studio.");
+                AddSystemMessage("Failed to install stemcode. Run 'npm install -g stemcode' manually (Node.js/npm required), then restart Visual Studio.");
                 return null;
             }
 
@@ -214,7 +214,7 @@ namespace StemCode.VS.ToolWindows
                 if (!update) return;
 
                 SetStatus("Updating...", "#FFCCA700");
-                bool ok = await StemCodeCli.NpmInstallAsync("stemcode-cli@latest", _log);
+                bool ok = await StemCodeCli.NpmInstallAsync("stemcode@latest", _log);
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 if (ok)
                 {

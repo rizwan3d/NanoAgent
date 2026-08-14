@@ -368,7 +368,7 @@ namespace StemCode.VS
 
         [System.ComponentModel.Category("CLI")]
         [System.ComponentModel.DisplayName("Auto-install CLI")]
-        [System.ComponentModel.Description("When 'stemcode' is not found, offer to install it via 'npm install -g stemcode-cli'.")]
+        [System.ComponentModel.Description("When 'stemcode' is not found, offer to install it via 'npm install -g stemcode'.")]
         public bool AutoInstall { get; set; } = true;
 
         [System.ComponentModel.Category("CLI")]
