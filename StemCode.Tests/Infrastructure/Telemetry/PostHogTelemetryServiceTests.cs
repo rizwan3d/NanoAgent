@@ -195,7 +195,7 @@ public sealed class PostHogTelemetryServiceTests
         PostHogTelemetryService sut = CreateSut(handler, BackendRuntimeOptions.DesktopSurface);
 
         sut.TrackToolInvoked(
-            "ShellCommand",
+            "shell_command",
             ToolResultStatus.ExecutionError,
             success: false,
             TimeSpan.FromMilliseconds(1500),
@@ -210,7 +210,7 @@ public sealed class PostHogTelemetryServiceTests
         using JsonDocument toolRequest = ParseBody(handler.Requests[1]);
 
         JsonElement toolProperties = toolRequest.RootElement.GetProperty("properties");
-        toolProperties.GetProperty("tool_name").GetString().Should().Be("shellcommand");
+        toolProperties.GetProperty("tool_name").GetString().Should().Be("shell_command");
         toolProperties.GetProperty("tool_status").GetString().Should().Be("execution_error");
         toolProperties.GetProperty("success").GetBoolean().Should().BeFalse();
         toolProperties.GetProperty("error_message").GetString().Should()
@@ -280,8 +280,8 @@ public sealed class PostHogTelemetryServiceTests
         props.GetProperty("success").GetBoolean().Should().BeFalse();
         props.GetProperty("streamed").GetBoolean().Should().BeFalse();
         props.GetProperty("latency_ms").GetInt64().Should().Be(30000);
-        props.GetProperty("latency_bucket").GetString().Should().Be("ge_60s");
-        props.GetProperty("retry_count_bucket").GetString().Should().Be("ge_6");
+        props.GetProperty("latency_bucket").GetString().Should().Be("15s_to_60s");
+        props.GetProperty("retry_count_bucket").GetString().Should().Be("2_to_5");
         props.GetProperty("error_message").GetString().Should()
             .Be("Provider returned HTTP 429: rate limited");
     }

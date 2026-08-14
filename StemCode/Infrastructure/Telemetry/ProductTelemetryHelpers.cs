@@ -384,6 +384,7 @@ internal static class ProductTelemetryHelpers
         }
 
         string normalized = toolName.Trim();
+
         if (normalized.StartsWith("mcp__", StringComparison.Ordinal))
         {
             return "mcp";
@@ -410,7 +411,7 @@ internal static class ProductTelemetryHelpers
         };
     }
 
-    private static string? NormalizeProviderKind(string? providerName)
+    internal static string? NormalizeProviderKind(string? providerName)
     {
         return string.IsNullOrWhiteSpace(providerName)
             ? null

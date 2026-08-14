@@ -3,6 +3,7 @@ using StemCode.Application.Exceptions;
 using StemCode.Application.Models;
 using StemCode.Application.Abstractions;
 using StemCode.Domain.Models;
+using StemCode.Infrastructure.Telemetry;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
@@ -336,7 +337,7 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         {
             TimeSpan latency = _timeProvider.GetUtcNow() - startedAt;
             _telemetry.TrackProviderRequest(
-                providerKind.ToString(),
+                ProductTelemetryHelpers.NormalizeProviderKind(providerKind.ToString()) ?? providerKind.ToString(),
                 success,
                 latency,
                 streamed,
