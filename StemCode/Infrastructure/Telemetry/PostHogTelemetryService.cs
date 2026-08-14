@@ -14,6 +14,8 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
     private const string AppStartedEventName = "app started";
     private const string AppStoppedEventName = "app stopped";
     private const string FeatureUsedEventName = "feature used";
+    private const string ToolInvokedEventName = "tool invoked";
+    private const string ProviderRequestEventName = "provider request";
 
     private readonly HttpClient _httpClient;
     private readonly Channel<TelemetryEnvelope>? _queue;
@@ -161,6 +163,72 @@ internal sealed class PostHogTelemetryService : IProductTelemetry, IAsyncDisposa
                 metrics,
                 attachmentCount,
                 exception));
+    }
+
+    public void TrackToolInvoked(
+        string toolName,
+        ToolResultStatus status,
+        bool success,
+        TimeSpan duration,
+        ConversationExecutionPhase executionPhase,
+        string? modelId = null,
+        string? providerName = null,
+        string? errorMessage = null)
+    {
+        if (!_enabled)
+        {
+            return;
+        }
+
+        EnsurePersonIdentified();
+        Enqueue(
+            ToolInvokedEventName,
+            ProductTelemetryHelpers.CreateToolInvokedProperties(
+                _version,
+                _osFamily,
+                _appSurface,
+                _executionEnvironment,
+                _ciProvider,
+                toolName,
+                status,
+                success,
+                duration,
+                executionPhase,
+                modelId,
+                providerName,
+                errorMessage));
+    }
+
+    public void TrackProviderRequest(
+        string providerName,
+        bool success,
+        TimeSpan latency,
+        bool streamed,
+        TimeSpan streamLatency,
+        int retryCount,
+        string? errorMessage = null)
+    {
+        if (!_enabled)
+        {
+            return;
+        }
+
+        EnsurePersonIdentified();
+        Enqueue(
+            ProviderRequestEventName,
+            ProductTelemetryHelpers.CreateProviderRequestProperties(
+                _version,
+                _osFamily,
+                _appSurface,
+                _executionEnvironment,
+                _ciProvider,
+                providerName,
+                success,
+                latency,
+                streamed,
+                streamLatency,
+                retryCount,
+                errorMessage));
     }
 
     public async ValueTask DisposeAsync()

@@ -151,6 +151,141 @@ public sealed class PostHogTelemetryServiceTests
         appStartedProperties.GetProperty("ci_provider").GetString().Should().Be(expectedProvider);
     }
 
+    [Fact]
+    public async Task TrackToolInvoked_Should_SendIdentifyAndToolEvent_OnSuccess()
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        PostHogTelemetryService sut = CreateSut(handler, BackendRuntimeOptions.CliSurface);
+
+        sut.TrackToolInvoked(
+            "file_read",
+            ToolResultStatus.Success,
+            success: true,
+            TimeSpan.FromMilliseconds(420),
+            ConversationExecutionPhase.Execution,
+            modelId: "gpt-5-mini",
+            providerName: "OpenAI",
+            errorMessage: null);
+        await sut.DisposeAsync();
+
+        handler.Requests.Should().HaveCount(2);
+
+        using JsonDocument identifyRequest = ParseBody(handler.Requests[0]);
+        using JsonDocument toolRequest = ParseBody(handler.Requests[1]);
+
+        identifyRequest.RootElement.GetProperty("event").GetString().Should().Be("$identify");
+        toolRequest.RootElement.GetProperty("event").GetString().Should().Be("tool invoked");
+
+        JsonElement toolProperties = toolRequest.RootElement.GetProperty("properties");
+        toolProperties.GetProperty("tool_name").GetString().Should().Be("file_read");
+        toolProperties.GetProperty("tool_status").GetString().Should().Be("success");
+        toolProperties.GetProperty("success").GetBoolean().Should().BeTrue();
+        toolProperties.GetProperty("duration_ms").GetInt64().Should().Be(420);
+        toolProperties.GetProperty("execution_phase").GetString().Should().Be("execution");
+        toolProperties.GetProperty("model_id").GetString().Should().Be("gpt-5-mini");
+        toolProperties.GetProperty("provider_name").GetString().Should().Be("openai");
+        toolProperties.GetProperty("tool_type").GetString().Should().Be("file");
+        toolProperties.TryGetProperty("error_message", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TrackToolInvoked_Should_IncludeErrorMessage_OnFailure()
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        PostHogTelemetryService sut = CreateSut(handler, BackendRuntimeOptions.DesktopSurface);
+
+        sut.TrackToolInvoked(
+            "ShellCommand",
+            ToolResultStatus.ExecutionError,
+            success: false,
+            TimeSpan.FromMilliseconds(1500),
+            ConversationExecutionPhase.Execution,
+            modelId: "gpt-5",
+            providerName: "OpenAI",
+            errorMessage: "Tool execution failed unexpectedly: exit code 1");
+        await sut.DisposeAsync();
+
+        handler.Requests.Should().HaveCount(2);
+
+        using JsonDocument toolRequest = ParseBody(handler.Requests[1]);
+
+        JsonElement toolProperties = toolRequest.RootElement.GetProperty("properties");
+        toolProperties.GetProperty("tool_name").GetString().Should().Be("shellcommand");
+        toolProperties.GetProperty("tool_status").GetString().Should().Be("execution_error");
+        toolProperties.GetProperty("success").GetBoolean().Should().BeFalse();
+        toolProperties.GetProperty("error_message").GetString().Should()
+            .Be("Tool execution failed unexpectedly: exit code 1");
+        toolProperties.GetProperty("tool_type").GetString().Should().Be("shell");
+        toolProperties.GetProperty("$session_id").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task TrackProviderRequest_Should_SendIdentifyAndProviderEvent_OnStreamedSuccess()
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        PostHogTelemetryService sut = CreateSut(handler, BackendRuntimeOptions.CliSurface);
+
+        sut.TrackProviderRequest(
+            "OpenAiCompatible",
+            success: true,
+            TimeSpan.FromMilliseconds(8000),
+            streamed: true,
+            TimeSpan.FromMilliseconds(6000),
+            retryCount: 0,
+            errorMessage: null);
+        await sut.DisposeAsync();
+
+        handler.Requests.Should().HaveCount(2);
+
+        using JsonDocument identifyRequest = ParseBody(handler.Requests[0]);
+        using JsonDocument providerRequest = ParseBody(handler.Requests[1]);
+
+        identifyRequest.RootElement.GetProperty("event").GetString().Should().Be("$identify");
+        providerRequest.RootElement.GetProperty("event").GetString().Should().Be("provider request");
+
+        JsonElement props = providerRequest.RootElement.GetProperty("properties");
+        props.GetProperty("provider_name").GetString().Should().Be("open_ai_compatible");
+        props.GetProperty("success").GetBoolean().Should().BeTrue();
+        props.GetProperty("latency_ms").GetInt64().Should().Be(8000);
+        props.GetProperty("latency_bucket").GetString().Should().Be("5s_to_15s");
+        props.GetProperty("streamed").GetBoolean().Should().BeTrue();
+        props.GetProperty("stream_latency_ms").GetInt64().Should().Be(6000);
+        props.GetProperty("stream_latency_bucket").GetString().Should().Be("5s_to_15s");
+        props.GetProperty("retry_count_bucket").GetString().Should().Be("0");
+        props.TryGetProperty("error_message", out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TrackProviderRequest_Should_IncludeErrorMessage_OnFailure()
+    {
+        RecordingHandler handler = new(_ => new HttpResponseMessage(HttpStatusCode.OK));
+        PostHogTelemetryService sut = CreateSut(handler, BackendRuntimeOptions.DesktopSurface);
+
+        sut.TrackProviderRequest(
+            "Anthropic",
+            success: false,
+            TimeSpan.FromSeconds(30),
+            streamed: false,
+            TimeSpan.Zero,
+            retryCount: 3,
+            errorMessage: "Provider returned HTTP 429: rate limited");
+        await sut.DisposeAsync();
+
+        handler.Requests.Should().HaveCount(2);
+
+        using JsonDocument providerRequest = ParseBody(handler.Requests[1]);
+
+        JsonElement props = providerRequest.RootElement.GetProperty("properties");
+        props.GetProperty("provider_name").GetString().Should().Be("anthropic");
+        props.GetProperty("success").GetBoolean().Should().BeFalse();
+        props.GetProperty("streamed").GetBoolean().Should().BeFalse();
+        props.GetProperty("latency_ms").GetInt64().Should().Be(30000);
+        props.GetProperty("latency_bucket").GetString().Should().Be("ge_60s");
+        props.GetProperty("retry_count_bucket").GetString().Should().Be("ge_6");
+        props.GetProperty("error_message").GetString().Should()
+            .Be("Provider returned HTTP 429: rate limited");
+    }
+
     private static PostHogTelemetryService CreateSut(
         HttpMessageHandler handler,
         string appSurface,

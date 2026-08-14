@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using StemCode.Application.Models;
+using StemCode.Application.Abstractions;
 using StemCode.Domain.Models;
 using StemCode.Infrastructure.Anthropic;
 using StemCode.Infrastructure.Conversation;
@@ -378,5 +379,76 @@ public sealed class ConversationProviderAdapterTests
             response.Headers.Add("x-request-id", "req_789");
             return Task.FromResult(response);
         }
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_RecordProviderTelemetry_OnSuccess()
+    {
+        RecordingHandler handler = new(CreateJsonResponse("req_1", "Hi."));
+        RecordingProductTelemetry telemetry = new();
+        ConversationProviderHttpExecutor executor = new(
+            new HttpClient(handler),
+            NullLogger.Instance,
+            (_, _) => Task.CompletedTask,
+            () => 0d,
+            TimeProvider.System,
+            telemetry);
+
+        ConversationProviderPayload payload = await executor.ExecuteAsync(
+            ProviderKind.OpenAiCompatible,
+            () => new HttpRequestMessage(HttpMethod.Post, "https://example.test/v1/chat/completions"),
+            CancellationToken.None);
+
+        payload.RetryCount.Should().Be(0);
+        telemetry.ProviderRequests.Should().ContainSingle();
+        (string ProviderName, bool Success, bool Streamed) recorded = telemetry.ProviderRequests[0];
+        recorded.ProviderName.Should().Be("open_ai_compatible");
+        recorded.Success.Should().BeTrue();
+        recorded.Streamed.Should().BeFalse();
+    }
+
+    private sealed class RecordingProductTelemetry : IProductTelemetry
+    {
+        public List<(string ProviderName, bool Success, bool Streamed)> ProviderRequests { get; } = [];
+
+        public void TrackAppStarted()
+        {
+        }
+
+        public void TrackAppStopped()
+        {
+        }
+
+        public void TrackFeatureUsed(
+            string featureName,
+            string interactionKind,
+            bool success,
+            ConversationTurnMetrics? metrics = null,
+            int attachmentCount = 0,
+            Exception? exception = null)
+        {
+        }
+
+        public void TrackToolInvoked(
+            string toolName,
+            ToolResultStatus status,
+            bool success,
+            TimeSpan duration,
+            ConversationExecutionPhase executionPhase,
+            string? modelId = null,
+            string? providerName = null,
+            string? errorMessage = null)
+        {
+        }
+
+        public void TrackProviderRequest(
+            string providerName,
+            bool success,
+            TimeSpan latency,
+            bool streamed,
+            TimeSpan streamLatency,
+            int retryCount,
+            string? errorMessage = null)
+            => ProviderRequests.Add((providerName, success, streamed));
     }
 }

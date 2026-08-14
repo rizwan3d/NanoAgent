@@ -27,11 +27,13 @@ internal sealed class OpenAiCompatibleConversationProviderClient : IConversation
         IAnthropicClaudeAccountCredentialService? anthropicClaudeAccountCredentialService = null,
         IGitHubCopilotCredentialService? gitHubCopilotCredentialService = null,
         IStemCodeEnterpriseCredentialService? stemCodeEnterpriseCredentialService = null,
+        TimeProvider? timeProvider = null,
+        IProductTelemetry? telemetry = null,
         ProviderRequestProjectHeaderProvider? providerRequestProjectHeaderProvider = null)
     {
         ConversationProviderRequestPayloadFactory payloadFactory = new();
         ConversationProviderResponseNormalizer responseNormalizer = new();
-        ConversationProviderHttpExecutor httpExecutor = new(httpClient, logger, delayAsync, nextJitter);
+        ConversationProviderHttpExecutor httpExecutor = new(httpClient, logger, delayAsync, nextJitter, timeProvider, telemetry);
 
         _openAiChatGptAccountAdapter = new OpenAiChatGptAccountConversationProviderAdapter(
             httpExecutor,

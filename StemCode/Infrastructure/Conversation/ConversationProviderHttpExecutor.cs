@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using StemCode.Application.Exceptions;
 using StemCode.Application.Models;
+using StemCode.Application.Abstractions;
 using StemCode.Domain.Models;
 using System.Net;
 using System.Net.Http.Headers;
@@ -18,17 +19,23 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
     private readonly Func<double> _nextJitter;
+    private readonly IProductTelemetry? _telemetry;
+    private readonly TimeProvider _timeProvider;
 
     public ConversationProviderHttpExecutor(
         HttpClient httpClient,
         ILogger logger,
         Func<TimeSpan, CancellationToken, Task>? delayAsync = null,
-        Func<double>? nextJitter = null)
+        Func<double>? nextJitter = null,
+        TimeProvider? timeProvider = null,
+        IProductTelemetry? telemetry = null)
     {
         _httpClient = httpClient;
         _logger = logger;
         _delayAsync = delayAsync ?? ((delay, token) => Task.Delay(delay, token));
         _nextJitter = nextJitter ?? Random.Shared.NextDouble;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _telemetry = telemetry;
     }
 
     public async Task<ConversationProviderPayload> ExecuteAsync(
@@ -44,10 +51,18 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         int retryCount = 0;
         bool forcedRefreshAfterAuthFailure = false;
 
-        for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+        DateTimeOffset startedAt = _timeProvider.GetUtcNow();
+        bool requestSucceeded = false;
+        bool streamed = false;
+        TimeSpan streamLatency = TimeSpan.Zero;
+        string? errorMessage = null;
+
+        try
         {
-            using HttpRequestMessage httpRequest = createRequest();
-            LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri);
+            for (int attempt = 0; attempt <= MaxRetryAttempts; attempt++)
+            {
+                using HttpRequestMessage httpRequest = createRequest();
+                LogDebugApiRequest(httpRequest.Method, httpRequest.RequestUri);
 
             HttpResponseMessage? response;
             try
@@ -76,81 +91,102 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
                 continue;
             }
 
-            using (response)
-            {
-            string responseBody;
-            bool assistantMessageWasStreamed = false;
-            if (response.IsSuccessStatusCode &&
-                readResponseBodyAsync is not null)
-            {
-                await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                StreamingResponseReadResult readResult = await readResponseBodyAsync(
-                    responseStream,
-                    onAssistantMessageChunkAsync,
-                    cancellationToken);
-                responseBody = readResult.ResponseBody;
-                assistantMessageWasStreamed = readResult.AssistantMessageWasStreamed;
-            }
-            else
-            {
-                responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            }
-
-            LogDebugApiResponse(response.StatusCode, TryGetResponseId(response));
-
-            if (response.IsSuccessStatusCode)
-            {
-                string normalizedResponseBody = normalizeResponseBody is null
-                    ? responseBody
-                    : normalizeResponseBody(responseBody);
-                if (string.IsNullOrWhiteSpace(normalizedResponseBody))
+                using (response)
                 {
-                    throw new ConversationProviderException(
-                        "The provider returned an empty response body for the conversation request.");
-                }
+                    string responseBody;
+                    bool assistantMessageWasStreamed = false;
+                    if (response.IsSuccessStatusCode &&
+                        readResponseBodyAsync is not null)
+                    {
+                        DateTimeOffset streamStartedAt = _timeProvider.GetUtcNow();
+                        await using Stream responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+                        StreamingResponseReadResult readResult = await readResponseBodyAsync(
+                            responseStream,
+                            onAssistantMessageChunkAsync,
+                            cancellationToken);
+                        responseBody = readResult.ResponseBody;
+                        assistantMessageWasStreamed = readResult.AssistantMessageWasStreamed;
+                        streamed = assistantMessageWasStreamed;
+                        streamLatency = _timeProvider.GetUtcNow() - streamStartedAt;
+                    }
+                    else
+                    {
+                        responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
+                    }
 
-                return new ConversationProviderPayload(
-                    providerKind,
-                    normalizedResponseBody,
-                    TryGetResponseId(response),
-                    retryCount,
-                    assistantMessageWasStreamed);
+                    LogDebugApiResponse(response.StatusCode, TryGetResponseId(response));
+
+                    if (response.IsSuccessStatusCode)
+                    {
+                        string normalizedResponseBody = normalizeResponseBody is null
+                            ? responseBody
+                            : normalizeResponseBody(responseBody);
+                        if (string.IsNullOrWhiteSpace(normalizedResponseBody))
+                        {
+                            throw new ConversationProviderException(
+                                "The provider returned an empty response body for the conversation request.");
+                        }
+
+                        requestSucceeded = true;
+                        streamed = assistantMessageWasStreamed;
+                        return new ConversationProviderPayload(
+                            providerKind,
+                            normalizedResponseBody,
+                            TryGetResponseId(response),
+                            retryCount,
+                            assistantMessageWasStreamed);
+                    }
+
+                    if (response.StatusCode == HttpStatusCode.Unauthorized &&
+                        !forcedRefreshAfterAuthFailure &&
+                        refreshAuthorizationAsync is not null &&
+                        await refreshAuthorizationAsync(cancellationToken))
+                    {
+                        forcedRefreshAfterAuthFailure = true;
+                        continue;
+                    }
+
+                    if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
+                    {
+                        retryCount++;
+                        TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
+                        _logger.LogWarning(
+                            "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
+                            (int)response.StatusCode,
+                            attempt + 1,
+                            MaxRetryAttempts + 1,
+                            Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
+                        await ReportRetryAsync(
+                            onRetryAsync,
+                            retryCount,
+                            $"HTTP {(int)response.StatusCode}",
+                            cancellationToken);
+                        await _delayAsync(retryDelay, cancellationToken);
+                        continue;
+                    }
+                    ThrowConversationRequestFailed(response.StatusCode, responseBody);
+                } // using (response)
             }
 
-            if (response.StatusCode == HttpStatusCode.Unauthorized &&
-                !forcedRefreshAfterAuthFailure &&
-                refreshAuthorizationAsync is not null &&
-                await refreshAuthorizationAsync(cancellationToken))
-            {
-                forcedRefreshAfterAuthFailure = true;
-                continue;
-            }
-
-            if (IsRetryableStatusCode(response.StatusCode) && attempt < MaxRetryAttempts)
-            {
-                retryCount++;
-                TimeSpan retryDelay = CalculateRetryDelay(retryCount, response.Headers.RetryAfter);
-                _logger.LogWarning(
-                    "Provider returned retryable HTTP {StatusCode} on attempt {Attempt} of {MaxAttempts}. Retrying after {RetryDelayMilliseconds} ms.",
-                    (int)response.StatusCode,
-                    attempt + 1,
-                    MaxRetryAttempts + 1,
-                    Math.Round(retryDelay.TotalMilliseconds, MidpointRounding.AwayFromZero));
-                await ReportRetryAsync(
-                    onRetryAsync,
-                    retryCount,
-                    $"HTTP {(int)response.StatusCode}",
-                    cancellationToken);
-                await _delayAsync(retryDelay, cancellationToken);
-                continue;
-            }
-
-            ThrowConversationRequestFailed(response.StatusCode, responseBody);
-            } // using (response)
+            throw new ConversationProviderException(
+                "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
         }
-
-        throw new ConversationProviderException(
-            "Unable to complete the conversation request. The provider retry loop ended unexpectedly.");
+        catch (Exception exception)
+        {
+            errorMessage = exception.Message;
+            throw;
+        }
+        finally
+        {
+            RecordProviderTelemetry(
+                providerKind,
+                requestSucceeded,
+                startedAt,
+                streamed,
+                streamLatency,
+                retryCount,
+                errorMessage);
+        }
     }
 
     private static string? TryGetResponseId(HttpResponseMessage response)
@@ -280,6 +316,42 @@ internal sealed class ConversationProviderHttpExecutor : IConversationProviderHt
         }
 
         return null;
+    }
+
+    private void RecordProviderTelemetry(
+        ProviderKind providerKind,
+        bool success,
+        DateTimeOffset startedAt,
+        bool streamed,
+        TimeSpan streamLatency,
+        int retryCount,
+        string? errorMessage = null)
+    {
+        if (_telemetry is null)
+        {
+            return;
+        }
+
+        try
+        {
+            TimeSpan latency = _timeProvider.GetUtcNow() - startedAt;
+            _telemetry.TrackProviderRequest(
+                providerKind.ToString(),
+                success,
+                latency,
+                streamed,
+                streamLatency,
+                retryCount,
+                errorMessage);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Telemetry must never affect provider request behavior.
+        }
     }
 
     private static void ThrowConversationRequestFailed(

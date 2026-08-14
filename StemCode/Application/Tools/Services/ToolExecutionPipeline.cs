@@ -8,6 +8,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
     private const int DefaultMaxParallelToolExecutions = 4;
 
     private readonly IToolAuditLogService? _toolAuditLogService;
+    private readonly IProductTelemetry? _telemetry;
     private readonly ILessonMemoryService? _lessonMemoryService;
     private readonly int _maxParallelToolExecutions;
     private readonly TimeProvider _timeProvider;
@@ -19,6 +20,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         IToolInvoker toolInvoker,
         ILessonMemoryService? lessonMemoryService = null,
         IToolAuditLogService? toolAuditLogService = null,
+        IProductTelemetry? telemetry = null,
         TimeProvider? timeProvider = null,
         int maxParallelToolExecutions = DefaultMaxParallelToolExecutions)
     {
@@ -26,6 +28,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         _toolInvoker = toolInvoker;
         _lessonMemoryService = lessonMemoryService;
         _toolAuditLogService = toolAuditLogService;
+        _telemetry = telemetry;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _maxParallelToolExecutions = Math.Max(1, maxParallelToolExecutions);
     }
@@ -242,6 +245,7 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
             record.StartedAtUtc,
             record.CompletedAtUtc,
             cancellationToken);
+        RecordToolTelemetry(record, session, executionPhase);
         await ObserveLessonMemoryAsync(
             record.ToolCall,
             record.InvocationResult,
@@ -297,6 +301,39 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         {
             // Audit logs are useful operational evidence, but a log write issue should
             // not turn a completed tool call into a failed agent turn.
+        }
+    }
+
+    private void RecordToolTelemetry(
+        ToolExecutionRecord record,
+        ReplSessionContext session,
+        ConversationExecutionPhase executionPhase)
+    {
+        if (_telemetry is null)
+        {
+            return;
+        }
+
+        try
+        {
+            ToolResult result = record.InvocationResult.Result;
+            _telemetry.TrackToolInvoked(
+                record.ToolCall.Name,
+                result.Status,
+                result.IsSuccess,
+                record.CompletedAtUtc - record.StartedAtUtc,
+                executionPhase,
+                modelId: session.ActiveModelId,
+                providerName: session.ProviderName,
+                errorMessage: result.IsSuccess ? null : result.Message);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Telemetry must never affect tool execution behavior.
         }
     }
 
