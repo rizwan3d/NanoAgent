@@ -90,9 +90,9 @@ public static partial class Program
             }
         }
 
-        // The body panel sits directly under the header; its top border (with header text)
-        // is one row, so the first visible conversation line is headerSize + 2 (1-based).
-        state.MessagesContentTopRow = headerSize + 2;
+        // The message view sits directly under the header with no surrounding panel chrome,
+        // so the first visible conversation line starts on the first body row (1-based).
+        state.MessagesContentTopRow = headerSize + 1;
 
         // The working-directory line shifts between the startup wordmark header and
         // the compact header shown after the first model turn.
@@ -227,9 +227,7 @@ public static partial class Program
 
     private static IRenderable BuildMessagesPanel(AppState state)
     {
-        return new Panel(BuildMessagesPanelContent(state))
-            .Border(BoxBorder.None)
-            .Expand();
+        return BuildMessagesPanelContent(state);
     }
 
     private static IRenderable BuildMessagesPanelContent(AppState state)
@@ -1227,7 +1225,7 @@ public static partial class Program
         }
 
         int messagesPanelSize = GetMessagesPanelSize(state);
-        int reservedLines = PanelChromeLineCount + GetBusyStatusReservedLineCount(state);
+        int reservedLines = GetBusyStatusReservedLineCount(state);
         return Math.Max(1, messagesPanelSize - reservedLines);
     }
 
