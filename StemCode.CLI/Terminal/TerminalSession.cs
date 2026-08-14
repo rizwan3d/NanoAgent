@@ -10,7 +10,8 @@ internal sealed class TerminalSession : IDisposable
     private const string EnableBracketedPasteSequence = "\u001b[?2004h";
     private const string DisableBracketedPasteSequence = "\u001b[?2004l";
     private const string DisableWheelScrollingSequence = "\u001b[?1007l";
-    private const string SetBlackBackgroundSequence = "\u001b]11;rgb:0000/0000/0000\u001b\\";
+    private const string SetBlackBackgroundSequence =
+    "\u001b]11;rgb:1717/1717/1717\u001b\\";
     private const string ResetBackgroundSequence = "\u001b]111\u001b\\";
     // Any-event tracking (?1003h) plus SGR extended coordinates (?1006h): reports
     // clicks, hover/motion, and wheel events with row/column so selection modals can

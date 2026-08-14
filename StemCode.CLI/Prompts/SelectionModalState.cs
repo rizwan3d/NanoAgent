@@ -363,8 +363,8 @@ public sealed class SelectionModalState<T> : UiModalState
                 string line = prefix + Markup.Escape(labelLines[lineIndex]);
                 lines.Add(new SelectionRenderLine(
                     selected
-                        ? $"[black on green]{line}[/]"
-                        : $"[green]{line}[/]",
+                        ? $"[#163A42 on #7FE7F2]{line}[/]"
+                        : $"[#B8C2CC]{line}[/]",
                     index));
             }
 
@@ -372,7 +372,7 @@ public sealed class SelectionModalState<T> : UiModalState
             {
                 foreach (string descriptionLine in WrapPlainText(option.Description, Math.Max(1, contentWidth - 4)))
                 {
-                    lines.Add(new SelectionRenderLine($"[grey]    {Markup.Escape(descriptionLine)}[/]", index));
+                    lines.Add(new SelectionRenderLine($"[#68758A]    {Markup.Escape(descriptionLine)}[/]", index));
                 }
             }
         }

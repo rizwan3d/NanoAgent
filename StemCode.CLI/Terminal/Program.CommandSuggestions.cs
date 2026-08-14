@@ -289,13 +289,13 @@ public static partial class Program
                 : $"{usageText} - {description}";
 
             lines.Add(selected
-                ? $"[black on green]{Markup.Escape(plainLine)}[/]"
-                : $"[green]{Markup.Escape(usageText)}[/][grey]{Markup.Escape(description.Length == 0 ? string.Empty : " - " + description)}[/]");
+                ? $"[#163A42 on #7FE7F2]{Markup.Escape(plainLine)}[/]"
+                : $"[#B8C2CC]{Markup.Escape(usageText)}[/][grey]{Markup.Escape(description.Length == 0 ? string.Empty : " - " + description)}[/]");
         }
 
         if (suggestions.Count > MaxSlashCommandSuggestionCount)
         {
-            lines.Add($"[grey]{suggestions.Count} matches. Keep typing to narrow.[/]");
+            lines.Add($"[#68758A]{suggestions.Count} matches. Keep typing to narrow.[/]");
         }
 
         return string.Join('\n', lines);

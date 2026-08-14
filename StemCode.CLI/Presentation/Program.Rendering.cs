@@ -21,7 +21,7 @@ public static partial class Program
     private const string BusyStatusText = "StemCode is working";
     private const string InputSelectionMarkupStyle = "black on grey70";
     private const string InputPanelBackgroundMarkupStyle = "white on #1c1c1c";
-    private const string InputAccentMarkupStyle = "black on purple";
+    private const string InputAccentMarkupStyle = "black on #7FE7F2";
     private const string InputPrefixMarkup = $" [{InputAccentMarkupStyle}] [/]  ";
     private const int InputPrefixPlainWidth = 3;
     private const int InputLeftGutterWidth = 1;
@@ -216,7 +216,7 @@ public static partial class Program
 
         return new Markup(
             (!state.HasMadeFirstLlmCall ? CliBranding.BuildHeaderBodyMarkup() : 
-            $"\n [bold purple]›[/] [bold white]STEMCODE[/] [grey]v{Markup.Escape(version)}[/]\n") +
+            $"\n [bold #7FE7F2]›[/] [bold white]STEMCODE[/] [grey]v{Markup.Escape(version)}[/]\n") +
             $"{workingDirectoryMarkup}{branchMarkup}{new string(' ', spacerLength)}[grey]{Markup.Escape(MessagesPanelScrollHint)}[/]\n") ;
     }
 
