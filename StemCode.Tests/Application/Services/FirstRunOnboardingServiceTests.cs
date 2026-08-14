@@ -274,82 +274,6 @@ public sealed class FirstRunOnboardingServiceTests
     }
 
     [Fact]
-    public async Task EnsureOnboardedAsync_Should_SaveStemCodeEnterpriseConfiguration_When_Selected()
-    {
-        AgentProviderProfile enterpriseProfile = new(ProviderKind.OpenAiCompatible, "https://app.getstemcode.com/v1");
-
-        Mock<ISelectionPrompt> selectionPrompt = new(MockBehavior.Strict);
-        SetupProviderSelection(selectionPrompt, OnboardingProviderChoice.StemCodeEnterprise);
-
-        Mock<ITextPrompt> textPrompt = new(MockBehavior.Strict);
-        Mock<ISecretPrompt> secretPrompt = new(MockBehavior.Strict);
-        Mock<IConfirmationPrompt> confirmationPrompt = new(MockBehavior.Strict);
-
-        Mock<IStatusMessageWriter> statusMessageWriter = new(MockBehavior.Strict);
-        statusMessageWriter
-            .Setup(writer => writer.ShowInfoAsync(
-                "Welcome to StemCode. Let's configure your provider for first run.",
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-        statusMessageWriter
-            .Setup(writer => writer.ShowSuccessAsync(
-                "Onboarding complete. Provider: StemCode Enterprise.",
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        Mock<IOnboardingInputValidator> inputValidator = new(MockBehavior.Strict);
-
-        Mock<IAgentConfigurationStore> configurationStore = new(MockBehavior.Strict);
-        configurationStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((AgentConfiguration?)null);
-        configurationStore
-            .Setup(store => store.SaveAsync(
-                new AgentConfiguration(enterpriseProfile, null, null, "StemCode Enterprise"),
-                It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        Mock<IApiKeySecretStore> secretStore = new(MockBehavior.Strict);
-        secretStore.Setup(store => store.LoadAsync(It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
-        secretStore.Setup(store => store.SaveAsync("enterprise-credential-json", It.IsAny<CancellationToken>())).Returns(Task.CompletedTask);
-        secretStore
-            .Setup(store => store.SaveAsync("StemCode Enterprise", "enterprise-credential-json", It.IsAny<CancellationToken>()))
-            .Returns(Task.CompletedTask);
-
-        Mock<IAgentProviderProfileFactory> profileFactory = new(MockBehavior.Strict);
-        profileFactory
-            .Setup(factory => factory.CreateCompatible("https://app.getstemcode.com/v1"))
-            .Returns(enterpriseProfile);
-
-        Mock<IStemCodeEnterpriseAuthenticator> authenticator = new(MockBehavior.Strict);
-        authenticator
-            .Setup(service => service.AuthenticateAsync("https://app.getstemcode.com/v1", It.IsAny<CancellationToken>()))
-            .ReturnsAsync("enterprise-credential-json");
-
-        FirstRunOnboardingService sut = CreateSut(
-            selectionPrompt.Object,
-            textPrompt.Object,
-            secretPrompt.Object,
-            confirmationPrompt.Object,
-            statusMessageWriter.Object,
-            inputValidator.Object,
-            configurationStore.Object,
-            secretStore.Object,
-            profileFactory.Object,
-            stemCodeEnterpriseAuthenticator: authenticator.Object);
-
-        OnboardingResult result = await sut.EnsureOnboardedAsync(CancellationToken.None);
-
-        result.Should().Be(new OnboardingResult(
-            enterpriseProfile,
-            true,
-            ActiveProviderName: "StemCode Enterprise"));
-        profileFactory.Verify(factory => factory.CreateCompatible("https://app.getstemcode.com/v1"), Times.Once);
-        authenticator.Verify(service => service.AuthenticateAsync("https://app.getstemcode.com/v1", It.IsAny<CancellationToken>()), Times.Once);
-        configurationStore.VerifyAll();
-        secretStore.VerifyAll();
-        statusMessageWriter.VerifyAll();
-    }
-
-    [Fact]
     public async Task EnsureOnboardedAsync_Should_UseProviderSetupSubmenus()
     {
         AgentProviderProfile openAiProfile = new(ProviderKind.OpenAi, null);
@@ -365,7 +289,6 @@ public sealed class FirstRunOnboardingServiceTests
                 request.Options.Select(option => (option.Label, option.Value))
                     .Should()
                     .Equal(
-                        ("StemCode Enterprise", OnboardingProviderSetupChoice.StemCodeEnterprise),
                         ("Subscription accounts", OnboardingProviderSetupChoice.SubscriptionAccount),
                         ("API key providers", OnboardingProviderSetupChoice.ApiKey),
                         ("OpenAI-compatible provider", OnboardingProviderSetupChoice.OpenAiCompatible),
@@ -1575,7 +1498,6 @@ public sealed class FirstRunOnboardingServiceTests
     {
         OnboardingProviderSetupChoice setupChoice = providerChoice switch
         {
-            OnboardingProviderChoice.StemCodeEnterprise => OnboardingProviderSetupChoice.StemCodeEnterprise,
             OnboardingProviderChoice.OpenAiChatGptAccount or
                 OnboardingProviderChoice.AnthropicClaudeAccount or
                 OnboardingProviderChoice.GitHubCopilot => OnboardingProviderSetupChoice.SubscriptionAccount,
@@ -1591,7 +1513,7 @@ public sealed class FirstRunOnboardingServiceTests
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync(setupChoice);
 
-        if (setupChoice is OnboardingProviderSetupChoice.StemCodeEnterprise or OnboardingProviderSetupChoice.OpenAiCompatible)
+        if (setupChoice == OnboardingProviderSetupChoice.OpenAiCompatible)
         {
             return;
         }
@@ -1615,8 +1537,7 @@ public sealed class FirstRunOnboardingServiceTests
         IAgentProviderProfileFactory profileFactory,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
-        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
-        IStemCodeEnterpriseAuthenticator? stemCodeEnterpriseAuthenticator = null)
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
     {
         return new FirstRunOnboardingService(
             selectionPrompt,
@@ -1631,7 +1552,6 @@ public sealed class FirstRunOnboardingServiceTests
             NullLogger<FirstRunOnboardingService>.Instance,
             openAiChatGptAccountAuthenticator,
             anthropicClaudeAccountAuthenticator,
-            gitHubCopilotAuthenticator,
-            stemCodeEnterpriseAuthenticator);
+            gitHubCopilotAuthenticator);
     }
 }
