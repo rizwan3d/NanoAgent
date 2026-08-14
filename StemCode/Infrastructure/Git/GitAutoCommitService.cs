@@ -16,7 +16,7 @@ internal sealed class GitAutoCommitService : IAutoCommitService
 
     private const int MaxCommitSuggestionSeconds = 20;
     private const string AutoCommitFallbackMessage = "chore: apply StemCode changes";
-    private const string AutoCommitCoAuthorTrailer = "Co-authored-by: StemCodeAi <313132566+StemCodeAi@users.noreply.github.com>";
+    private const string AutoCommitCoAuthorTrailer = "Co-authored-by: StemCodeAi <317135024+stemcodeai[bot]@users.noreply.github.com>";
     private const string GitIndexFileEnvironmentVariable = "GIT_INDEX_FILE";
     private const string SystemPrompt =
         """
