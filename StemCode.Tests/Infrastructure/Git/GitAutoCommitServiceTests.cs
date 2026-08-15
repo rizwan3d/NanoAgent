@@ -52,7 +52,7 @@ public sealed class GitAutoCommitServiceTests
                 "-m",
                 "chore: apply StemCode changes",
                 "-m",
-                "Co-authored-by: StemCodeAi <313132566+StemCodeAi@users.noreply.github.com>");
+                "Co-authored-by: StemCodeAi <317135024+stemcodeai[bot]@users.noreply.github.com>");
         }
         finally
         {
