@@ -43,8 +43,11 @@ function executableFileName() {
   return process.platform === "win32" ? `${EXECUTABLE_NAME}.exe` : EXECUTABLE_NAME;
 }
 
-// Version baked into package.json by the release workflow; the matching release
-// is tagged "v<version>".
+// Version baked into package.json by the release workflow; the matching GitHub
+// release is tagged "V<version>" (uppercase V). Historically releases have also
+// shipped under lowercase "v<version>". The release pipelines strip a leading
+// v/V, but published asset URLs use the exact tag casing, so downloaders try
+// both the resolved tag and its case-variant.
 function resolveVersion() {
   const override = process.env.STEMCODE_CLI_VERSION;
   if (override && override.trim()) {
@@ -59,7 +62,17 @@ function resolveTag() {
   if (override && override.trim()) {
     return override.trim();
   }
-  return `v${resolveVersion()}`;
+  return `V${resolveVersion()}`;
+}
+
+// Returns the case-variant of a release tag, e.g. "V1.1.10" <-> "v1.1.10".
+// GitHub release assets have been published under both casings, so callers
+// try the resolved tag and its alternate when a download 404s.
+function alternateTag(tag) {
+  if (!tag) return tag;
+  if (tag.startsWith("V")) return `v${tag.slice(1)}`;
+  if (tag.startsWith("v")) return `V${tag.slice(1)}`;
+  return tag;
 }
 
 function baseDownloadUrl(tagOverride) {
@@ -95,6 +108,7 @@ module.exports = {
   executableFileName,
   resolveVersion,
   resolveTag,
+  alternateTag,
   baseDownloadUrl,
   assetName,
   vendorDir,
