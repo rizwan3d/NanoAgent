@@ -374,12 +374,30 @@ jobs:
           }
 
           async function npmDownloads(packageId, period) {
-            return json(`https://api.npmjs.org/downloads/point/${period}/${encodeURIComponent(packageId)}`, {
+            const url =
+              `https://api.npmjs.org/downloads/point/${period}/${encodeURIComponent(packageId)}`
+
+            const res = await fetch(url, {
               headers: {
                 Accept: 'application/json',
                 'User-Agent': 'posthog-release-and-nuget-trend',
               },
             })
+
+            if (res.status === 404) {
+              console.warn(
+                `npm download statistics are not available yet for ${packageId} (${period})`,
+              )
+              return null
+            }
+
+            if (!res.ok) {
+              throw new Error(
+                `Request failed ${res.status} for ${url}: ${await res.text()}`,
+              )
+            }
+
+            return res.json()
           }
 
           function isoDate(value) {
@@ -421,10 +439,41 @@ jobs:
                 ? metadata.time[latestVersion]
                 : createdAt
 
-            const totalDownloadsResult = await npmDownloads(packageId, `${isoDate(createdAt)}:${collectedDate}`)
-            const lastDayDownloadsResult = await npmDownloads(packageId, 'last-day')
-            const lastWeekDownloadsResult = await npmDownloads(packageId, 'last-week')
-            const lastMonthDownloadsResult = await npmDownloads(packageId, 'last-month')
+            const [
+              totalDownloadsResult,
+              lastDayDownloadsResult,
+              lastWeekDownloadsResult,
+              lastMonthDownloadsResult,
+            ] = await Promise.all([
+              npmDownloads(packageId, `${isoDate(createdAt)}:${collectedDate}`),
+              npmDownloads(packageId, 'last-day'),
+              npmDownloads(packageId, 'last-week'),
+              npmDownloads(packageId, 'last-month'),
+            ])
+
+            if (
+              !totalDownloadsResult ||
+              !lastDayDownloadsResult ||
+              !lastWeekDownloadsResult ||
+              !lastMonthDownloadsResult
+            ) {
+              await posthogCapture(
+                'stemcode npm download stats unavailable',
+                {
+                  repository: REPOSITORY,
+                  package_id: packageId,
+                  latest_version: latestVersion || null,
+                  collected_at: collectedAt,
+                  snapshot_type: 'downloads_unavailable',
+                },
+                `npm-package:${packageId.toLowerCase()}`,
+              )
+
+              console.warn(
+                `Skipping npm download snapshot for ${packageId}; npm has not indexed its download stats yet.`,
+              )
+              continue
+            }
 
             const packageTotalDownloads = Number(totalDownloadsResult.downloads || 0)
             const packageLastDayDownloads = Number(lastDayDownloadsResult.downloads || 0)
