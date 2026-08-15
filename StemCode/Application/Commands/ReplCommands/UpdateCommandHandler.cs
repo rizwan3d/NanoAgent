@@ -9,15 +9,18 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
     private readonly IApplicationUpdateService _updateService;
     private readonly IConfirmationPrompt _confirmationPrompt;
     private readonly IStatusMessageWriter _statusMessageWriter;
+    private readonly IStemCodeInstanceService _instanceService;
 
     public UpdateCommandHandler(
         IApplicationUpdateService updateService,
         IConfirmationPrompt confirmationPrompt,
-        IStatusMessageWriter statusMessageWriter)
+        IStatusMessageWriter statusMessageWriter,
+        IStemCodeInstanceService instanceService)
     {
         _updateService = updateService;
         _confirmationPrompt = confirmationPrompt;
         _statusMessageWriter = statusMessageWriter;
+        _instanceService = instanceService;
     }
 
     public string CommandName => "update";
@@ -78,6 +81,41 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
                 return ReplCommandResult.Continue(
                     $"Skipped StemCode {updateInfo.LatestVersion}. Release: {updateInfo.ReleaseUri}",
                     ReplFeedbackKind.Info);
+            }
+        }
+
+        // Before replacing the running binary, terminate any other StemCode
+        // sessions so the in-place update is not blocked by a file lock. In
+        // 'now' (non-interactive) mode we terminate them automatically; in the
+        // interactive flow we ask first.
+        IReadOnlyList<RunningStemCodeInstance> otherInstances =
+            await _instanceService.GetOtherRunningInstancesAsync(cancellationToken);
+
+        if (otherInstances.Count > 0)
+        {
+            bool terminate = installWithoutPrompt;
+
+            if (!terminate)
+            {
+                terminate = await _confirmationPrompt.PromptAsync(
+                    new ConfirmationPromptRequest(
+                        "Other StemCode sessions are running. Terminate them before updating?",
+                        $"{otherInstances.Count} other StemCode session(s) are holding the running binary. " +
+                        "Closing them lets the update replace the executable. Choose Yes to terminate them and continue, or No to attempt the update anyway.",
+                        DefaultValue: true),
+                    cancellationToken);
+            }
+
+            if (terminate)
+            {
+                await _statusMessageWriter.ShowInfoAsync(
+                    $"Terminating {otherInstances.Count} other StemCode session(s)...",
+                    cancellationToken);
+
+                foreach (RunningStemCodeInstance instance in otherInstances)
+                {
+                    await _instanceService.TerminateAsync(instance, cancellationToken);
+                }
             }
         }
 
