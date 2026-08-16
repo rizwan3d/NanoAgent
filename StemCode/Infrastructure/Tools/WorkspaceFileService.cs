@@ -595,14 +595,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Search);
-        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        WorkspaceSearchIgnoreMatcher ignoreMatcher = LoadWorkspaceFileSearchIgnoreMatcher();
         string effectiveMode = GetEffectiveSearchMode(request);
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
         {
-            if (!request.IncludeIgnored)
-            {
-                EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
-            }
+            EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher, request.IncludeIgnored);
         }
 
         WorkspaceFileSearchPage page = SearchFilesManaged(request, effectiveMode, fullPath, ignoreMatcher);
@@ -638,7 +635,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(request.Path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Search);
-        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
+        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceSearchIgnoreMatcher();
         if (File.Exists(fullPath) || Directory.Exists(fullPath))
         {
             EnsurePathNotIgnored(fullPath, Directory.Exists(fullPath), ignoreMatcher);
@@ -663,7 +660,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         ArgumentNullException.ThrowIfNull(replace);
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceSearchIgnoreMatcher());
         string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
         (string currentContent, int replacementCount) = useRegex
@@ -1005,7 +1002,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         WorkspaceFileSearchRequest request,
         string effectiveMode,
         string fullPath,
-        WorkspaceIgnoreMatcher ignoreMatcher)
+        WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         bool searchPathIsDirectory = Directory.Exists(fullPath);
         bool searchPathExists = File.Exists(fullPath) || searchPathIsDirectory;
@@ -1065,7 +1062,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         WorkspaceFileSearchRequest request,
         string effectiveMode,
         string filePath,
-        WorkspaceIgnoreMatcher ignoreMatcher)
+        WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         string relativePath = ToWorkspaceRelativePath(filePath);
         if (!ShouldIncludeSearchPath(relativePath, filePath, isDirectory: false, request, ignoreMatcher))
@@ -1096,15 +1093,14 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         string fullPath,
         bool isDirectory,
         WorkspaceFileSearchRequest request,
-        WorkspaceIgnoreMatcher ignoreMatcher)
+        WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         if (IsGitMetadataPath(relativePath))
         {
             return false;
         }
 
-        if (!request.IncludeIgnored &&
-            ignoreMatcher.IsIgnored(fullPath, isDirectory))
+        if (ignoreMatcher.IsIgnored(fullPath, isDirectory, request.IncludeIgnored))
         {
             return false;
         }
@@ -1174,7 +1170,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
     private IEnumerable<string> EnumerateSearchFiles(
         string root,
         WorkspaceFileSearchRequest request,
-        WorkspaceIgnoreMatcher ignoreMatcher)
+        WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         Stack<string> pendingDirectories = new();
         pendingDirectories.Push(root);
@@ -1800,6 +1796,16 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         return WorkspaceIgnoreMatcher.Load(GetWorkspaceRoot());
     }
 
+    private WorkspaceIgnoreMatcher LoadWorkspaceSearchIgnoreMatcher()
+    {
+        return WorkspaceIgnoreMatcher.LoadWithProjectIgnoreRules(GetWorkspaceRoot());
+    }
+
+    private WorkspaceSearchIgnoreMatcher LoadWorkspaceFileSearchIgnoreMatcher()
+    {
+        return WorkspaceSearchIgnoreMatcher.Load(GetWorkspaceRoot());
+    }
+
     private void EnsurePathNotIgnored(
         string fullPath,
         bool isDirectory,
@@ -1812,6 +1818,32 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
 
         throw new InvalidOperationException(
             $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by {sourceDisplayPath}.");
+    }
+
+    private void EnsurePathNotIgnored(
+        string fullPath,
+        bool isDirectory,
+        WorkspaceSearchIgnoreMatcher ignoreMatcher,
+        bool includeIgnored)
+    {
+        if (includeIgnored)
+        {
+            if (!ignoreMatcher.StemCodeIgnore.TryGetIgnoreSource(fullPath, isDirectory, out string stemCodeSource))
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by {stemCodeSource}.");
+        }
+
+        if (!ignoreMatcher.TryGetIgnoreSource(fullPath, isDirectory, out string combinedSource))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by {combinedSource}.");
     }
 
     private string ToWorkspaceRelativePath(string fullPath)

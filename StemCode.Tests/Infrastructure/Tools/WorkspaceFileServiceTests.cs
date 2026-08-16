@@ -838,7 +838,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchFilesAsync_Should_IncludeStemCodeIgnoredFiles_When_Requested()
+    public async Task SearchFilesAsync_Should_NotIncludeStemCodeIgnoredFiles_EvenWhenIncludeIgnored()
     {
         await WriteStemCodeIgnoreAsync("ignored/");
         Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
@@ -853,7 +853,179 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         result.Matches.Select(static match => match.Path)
             .Should()
+            .Equal(["src/Program.cs"]);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_ExcludeRootGitIgnoredFiles()
+    {
+        await WriteGitIgnoreAsync("ignored/\n");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path).Should().Equal("src/Program.cs");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_RespectGitIgnoreRules()
+    {
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "visible"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "generated"));
+        await WriteGitIgnoreAsync(
+            """
+            src/generated/
+            *.snap
+            !keep.snap
+            """);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "visible", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "generated", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "test.snap"), "snapshot", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "keep.snap"), "snapshot", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult programResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "src", CaseSensitive: false),
+            CancellationToken.None);
+        WorkspaceFileSearchResult snapResult = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("snap", "src", CaseSensitive: false),
+            CancellationToken.None);
+
+        programResult.Matches.Select(static match => match.Path).Should().Equal("src/visible/Program.cs");
+        snapResult.Matches.Select(static match => match.Path).Should().Equal("src/keep.snap");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_DenyGitIgnoredSearchPath()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", "ignored", CaseSensitive: false),
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .gitignore*");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_IncludeGitIgnoredFiles_When_Requested()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false, IncludeIgnored: true),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path)
+            .Should()
             .Contain(["src/Program.cs", "ignored/Program.cs"]);
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_KeepGitIgnoreAndStemCodeIgnoreIndependent()
+    {
+        await WriteGitIgnoreAsync("*.secret\n");
+        await WriteStemCodeIgnoreAsync("*.cache\n");
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "token.secret"), "secret", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "build.cache"), "cache", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "app.log"), "log", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        (await sut.SearchFilesAsync(new WorkspaceFileSearchRequest("secret", ".", CaseSensitive: false), CancellationToken.None))
+            .Matches.Should().BeEmpty();
+        (await sut.SearchFilesAsync(new WorkspaceFileSearchRequest("cache", ".", CaseSensitive: false), CancellationToken.None))
+            .Matches.Should().BeEmpty();
+        (await sut.SearchFilesAsync(new WorkspaceFileSearchRequest("log", ".", CaseSensitive: false), CancellationToken.None))
+            .Matches.Select(static match => match.Path).Should().Equal("app.log");
+    }
+
+    [Fact]
+    public async Task SearchFilesAsync_Should_OverrideGitIgnoreButNotStemCodeIgnore_WhenIncludeIgnored()
+    {
+        await WriteGitIgnoreAsync("ignored/");
+        await WriteStemCodeIgnoreAsync("*.cache");
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "build.cache"), "cache", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        (await sut.SearchFilesAsync(
+                new WorkspaceFileSearchRequest("Program", ".", CaseSensitive: false, IncludeIgnored: true),
+                CancellationToken.None))
+            .Matches.Select(static match => match.Path)
+            .Should()
+            .Equal("ignored/Program.cs");
+
+        (await sut.SearchFilesAsync(
+                new WorkspaceFileSearchRequest("cache", ".", CaseSensitive: false, IncludeIgnored: true),
+                CancellationToken.None))
+            .Matches
+            .Should()
+            .BeEmpty();
+    }
+
+    [Fact]
+    public async Task SearchTextAsync_Should_ExcludeGitIgnoredFiles()
+    {
+        await WriteGitIgnoreAsync(
+            """
+            secrets/
+            *.log
+            !visible.log
+            """);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "README.md"), "needle", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "app.log"), "needle", CancellationToken.None);
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "visible.log"), "needle", CancellationToken.None);
+        Directory.CreateDirectory(Path.Combine(_workspaceRoot, "secrets"));
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "secrets", "token.txt"), "needle", CancellationToken.None);
+
+        WorkspaceFileService sut = CreateSut();
+
+        WorkspaceTextSearchResult result = await sut.SearchTextAsync(
+            new WorkspaceTextSearchRequest("needle", ".", CaseSensitive: false),
+            CancellationToken.None);
+
+        result.Matches.Select(static match => match.Path)
+            .Should()
+            .BeEquivalentTo(["README.md", "visible.log"]);
+    }
+
+    [Fact]
+    public async Task SearchAndReplaceAsync_Should_DenyGitIgnoredPath()
+    {
+        await WriteGitIgnoreAsync("*.secret");
+        await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "token.secret"), "hidden", CancellationToken.None);
+        WorkspaceFileService sut = CreateSut();
+
+        Func<Task> act = () => sut.SearchAndReplaceAsync(
+            "token.secret",
+            "hidden",
+            "visible",
+            useRegex: false,
+            caseSensitive: true,
+            CancellationToken.None);
+
+        await act.Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("*excluded by .gitignore*");
     }
 
     [Fact]
@@ -2757,6 +2929,14 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         Directory.CreateDirectory(stemCodeDirectory);
         await File.WriteAllTextAsync(
             Path.Combine(stemCodeDirectory, ".stemcodeignore"),
+            content,
+            CancellationToken.None);
+    }
+
+    private async Task WriteGitIgnoreAsync(string content)
+    {
+        await File.WriteAllTextAsync(
+            Path.Combine(_workspaceRoot, ".gitignore"),
             content,
             CancellationToken.None);
     }

@@ -7,7 +7,10 @@ internal sealed class WorkspaceIgnoreMatcher
 {
     private const string IgnoreFileDirectoryName = ".stemcode";
     private const string IgnoreFileName = ".stemcodeignore";
-    private static readonly string StemCodeIgnoreRelativePath = Path.Combine(IgnoreFileDirectoryName, IgnoreFileName);
+    internal static readonly string StemCodeIgnoreRelativePath = Path.Combine(IgnoreFileDirectoryName, IgnoreFileName);
+
+    private const string GitIgnoreFileName = ".gitignore";
+    private static readonly string GitIgnoreRelativePath = GitIgnoreFileName;
 
     private static readonly WorkspaceIgnoreMatcher EmptyMatcher = new(
         string.Empty,
@@ -77,6 +80,20 @@ internal sealed class WorkspaceIgnoreMatcher
         return normalizedRules.Length == 0
             ? EmptyMatcher
             : new WorkspaceIgnoreMatcher(fullWorkspaceRoot, normalizedRules);
+    }
+
+    /// <summary>
+    /// Loads the ignore rules used by the search tools. The project's existing
+    /// <c>.gitignore</c> is respected first (it is the primary, project-level
+    /// ignore source), followed by the StemCode-specific
+    /// <c>.stemcode/.stemcodeignore</c> rules. A later <c>.stemcodeignore</c>
+    /// negation can still re-include a path that <c>.gitignore</c> ignores.
+    /// </summary>
+    public static WorkspaceIgnoreMatcher LoadWithProjectIgnoreRules(string workspaceRoot)
+    {
+        return Load(
+            workspaceRoot,
+            [GitIgnoreRelativePath, StemCodeIgnoreRelativePath]);
     }
 
     public bool IsIgnored(
