@@ -25,7 +25,7 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
 
     public string CommandName => "update";
 
-    public string Description => "Check for StemCode updates and install the latest release.";
+    public string Description => "Check for StemCode updates and synchronize the matching Voice runtime.";
 
     public string Usage => "/update [now]";
 
@@ -60,19 +60,22 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
                 ReplFeedbackKind.Error);
         }
 
-        if (!updateInfo.IsUpdateAvailable)
+        // Plain `/update` remains a check-and-update command. `/update now` is also
+        // a repair/synchronization path: even when the CLI is current, rerun the
+        // matching release installer so StemCode.Voice is guaranteed to match it.
+        if (!updateInfo.IsUpdateAvailable && !installWithoutPrompt)
         {
             return ReplCommandResult.Continue(
                 $"StemCode is up to date. Current version: {updateInfo.CurrentVersion}.",
                 ReplFeedbackKind.Info);
         }
 
-        if (!installWithoutPrompt)
+        if (updateInfo.IsUpdateAvailable && !installWithoutPrompt)
         {
             bool shouldUpdate = await _confirmationPrompt.PromptAsync(
                 new ConfirmationPromptRequest(
-                    "A StemCode update is available. Update now?",
-                    $"Current: {updateInfo.CurrentVersion}. Latest: {updateInfo.LatestVersion}. Choose Yes to update now, or No to skip.",
+                    "A StemCode update is available. Update CLI and Voice runtime now?",
+                    $"Current: {updateInfo.CurrentVersion}. Latest: {updateInfo.LatestVersion}. Choose Yes to update StemCode and its matching Voice runtime now, or No to skip.",
                     DefaultValue: false),
                 cancellationToken);
 
@@ -119,8 +122,12 @@ internal sealed class UpdateCommandHandler : IReplCommandHandler
             }
         }
 
+        string installStatus = updateInfo.IsUpdateAvailable
+            ? $"Installing StemCode {updateInfo.LatestVersion} and matching Voice runtime..."
+            : $"Synchronizing StemCode {updateInfo.LatestVersion} and Voice runtime...";
+
         await _statusMessageWriter.ShowInfoAsync(
-            $"Installing StemCode {updateInfo.LatestVersion}...",
+            installStatus,
             cancellationToken);
 
         ApplicationUpdateInstallResult installResult;
