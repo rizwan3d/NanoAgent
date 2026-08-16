@@ -69,10 +69,19 @@ internal static class VoiceModelCatalog
         }
     }
 
+    // A fixed superset of characters that are invalid in a file name on any
+    // supported platform. Path.GetInvalidFileNameChars() is platform-specific
+    // (on Linux only '/' and '\0' are reported), so it cannot be relied on to
+    // keep model identifiers safe across Windows, macOS, and Linux.
+    private static readonly char[] UnsafeFileNameChars =
+    [
+        '/', '\\', ':', '*', '?', '"', '<', '>', '|',
+    ];
+
     public static string ModelPath(string id)
     {
         string safeId = string.IsNullOrWhiteSpace(id) ? Default.Id : id;
-        foreach (char invalid in Path.GetInvalidFileNameChars())
+        foreach (char invalid in UnsafeFileNameChars)
         {
             safeId = safeId.Replace(invalid, '_');
         }

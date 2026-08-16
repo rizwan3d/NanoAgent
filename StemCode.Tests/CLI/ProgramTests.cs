@@ -361,11 +361,11 @@ public sealed class ProgramTests
 
         object? handled = tryHandleTerminalEscapeFollowupKey.Invoke(
             null,
-            [state, new ConsoleKeyInfo('a', ConsoleKey.A, false, false, false)]);
+            [state, new ConsoleKeyInfo('1', ConsoleKey.D1, false, false, false)]);
 
         handled.Should().Be(false);
         state.PendingInputKeys.Should().ContainSingle();
-        state.PendingInputKeys.Peek().KeyChar.Should().Be('a');
+        state.PendingInputKeys.Peek().KeyChar.Should().Be('1');
     }
 
     [Fact]
