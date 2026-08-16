@@ -28,6 +28,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
     private const int MaxFileWritePreviewLines = 8;
     private const int LargeFileThresholdBytes = 262_144;
     private const int ContentPreviewThresholdChars = 262_144;
+    private const string BinaryFileReadNotice = "Binary file — content not displayed.";
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
     private static readonly Encoding Utf8WithBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true);
@@ -474,6 +475,26 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Read);
         EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+
+        if (DetectEncodingFromBom(fullPath) is WorkspaceTextEncoding.Utf8 or WorkspaceTextEncoding.Utf8Bom &&
+            LooksBinary(fullPath))
+        {
+            await using FileStream binaryStream = File.OpenRead(fullPath);
+            string sha256 = await ComputeSha256Async(binaryStream, cancellationToken);
+
+            return new WorkspaceFileReadResult(
+                ToWorkspaceRelativePath(fullPath),
+                rawContent: string.Empty,
+                displayContent: BinaryFileReadNotice,
+                startLine: 0,
+                endLine: 0,
+                totalLines: 0,
+                truncated: false,
+                nextOffset: null,
+                sha256,
+                encoding: "binary");
+        }
+
         WorkspaceFileReadPage page = await ReadWorkspaceFilePageAsync(
             fullPath,
             offset,
@@ -2395,6 +2416,35 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             extension.Equals(".woff2", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".ttf", StringComparison.OrdinalIgnoreCase) ||
             extension.Equals(".otf", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksBinary(string path)
+    {
+        const int sampleSize = 8192;
+
+        using FileStream stream = File.OpenRead(path);
+
+        Span<byte> buffer = stackalloc byte[sampleSize];
+        int read = stream.Read(buffer);
+
+        for (int i = 0; i < read; i++)
+        {
+            if (buffer[i] == 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static WorkspaceTextEncoding DetectEncodingFromBom(string fullPath)
+    {
+        Span<byte> bom = stackalloc byte[4];
+        using FileStream stream = File.OpenRead(fullPath);
+        int read = stream.Read(bom);
+
+        return DetectFileEncoding(bom[..read]).Encoding;
     }
 
     private static bool IsValidUtf8Sample(ReadOnlySpan<byte> bytes)

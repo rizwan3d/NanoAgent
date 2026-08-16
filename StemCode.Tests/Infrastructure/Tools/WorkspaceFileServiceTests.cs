@@ -209,6 +209,32 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadFileAsync_Should_ReturnNoticeWithoutContent_When_FileIsBinary()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string filePath = Path.Combine(_workspaceRoot, "image.bin");
+        byte[] bytes =
+        [
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+            0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0x00, 0x10
+        ];
+        await File.WriteAllBytesAsync(filePath, bytes, CancellationToken.None);
+
+        WorkspaceFileReadResult result = await sut.ReadFileAsync(
+            "image.bin",
+            offset: 1,
+            limit: 2,
+            CancellationToken.None);
+
+        result.RawContent.Should().BeEmpty();
+        result.DisplayContent.Should().Be("Binary file — content not displayed.");
+        result.Content.Should().BeEmpty();
+        result.TotalLines.Should().Be(0);
+        result.Encoding.Should().Be("binary");
+        result.Sha256.Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
     public async Task ReadFileAsync_Should_AllowLargeFiles_ByReturningRequestedWindow()
     {
         WorkspaceFileService sut = CreateSut();

@@ -47,6 +47,37 @@ public sealed class FileReadToolTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_RenderNoticeWithoutBinaryContent_When_FileIsBinary()
+    {
+        Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
+        workspaceFileService
+            .Setup(service => service.ReadFileAsync("image.bin", 1, 2_000, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new WorkspaceFileReadResult(
+                "image.bin",
+                rawContent: string.Empty,
+                displayContent: "Binary file — content not displayed.",
+                startLine: 0,
+                endLine: 0,
+                totalLines: 0,
+                truncated: false,
+                nextOffset: null,
+                sha256: "abc123",
+                encoding: "binary"));
+
+        FileReadTool sut = new(workspaceFileService.Object);
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": "image.bin" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.Success);
+        result.RenderPayload.Should().NotBeNull();
+        result.RenderPayload!.Text.Should().Contain("Binary file");
+        result.RenderPayload.Text.Should().NotContain("\0");
+        result.JsonResult.Should().Contain("binary");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_NotSerializeDuplicateContentProperties()
     {
         Mock<IWorkspaceFileService> workspaceFileService = new(MockBehavior.Strict);
