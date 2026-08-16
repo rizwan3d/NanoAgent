@@ -6,6 +6,7 @@ namespace StemCode.Tests.CLI;
 public sealed class FilePathSuggestionProviderTests : IDisposable
 {
     private readonly string _workspaceRoot;
+    private readonly string _homeRoot;
 
     public FilePathSuggestionProviderTests()
     {
@@ -13,6 +14,11 @@ public sealed class FilePathSuggestionProviderTests : IDisposable
             Path.GetTempPath(),
             "stemcode-path-suggestions-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_workspaceRoot);
+
+        _homeRoot = Path.Combine(
+            Path.GetTempPath(),
+            "stemcode-path-home-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(_homeRoot);
     }
 
     [Fact]
@@ -202,17 +208,211 @@ public sealed class FilePathSuggestionProviderTests : IDisposable
         suggestions.Should().BeEmpty();
     }
 
+
+    [Fact]
+    public void GetSuggestions_Should_SuggestWorkspaceFilesForPlainRelativePath()
+    {
+        WriteFile("README.md", "hello");
+        WriteFile("docs/guide.md", "hello");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "./",
+            maxCount: 8);
+
+        suggestions.Select(suggestion => suggestion.DisplayPath)
+            .Should()
+            .Contain("./README.md");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteDirectoryForPlainRelativePath()
+    {
+        WriteFile("src/index.html", "<html></html>");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "./sr",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("./src/");
+        suggestions[0].CompletedInput.Should().Be("./src/");
+        suggestions[0].IsDirectory.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_NotTriggerForPlainNonPathInput()
+    {
+        WriteFile("src/index.html", "<html></html>");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "src/",
+            maxCount: 8);
+
+        suggestions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteLastPathTokenInCommandLine()
+    {
+        WriteFile("src/index.html", "<html></html>");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "cd ./sr",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("./src/");
+        suggestions[0].CompletedInput.Should().Be("cd ./src/");
+        suggestions[0].IsDirectory.Should().BeTrue();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteTildeTokenAfterCommandWord()
+    {
+        WriteHomeFile("notes.txt", "x");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "run ~/no",
+            maxCount: 8,
+            homeDirectory: _homeRoot);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("~/notes.txt");
+        suggestions[0].CompletedInput.Should().Be("run ~/notes.txt");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_NotTriggerWhenLastTokenIsNotAPath()
+    {
+        WriteFile("src/index.html", "<html></html>");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "cd src",
+            maxCount: 8);
+
+        suggestions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteLastPathTokenBeforeCaret()
+    {
+        WriteFile("docs/guide.md", "hello");
+
+        // The caller passes only the text before the caret, so a path token that is the
+        // last token before the caret completes even when more text follows it on the line.
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "open ./do",
+            maxCount: 8);
+
+        suggestions.Select(suggestion => suggestion.DisplayPath)
+            .Should()
+            .Contain("./docs/");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompletePathTypedDirectlyAfterBang()
+    {
+        WriteFile("build.sh", "x");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!./bu",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("./build.sh");
+        suggestions[0].CompletedInput.Should().Be("!./build.sh");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompletePathTypedDirectlyAfterBackgroundBang()
+    {
+        WriteFile("build.sh", "x");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!!./bu",
+            maxCount: 8);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].CompletedInput.Should().Be("!!./build.sh");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_NotEscapeWorkspaceForPlainParentPath()
+    {
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "../",
+            maxCount: 8);
+
+        suggestions.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_SuggestHomeFilesForTildeInNormalInput()
+    {
+        WriteHomeFile("notes.txt", "x");
+        WriteHomeFile("projects/readme.md", "y");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "~/",
+            maxCount: 8,
+            homeDirectory: _homeRoot);
+
+        suggestions.Select(suggestion => suggestion.DisplayPath)
+            .Should()
+            .Contain("~/notes.txt");
+    }
+
+    [Fact]
+    public void GetSuggestions_Should_CompleteHomeFileForTildeAfterBang()
+    {
+        WriteHomeFile("notes.txt", "x");
+
+        IReadOnlyList<FilePathSuggestion> suggestions = FilePathSuggestionProvider.GetSuggestions(
+            _workspaceRoot,
+            "!~/no",
+            maxCount: 8,
+            homeDirectory: _homeRoot);
+
+        suggestions.Should().ContainSingle();
+        suggestions[0].DisplayPath.Should().Be("~/notes.txt");
+        suggestions[0].CompletedInput.Should().Be("!~/notes.txt");
+    }
+
+
     public void Dispose()
     {
         if (Directory.Exists(_workspaceRoot))
         {
             Directory.Delete(_workspaceRoot, recursive: true);
         }
+
+        if (Directory.Exists(_homeRoot))
+        {
+            Directory.Delete(_homeRoot, recursive: true);
+        }
     }
 
     private void WriteFile(string relativePath, string content)
     {
         string path = Path.Combine(_workspaceRoot, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        File.WriteAllText(path, content);
+    }
+
+    private void WriteHomeFile(string relativePath, string content)
+    {
+        string path = Path.Combine(_homeRoot, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, content);
     }

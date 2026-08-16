@@ -12,13 +12,16 @@ public static partial class Program
         suggestions = [];
 
         if (state.ActiveModal is not null ||
-            state.InputCursorIndex != state.Input.Length ||
             state.SlashCommandSuggestionsDismissed)
         {
             return false;
         }
 
-        string input = state.Input.ToString();
+        string fullInput = state.Input.ToString();
+        // Suggestions are derived from the text before the cursor so completion
+        // works while editing anywhere in the input, not only when the caret sits
+        // at the very end.
+        string input = fullInput[..Math.Clamp(state.InputCursorIndex, 0, fullInput.Length)];
         bool isCommandSuggestionInput = IsSlashCommandSuggestionInput(state.RootDirectory, input);
         if (!isCommandSuggestionInput &&
             FilePathSuggestionProvider.GetSuggestions(
@@ -71,10 +74,31 @@ public static partial class Program
             return false;
         }
 
+        // When the caret is in the middle of the input, suggestions act as a passive
+        // hint: Tab completes the token under the caret, but arrow/Home/End keys fall
+        // through to normal text editing so the user can move around freely.
+        bool cursorAtEnd = state.InputCursorIndex == state.Input.Length;
+
         if (IsEnterKey(key))
         {
+            if (!cursorAtEnd)
+            {
+                return false;
+            }
+
             AcceptSlashCommandSuggestion(state, suggestions, submitCommand: true);
             return true;
+        }
+
+        if (key.Key == ConsoleKey.Tab)
+        {
+            AcceptSlashCommandSuggestion(state, suggestions, submitCommand: false);
+            return true;
+        }
+
+        if (!cursorAtEnd)
+        {
+            return false;
         }
 
         switch (key.Key)
@@ -138,6 +162,12 @@ public static partial class Program
         string sequence)
     {
         if (!TryGetSlashCommandSuggestions(state, out IReadOnlyList<SlashCommandSuggestion> suggestions))
+        {
+            return false;
+        }
+
+        // Mid-input arrow sequences must move the caret, not navigate suggestions.
+        if (state.InputCursorIndex != state.Input.Length)
         {
             return false;
         }
@@ -214,19 +244,44 @@ public static partial class Program
         }
 
         SlashCommandSuggestion suggestion = suggestions[state.SlashCommandSuggestionIndex];
-        state.Input.Clear();
-        state.CollapsedInputPastes.Clear();
-        state.Input.Append(suggestion.CompletedInput ??
+        string completedInput = suggestion.CompletedInput ??
             (suggestion.RequiresArgument
                 ? suggestion.Command + " "
-                : suggestion.Command));
-        state.InputCursorIndex = state.Input.Length;
+                : suggestion.Command);
+
+        (string updatedInput, int updatedCursorIndex) = ApplySuggestionAtCursor(
+            state.Input.ToString(),
+            state.InputCursorIndex,
+            completedInput);
+
+        state.Input.Clear();
+        state.CollapsedInputPastes.Clear();
+        state.Input.Append(updatedInput);
+        state.InputCursorIndex = updatedCursorIndex;
         state.SlashCommandSuggestionsDismissed = true;
 
-        if (submitCommand && (suggestion.SubmitOnEnter || !suggestion.RequiresArgument))
+        // Submission only happens from the end-of-input position (the historical
+        // behaviour); when completing a token in the middle of the text we keep the
+        // remaining input editable instead of sending the whole line.
+        bool cursorAtEnd = updatedCursorIndex == updatedInput.Length;
+        if (submitCommand && cursorAtEnd &&
+            (suggestion.SubmitOnEnter || !suggestion.RequiresArgument))
         {
             SubmitInput(state);
         }
+    }
+
+    // Replaces the text from the start of the input up to the caret with the
+    // completed value, preserving everything after the caret, and returns the
+    // resulting input and caret index. Pure and therefore unit-testable.
+    internal static (string Input, int CursorIndex) ApplySuggestionAtCursor(
+        string originalInput,
+        int cursorIndex,
+        string completedInput)
+    {
+        int clampedCursorIndex = Math.Clamp(cursorIndex, 0, originalInput.Length);
+        string afterCursor = originalInput[clampedCursorIndex..];
+        return (completedInput + afterCursor, completedInput.Length);
     }
 
     private static void ResetSlashCommandSuggestions(AppState state)
@@ -266,11 +321,13 @@ public static partial class Program
         int firstVisibleIndex = GetSlashCommandSuggestionIndex(
             suggestions,
             visibleSuggestions[0]);
+        string matchedInput = state.Input.ToString()
+            [..Math.Clamp(state.InputCursorIndex, 0, state.Input.Length)];
         List<string> lines =
         [
             suggestions[0].Kind == SlashCommandSuggestionKind.FilePath
-                ? $"[grey]Files matching [/][green]{Markup.Escape(state.Input.ToString())}[/][grey]:[/]"
-                : $"[grey]Commands matching [/][green]{Markup.Escape(state.Input.ToString())}[/][grey]:[/]"
+                ? $"[grey]Files matching [/][green]{Markup.Escape(matchedInput)}[/][grey]:[/]"
+                : $"[grey]Commands matching [/][green]{Markup.Escape(matchedInput)}[/][grey]:[/]"
         ];
 
         for (int visibleIndex = 0; visibleIndex < visibleSuggestions.Count; visibleIndex++)
@@ -337,6 +394,12 @@ public static partial class Program
         // Shell commands (!/!!) often take further arguments after a path, so completing a
         // file should not immediately submit the command the way /read or /import do.
         bool isShellCommand = input.StartsWith('!');
+        // Plain path input (./, ../, ~/ typed at the start of a chat message) behaves like a
+        // shell argument: selecting a file should complete the token without submitting.
+        bool isPlainPathInput = !isShellCommand &&
+            (input.StartsWith("./", StringComparison.Ordinal) ||
+                input.StartsWith("../", StringComparison.Ordinal) ||
+                input.StartsWith("~", StringComparison.Ordinal));
         return FilePathSuggestionProvider
             .GetSuggestions(
                 state.RootDirectory,
@@ -349,7 +412,7 @@ public static partial class Program
                 suggestion.IsDirectory,
                 SlashCommandSuggestionKind.FilePath,
                 suggestion.CompletedInput,
-                SubmitOnEnter: !suggestion.IsDirectory && !isShellCommand))
+                SubmitOnEnter: !suggestion.IsDirectory && !isShellCommand && !isPlainPathInput))
             .ToArray();
     }
 

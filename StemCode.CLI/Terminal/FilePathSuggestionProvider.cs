@@ -12,10 +12,14 @@ internal static class FilePathSuggestionProvider
     public static IReadOnlyList<FilePathSuggestion> GetSuggestions(
         string rootDirectory,
         string input,
-        int maxCount)
+        int maxCount,
+        string? homeDirectory = null)
     {
+        string home = homeDirectory
+            ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+
         if (maxCount <= 0 ||
-            !TryCreateRequest(rootDirectory, input, out FilePathSuggestionRequest? request) ||
+            !TryCreateRequest(rootDirectory, input, home, out FilePathSuggestionRequest? request) ||
             request is null)
         {
             return [];
@@ -33,18 +37,31 @@ internal static class FilePathSuggestionProvider
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
 
-        // For shell commands the user types a path token in place (e.g. "cd ./sr"); we
-        // complete only the final name component while preserving the directory portion
-        // exactly as typed. Slash commands instead receive the full workspace-relative path.
+        // For shell commands (and plain path input) the user types a path token in place
+        // (e.g. "cd ./sr"); we complete only the final name component while preserving the
+        // directory portion exactly as typed. Slash commands instead receive the full
+        // workspace-relative path.
         string literalDirectoryPrefix = request.PreserveTypedPath
-            ? GetLiteralDirectoryPrefix(request.PathText)
+            ? GetLiteralDirectoryPrefix(request.LiteralPathText)
             : string.Empty;
+
+        // Home-relative paths (~/...) resolve outside the workspace, so the "current
+        // directory" shorthand would render as "~./" and is skipped; the directory listing
+        // below already covers the home contents.
+        bool isHomePath = request.LiteralPathText.StartsWith("~", StringComparison.Ordinal);
 
         List<FilePathSuggestion> suggestions = [];
         if (request.PreserveTypedPath &&
+            !isHomePath &&
             ShouldSuggestCurrentDirectory(request.PathText, namePrefix))
         {
-            string displayPath = literalDirectoryPrefix + "./";
+            // When the typed token already ends with a separator ("./", "src/") the
+            // directory is fully specified, so we keep the literal prefix instead of
+            // appending another "./" (which would render as "././").
+            string displayPath = literalDirectoryPrefix.Length > 0 &&
+                literalDirectoryPrefix[^1] is '/' or '\\'
+                ? literalDirectoryPrefix
+                : literalDirectoryPrefix + "./";
             suggestions.Add(new FilePathSuggestion(
                 request.CommandPrefix + displayPath,
                 displayPath,
@@ -132,6 +149,7 @@ internal static class FilePathSuggestionProvider
     private static bool TryCreateRequest(
         string rootDirectory,
         string input,
+        string homeDirectory,
         out FilePathSuggestionRequest? request)
     {
         request = null;
@@ -143,11 +161,12 @@ internal static class FilePathSuggestionProvider
         }
 
         string fullRoot = Path.GetFullPath(rootDirectory);
-        if (TryCreateRequest(input, ReadCommandPrefix, fullRoot, jsonOnly: false, out request) ||
-            TryCreateRequest(input, ImportCommandPrefix, fullRoot, jsonOnly: true, out request) ||
-            TryCreateRequest(input, ExportJsonCommandPrefix, fullRoot, jsonOnly: false, out request) ||
-            TryCreateRequest(input, ExportHtmlCommandPrefix, fullRoot, jsonOnly: false, out request) ||
-            TryCreateBangRequest(input, fullRoot, out request))
+        if (TryCreateRequest(input, ReadCommandPrefix, fullRoot, homeDirectory, jsonOnly: false, out request) ||
+            TryCreateRequest(input, ImportCommandPrefix, fullRoot, homeDirectory, jsonOnly: true, out request) ||
+            TryCreateRequest(input, ExportJsonCommandPrefix, fullRoot, homeDirectory, jsonOnly: false, out request) ||
+            TryCreateRequest(input, ExportHtmlCommandPrefix, fullRoot, homeDirectory, jsonOnly: false, out request) ||
+            TryCreateBangRequest(input, fullRoot, homeDirectory, out request) ||
+            TryCreatePlainPathRequest(input, fullRoot, homeDirectory, out request))
         {
             return true;
         }
@@ -155,9 +174,51 @@ internal static class FilePathSuggestionProvider
         return false;
     }
 
+    private static bool TryCreatePlainPathRequest(
+        string input,
+        string rootDirectory,
+        string homeDirectory,
+        out FilePathSuggestionRequest? request)
+    {
+        request = null;
+        // Complete the last whitespace-delimited token wherever it appears so path
+        // tokens fire in the middle of a command line, not only at the very start
+        // (e.g. "cd ./src", "run ~/notes", "echo ~/file.txt").
+        int lastWhitespaceIndex = -1;
+        for (int index = input.Length - 1; index >= 0; index--)
+        {
+            if (char.IsWhiteSpace(input[index]))
+            {
+                lastWhitespaceIndex = index;
+                break;
+            }
+        }
+
+        int tokenStart = lastWhitespaceIndex + 1;
+        string token = input[tokenStart..];
+        if (!IsPathToken(token))
+        {
+            return false;
+        }
+
+        // Everything before the token (including its separating whitespace) is preserved
+        // verbatim so the completed path is inserted in place. When the path token is the
+        // entire input this prefix is empty, matching the previous start-of-line behaviour.
+        string commandPrefix = input[..tokenStart];
+        request = CreatePathRequest(
+            rootDirectory,
+            commandPrefix,
+            token,
+            homeDirectory,
+            jsonOnly: false,
+            preserveTypedPath: true);
+        return true;
+    }
+
     private static bool TryCreateBangRequest(
         string input,
         string rootDirectory,
+        string homeDirectory,
         out FilePathSuggestionRequest? request)
     {
         request = null;
@@ -166,11 +227,27 @@ internal static class FilePathSuggestionProvider
             return false;
         }
 
-        // Only complete an argument token: there must be a command name followed by
-        // whitespace after the bang prefix(es). "!cd" is still naming the command, while
-        // "!cd ./sr" (or a trailing space) is completing an argument.
         int bangLength = input.StartsWith("!!", StringComparison.Ordinal) ? 2 : 1;
         string rest = input[bangLength..];
+
+        // A path typed directly after the bang (e.g. "!./script.sh" or "!~/notes.txt")
+        // should complete like an argument token too, without requiring a command name
+        // and a separating space first.
+        if (IsPathToken(rest))
+        {
+            request = CreatePathRequest(
+                rootDirectory,
+                input[..bangLength],
+                rest.TrimStart(),
+                homeDirectory,
+                jsonOnly: false,
+                preserveTypedPath: true);
+            return true;
+        }
+
+        // Only complete an argument token: there must be a command name followed by
+        // whitespace after the bang prefix(es). "!cd" is still naming the command, while
+        // "!cd ./src" (or a trailing space) is completing an argument.
         if (!rest.TrimStart().Any(char.IsWhiteSpace))
         {
             return false;
@@ -198,12 +275,13 @@ internal static class FilePathSuggestionProvider
             return false;
         }
 
-        request = new FilePathSuggestionRequest(
+        request = CreatePathRequest(
             rootDirectory,
             commandPrefix,
             pathText,
-            JsonOnly: false,
-            PreserveTypedPath: true);
+            homeDirectory,
+            jsonOnly: false,
+            preserveTypedPath: true);
         return true;
     }
 
@@ -211,6 +289,7 @@ internal static class FilePathSuggestionProvider
         string input,
         string commandPrefix,
         string rootDirectory,
+        string homeDirectory,
         bool jsonOnly,
         out FilePathSuggestionRequest? request)
     {
@@ -226,14 +305,97 @@ internal static class FilePathSuggestionProvider
             return false;
         }
 
-        request = new FilePathSuggestionRequest(
+        request = CreatePathRequest(
             rootDirectory,
             commandPrefix,
             pathText,
+            homeDirectory,
             jsonOnly,
-            PreserveTypedPath: false);
+            preserveTypedPath: false);
         return true;
     }
+
+    private static FilePathSuggestionRequest CreatePathRequest(
+        string rootDirectory,
+        string commandPrefix,
+        string pathText,
+        string homeDirectory,
+        bool jsonOnly,
+        bool preserveTypedPath)
+    {
+        string literalPathText = pathText;
+        string resolvedPathText = pathText;
+        string baseDirectory = rootDirectory;
+
+        if (TryExpandTilde(pathText, homeDirectory, out string? expandedPath, out string? tildeBase))
+        {
+            resolvedPathText = expandedPath;
+            baseDirectory = tildeBase;
+        }
+
+        return new FilePathSuggestionRequest(
+            baseDirectory,
+            commandPrefix,
+            resolvedPathText,
+            literalPathText,
+            jsonOnly,
+            preserveTypedPath);
+    }
+
+    private static bool IsPathToken(string text)
+    {
+        string trimmed = text.TrimStart();
+        if (trimmed.Length == 0)
+        {
+            return false;
+        }
+
+        return trimmed.StartsWith("./", StringComparison.Ordinal) ||
+            trimmed.StartsWith("../", StringComparison.Ordinal) ||
+            trimmed.StartsWith("~/", StringComparison.Ordinal) ||
+            string.Equals(trimmed, ".", StringComparison.Ordinal) ||
+            string.Equals(trimmed, "..", StringComparison.Ordinal) ||
+            string.Equals(trimmed, "~", StringComparison.Ordinal);
+    }
+
+    private static bool TryExpandTilde(
+        string pathText,
+        string homeDirectory,
+        out string? expandedPath,
+        out string? baseDirectory)
+    {
+        expandedPath = null;
+        baseDirectory = null;
+
+        string trimmed = pathText.TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '~')
+        {
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(homeDirectory))
+        {
+            return false;
+        }
+
+        baseDirectory = homeDirectory;
+        if (trimmed.Length == 1)
+        {
+            expandedPath = EndWithSeparator(homeDirectory);
+            return true;
+        }
+
+        string afterTilde = trimmed[1..].TrimStart('/');
+        expandedPath = string.IsNullOrEmpty(afterTilde)
+            ? EndWithSeparator(homeDirectory)
+            : Path.Combine(homeDirectory, afterTilde);
+        return true;
+    }
+
+    private static string EndWithSeparator(string path)
+        => path.EndsWith(Path.DirectorySeparatorChar)
+            ? path
+            : path + Path.DirectorySeparatorChar;
 
     private static string GetLiteralDirectoryPrefix(string pathText)
     {
@@ -290,7 +452,11 @@ internal static class FilePathSuggestionProvider
     {
         fullDirectoryPath = null;
         string fullRoot = Path.GetFullPath(rootDirectory);
-        string candidate = Path.GetFullPath(Path.Combine(fullRoot, directoryPart));
+
+        string candidate = Path.IsPathRooted(directoryPart)
+            ? Path.GetFullPath(directoryPart)
+            : Path.GetFullPath(Path.Combine(fullRoot, directoryPart));
+
         StringComparison comparison = OperatingSystem.IsWindows()
             ? StringComparison.OrdinalIgnoreCase
             : StringComparison.Ordinal;
@@ -369,6 +535,7 @@ internal static class FilePathSuggestionProvider
         string RootDirectory,
         string CommandPrefix,
         string PathText,
+        string LiteralPathText,
         bool JsonOnly,
         bool PreserveTypedPath);
 }
