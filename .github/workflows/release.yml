@@ -56,6 +56,7 @@ jobs:
             StemCode.CLI/packages.lock.json
             StemCode.Desktop/packages.lock.json
             StemCode.Tests/packages.lock.json
+            StemCode.Voice/packages.lock.json
 
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
@@ -133,6 +134,7 @@ jobs:
             StemCode.CLI/packages.lock.json
             StemCode.Desktop/packages.lock.json
             StemCode.Tests/packages.lock.json
+            StemCode.Voice/packages.lock.json
 
       - name: Restore
         run: dotnet restore ${{ env.SOLUTION_FILE }} --locked-mode
@@ -246,6 +248,46 @@ jobs:
             rid: osx-arm64
             artifact_name: desktop-osx-arm64
 
+          - display_name: Voice
+            app_id: voice
+            package_name: StemCode.Voice
+            project: StemCode.Voice/StemCode.Voice.csproj
+            runner: windows-2025
+            rid: win-x64
+            artifact_name: voice-win-x64
+
+          - display_name: Voice
+            app_id: voice
+            package_name: StemCode.Voice
+            project: StemCode.Voice/StemCode.Voice.csproj
+            runner: ubuntu-24.04
+            rid: linux-x64
+            artifact_name: voice-linux-x64
+
+          - display_name: Voice
+            app_id: voice
+            package_name: StemCode.Voice
+            project: StemCode.Voice/StemCode.Voice.csproj
+            runner: ubuntu-24.04-arm
+            rid: linux-arm64
+            artifact_name: voice-linux-arm64
+
+          - display_name: Voice
+            app_id: voice
+            package_name: StemCode.Voice
+            project: StemCode.Voice/StemCode.Voice.csproj
+            runner: macos-15-intel
+            rid: osx-x64
+            artifact_name: voice-osx-x64
+
+          - display_name: Voice
+            app_id: voice
+            package_name: StemCode.Voice
+            project: StemCode.Voice/StemCode.Voice.csproj
+            runner: macos-15
+            rid: osx-arm64
+            artifact_name: voice-osx-arm64
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -262,6 +304,7 @@ jobs:
             StemCode.CLI/packages.lock.json
             StemCode.Desktop/packages.lock.json
             StemCode.Tests/packages.lock.json
+            StemCode.Voice/packages.lock.json
 
       - name: Prepare artifact directories
         shell: pwsh
@@ -306,9 +349,9 @@ jobs:
           }
 
           $scriptPath = Join-Path $env:RUNNER_TEMP "StemCode.Desktop.iss"
-          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\', '\\')
-          $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\', '\\')
-          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "StemCode.Desktop/Assets/logo.ico").Replace('\', '\\')
+          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\\', '\\\\')
+          $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\\', '\\\\')
+          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "StemCode.Desktop/Assets/logo.ico").Replace('\\', '\\\\')
 
           @"
           #define MyAppName "StemCode Desktop"
@@ -321,7 +364,7 @@ jobs:
           AppName={#MyAppName}
           AppVersion={#MyAppVersion}
           AppPublisher={#MyAppPublisher}
-          DefaultDirName={autopf}\StemCode Desktop
+          DefaultDirName={autopf}\\StemCode Desktop
           DefaultGroupName=StemCode Desktop
           DisableProgramGroupPage=yes
           OutputDir=$outputDir
@@ -334,20 +377,20 @@ jobs:
           ArchitecturesInstallIn64BitMode=x64compatible
 
           [Files]
-          Source: "$publishDir\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          Source: "$publishDir\\\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{autoprograms}\StemCode Desktop"; Filename: "{app}\{#MyAppExeName}"
-          Name: "{autodesktop}\StemCode Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+          Name: "{autoprograms}\\StemCode Desktop"; Filename: "{app}\\{#MyAppExeName}"
+          Name: "{autodesktop}\\StemCode Desktop"; Filename: "{app}\\{#MyAppExeName}"; Tasks: desktopicon
 
           [Tasks]
           Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
           [Run]
-          Filename: "{app}\{#MyAppExeName}"; Description: "Launch StemCode Desktop"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\\{#MyAppExeName}"; Description: "Launch StemCode Desktop"; Flags: nowait postinstall skipifsilent
           "@ | Set-Content -Path $scriptPath -Encoding UTF8
 
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $scriptPath
+          & "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe" $scriptPath
 
       - name: Package published output on Linux and macOS
         if: runner.os != 'Windows'
