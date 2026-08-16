@@ -44,14 +44,14 @@
     <img src="https://img.shields.io/badge/Install-npm-0969da?style=for-the-badge" alt="Install StemCode from npm">
   </a>
   <a href="https://www.nuget.org/packages/StemCode/">
-    <img src="https://img.shields.io/badge/Install-Nuget-0969da?style=for-the-badge" alt="Install StemCode Nuget">
-    <a href="docs/documentation.md">
+    <img src="https://img.shields.io/badge/Install-NuGet-0969da?style=for-the-badge" alt="Install StemCode NuGet">
+  </a>
+  <a href="docs/documentation.md">
     <img src="https://img.shields.io/badge/Read-Docs-0969da?style=for-the-badge" alt="Read StemCode documentation">
   </a>
 </p>
 
 ---
-
 StemCode is built for practical engineering work. It runs against a real local repository, uses real shells and tools, keeps workspace memory in versionable files, and asks for approval when an action should stay under human control.
 
 Use it when you want one agent experience across:
@@ -71,8 +71,6 @@ Use it when you want one agent experience across:
 - [Quick Start](#quick-start)
 - [Providers](#providers)
 - [Built For Control](#built-for-control)
-- [Benchmarks](#benchmarks)
-- [Telemetry](#telemetry)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [Support](#support)
@@ -85,6 +83,11 @@ Use it when you want one agent experience across:
 - Reuses the same agent across desktop, CLI, IDE, and CI workflows.
 - Stores reusable commands and team memory in `.stemcode/` files you can review and commit.
 - Supports both subscription-style sign-in and API-key or local-model setups.
+- Local voice dictation
+- Subagents for delegated tasks, with independent contexts that keep the main conversation focused
+- Interactive user questions for clarification, multiple-choice, multi-select, and free-form input
+- ! for local shell commands and !! for background terminal commands
+- Tab-based path autocomplete for files and directories in shell commands
 
 ## What You Can Do
 
@@ -130,6 +133,7 @@ Release assets publish `SHA256SUMS` and GitHub artifact attestations so you can 
 Every installer exposes the same `stemcode` command and downloads the same self-contained release binary.
 
 #### Install script
+
 Curl:
 
 ```bash
@@ -145,7 +149,6 @@ irm https://raw.githubusercontent.com/rizwan3d/StemCode/master/scripts/install.p
 On Windows, both scripts install the same `stemcode` CLI. The Bash installer downloads the `win-x64` release, installs `stemcode.exe` into `%LOCALAPPDATA%\Programs\StemCode\bin` by default, and adds that directory to your user `PATH`.
 
 #### npm / pnpm / bun
-
 ```bash
 npm install -g stemcode
 # or
@@ -260,53 +263,6 @@ StemCode is designed for useful automation without silent surprises.
 - Automatic AI git commits are enabled by default, happen at session end, skip workspaces with existing staged changes, and stay scoped to files StemCode actually changed.
 - Secret redaction is off by default; when enabled, secret-looking values are redacted before logs, memory, audit records, and displayed tool output.
 - Your workspace stays local. Only the prompt and selected context needed for a request are sent to the provider you configure.
-
-## Benchmarks
-
-StemCode includes task-based benchmarks in [`benchmarks/`](benchmarks) so we can measure real coding-agent behavior, not just chat-style answers.
-
-- Benchmark tasks live in [`benchmarks/tasks/`](benchmarks/tasks).
-- Suites are grouped in [`benchmarks/manifest.json`](benchmarks/manifest.json).
-- Results are refreshed in [`benchmarks/results/latest.md`](benchmarks/results/latest.md) and [`benchmarks/results/latest.json`](benchmarks/results/latest.json).
-
-Run the full benchmark set:
-
-```bash
-python benchmarks/scripts/run_benchmarks.py --all --system --skip-preflight
-```
-
-Run the regression-only suite:
-
-```bash
-python benchmarks/scripts/run_benchmarks.py --suite regression --system --skip-preflight
-```
-
-## Telemetry
-
-StemCode sends anonymous product analytics to PostHog using built-in US Cloud defaults in code. You can still override `Application:Telemetry:*` settings, and `/disableanalytics` writes `Application.Telemetry.Enabled=false` to `.stemcode/agent-profile.json` for the current workspace.
-
-Every installer (the `curl`/PowerShell scripts and the `npm`/`pnpm`/`bun` package) also sends a single anonymous `cli installed` event recording the install method, release version, OS family, and CI flag. It is best-effort and never blocks or fails an install. Opt out by setting `STEMCODE_TELEMETRY_DISABLED=1` (or the cross-tool `DO_NOT_TRACK=1`) before installing.
-
-Collected:
-
-- StemCode version
-- OS family
-- app surface such as CLI, Desktop, VS Code, Visual Studio, JetBrains, GitHub Actions, GitLab CI, or Bitbucket Pipelines
-- execution environment (`local` or `ci`)
-- CI provider when detected (`github_actions`, `gitlab_ci`, `bitbucket_pipelines`, or generic CI)
-- feature names used
-- success and failure counts
-- token and duration buckets
-- daily runs and usage-time buckets
-
-Never collected:
-
-- prompts
-- source code
-- file paths
-- repository names or URLs
-- API keys
-- terminal output
 
 ## Documentation
 
