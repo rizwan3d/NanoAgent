@@ -349,9 +349,9 @@ jobs:
           }
 
           $scriptPath = Join-Path $env:RUNNER_TEMP "StemCode.Desktop.iss"
-          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\\', '\\\\')
-          $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\\', '\\\\')
-          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "StemCode.Desktop/Assets/logo.ico").Replace('\\', '\\\\')
+          $publishDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/publish/${{ matrix.app_id }}/${{ matrix.rid }}").Replace('\', '\\')
+          $outputDir = (Join-Path $env:GITHUB_WORKSPACE "artifacts/packages").Replace('\', '\\')
+          $setupIconFile = (Join-Path $env:GITHUB_WORKSPACE "StemCode.Desktop/Assets/logo.ico").Replace('\', '\\')
 
           @"
           #define MyAppName "StemCode Desktop"
@@ -364,7 +364,7 @@ jobs:
           AppName={#MyAppName}
           AppVersion={#MyAppVersion}
           AppPublisher={#MyAppPublisher}
-          DefaultDirName={autopf}\\StemCode Desktop
+          DefaultDirName={autopf}\StemCode Desktop
           DefaultGroupName=StemCode Desktop
           DisableProgramGroupPage=yes
           OutputDir=$outputDir
@@ -377,20 +377,20 @@ jobs:
           ArchitecturesInstallIn64BitMode=x64compatible
 
           [Files]
-          Source: "$publishDir\\\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          Source: "$publishDir\\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
           [Icons]
-          Name: "{autoprograms}\\StemCode Desktop"; Filename: "{app}\\{#MyAppExeName}"
-          Name: "{autodesktop}\\StemCode Desktop"; Filename: "{app}\\{#MyAppExeName}"; Tasks: desktopicon
+          Name: "{autoprograms}\StemCode Desktop"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{autodesktop}\StemCode Desktop"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
           [Tasks]
           Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional icons:"; Flags: unchecked
 
           [Run]
-          Filename: "{app}\\{#MyAppExeName}"; Description: "Launch StemCode Desktop"; Flags: nowait postinstall skipifsilent
+          Filename: "{app}\{#MyAppExeName}"; Description: "Launch StemCode Desktop"; Flags: nowait postinstall skipifsilent
           "@ | Set-Content -Path $scriptPath -Encoding UTF8
 
-          & "${env:ProgramFiles(x86)}\\Inno Setup 6\\ISCC.exe" $scriptPath
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" $scriptPath
 
       - name: Package published output on Linux and macOS
         if: runner.os != 'Windows'
