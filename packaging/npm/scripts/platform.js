@@ -9,8 +9,10 @@ const path = require("path");
 const OWNER = "rizwan3d";
 const REPO = "StemCode";
 const APP_NAME = "StemCode.CLI";
+const VOICE_APP_NAME = "StemCode.Voice";
 // Executable name inside the release archive (matches the AOT-published output).
 const EXECUTABLE_NAME = "StemCode.CLI";
+const VOICE_EXECUTABLE_NAME = "stemcode-voice";
 const CHECKSUMS_NAME = "SHA256SUMS";
 
 // Maps Node's process.platform/process.arch onto the .NET runtime identifiers
@@ -41,6 +43,10 @@ function resolveRid() {
 
 function executableFileName() {
   return process.platform === "win32" ? `${EXECUTABLE_NAME}.exe` : EXECUTABLE_NAME;
+}
+
+function voiceExecutableFileName() {
+  return process.platform === "win32" ? `${VOICE_EXECUTABLE_NAME}.exe` : VOICE_EXECUTABLE_NAME;
 }
 
 // Version baked into package.json by the release workflow; the matching GitHub
@@ -90,28 +96,46 @@ function assetName(rid) {
   return `${APP_NAME}-${rid}.zip`;
 }
 
+function voiceAssetName(rid) {
+  return `${VOICE_APP_NAME}-${rid}.zip`;
+}
+
 function vendorDir() {
   return path.join(__dirname, "..", "vendor");
+}
+
+function voiceDir() {
+  return path.join(vendorDir(), "voice");
 }
 
 function installedBinaryPath() {
   return path.join(vendorDir(), executableFileName());
 }
 
+function installedVoiceBinaryPath() {
+  return path.join(voiceDir(), voiceExecutableFileName());
+}
+
 module.exports = {
   OWNER,
   REPO,
   APP_NAME,
+  VOICE_APP_NAME,
   EXECUTABLE_NAME,
+  VOICE_EXECUTABLE_NAME,
   CHECKSUMS_NAME,
   resolveRid,
   executableFileName,
+  voiceExecutableFileName,
   resolveVersion,
   resolveTag,
   alternateTag,
   baseDownloadUrl,
   assetName,
+  voiceAssetName,
   vendorDir,
+  voiceDir,
   installedBinaryPath,
+  installedVoiceBinaryPath,
   homedir: os.homedir,
 };

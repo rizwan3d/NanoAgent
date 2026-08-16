@@ -161,17 +161,17 @@ async function promptForUpdate(currentVersion, latestVersion) {
   const { default: select } = await import("@inquirer/select");
 
   return await select({
-    message: `StemCode ${latestVersion} is available. Update before launch?`,
+    message: `StemCode ${latestVersion} is available. Update CLI and Voice runtime before launch?`,
     choices: [
       {
         name: `Yes, update from ${currentVersion} to ${latestVersion}`,
         value: true,
-        description: "Downloads the latest StemCode CLI binary, then starts stemcode.",
+        description: "Downloads the latest StemCode CLI and matching Voice runtime, then starts stemcode.",
       },
       {
         name: `No, continue with ${currentVersion}`,
         value: false,
-        description: "Skip this update check and launch the currently installed binary.",
+        description: "Skip this update check and launch the currently installed CLI and Voice runtime.",
       },
     ],
     default: false,
@@ -217,24 +217,32 @@ async function maybeUpdateBinary(binaryPath, options = {}) {
     return binaryPath;
   }
 
-  // Before replacing the vendored binary, terminate any other running StemCode
-  // sessions so the file is not held by another process during the update.
+  // Before replacing the vendored release, terminate any other running StemCode
+  // sessions so neither the CLI nor Voice runtime is held by another process.
   await terminateOtherInstances({ log });
 
-  log(`Updating StemCode CLI to ${latestRelease.tag}...`);
+  log(`Updating StemCode CLI and Voice runtime to ${latestRelease.tag}...`);
 
   try {
-    return await ensureBinary({
+    const updatedBinaryPath = await ensureBinary({
       force: true,
       tag: latestRelease.tag,
       log,
     });
+
+    // ensureBinary installs the two release archives as one unit. Keep an explicit
+    // guard here so the npm updater never reports success with a CLI-only install.
+    if (!fs.existsSync(platform.installedVoiceBinaryPath())) {
+      throw new Error("StemCode Voice runtime was not installed with the CLI update.");
+    }
+
+    return updatedBinaryPath;
   } catch (error) {
     const message = error && error.message
       ? error.message
       : String(error);
     log(`Update failed: ${message}`);
-    log("Starting the currently installed StemCode CLI instead.");
+    log("Starting the currently installed StemCode CLI and Voice runtime instead.");
     return binaryPath;
   }
 }

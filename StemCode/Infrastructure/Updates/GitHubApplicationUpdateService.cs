@@ -60,13 +60,10 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
     {
         ArgumentNullException.ThrowIfNull(updateInfo);
 
-        if (!updateInfo.IsUpdateAvailable)
-        {
-            return new ApplicationUpdateInstallResult(
-                true,
-                $"StemCode is already up to date ({updateInfo.CurrentVersion}).");
-        }
-
+        // Always run the matching release installer when installation is requested.
+        // Besides replacing the CLI, the installer synchronizes StemCode.Voice to
+        // the same release. This also lets `/update now` repair a missing or stale
+        // Voice runtime when the CLI itself is already on the latest version.
         Action<string>? onOutputLine = progress is null
             ? null
             : line =>
@@ -83,9 +80,10 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
 
         if (result.ExitCode == 0)
         {
+            string operation = updateInfo.IsUpdateAvailable ? "update" : "synchronization";
             string successMessage = OperatingSystem.IsWindows()
-                ? $"StemCode update prepared: {updateInfo.LatestVersion}. Exit StemCode to finish installation, then restart it to use the new version."
-                : $"StemCode update installed: {updateInfo.LatestVersion}. Restart StemCode to use the new version.";
+                ? $"StemCode and Voice runtime {operation} prepared: {updateInfo.LatestVersion}. Exit StemCode to finish installation, then restart it to use the synchronized release."
+                : $"StemCode and Voice runtime {operation} installed: {updateInfo.LatestVersion}. Restart StemCode to use the synchronized release.";
 
             return new ApplicationUpdateInstallResult(
                 true,
@@ -101,8 +99,8 @@ internal sealed class GitHubApplicationUpdateService : IApplicationUpdateService
         return new ApplicationUpdateInstallResult(
             false,
             string.IsNullOrWhiteSpace(detail)
-                ? $"StemCode update failed with exit code {result.ExitCode}. Download it manually from {updateInfo.ReleaseUri}."
-                : $"StemCode update failed with exit code {result.ExitCode}: {Truncate(detail, 600)}");
+                ? $"StemCode and Voice runtime update failed with exit code {result.ExitCode}. Download the release manually from {updateInfo.ReleaseUri}."
+                : $"StemCode and Voice runtime update failed with exit code {result.ExitCode}: {Truncate(detail, 600)}");
     }
 
     private static ProcessExecutionRequest CreateInstallRequest(

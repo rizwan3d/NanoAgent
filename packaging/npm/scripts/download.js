@@ -1,9 +1,8 @@
 "use strict";
 
-// Downloads, verifies, and extracts the StemCode CLI binary from the matching
-// GitHub release. Shared by the postinstall step and the runtime launcher so the
-// CLI self-heals on first run even when a package manager skips lifecycle
-// scripts (notably `bun install`, which does not run postinstall by default).
+// Downloads, verifies, and extracts the StemCode CLI binary and matching Voice
+// runtime from the GitHub release. Shared by the postinstall step and runtime
+// launcher so installations self-heal when lifecycle scripts were skipped.
 
 const fs = require("fs");
 const path = require("path");
@@ -79,6 +78,23 @@ function extractExecutable(zipBuffer, destinationPath) {
   }
 }
 
+function extractVoiceRuntime(zipBuffer, destinationDir) {
+  fs.mkdirSync(destinationDir, { recursive: true });
+  const zip = new AdmZip(zipBuffer);
+  zip.extractAllTo(destinationDir, true);
+
+  const voiceBinary = path.join(destinationDir, platform.voiceExecutableFileName());
+  if (!fs.existsSync(voiceBinary)) {
+    throw new Error(
+      `Voice release archive did not contain the expected executable '${platform.voiceExecutableFileName()}'.`
+    );
+  }
+
+  if (process.platform !== "win32") {
+    fs.chmodSync(voiceBinary, 0o755);
+  }
+}
+
 // Fetches and SHA256-verifies the release archive for a single tag.
 // Returns the archive Buffer, or null when the asset is missing (HTTP 404).
 async function downloadForTag(candidateTag, asset, log) {
@@ -92,7 +108,7 @@ async function downloadForTag(candidateTag, asset, log) {
     return null;
   }
 
-  log(`Verifying ${platform.CHECKSUMS_NAME}...`);
+  log(`Verifying ${platform.CHECKSUMS_NAME} for ${asset}...`);
   const checksumsText = (await fetchBuffer(checksumsUrl)).toString("utf8");
   const expected = parseExpectedChecksum(checksumsText, asset);
   if (!expected) {
@@ -109,26 +125,26 @@ async function downloadForTag(candidateTag, asset, log) {
   return archiveBuffer;
 }
 
-// Ensures the platform binary is present in vendor/. Returns the absolute path.
-// `onDownloaded` is awaited only when a fresh (non-update) binary is fetched, so
-// callers can record an anonymous install event exactly once per real install.
+// Ensures the platform CLI and Voice runtime are present in vendor/. Returns the
+// absolute CLI path. `onDownloaded` is awaited only for a fresh installation.
 async function ensureBinary(options = {}) {
   const { force = false, log = () => {}, tag, onDownloaded } = options;
 
   const binaryPath = platform.installedBinaryPath();
-  if (!force && fs.existsSync(binaryPath)) {
+  const voiceBinaryPath = platform.installedVoiceBinaryPath();
+  if (!force && fs.existsSync(binaryPath) && fs.existsSync(voiceBinaryPath)) {
     return binaryPath;
   }
 
   const rid = platform.resolveRid();
   const asset = platform.assetName(rid);
+  const voiceAsset = platform.voiceAssetName(rid);
   const resolvedTag = tag && tag.trim()
     ? tag.trim()
     : platform.resolveTag();
 
-  // GitHub release tags have shipped under both casings ("v1.1.10" and
-  // "V1.1.10"). Try the resolved tag first, then its alternate-case variant,
-  // so installs and updates succeed regardless of how the release was tagged.
+  // Release tags have shipped under both v/V casings. Use one casing for both
+  // archives so the CLI and Voice runtime always come from the same release.
   const candidateTags = [resolvedTag];
   const alternate = platform.alternateTag(resolvedTag);
   if (alternate && alternate !== resolvedTag) {
@@ -136,46 +152,66 @@ async function ensureBinary(options = {}) {
   }
 
   let archiveBuffer = null;
+  let voiceArchiveBuffer = null;
   let usedTag = null;
   let lastError = null;
   for (const candidateTag of candidateTags) {
     try {
-      const buffer = await downloadForTag(candidateTag, asset, log);
-      if (buffer) {
-        archiveBuffer = buffer;
-        usedTag = candidateTag;
-        break;
+      const cliBuffer = await downloadForTag(candidateTag, asset, log);
+      if (!cliBuffer) {
+        continue;
       }
+
+      const voiceBuffer = await downloadForTag(candidateTag, voiceAsset, log);
+      if (!voiceBuffer) {
+        continue;
+      }
+
+      archiveBuffer = cliBuffer;
+      voiceArchiveBuffer = voiceBuffer;
+      usedTag = candidateTag;
+      break;
     } catch (err) {
-      // A 404 under one casing is the common case and simply means "try the
-      // other casing". Other errors (checksum mismatch, network) are recorded
-      // so they can be surfaced if no candidate succeeds.
       lastError = err;
     }
   }
 
-  if (!archiveBuffer) {
+  if (!archiveBuffer || !voiceArchiveBuffer) {
     if (lastError) {
       throw lastError;
     }
     throw new Error(
-      `Could not find release asset ${asset} for tag ${resolvedTag}` +
+      `Could not find release assets ${asset} and ${voiceAsset} for tag ${resolvedTag}` +
         (alternate && alternate !== resolvedTag ? ` or ${alternate}` : "") +
         "."
     );
   }
 
-  log("Extracting StemCode CLI...");
-  // Extract to a temp file first, then rename so concurrent runs never observe
-  // a partially written executable.
-  const tempPath = path.join(
+  fs.mkdirSync(platform.vendorDir(), { recursive: true });
+  const tempBinaryPath = path.join(
     platform.vendorDir(),
     `.${platform.executableFileName()}.${process.pid}.tmp`
   );
-  extractExecutable(archiveBuffer, tempPath);
-  fs.renameSync(tempPath, binaryPath);
+  const tempVoiceDir = path.join(platform.vendorDir(), `.voice.${process.pid}.tmp`);
+
+  try {
+    log("Extracting StemCode CLI...");
+    extractExecutable(archiveBuffer, tempBinaryPath);
+
+    log("Extracting StemCode Voice runtime...");
+    fs.rmSync(tempVoiceDir, { recursive: true, force: true });
+    extractVoiceRuntime(voiceArchiveBuffer, tempVoiceDir);
+
+    fs.rmSync(platform.voiceDir(), { recursive: true, force: true });
+    fs.renameSync(tempVoiceDir, platform.voiceDir());
+    fs.renameSync(tempBinaryPath, binaryPath);
+  } finally {
+    fs.rmSync(tempBinaryPath, { force: true });
+    fs.rmSync(tempVoiceDir, { recursive: true, force: true });
+  }
 
   log(`Installed StemCode CLI to ${binaryPath} (${usedTag}).`);
+  log(`Installed StemCode Voice runtime to ${platform.voiceDir()} (${usedTag}).`);
 
   // Fire once per genuine install. Updates pass force=true and are intentionally
   // excluded so they are not counted as new installs.
