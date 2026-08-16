@@ -35,8 +35,11 @@ if ([string]::IsNullOrWhiteSpace($CommandName)) {
 $Owner = 'rizwan3d'
 $Repo = 'StemCode'
 $AppName = 'StemCode.CLI'
+$VoiceAppName = 'StemCode.Voice'
 $ExecutableName = 'StemCode.CLI'
+$VoiceExecutableName = 'stemcode-voice'
 $AssetName = "$ExecutableName-win-x64.zip"
+$VoiceAssetName = "$VoiceAppName-win-x64.zip"
 $ChecksumsName = 'SHA256SUMS'
 $TotalSteps = 7
 $CurrentStep = 0
@@ -348,7 +351,10 @@ function Test-ArchiveSha256 {
         [string]$ArchivePath,
 
         [Parameter(Mandatory = $true)]
-        [string]$TempRoot
+        [string]$TempRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileName
     )
 
     $checksumsUrl = "https://github.com/$Owner/$Repo/releases/download/$Tag/$ChecksumsName"
@@ -360,33 +366,33 @@ function Test-ArchiveSha256 {
         Save-UrlToFile -Url $checksumsUrl -Path $checksumsPath
     }
     catch {
-        $expectedSha256 = Get-ReleaseAssetSha256 -Tag $Tag -FileName $AssetName
+        $expectedSha256 = Get-ReleaseAssetSha256 -Tag $Tag -FileName $FileName
 
         if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
             Fail-Install "Unable to download $ChecksumsName from $checksumsUrl, and no GitHub release metadata digest was found. Checksum verification is mandatory. $($_.Exception.Message)"
         }
 
-        Write-Status "Using SHA256 digest from GitHub release metadata for $AssetName."
+        Write-Status "Using SHA256 digest from GitHub release metadata for $FileName."
     }
 
     if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
-        $expectedSha256 = Get-ExpectedSha256 -ChecksumsPath $checksumsPath -FileName $AssetName
+        $expectedSha256 = Get-ExpectedSha256 -ChecksumsPath $checksumsPath -FileName $FileName
     }
 
     if ([string]::IsNullOrWhiteSpace($expectedSha256)) {
-        Fail-Install "$ChecksumsName does not contain a checksum for $AssetName."
+        Fail-Install "$ChecksumsName does not contain a checksum for $FileName."
     }
 
     if ($expectedSha256 -notmatch '^[0-9a-f]{64}$') {
-        Fail-Install "$ChecksumsName contains an invalid SHA256 checksum for $AssetName."
+        Fail-Install "$ChecksumsName contains an invalid SHA256 checksum for $FileName."
     }
 
     $actualSha256 = (Get-FileHash -LiteralPath $ArchivePath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualSha256 -ne $expectedSha256) {
-        Fail-Install "SHA256 verification failed for $AssetName. Expected $expectedSha256, got $actualSha256."
+        Fail-Install "SHA256 verification failed for $FileName. Expected $expectedSha256, got $actualSha256."
     }
 
-    Write-Status "Verified SHA256 checksum for $AssetName."
+    Write-Status "Verified SHA256 checksum for $FileName."
 }
 
 function Test-PathContainsDirectory {
@@ -651,13 +657,17 @@ if ([string]::IsNullOrWhiteSpace($Tag)) {
     $Tag = Get-LatestTag
 }
 
-Complete-InstallStep "Using $AppName $Tag for win-x64."
+Complete-InstallStep "Using $AppName and $VoiceAppName $Tag for win-x64."
 
 $downloadUrl = "https://github.com/$Owner/$Repo/releases/download/$Tag/$AssetName"
+$voiceDownloadUrl = "https://github.com/$Owner/$Repo/releases/download/$Tag/$VoiceAssetName"
 $tempRoot = Join-Path ([System.IO.Path]::GetTempPath()) "$AppName-install-$([System.Guid]::NewGuid().ToString('N'))"
 $archivePath = Join-Path $tempRoot $AssetName
+$voiceArchivePath = Join-Path $tempRoot $VoiceAssetName
 $extractDir = Join-Path $tempRoot 'extract'
+$voiceExtractDir = Join-Path $tempRoot 'voice-extract'
 $destinationPath = Join-Path $InstallDir "$CommandName.exe"
+$voiceDestinationDir = Join-Path $InstallDir 'voice'
 $cleanupTempRoot = $true
 
 try {
@@ -666,35 +676,50 @@ try {
     Start-InstallStep 'Preparing install directory...'
     Write-Status "Install directory: $InstallDir"
 
-    New-Item -ItemType Directory -Path $tempRoot, $extractDir, $InstallDir -Force | Out-Null
+    New-Item -ItemType Directory -Path $tempRoot, $extractDir, $voiceExtractDir, $InstallDir -Force | Out-Null
     Complete-InstallStep 'Workspace ready.'
 
-    Start-InstallStep "Downloading $AssetName..."
+    Start-InstallStep 'Downloading release assets...'
     try {
         Save-UrlToFile -Url $downloadUrl -Path $archivePath -Activity "Downloading $AssetName" -ShowProgress
+        Save-UrlToFile -Url $voiceDownloadUrl -Path $voiceArchivePath -Activity "Downloading $VoiceAssetName" -ShowProgress
     }
     catch {
-        Fail-Install "Download failed from $downloadUrl. $($_.Exception.Message)"
+        Fail-Install "Download failed. $($_.Exception.Message)"
     }
 
     $downloadedSize = (Get-Item -LiteralPath $archivePath).Length
-    Complete-InstallStep "Downloaded $AssetName ($(Format-ByteSize -Bytes $downloadedSize))."
+    $voiceDownloadedSize = (Get-Item -LiteralPath $voiceArchivePath).Length
+    Complete-InstallStep "Downloaded $AssetName ($(Format-ByteSize -Bytes $downloadedSize)) and $VoiceAssetName ($(Format-ByteSize -Bytes $voiceDownloadedSize))."
 
-    Start-InstallStep 'Verifying download...'
-    Test-ArchiveSha256 -Tag $Tag -ArchivePath $archivePath -TempRoot $tempRoot
+    Start-InstallStep 'Verifying downloads...'
+    Test-ArchiveSha256 -Tag $Tag -ArchivePath $archivePath -TempRoot $tempRoot -FileName $AssetName
+    Test-ArchiveSha256 -Tag $Tag -ArchivePath $voiceArchivePath -TempRoot $tempRoot -FileName $VoiceAssetName
     Complete-InstallStep 'Checksum verification passed.'
 
-    Start-InstallStep 'Extracting archive...'
+    Start-InstallStep 'Extracting archives...'
     Expand-Archive -Path $archivePath -DestinationPath $extractDir -Force
+    Expand-Archive -Path $voiceArchivePath -DestinationPath $voiceExtractDir -Force
 
     $sourcePath = Join-Path $extractDir "$ExecutableName.exe"
+    $voiceSourcePath = Join-Path $voiceExtractDir "$VoiceExecutableName.exe"
     if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
         Fail-Install "Expected executable '$ExecutableName.exe' was not found in $AssetName."
     }
+    if (-not (Test-Path -LiteralPath $voiceSourcePath -PathType Leaf)) {
+        Fail-Install "Expected executable '$VoiceExecutableName.exe' was not found in $VoiceAssetName."
+    }
 
-    Complete-InstallStep "Found $ExecutableName.exe."
+    Complete-InstallStep "Found $ExecutableName.exe and $VoiceExecutableName.exe."
 
-    Start-InstallStep 'Installing command...'
+    Start-InstallStep 'Installing command and Voice runtime...'
+    if (Test-Path -LiteralPath $voiceDestinationDir) {
+        Remove-Item -LiteralPath $voiceDestinationDir -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $voiceDestinationDir -Force | Out-Null
+    Get-ChildItem -LiteralPath $voiceExtractDir -Force | Copy-Item -Destination $voiceDestinationDir -Recurse -Force
+    Write-Status "Installed Voice runtime to $voiceDestinationDir"
+
     $waitProcessId = Resolve-WaitForProcessId -RequestedProcessId $WaitForProcessId -DestinationPath $destinationPath
     if ($waitProcessId -gt 0) {
         Start-DeferredInstall -SourcePath $sourcePath -DestinationPath $destinationPath -ProcessId $waitProcessId -CleanupRoot $tempRoot
