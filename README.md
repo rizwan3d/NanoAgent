@@ -109,6 +109,7 @@ Use it when you want one agent experience across:
 | `stemcode` CLI | Keyboard-first work, one-shot prompts, piped input, quick reviews, and automation-friendly output. |
 | VS Code extension | Chat, selected-context prompts, file review, diff review, and applying suggestions without leaving the editor. |
 | Visual Studio extension | Docked StemCode tool window powered by the local CLI over ACP. |
+| JetBrains plugin | IntelliJ-based IDE tool window powered by the local CLI over ACP. |
 | CI automation | Running StemCode in GitHub Actions, GitLab CI, and Bitbucket Pipelines to review proposed changes automatically. |
 
 ## Get Started
@@ -241,6 +242,7 @@ StemCode supports:
 - Anthropic Claude Pro/Max sign-in
 - GitHub Copilot sign-in
 - OpenRouter
+- OpenCode Zen
 - Kilo Code
 - Cerebras
 - Groq

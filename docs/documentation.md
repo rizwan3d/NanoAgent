@@ -10,8 +10,10 @@ This guide contains the setup, reference, and technical material for StemCode. T
 - [First Run](#first-run)
 - [Desktop Workflow](#desktop-workflow)
 - [Terminal Workflow](#terminal-workflow)
+- [Voice Input](#voice-input)
 - [VS Code Extension](#vs-code-extension)
 - [Visual Studio Extension](#visual-studio-extension)
+- [JetBrains Extension](#jetbrains-extension)
 - [ACP Editor Integration](#acp-editor-integration)
 - [Review Automation](#review-automation)
 - [Code Intelligence](#code-intelligence)
@@ -156,6 +158,7 @@ When a newer StemCode release is available, startup can ask whether to update no
 | API key | Anthropic | API key | Uses the Anthropic OpenAI-compatible endpoint. |
 | API key | Google AI Studio | API key | Uses the OpenAI-compatible Gemini endpoint. |
 | API key | OpenRouter | API key | Uses the OpenRouter OpenAI-compatible endpoint. |
+| API key | OpenCode Zen | API key | Uses the OpenCode Zen OpenAI-compatible endpoint at `https://opencode.ai/zen/v1`. |
 | API key | Kilo Code | API key | Uses Kilo's OpenRouter-compatible gateway. |
 | API key | Cerebras | API key | Uses the Cerebras OpenAI-compatible endpoint. |
 | API key | Groq | API key | Uses the Groq OpenAI-compatible endpoint. |
@@ -335,44 +338,65 @@ stemcode --session <session-guid>
 | `--section <id>` | Compatibility alias for `--session`. |
 | `--profile <name>` | Start with a profile. |
 | `--thinking <on\|off>` | Start with thinking on or off. |
+| `-v, --version` | Show the StemCode CLI version. |
+| `--doctor` | Run system diagnostics and print the doctor report. |
+| `--no-update-check` | Skip checking for application updates on startup. |
+| `--no-old-reader` | Resume a section without replaying old messages to the screen. |
 | `-h, --help` | Show CLI help. |
 
 ## Terminal Commands
 
 | Command | Description |
 | --- | --- |
-| `/help` | List commands and usage. |
-| `/budget [status\|local\|cloud]` | Show or configure budget controls. |
-| `/config` | Show provider, model, profile, thinking mode, reasoning effort, and reasoning-output behavior. |
-| `/doctor` | Show comprehensive diagnostics for system, workspace, provider, permissions, tools, LSP, sandbox, and budget status. |
-| `/models` | Choose the active model with the arrow-key picker. |
-| `/use <model>` | Switch directly to a model id. |
-| `/onboard` | Re-run provider onboarding through setup-type and provider submenus, then switch the active session. |
-| `/autocommit [on\|off\|status]` | Show or toggle automatic git commits for AI-made workspace changes in `.stemcode/agent-profile.json`. |
-| `/skill marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]` | Add or update a GitHub-backed skill marketplace entry in `.stemcode/skills/marketplaces.json`. |
-| `/skill marketplace remove <alias>` | Drop a configured skill marketplace entry from `.stemcode/skills/marketplaces.json`. |
-| `/skill browse <marketplaceAlias>` | List the skills a marketplace offers, read from its `stemcode-marketplace.json` index. |
-| `/skill install <skillId>@<marketplaceAlias> [--force]` | Install a data-only skill into safe `.stemcode/...` paths and track it in `.stemcode/skills/installed.json`. |
-| `/skill list` | Show configured skill marketplaces, installed skills, and tracked installed files. |
-| `/skill uninstall <skillId>` | Remove only the files tracked for an installed skill. |
-| `/profile <name>` | Switch the active profile. |
-| `/thinking [on\|off]` | Show or set simple thinking mode. |
-| `/reasoning [show\|<none\|minimal\|low\|medium\|high\|xhigh\|max>]` | Show or set provider reasoning effort. |
-| `/tooloutput [compact\|full\|auto]` | Show or toggle whether tool results print their complete output or a compact preview. `auto` follows the active agent profile. |
-| `/permissions` | Show permission summary and override guidance. |
-| `/rules` | Show effective permission rules in evaluation order. |
-| `/setting [model\|profile\|thinking\|provider\|budget\|workspace\|permissions\|tools\|summary]` | Open the settings picker or jump directly to a settings area. |
-| `/allow <tool-or-tag> [pattern]` | Add a session allow override. |
-| `/deny <tool-or-tag> [pattern]` | Add a session deny override. |
-| `/mcp` | Show MCP servers, custom tool providers, and dynamic tools. |
-| `/terminals [stop <id>\|stop all]` | List or stop background terminals for the current session. |
-| `/init [recommended\|minimal\|custom]` | Choose and initialize workspace-local StemCode files. |
-| `/update [now]` | Check for updates. Use `/update now` to install without another prompt. |
-| `/undo` | Roll back the most recent tracked edit transaction. |
-| `/redo` | Re-apply the most recently undone edit transaction. |
+| `/a` | Alias for `/agent`. |
+| `/agent` | List available subagents for delegated work. |
+| `/allow <tool-or-tag> [pattern]` | Add a session-scoped allow override for a tool/tag and optional target pattern. |
+| `/autocommit [on\|off\|status]` | Show or toggle automatic git commits for AI-made workspace changes. |
+| `/budget [status\|local [path]\|cloud]` | Show or configure budget controls from local or cloud settings. |
+| `/clone` | Duplicate the current session at the current position. |
+| `/compact [retained-turns]` | Manually compact the session context. |
+| `/config` | Show provider, config path, active profile, thinking, and active model details. |
+| `/copy` | Copy the last agent message to the clipboard. |
+| `/disableanalytics` | Disable product analytics for this workspace. |
+| `/doctor` | Show comprehensive system diagnostics for StemCode. |
+| `/deny <tool-or-tag> [pattern]` | Add a session-scoped deny override for a tool/tag and optional target pattern. |
 | `/exit` | Exit the interactive shell. |
+| `/export [json\|html] [path]` | Export the current session as JSON or HTML. |
+| `/fork [turn-number]` | Create a new fork from a previous user message. |
+| `/help` | List the available shell commands and their usage. |
+| `/import <json-path>` | Import a session from JSON and switch to the imported copy. |
+| `/index [update\|status\|rebuild\|list] [limit]` | Update, rebuild, inspect, or list the local codebase index. See [Manual Index Updates](#manual-index-updates). |
+| `/init [recommended\|minimal\|custom]` | Choose and initialize workspace-local StemCode files. |
+| `/lessons [status\|on\|off\|list [limit]\|search <query>\|save <trigger> \| <problem> \| <lesson>\|edit <id> ...\|delete <id>]` | Manage local lesson memory; off by default and can inject relevant lessons when enabled. |
+| `/lsp [status\|refresh\|file <path> [refresh]]` | Show discovered language servers, or inspect which ones apply to a file. See [Code Intelligence](#code-intelligence). |
+| `/mcp` | Show configured MCP servers, custom tool providers, and discovered dynamic tools. |
+| `/models` | Open the active model picker. |
+| `/new` | Start a fresh section without carrying over prior context. |
+| `/onboard` | Re-run provider onboarding and switch the active session to the new provider. |
+| `/permissions` | Show the current permission summary and session override guidance. |
+| `/profile <name>` | Switch the active agent profile for subsequent prompts. |
+| `/provider [list\|<name>]` | List saved providers or switch the active session to another saved provider. |
+| `/reasoning [show\|<none\|minimal\|low\|medium\|high\|xhigh\|max>]` | Show or set provider reasoning effort for subsequent prompts. |
+| `/redact [on\|off]` | Show or toggle secret redaction for session output. |
+| `/redo` | Re-apply the most recently undone file edit transaction. |
+| `/reload` | Reload keybindings, extensions, skills, prompts, and themes. |
+| `/resume [session-id]` | Resume a different session. |
+| `/rules` | List the effective permission rules in evaluation order. |
+| `/session` | Show session info and stats. |
+| `/setting [model\|profile\|thinking\|provider\|budget\|workspace\|permissions\|tools\|summary]` | Open the settings picker for configurable session and workspace options. |
+| `/setup-sandbox` | Set up Windows sandbox support for restricted shell commands. |
+| `/share` | Share the current session as a secret GitHub gist. |
+| `/skill [marketplace add <owner/repo> [--ref <ref>] [--alias <alias>]\|marketplace remove <alias>\|browse <marketplaceAlias>\|install <skillId>@<marketplaceAlias> [--force]\|list\|uninstall <skillId>]` | Manage data-only skill marketplaces and installs. |
+| `/terminals [view [<terminal-id>]\|stop <terminal-id>\|stop all]` | List, view, or stop background terminals for the current session. |
+| /thinking [on\|off] | Show or set thinking mode for subsequent prompts. |
+| `/tooloutput [compact\|full\|auto]` | Show or toggle whether tool results print their complete output or a compact preview. `auto` follows the active agent profile. |
+| `/tree` | Navigate the session tree and switch branches. |
+| `/update [now]` | Check for StemCode updates and install the latest release. |
+| `/undo` | Roll back the most recent tracked file edit transaction. |
+| `/use <model>` | Switch the active model for subsequent prompts. |
+| `/version` | Show the current StemCode CLI version. |
 
-Terminal utility commands also include `/clear`, `/ls`, and `/read <file>`.
+The terminal also recognizes `!` and `!!` shell prefixes and `/` command suggestions, described earlier in [Terminal Workflow](#terminal-workflow). See [Code Intelligence](#code-intelligence) for `/lsp` and [Codebase Indexing](#codebase-indexing) for `/index`.
 
 ## Tracked File Edits
 
@@ -498,6 +522,10 @@ Set `httpClientTimeoutSeconds` to override the default timeout used by StemCode-
 Set `toolOutput` to choose how tool results render in session output: `full` (or `complete`) prints the complete output and `compact` (or `preview`) prints the capped preview. Omit it or leave it unrecognized to keep the compact default. This is the lowest-priority source — a per-agent markdown profile's `toolOutput` front-matter key overrides it for that profile, and the `/tooloutput` command overrides both for the current session (`/tooloutput auto` reverts to the profile/configured default).
 
 Completed background terminals remain readable until `completedBackgroundTerminalTtlSeconds` expires. Running background terminals are stopped when the StemCode process exits.
+
+## Voice Input
+
+StemCode includes a local, on-device voice dictation runtime (`StemCode.Voice`, published as `stemcode-voice`). It uses Whisper.net for speech recognition and PortAudio for cross-platform microphone capture (WASAPI on Windows, CoreAudio on macOS, ALSA/PulseAudio on Linux), so prompts can be dictated instead of typed. The voice runtime is intentionally not AOT-compiled because it hosts the native Whisper library and PortAudio; it is published separately next to the AOT-compiled `stemcode` host. Build it from the `StemCode.Voice` project, which is included in `StemCode.slnx`.
 
 ## VS Code Extension
 
@@ -632,6 +660,12 @@ VS_MARKETPLACE_EXTENSION_NAME
 ```
 
 If the optional variables are unset, the workflow defaults to publisher `rizwan3d` and extension internal name `stemcode-vs`. The publish job uses the `visual-studio-marketplace` GitHub environment so approval or environment protection rules can be applied separately from the VS Code marketplace flow.
+
+## JetBrains Extension
+
+StemCode includes a JetBrains IntelliJ-platform plugin in `StemCode.JetBrains`. It opens a tool window inside IntelliJ-based IDEs and drives the local StemCode CLI over ACP, the same protocol used by the Visual Studio and VS Code integrations. The plugin is a Kotlin/Gradle project (`build.gradle.kts`) with an `AcpClient` that manages the local `stemcode --acp` process, a `ChatPanel` for the conversation, and a `SessionManager`.
+
+Before first use, install the StemCode CLI so `stemcode` is available on `PATH` (or point the plugin at an explicit CLI path), and run `stemcode` once to complete provider onboarding.
 
 ## ACP Editor Integration
 
@@ -1552,7 +1586,12 @@ The main projects are:
 | `StemCode.Desktop` | Desktop app. |
 | `StemCode.VS` | Visual Studio extension that hosts StemCode inside a Visual Studio tool window. |
 | `StemCode.VsCode` | VS Code extension that drives StemCode through ACP mode. |
+| `StemCode.Voice` | Local Whisper-powered voice dictation runtime (`stemcode-voice`) used for speech-to-text prompts. |
+| `StemCode.JetBrains` | JetBrains IntelliJ-platform plugin that hosts StemCode inside the IDE through ACP. |
+| `benchmarks` | Benchmark fixtures, tasks, and result scripts (not a buildable project). |
 | `StemCode.Tests` | Test suite. |
+
+Two solution files exist: `StemCode.CrossPlatform.slnx` (core, CLI, desktop, and tests) is used by the cross-platform build commands above, while `StemCode.slnx` additionally includes `StemCode.Voice` and the Windows-only `StemCode.VS` extension. To build or pack the voice runtime or the Visual Studio extension, use `StemCode.slnx`.
 
 ## License
 
