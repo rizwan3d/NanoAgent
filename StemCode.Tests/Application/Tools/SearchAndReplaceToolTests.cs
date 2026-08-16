@@ -108,6 +108,19 @@ public sealed class SearchAndReplaceToolTests
         transaction!.Description.Should().Be("search_and_replace (README.md)");
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Should_ReturnInvalidArguments_When_PathIsInsideGitDirectory()
+    {
+        SearchAndReplaceTool sut = new(Mock.Of<IWorkspaceFileService>());
+
+        ToolResult result = await sut.ExecuteAsync(
+            CreateContext("""{ "path": ".git/config", "search": "old", "replace": "new" }"""),
+            CancellationToken.None);
+
+        result.Status.Should().Be(ToolResultStatus.InvalidArguments);
+        result.Message.Should().Contain(".git");
+    }
+
     private static ToolExecutionContext CreateContext(
         string argumentsJson,
         ReplSessionContext? session = null)

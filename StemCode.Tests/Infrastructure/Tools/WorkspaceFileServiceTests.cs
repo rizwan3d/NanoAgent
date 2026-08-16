@@ -2686,6 +2686,63 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         return service;
     }
 
+    [Fact]
+    public async Task SearchFilesAsync_Should_ExcludeGitDirectory_EvenWhenIncludeHiddenIsTrue()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string gitDirectory = Path.Combine(_workspaceRoot, ".git");
+        Directory.CreateDirectory(gitDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(gitDirectory, "config"),
+            "git metadata",
+            CancellationToken.None);
+
+        string sourceDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(sourceDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(sourceDirectory, "app.cs"),
+            "public class App { }",
+            CancellationToken.None);
+
+        WorkspaceFileSearchResult result = await sut.SearchFilesAsync(
+            new WorkspaceFileSearchRequest(
+                "c",
+                Path: null,
+                CaseSensitive: false,
+                IncludeHidden: true,
+                IncludeIgnored: true),
+            CancellationToken.None);
+
+        result.Matches.Should().NotContain(match => match.Path.Contains(".git"));
+        result.Matches.Should().Contain(match => match.Path.Contains("app.cs"));
+    }
+
+    [Fact]
+    public async Task SearchTextAsync_Should_ExcludeGitDirectory()
+    {
+        WorkspaceFileService sut = CreateSut();
+        string gitDirectory = Path.Combine(_workspaceRoot, ".git");
+        Directory.CreateDirectory(gitDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(gitDirectory, "config"),
+            "SECRET_TOKEN=abc",
+            CancellationToken.None);
+
+        string sourceDirectory = Path.Combine(_workspaceRoot, "src");
+        Directory.CreateDirectory(sourceDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(sourceDirectory, "app.cs"),
+            "public const string SECRET_TOKEN = \"abc\";",
+            CancellationToken.None);
+
+        WorkspaceTextSearchResult result = await sut.SearchTextAsync(
+            new WorkspaceTextSearchRequest("SECRET_TOKEN", Path: null, CaseSensitive: false),
+            CancellationToken.None);
+
+        result.Matches.Should().NotContain(match => match.Path.Contains(".git"));
+        result.Matches.Should().Contain(match => match.Path.Contains("app.cs"));
+    }
+
     private static string GetBackupDirectoryPath(WorkspaceFileService service)
     {
         FieldInfo field = typeof(WorkspaceFileService).GetField(

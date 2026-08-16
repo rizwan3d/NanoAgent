@@ -1098,6 +1098,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         WorkspaceFileSearchRequest request,
         WorkspaceIgnoreMatcher ignoreMatcher)
     {
+        if (IsGitMetadataPath(relativePath))
+        {
+            return false;
+        }
+
         if (!request.IncludeIgnored &&
             ignoreMatcher.IsIgnored(fullPath, isDirectory))
         {
@@ -1492,6 +1497,21 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             fileName.Contains(".designer.", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool IsGitMetadataPath(string path)
+    {
+        string normalized = path.Replace('\\', '/');
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string segment in segments)
+        {
+            if (string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static bool TryScoreSubsequence(
         string candidate,
         string query,
@@ -1657,14 +1677,19 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         bool recursive,
         WorkspaceIgnoreMatcher ignoreMatcher)
     {
-        return EnumerateFileSystemEntriesSafely(root, recursive, ignoreMatcher)
+        return EnumerateFileSystemEntriesSafely(
+            root,
+            recursive,
+            ignoreMatcher,
+            static entry => IsGitMetadataPath(entry))
             .Where(static entry => File.Exists(entry));
     }
 
     private static IEnumerable<string> EnumerateFileSystemEntriesSafely(
         string root,
         bool recursive,
-        WorkspaceIgnoreMatcher ignoreMatcher)
+        WorkspaceIgnoreMatcher ignoreMatcher,
+        Func<string, bool>? shouldExcludeEntry = null)
     {
         Stack<string> pendingDirectories = new();
         pendingDirectories.Push(root);
@@ -1695,7 +1720,8 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
                 }
 
                 bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
-                if (ignoreMatcher.IsIgnored(entry, isDirectory))
+                if (ignoreMatcher.IsIgnored(entry, isDirectory) ||
+                    (shouldExcludeEntry is not null && shouldExcludeEntry(entry)))
                 {
                     continue;
                 }

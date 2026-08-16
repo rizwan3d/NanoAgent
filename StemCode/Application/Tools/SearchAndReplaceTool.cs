@@ -94,6 +94,16 @@ internal sealed class SearchAndReplaceTool(IWorkspaceFileService workspaceFileSe
         }
 
         string safePath = context.Session.ResolvePathFromWorkingDirectory(path!);
+        if (IsGitMetadataPath(safePath))
+        {
+            return ToolResultFactory.InvalidArguments(
+                "git_metadata_path",
+                "Tool 'search_and_replace' cannot modify files inside the .git directory.",
+                new ToolRenderPayload(
+                    "Operation blocked",
+                    "Edits inside the .git directory are not allowed."));
+        }
+
         bool useRegex = ToolArguments.GetBoolean(context.Arguments, "useRegex", defaultValue: false);
         bool caseSensitive = ToolArguments.GetBoolean(context.Arguments, "caseSensitive", defaultValue: true);
 
@@ -144,5 +154,20 @@ internal sealed class SearchAndReplaceTool(IWorkspaceFileService workspaceFileSe
                     "Invalid search_and_replace arguments",
                     exception.Message));
         }
+    }
+
+    private static bool IsGitMetadataPath(string fullPath)
+    {
+        string normalized = fullPath.Replace('\\', '/');
+        string[] segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        foreach (string segment in segments)
+        {
+            if (string.Equals(segment, ".git", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
