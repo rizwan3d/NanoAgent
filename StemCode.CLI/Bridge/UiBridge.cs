@@ -132,17 +132,17 @@ public sealed class UiBridge : IUiBridge
 
     public void ShowError(string message)
     {
-        EnqueueForActiveOperation(state => state.AddSystemMessage($"Error: {message}"));
+        EnqueueForActiveOperation(state => state.AddSystemMessage(NormalizeTabs($"Error: {message}")));
     }
 
     public void ShowInfo(string message)
     {
-        EnqueueForActiveOperation(state => state.AddSystemMessage(message));
+        EnqueueForActiveOperation(state => state.AddSystemMessage(NormalizeTabs(message)));
     }
 
     public void ShowSuccess(string message)
     {
-        EnqueueForActiveOperation(state => state.AddSystemMessage($"Success: {message}"));
+        EnqueueForActiveOperation(state => state.AddSystemMessage(NormalizeTabs($"Success: {message}")));
     }
 
     public void ShowAssistantMessageChunk(string text)
@@ -158,7 +158,7 @@ public sealed class UiBridge : IUiBridge
         {
             state.ActivityText = "Streaming response";
             state.ClearBusyWhenStreamCompletes = true;
-            state.AppendAssistantStreamChunk(text);
+            state.AppendAssistantStreamChunk(NormalizeTabs(text));
         });
     }
 
@@ -172,14 +172,14 @@ public sealed class UiBridge : IUiBridge
         EnqueueForActiveOperation(state =>
         {
             state.ActivityText = "Thinking";
-            state.AddThinkingMessage("Thinking:\n\n" + reasoningText.Trim());
+            state.AddThinkingMessage("Thinking:\n\n" + NormalizeTabs(reasoningText.Trim()));
         });
     }
 
     public void ShowToolCalls(IReadOnlyList<ConversationToolCall> toolCalls)
     {
         string[] descriptions = toolCalls
-            .Select(_toolOutputFormatter.DescribeCall)
+            .Select( call => NormalizeTabs(_toolOutputFormatter.DescribeCall(call)))
             .Where(static description => !string.IsNullOrWhiteSpace(description))
             .ToArray();
 
@@ -249,18 +249,19 @@ public sealed class UiBridge : IUiBridge
             bool isFirstResult = true;
             for (int index = 0; index < messages.Count; index++)
             {
-                string message = messages[index];
+                string message = NormalizeTabs(messages[index]);
                 ChatMessage resultMsg = state.AddSystemMessage(message, isCollapsibleToolMessage: true);
-                resultMsg.CompactToolOutputText = index < compactMessages.Count ? compactMessages[index] : message;
-                resultMsg.FullToolOutputText = index < fullMessages.Count ? fullMessages[index] : message;
+                resultMsg.CompactToolOutputText = index < compactMessages.Count ? NormalizeTabs(compactMessages[index]) : message;
+                resultMsg.FullToolOutputText = index < fullMessages.Count ? NormalizeTabs(fullMessages[index]) : message;
 
                 // Prepend the tool call text to the first result message so both appear
                 // together in the same collapsed block when the view is collapsed.
                 if (isFirstResult && toolCallMsg is not null)
                 {
-                    resultMsg.Text = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.Text;
-                    resultMsg.CompactToolOutputText = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.CompactToolOutputText;
-                    resultMsg.FullToolOutputText = toolCallMsg.Text + Environment.NewLine + Environment.NewLine + resultMsg.FullToolOutputText;
+                    string prefix = NormalizeTabs(toolCallMsg.Text);
+                    resultMsg.Text = prefix + Environment.NewLine + Environment.NewLine + resultMsg.Text;
+                    resultMsg.CompactToolOutputText = prefix + Environment.NewLine + Environment.NewLine + resultMsg.CompactToolOutputText;
+                    resultMsg.FullToolOutputText = prefix + Environment.NewLine + Environment.NewLine + resultMsg.FullToolOutputText;
                     isFirstResult = false;
                 }
 
@@ -291,7 +292,7 @@ public sealed class UiBridge : IUiBridge
 
     public void ShowExecutionPlan(ExecutionPlanProgress progress)
     {
-        string description = _planOutputFormatter.Format(progress);
+        string description = NormalizeTabs(_planOutputFormatter.Format(progress));
 
         EnqueueForActiveOperation(state =>
         {
@@ -318,7 +319,7 @@ public sealed class UiBridge : IUiBridge
         {
             state.ActivityText = $"Trying {progress.Attempt}/{progress.MaxAttempts}";
             state.AddSystemMessage(
-                $"Provider unreachable ({progress.Reason}). Retrying… ({progress.Attempt}/{progress.MaxAttempts})",
+                NormalizeTabs($"Provider unreachable ({progress.Reason}). Retrying… ({progress.Attempt}/{progress.MaxAttempts})"),
                 isCollapsibleToolMessage: true);
         });
     }
@@ -342,6 +343,17 @@ public sealed class UiBridge : IUiBridge
         }
 
         return normalized[..Math.Max(0, maxLength - 3)] + "...";
+    }
+
+    // Normalizes tab characters to four spaces so text renders consistently on
+    // screen. Tabs in terminal UIs are column-aligned and often render as wide,
+    // uneven gaps; replacing them up front keeps layout predictable before the
+    // text is shown to the user.
+    private static string NormalizeTabs(string? value)
+    {
+        return string.IsNullOrEmpty(value)
+            ? string.Empty
+            : value.Replace("\t", "    ", StringComparison.Ordinal);
     }
 
     private bool TryConsumeProviderAuthKey(
