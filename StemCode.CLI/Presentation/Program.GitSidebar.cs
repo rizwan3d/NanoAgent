@@ -168,7 +168,7 @@ public static partial class Program
 
     private static bool TryHandleGitSidebarKey(AppState state, ConsoleKeyInfo key)
     {
-        if (!state.IsGitSidebarVisible || state.ActiveModal is not null || state.IsReaderViewActive || state.IsCopyModeActive)
+        if (state.ActiveModal is not null || state.IsReaderViewActive || state.IsCopyModeActive)
         {
             return false;
         }
