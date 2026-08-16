@@ -14,10 +14,12 @@ function sha256(buffer) {
   return crypto.createHash("sha256").update(buffer).digest("hex").toLowerCase();
 }
 
-function makeZip(assetName, contents) {
+function makeZip(entries) {
   const AdmZip = require("adm-zip");
   const zip = new AdmZip();
-  zip.addFile(assetName, Buffer.from(contents));
+  for (const [name, contents] of Object.entries(entries)) {
+    zip.addFile(name, Buffer.from(contents));
+  }
   return zip.toBuffer();
 }
 
@@ -33,9 +35,9 @@ function fakeResponse(body, status = 200) {
   };
 }
 
-// Serves a zip (whose checksum is embedded in the SHA256SUMS response) for each
-// tag in `zipByTag`, and returns HTTP 404 for tags in `missingTags`.
-function makeFetch({ missingTags, zipByTag, asset }) {
+// Serves release assets for each tag and emits checksums for every prepared
+// archive so the CLI and Voice runtime are verified from the same release.
+function makeFetch({ missingTags, assetsByTag }) {
   return async (url) => {
     const match = url.match(/\/releases\/download\/([^/]+)\/(.+)$/);
     assert.ok(match, `unexpected request url: ${url}`);
@@ -45,13 +47,18 @@ function makeFetch({ missingTags, zipByTag, asset }) {
       return fakeResponse("", 404);
     }
 
-    const zipBuffer = zipByTag.get(tag);
-    assert.ok(zipBuffer, `no prepared zip for tag ${tag}`);
+    const assets = assetsByTag.get(tag);
+    assert.ok(assets, `no prepared assets for tag ${tag}`);
 
     if (file === platform.CHECKSUMS_NAME) {
-      return fakeResponse(`${sha256(zipBuffer)}  ${asset}\n`);
+      const checksums = [...assets.entries()]
+        .map(([name, buffer]) => `${sha256(buffer)}  ${name}`)
+        .join("\n");
+      return fakeResponse(`${checksums}\n`);
     }
-    return fakeResponse(zipBuffer);
+
+    const archive = assets.get(file);
+    return archive ? fakeResponse(archive) : fakeResponse("", 404);
   };
 }
 
@@ -59,13 +66,17 @@ async function withDownloadOverrides(overrides, fn) {
   const originals = {
     fetch: global.fetch,
     installedBinaryPath: platform.installedBinaryPath,
+    installedVoiceBinaryPath: platform.installedVoiceBinaryPath,
     vendorDir: platform.vendorDir,
+    voiceDir: platform.voiceDir,
     cliVersion: process.env.STEMCODE_CLI_VERSION,
   };
   try {
     global.fetch = overrides.fetch;
     platform.installedBinaryPath = overrides.installedBinaryPath;
+    platform.installedVoiceBinaryPath = overrides.installedVoiceBinaryPath;
     platform.vendorDir = overrides.vendorDir;
+    platform.voiceDir = overrides.voiceDir;
     if (overrides.cliVersion === undefined) {
       delete process.env.STEMCODE_CLI_VERSION;
     } else {
@@ -75,7 +86,9 @@ async function withDownloadOverrides(overrides, fn) {
   } finally {
     global.fetch = originals.fetch;
     platform.installedBinaryPath = originals.installedBinaryPath;
+    platform.installedVoiceBinaryPath = originals.installedVoiceBinaryPath;
     platform.vendorDir = originals.vendorDir;
+    platform.voiceDir = originals.voiceDir;
     if (originals.cliVersion === undefined) {
       delete process.env.STEMCODE_CLI_VERSION;
     } else {
@@ -84,61 +97,87 @@ async function withDownloadOverrides(overrides, fn) {
   }
 }
 
+function createReleaseAssets(tag, cliContents, voiceContents) {
+  const rid = platform.resolveRid();
+  const cliAsset = platform.assetName(rid);
+  const voiceAsset = platform.voiceAssetName(rid);
+  const cliZip = makeZip({
+    [platform.executableFileName()]: cliContents,
+  });
+  const voiceZip = makeZip({
+    [platform.voiceExecutableFileName()]: voiceContents,
+    "voice-native-file.txt": "native-runtime-content",
+  });
+
+  return new Map([
+    [tag, new Map([
+      [cliAsset, cliZip],
+      [voiceAsset, voiceZip],
+    ])],
+  ]);
+}
+
 test("ensureBinary falls back to the alternate-case tag when the primary 404s", async () => {
-  const asset = platform.assetName(platform.resolveRid());
   const executable = platform.executableFileName();
+  const voiceExecutable = platform.voiceExecutableFileName();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stemcode-dl-"));
+  const voiceDir = path.join(tempDir, "voice");
 
   try {
-    const zipBuffer = makeZip(executable, "fake-stemcode-binary");
     const fetch = makeFetch({
       missingTags: new Set(["V1.1.10"]),
-      zipByTag: new Map([["v1.1.10", zipBuffer]]),
-      asset,
+      assetsByTag: createReleaseAssets("v1.1.10", "fake-stemcode-binary", "fake-voice-binary"),
     });
 
     const result = await withDownloadOverrides(
       {
         fetch,
         installedBinaryPath: () => path.join(tempDir, executable),
+        installedVoiceBinaryPath: () => path.join(voiceDir, voiceExecutable),
         vendorDir: () => tempDir,
+        voiceDir: () => voiceDir,
         cliVersion: "1.1.10", // resolveTag() => V1.1.10 (primary)
       },
       () => download.ensureBinary({ force: true, log: () => {} })
     );
 
     assert.equal(result, path.join(tempDir, executable));
-    assert.ok(fs.existsSync(result), "binary should be extracted to disk");
+    assert.ok(fs.existsSync(result), "CLI binary should be extracted to disk");
+    assert.ok(fs.existsSync(path.join(voiceDir, voiceExecutable)), "Voice runtime should be extracted");
+    assert.ok(fs.existsSync(path.join(voiceDir, "voice-native-file.txt")), "Voice native files should be retained");
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
 
 test("ensureBinary uses the primary tag when it resolves successfully", async () => {
-  const asset = platform.assetName(platform.resolveRid());
   const executable = platform.executableFileName();
+  const voiceExecutable = platform.voiceExecutableFileName();
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "stemcode-dl-"));
+  const voiceDir = path.join(tempDir, "voice");
 
   try {
-    const zipBuffer = makeZip(executable, "fake-stemcode-binary-primary");
     const fetch = makeFetch({
       missingTags: new Set(),
-      zipByTag: new Map([["V1.1.10", zipBuffer]]),
-      asset,
+      assetsByTag: createReleaseAssets("V1.1.10", "fake-stemcode-binary-primary", "fake-voice-binary-primary"),
     });
 
     const result = await withDownloadOverrides(
       {
         fetch,
         installedBinaryPath: () => path.join(tempDir, executable),
+        installedVoiceBinaryPath: () => path.join(voiceDir, voiceExecutable),
         vendorDir: () => tempDir,
+        voiceDir: () => voiceDir,
         cliVersion: "1.1.10", // resolveTag() => V1.1.10 (primary)
       },
       () => download.ensureBinary({ force: true, log: () => {} })
     );
 
     assert.equal(result, path.join(tempDir, executable));
-    assert.ok(fs.existsSync(result), "binary should be extracted to disk");
+    assert.ok(fs.existsSync(result), "CLI binary should be extracted to disk");
+    assert.ok(fs.existsSync(path.join(voiceDir, voiceExecutable)), "Voice runtime should be extracted");
+    assert.ok(fs.existsSync(path.join(voiceDir, "voice-native-file.txt")), "Voice native files should be retained");
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
