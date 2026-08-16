@@ -1,4 +1,4 @@
-using NAudio.Wave;
+using PortAudioSharp;
 
 namespace StemCode.Voice;
 
@@ -87,25 +87,43 @@ internal static class Program
 
     private static IReadOnlyList<InputDevice> ListInputDevices()
     {
-        if (!OperatingSystem.IsWindows())
+        PortAudio.Initialize();
+        try
         {
-            return [new InputDevice(string.Empty, "System default", IsDefault: true)];
-        }
+            int deviceCount = PortAudio.DeviceCount;
+            if (deviceCount <= 0)
+            {
+                return [new InputDevice(string.Empty, "System default", IsDefault: true)];
+            }
 
-        int deviceCount = WaveInEvent.DeviceCount;
-        if (deviceCount <= 0)
+            int defaultDevice = PortAudio.DefaultInputDevice;
+            var devices = new List<InputDevice>(deviceCount);
+
+            for (int index = 0; index < deviceCount; index++)
+            {
+                DeviceInfo info = PortAudio.GetDeviceInfo(index);
+                if (info.maxInputChannels < 1)
+                {
+                    continue;
+                }
+
+                string name = string.IsNullOrWhiteSpace(info.name)
+                    ? $"Input device {index}"
+                    : info.name.Trim();
+                devices.Add(new InputDevice(index.ToString(), name, IsDefault: index == defaultDevice));
+            }
+
+            if (devices.Count == 0)
+            {
+                return [new InputDevice(string.Empty, "System default", IsDefault: true)];
+            }
+
+            return devices;
+        }
+        finally
         {
-            return [new InputDevice(string.Empty, "System default", IsDefault: true)];
+            PortAudio.Terminate();
         }
-
-        var devices = new List<InputDevice>(deviceCount);
-        for (int index = 0; index < deviceCount; index++)
-        {
-            string name = WaveInEvent.GetCapabilities(index).ProductName;
-            devices.Add(new InputDevice(index.ToString(), name, IsDefault: index == 0));
-        }
-
-        return devices;
     }
 
     private static async Task<int> RunModelCommandAsync(string[] args, CancellationToken cancellationToken)

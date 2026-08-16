@@ -1,94 +1,323 @@
-using NAudio.Wave;
-using System.Diagnostics;
+using System.Runtime.InteropServices;
+using PortAudioSharp;
 
 namespace StemCode.Voice;
 
 /// <summary>
-/// Captures microphone audio as 16 kHz mono 16-bit PCM and returns it as
-/// normalized float samples suitable for Whisper. Stops automatically after a
-/// period of silence or when the maximum duration is reached, and honors
-/// cancellation (for example Ctrl+C) by returning whatever was captured.
+/// Captures microphone audio as 16 kHz mono float samples in the range [-1, 1],
+/// suitable for Whisper.
+///
+/// Recording stops when:
+/// - Speech has been detected and then continuous silence lasts long enough.
+/// - The maximum recording duration is reached.
+/// - Cancellation is requested.
+///
+/// Works on Windows, macOS, and Linux through PortAudio.
 /// </summary>
 internal static class MicrophoneCapture
 {
-    private const double SilenceThreshold = 0.01;
-    private const int SilenceLimitMilliseconds = 1200;
-    private const int SampleRate = 16000;
+    private const int SampleRate = 16_000;
+
+    // Analyze audio in 20 ms windows.
+    private const int AnalysisWindowMilliseconds = 20;
+    private const int AnalysisWindowSamples =
+        SampleRate * AnalysisWindowMilliseconds / 1000; // 320 samples
+
+    // Anything below roughly -40 dBFS is considered silence.
+    private const double SilenceThresholdDb = -40.0;
+
+    // Stop after this much continuous silence once speech has started.
+    private const int SilenceLimitMilliseconds = 1_200;
+    private const int SilenceLimitSamples =
+        SampleRate * SilenceLimitMilliseconds / 1000;
+
     private const int MaxDurationSeconds = 25;
+    private const int MaxSampleCount = SampleRate * MaxDurationSeconds;
 
     public static async Task<float[]> CaptureAsync(
         int? deviceNumber,
         CancellationToken cancellationToken)
     {
-        if (!OperatingSystem.IsWindows())
+        PortAudio.Initialize();
+
+        try
         {
-            throw new PlatformNotSupportedException(
-                "Microphone capture for voice dictation is currently supported on Windows only.");
+            int deviceIndex =
+                deviceNumber ?? PortAudio.DefaultInputDevice;
+
+            if (deviceIndex == PortAudio.NoDevice)
+            {
+                throw new InvalidOperationException(
+                    "No microphone input device was found.");
+            }
+
+            DeviceInfo info = PortAudio.GetDeviceInfo(deviceIndex);
+
+            if (info.maxInputChannels < 1)
+            {
+                throw new InvalidOperationException(
+                    $"The selected device '{info.name}' does not support audio input.");
+            }
+
+            var parameters = new StreamParameters
+            {
+                device = deviceIndex,
+                channelCount = 1,
+                sampleFormat = SampleFormat.Float32,
+                suggestedLatency = info.defaultLowInputLatency,
+                hostApiSpecificStreamInfo = IntPtr.Zero
+            };
+
+            var samples = new List<float>(MaxSampleCount);
+
+            var completion =
+                new TaskCompletionSource<float[]>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+
+            var guard = new object();
+
+            int silentSampleCount = 0;
+            bool heardSpeech = false;
+            bool completed = false;
+
+            void ProcessAudio(float[] chunk)
+            {
+                lock (guard)
+                {
+                    if (completed)
+                    {
+                        return;
+                    }
+
+                    int remainingCapacity =
+                        MaxSampleCount - samples.Count;
+
+                    if (remainingCapacity <= 0)
+                    {
+                        return;
+                    }
+
+                    int samplesToKeep =
+                        Math.Min(chunk.Length, remainingCapacity);
+
+                    for (int i = 0; i < samplesToKeep; i++)
+                    {
+                        samples.Add(chunk[i]);
+                    }
+
+                    // Analyze the incoming chunk in small fixed windows.
+                    int offset = 0;
+
+                    while (offset < samplesToKeep)
+                    {
+                        int windowLength = Math.Min(
+                            AnalysisWindowSamples,
+                            samplesToKeep - offset);
+
+                        double rms =
+                            ComputeRms(chunk, offset, windowLength);
+
+                        double db = RmsToDb(rms);
+
+                        if (db < SilenceThresholdDb)
+                        {
+                            if (heardSpeech)
+                            {
+                                silentSampleCount += windowLength;
+                            }
+                        }
+                        else
+                        {
+                            heardSpeech = true;
+                            silentSampleCount = 0;
+                        }
+
+                        offset += windowLength;
+                    }
+                }
+            }
+
+            PortAudioSharp.Stream.Callback callback =
+                (
+                    input,
+                    output,
+                    frameCount,
+                    ref StreamCallbackTimeInfo timeInfo,
+                    StreamCallbackFlags statusFlags,
+                    IntPtr userDataPtr) =>
+                {
+                    if (input == IntPtr.Zero || frameCount == 0)
+                    {
+                        return StreamCallbackResult.Continue;
+                    }
+
+                    int count = checked((int)frameCount);
+
+                    var chunk = new float[count];
+
+                    Marshal.Copy(
+                        input,
+                        chunk,
+                        0,
+                        count);
+
+                    ProcessAudio(chunk);
+
+                    return StreamCallbackResult.Continue;
+                };
+
+            using var stream = new PortAudioSharp.Stream(
+                inParams: parameters,
+                outParams: null,
+                sampleRate: SampleRate,
+                framesPerBuffer: 0,
+                streamFlags: StreamFlags.ClipOff,
+                callback: callback,
+                userData: null);
+
+            try
+            {
+                stream.Start();
+            }
+            catch (PortAudioException exception)
+            {
+                throw new InvalidOperationException(
+                    $"Unable to start microphone capture on device '{info.name}'.",
+                    exception);
+            }
+
+            void StopCapture()
+            {
+                float[] capturedSamples;
+
+                lock (guard)
+                {
+                    if (completed)
+                    {
+                        return;
+                    }
+
+                    completed = true;
+                    capturedSamples = samples.ToArray();
+                }
+
+                try
+                {
+                    stream.Stop();
+                }
+                catch (PortAudioException)
+                {
+                    // Stream may already be stopping or stopped.
+                    // The captured samples are still usable.
+                }
+
+                completion.TrySetResult(capturedSamples);
+            }
+
+            // Monitor state outside of the real-time PortAudio callback.
+            //
+            // We intentionally don't call stream.Stop() directly inside the
+            // PortAudio callback because stopping/closing a stream from its
+            // callback can cause backend-specific problems.
+            Task monitor = Task.Run(async () =>
+            {
+                try
+                {
+                    while (true)
+                    {
+                        await Task.Delay(
+                            50,
+                            cancellationToken);
+
+                        int sampleCount;
+                        int silenceSamples;
+                        bool speechDetected;
+                        bool alreadyCompleted;
+
+                        lock (guard)
+                        {
+                            sampleCount = samples.Count;
+                            silenceSamples = silentSampleCount;
+                            speechDetected = heardSpeech;
+                            alreadyCompleted = completed;
+                        }
+
+                        if (alreadyCompleted)
+                        {
+                            return;
+                        }
+
+                        bool silenceReached =
+                            speechDetected &&
+                            silenceSamples >= SilenceLimitSamples;
+
+                        bool maximumReached =
+                            sampleCount >= MaxSampleCount;
+
+                        if (silenceReached || maximumReached)
+                        {
+                            StopCapture();
+                            return;
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    StopCapture();
+                }
+            });
+
+            using CancellationTokenRegistration registration =
+                cancellationToken.Register(StopCapture);
+
+            float[] result = await completion.Task;
+
+            await monitor;
+
+            return result;
         }
-
-        var samples = new List<float>(SampleRate * MaxDurationSeconds);
-        var completion = new TaskCompletionSource<float[]>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        using var waveIn = new WaveInEvent
+        finally
         {
-            DeviceNumber = deviceNumber ?? 0,
-            WaveFormat = new WaveFormat(SampleRate, 16, 1),
-            BufferMilliseconds = 50
-        };
-
-        var stopwatch = Stopwatch.StartNew();
-        var silentMilliseconds = 0;
-        var heardSpeech = false;
-
-        waveIn.DataAvailable += (_, args) =>
-        {
-            for (int offset = 0; offset + 1 < args.BytesRecorded; offset += 2)
-            {
-                short value = BitConverter.ToInt16(args.Buffer, offset);
-                samples.Add(value / 32768f);
-            }
-
-            double rms = ComputeRms(args.Buffer, args.BytesRecorded);
-            if (rms < SilenceThreshold)
-            {
-                silentMilliseconds += waveIn.BufferMilliseconds;
-            }
-            else
-            {
-                heardSpeech = true;
-                silentMilliseconds = 0;
-            }
-
-            if ((heardSpeech && silentMilliseconds >= SilenceLimitMilliseconds) ||
-                stopwatch.Elapsed.TotalSeconds >= MaxDurationSeconds)
-            {
-                waveIn.StopRecording();
-            }
-        };
-
-        waveIn.RecordingStopped += (_, _) => completion.TrySetResult(samples.ToArray());
-
-        using (cancellationToken.Register(() => waveIn.StopRecording()))
-        {
-            waveIn.StartRecording();
-            float[] captured = await completion.Task;
-            stopwatch.Stop();
-            return captured;
+            PortAudio.Terminate();
         }
     }
 
-    private static double ComputeRms(byte[] buffer, int bytesRecorded)
+    /// <summary>
+    /// Calculates RMS for a section of a float sample buffer.
+    /// </summary>
+    private static double ComputeRms(
+        float[] samples,
+        int offset,
+        int count)
     {
-        long sumOfSquares = 0;
-        int count = 0;
-
-        for (int offset = 0; offset + 1 < bytesRecorded; offset += 2)
+        if (count <= 0)
         {
-            short value = BitConverter.ToInt16(buffer, offset);
-            sumOfSquares += (long)value * value;
-            count++;
+            return 0d;
         }
 
-        return count == 0 ? 0 : Math.Sqrt(sumOfSquares / (double)count) / 32768.0;
+        double sumOfSquares = 0d;
+
+        int end = offset + count;
+
+        for (int i = offset; i < end; i++)
+        {
+            double value = samples[i];
+            sumOfSquares += value * value;
+        }
+
+        return Math.Sqrt(sumOfSquares / count);
+    }
+
+    /// <summary>
+    /// Converts RMS amplitude to dBFS.
+    /// </summary>
+    private static double RmsToDb(double rms)
+    {
+        if (rms <= 0d)
+        {
+            return double.NegativeInfinity;
+        }
+
+        return 20d * Math.Log10(rms);
     }
 }

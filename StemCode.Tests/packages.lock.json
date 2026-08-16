@@ -379,59 +379,47 @@
           "Newtonsoft.Json": "13.0.3"
         }
       },
-      "NAudio": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "c0DzwiyyklM0TP39Y7RObwO3QkWecgM6H60ikiEnsV/aEAJPbj5MFCLaD8BSfKuZe0HGuh9GRGWWlJmSxDc9MA==",
-        "dependencies": {
-          "NAudio.Asio": "2.2.1",
-          "NAudio.Core": "2.2.1",
-          "NAudio.Midi": "2.2.1",
-          "NAudio.Wasapi": "2.2.1",
-          "NAudio.WinMM": "2.2.1"
-        }
-      },
-      "NAudio.Asio": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "hQglyOT5iT3XuGpBP8ZG0+aoqwRfidHjTNehpoWwX0g6KJEgtH2VaqM2nuJ2mheKZa/IBqB4YQTZVvrIapzfOA==",
-        "dependencies": {
-          "NAudio.Core": "2.2.1"
-        }
-      },
-      "NAudio.Core": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "GgkdP6K/7FqXFo7uHvoqGZTJvW4z8g2IffhOO4JHaLzKCdDOUEzVKtveoZkCuUX8eV2HAINqi7VFqlFndrnz/g=="
-      },
-      "NAudio.Midi": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "6r23ylGo5aeP02WFXsPquz0T0hFJWyh+7t++tz19tc3Kr38NHm+Z9j+FiAv+xkH8tZqXJqus9Q8p6u7bidIgbw==",
-        "dependencies": {
-          "NAudio.Core": "2.2.1"
-        }
-      },
-      "NAudio.Wasapi": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "lFfXoqacZZe0WqNChJgGYI+XV/n/61LzPHT3C1CJp4khoxeo2sziyX5wzNYWeCMNbsWxFvT3b3iXeY1UYjBhZw==",
-        "dependencies": {
-          "NAudio.Core": "2.2.1"
-        }
-      },
-      "NAudio.WinMM": {
-        "type": "Transitive",
-        "resolved": "2.2.1",
-        "contentHash": "xFHRFwH4x6aq3IxRbewvO33ugJRvZFEOfO62i7uQJRUNW2cnu6BeBTHUS0JD5KBucZbHZaYqxQG8dwZ47ezQuQ==",
-        "dependencies": {
-          "NAudio.Core": "2.2.1"
-        }
-      },
       "Newtonsoft.Json": {
         "type": "Transitive",
         "resolved": "13.0.3",
         "contentHash": "HrC5BXdl00IP9zeV+0Z848QWPAoCr9P3bDEZguI+gkLcBKAOxix/tLEAAHC+UvDNPv4a2d18lOReHMOagPa+zQ=="
+      },
+      "org.k2fsa.portaudio.runtime.linux-aarch64": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "kha8bJ1Cqte5pe+V+IWK79OVfdgu0jeRFGlAVd1Iw0JBv04X238t7FVR3GPHK2ix7c1Vqb8yJhneEAkVfrEeeQ=="
+      },
+      "org.k2fsa.portaudio.runtime.linux-x64": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "0D0ECSNhKIAGWjrZuDkBS2GGuQD5l+Kqbfg/DSGQYxaVu/6Zc4fCOEf9uTwOHLyaSp3vINWH8Nw68nqctcqtRw=="
+      },
+      "org.k2fsa.portaudio.runtime.osx-arm64": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "BvxoZ5VtvC+R/gZSh5pzOAeoCDd6/1kfO4HKYavpuD179ZCOTwFZF3Zy6x5TDe0smX+NOwqqcHYswTf8IK5U0g=="
+      },
+      "org.k2fsa.portaudio.runtime.osx-x64": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "RuhJuQ1PXD6XEP/C3JqGkBXkYMDrG248Xkfo7TKUj9anOjhEWrf+B+TAuWImwbtPpYOv2v/MC0wDh/E80o/Chw=="
+      },
+      "org.k2fsa.portaudio.runtime.win-x64": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "IUmJ8Nw9G+D09OETUD39GLuFD3+uuZrXhy5iWS6Md0VZVtnKcC2gHweVUyOSIr/MZRLgSA+58PfixFLiIo8YUQ=="
+      },
+      "PortAudioSharp2": {
+        "type": "Transitive",
+        "resolved": "1.0.6",
+        "contentHash": "8wjpXYVi9G0xp04veuOOSqu5YHekf4ZfuC77vESj2Ccv1SJ6SUxk33NEGTzS1No4INNucZ7864hdDCimbKvHqQ==",
+        "dependencies": {
+          "org.k2fsa.portaudio.runtime.linux-aarch64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.linux-x64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.osx-arm64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.osx-x64": "1.0.6",
+          "org.k2fsa.portaudio.runtime.win-x64": "1.0.6"
+        }
       },
       "Spectre.Console": {
         "type": "Transitive",
@@ -524,8 +512,7 @@
       "stemcode-voice": {
         "type": "Project",
         "dependencies": {
-          "NAudio": "[2.2.1, )",
-          "NAudio.WinMM": "[2.2.1, )",
+          "PortAudioSharp2": "[1.0.6, )",
           "Whisper.net": "[1.9.1, )",
           "Whisper.net.Runtime": "[1.9.1, )"
         }

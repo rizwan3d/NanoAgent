@@ -8,7 +8,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <!-- The voice runtime is intentionally NOT AOT: it hosts the native Whisper
-         library and NAudio, and is published separately next to the AOT host. -->
+         library and PortAudio, and is published separately next to the AOT host. -->
     <PublishAot>false</PublishAot>
     <IsAotCompatible>false</IsAotCompatible>
     <IsPackable>false</IsPackable>
@@ -18,12 +18,11 @@
   <ItemGroup>
     <PackageReference Include="Whisper.net" Version="1.9.1" />
     <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
-    <!-- WaveInEvent / WinMM capture lives in NAudio.WinMM (NAudio 2.x split the
-         Windows Multimedia APIs out of the NAudio meta-package). Referencing it
-         directly guarantees the type is available at compile time instead of
-         relying on transitive flow from the NAudio package. -->
-    <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
-    <PackageReference Include="NAudio" Version="2.2.1" />
+    <!-- Cross-platform microphone capture. PortAudioSharp2 binds PortAudio and
+         bundles the native library (WASAPI on Windows, CoreAudio on macOS and
+         ALSA/PulseAudio on Linux), so a single capture path works on every
+         supported operating system. -->
+    <PackageReference Include="PortAudioSharp2" Version="1.0.6" />
   </ItemGroup>
 
   <ItemGroup>
