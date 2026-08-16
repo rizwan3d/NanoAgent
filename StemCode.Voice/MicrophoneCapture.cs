@@ -139,9 +139,9 @@ internal static class MicrophoneCapture
 
             PortAudioSharp.Stream.Callback callback =
                 (
-                    input,
-                    output,
-                    frameCount,
+                    IntPtr input,
+                    IntPtr output,
+                    uint frameCount,
                     ref StreamCallbackTimeInfo timeInfo,
                     StreamCallbackFlags statusFlags,
                     IntPtr userDataPtr) =>
