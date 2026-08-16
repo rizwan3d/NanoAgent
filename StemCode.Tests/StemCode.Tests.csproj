@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\StemCode.CLI\StemCode.CLI.csproj" />
     <ProjectReference Include="..\StemCode\StemCode.csproj" />
+    <ProjectReference Include="..\StemCode.Voice\StemCode.Voice.csproj" />
   </ItemGroup>
 
   <ItemGroup>

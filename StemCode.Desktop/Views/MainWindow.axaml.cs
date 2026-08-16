@@ -45,6 +45,22 @@ public partial class MainWindow : Window
             return;
         }
 
+        if (e.Key == Key.R && e.KeyModifiers.HasFlag(KeyModifiers.Control))
+        {
+            e.Handled = true;
+            await viewModel.Chat.DictateVoiceAsync();
+            return;
+        }
+
+        bool isPlainEnter = e.Key == Key.Enter &&
+            !e.KeyModifiers.HasFlag(KeyModifiers.Shift) &&
+            !e.KeyModifiers.HasFlag(KeyModifiers.Control);
+        if (isPlainEnter && await viewModel.Chat.TryHandleVoiceCommandAsync())
+        {
+            e.Handled = true;
+            return;
+        }
+
         if (!viewModel.Chat.ShouldHandlePromptKey(e.Key, e.KeyModifiers))
         {
             return;

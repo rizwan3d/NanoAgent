@@ -12,6 +12,11 @@ internal static class CliApplication
             return specialExitCode;
         }
 
+        if (VoiceConsoleRunner.IsInvocation(args))
+        {
+            return await VoiceConsoleRunner.RunAsync(args);
+        }
+
         CliInvocation invocation;
         try
         {

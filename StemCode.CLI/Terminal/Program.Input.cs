@@ -37,6 +37,14 @@ public static partial class Program
                 return;
             }
 
+            // While a voice dictation is running, any key press stops it
+            // (the runtime process is cancelled and the mic is released).
+            if (IsVoiceOperationActive(state))
+            {
+                StopVoiceOperation(state);
+                continue;
+            }
+
             if (TrySkipLineFeedAfterCarriageReturn(state, key))
             {
                 continue;
@@ -87,6 +95,12 @@ public static partial class Program
             if (TryHandleGitSidebarKey(state, key))
             {
                 continue;
+            }
+
+            if (IsVoiceDictationKey(key))
+            {
+                StartVoiceDictation(state);
+                return;
             }
 
             if (key.Key == ConsoleKey.V &&
@@ -187,6 +201,17 @@ public static partial class Program
                     continue;
                 }
 
+                if (TryHandleVoiceInputCommand(state))
+                {
+                    return;
+                }
+
+                if (IsVoiceOperationActive(state))
+                {
+                    state.AddSystemMessage("Voice dictation is still in progress.");
+                    return;
+                }
+
                 SubmitInput(state);
                 return;
             }
@@ -237,11 +262,6 @@ public static partial class Program
             return true;
         }
 
-        // If the backend operation is still running, cancel its token. This covers
-        // both a plain in-flight turn and a !! background stream that streams output
-        // live while the backend poll loop is still active: the backend observes the
-        // cancellation and finishes gracefully (detaching from the terminal, which
-        // keeps running).
         if (state.IsStreaming)
         {
             state.IsStreaming = false;
@@ -258,8 +278,6 @@ public static partial class Program
             return true;
         }
 
-        // Busy but the backend task already settled and the UI has not caught up
-        // yet; cancel the token defensively so Esc is never a no-op while busy.
         if (state.IsBusy)
         {
             if (!state.IsTurnInterruptPending)
@@ -394,14 +412,12 @@ public static partial class Program
 
     private static bool IsToggleThinkingKey(ConsoleKeyInfo key)
     {
-        // Ctrl+T arrives as ConsoleKey.T+Control on the direct read path and as the
-        // raw 0x14 control character on the terminal escape path.
         return (key.Key == ConsoleKey.T && key.Modifiers.HasFlag(ConsoleModifiers.Control)) ||
-            key.KeyChar == '';
+            key.KeyChar == '\u0014';
     }
 
     private static void ToggleThinkingExpansion(AppState state)
-   {
+    {
         bool hasThinking = state.Messages.Any(m => m.Role == Role.Thinking);
         bool hasToolCalls = state.Messages.Any(m => m.IsCollapsibleToolMessage);
         bool allExpanded = (!hasThinking || state.AreAllThinkingExpanded()) &&
@@ -409,19 +425,17 @@ public static partial class Program
 
         if (allExpanded)
         {
-            // Collapse all thinking and tool call blocks
             state.ExpandedThinkingMessageIds.Clear();
             state.ExpandedToolMessageIds.Clear();
         }
         else
         {
-            // Expand all thinking and tool call blocks
             state.ExpandAllThinking();
             state.ExpandAllToolCalls();
         }
 
         state.SkipNextInputLineFeed = false;
-   }
+    }
 
     private static bool IsEnterKey(ConsoleKeyInfo key)
     {
@@ -454,6 +468,7 @@ public static partial class Program
         return key.Key == ConsoleKey.Escape ||
             key.KeyChar == '\u001b';
     }
+
     private static bool HandlePlanScrollInput(AppState state, ConsoleKeyInfo key)
     {
         if (!HasPinnedPlan(state) || key.Modifiers != 0)
@@ -652,7 +667,6 @@ public static partial class Program
             return;
         }
 
-        // Wheel events (button codes 64/65) scroll regardless of press/release.
         int normalizedButtonCode = buttonCode & ~0b1_1100;
         bool isMotion = (buttonCode & 0b10_0000) != 0;
         if (normalizedButtonCode is 64 or 65)
@@ -670,8 +684,6 @@ public static partial class Program
                 return;
             }
 
-            // Scroll the git sidebar when the pointer is over its columns; otherwise the
-            // conversation. 64 = wheel up (earlier lines), 65 = wheel down.
             if (state.IsGitSidebarVisible &&
                 int.TryParse(parts[1], out int wheelColumn) &&
                 wheelColumn <= state.GitSidebarWidth)
@@ -701,8 +713,6 @@ public static partial class Program
             return;
         }
 
-        // A left-button press (code 0) clicks a sidebar file (when the pointer is over
-        // the git sidebar columns) or toggles the thinking block under the pointer.
         if (isPress &&
             normalizedButtonCode == 0 &&
             int.TryParse(parts[1], out int column) &&
@@ -713,55 +723,49 @@ public static partial class Program
                 column <= state.GitSidebarWidth)
             {
                 HandleGitSidebarClick(state, row);
-               return;
-           }
+                return;
+            }
 
-            // Click on the header working directory row opens an action menu.
             if (state.HeaderWorkingDirectoryClickRow > 0 && row == state.HeaderWorkingDirectoryClickRow)
             {
                 HandleWorkingDirectoryClick(state);
                 return;
             }
 
-
-            // Click on the input panel status row opens the matching selection for
-            // whichever visible label was clicked.
             if (state.InputPanelHeaderRow > 0 && row == state.InputPanelHeaderRow)
             {
                 HandleInputPanelHeaderClick(state, column);
                 return;
             }
+
             bool showFullOutput = (buttonCode & 0b1_1000) != 0;
             HandleConversationClick(state, row, showFullOutput);
         }
     }
 
-    // Maps a 1-based terminal row to the conversation line rendered there and toggles its
-    // thinking block, if any. Disabled while a modal, reader view, or copy mode is active.
     private static void HandleConversationClick(AppState state, int row, bool showFullOutput)
     {
-       if (state.ActiveModal is not null ||
-           state.IsReaderViewActive ||
-           state.IsCopyModeActive ||
-           state.MessagesContentTopRow <= 0)
-       {
-           return;
-       }
-
-       int index = row - state.MessagesContentTopRow;
-       int?[] visibleIds = state.VisibleThinkingMessageIds;
-       if (index < 0 || index >= visibleIds.Length)
-       {
-           return;
-       }
-
-       if (visibleIds[index] is int messageId)
-       {
-           state.ToggleThinkingMessage(messageId);
+        if (state.ActiveModal is not null ||
+            state.IsReaderViewActive ||
+            state.IsCopyModeActive ||
+            state.MessagesContentTopRow <= 0)
+        {
             return;
         }
 
-        // Check tool call blocks when no thinking block was found.
+        int index = row - state.MessagesContentTopRow;
+        int?[] visibleIds = state.VisibleThinkingMessageIds;
+        if (index < 0 || index >= visibleIds.Length)
+        {
+            return;
+        }
+
+        if (visibleIds[index] is int messageId)
+        {
+            state.ToggleThinkingMessage(messageId);
+            return;
+        }
+
         int?[] toolCallVisibleIds = state.VisibleToolCallMessageIds;
         if (index >= 0 && index < toolCallVisibleIds.Length &&
             toolCallVisibleIds[index] is int toolCallMessageId)
@@ -774,8 +778,8 @@ public static partial class Program
             {
                 state.ToggleToolCallMessage(toolCallMessageId);
             }
-       }
-   }
+        }
+    }
 
     private static void ConsumeX10MouseInput(AppState state)
     {
@@ -878,8 +882,6 @@ public static partial class Program
                 ToggleGitSidebar(state);
                 return;
 
-            // Ctrl+Up / Ctrl+Down / Ctrl+PgUp / Ctrl+PgDn scroll the git sidebar.
-            // ScrollGitSidebar clamps to 0 when the sidebar is hidden, so no guard needed.
             case "1;5A":
                 ScrollGitSidebar(state, -MouseWheelScrollLineCount);
                 return;
@@ -1370,15 +1372,15 @@ public static partial class Program
             return false;
         }
 
-        StemCode.Application.Models.SelectionPromptOption<int>[] options = state.InputAttachments
-            .Select((attachment, index) => new StemCode.Application.Models.SelectionPromptOption<int>(
+        SelectionPromptOption<int>[] options = state.InputAttachments
+            .Select((attachment, index) => new SelectionPromptOption<int>(
                 attachment.Name,
                 index,
                 attachment.MediaType))
             .ToArray();
 
         state.ActiveModal = SelectionModalState<int>.Create(
-            new StemCode.Application.Models.SelectionPromptRequest<int>(
+            new SelectionPromptRequest<int>(
                 "Remove attached file",
                 options,
                 "Choose an attached file to remove from this input.",
@@ -1669,8 +1671,6 @@ public static partial class Program
         IReadOnlyList<string> Arguments,
         bool TrimTrailingNewline);
 
-    // Writes text to the system clipboard using the platform's clipboard CLI, mirroring
-    // TryReadClipboardText. Returns true once a command succeeds.
     private static bool TryWriteClipboardText(string text)
     {
         ClipboardWriteCommand[] commands = OperatingSystem.IsWindows()
@@ -1955,11 +1955,9 @@ public static partial class Program
         else if (normalizedButtonCode == 65)
         {
             ScrollConversation(state, -MouseWheelScrollLineCount);
-       }
-   }
+        }
+    }
 
-    // Shows a selection modal with actions for the current working directory:
-    // "Open in Explorer" and "Start Terminal".
     private static void HandleWorkingDirectoryClick(AppState state)
     {
         if (state.ActiveModal is not null ||
@@ -1973,14 +1971,14 @@ public static partial class Program
         string displayPath = TruncateFromRight(rootDirectory, 60);
 
         state.ActiveModal = SelectionModalState<string>.Create(
-            new StemCode.Application.Models.SelectionPromptRequest<string>(
+            new SelectionPromptRequest<string>(
                 "Working directory actions",
                 [
-                    new StemCode.Application.Models.SelectionPromptOption<string>(
+                    new SelectionPromptOption<string>(
                         "Open in Explorer",
                         "explorer",
                         $"Open {displayPath} in the system file manager."),
-                    new StemCode.Application.Models.SelectionPromptOption<string>(
+                    new SelectionPromptOption<string>(
                         "Start Terminal",
                         "terminal",
                         $"Open a new terminal window in {displayPath}.")
@@ -2005,8 +2003,6 @@ public static partial class Program
             onCancelled: _ => state.AddSystemMessage("Working directory action cancelled."));
     }
 
-
-    // Routes a click on the input status row to the matching setting picker.
     private static void HandleInputPanelHeaderClick(AppState state, int column)
     {
         if (state.ActiveModal is not null ||
@@ -2055,7 +2051,6 @@ public static partial class Program
             column <= endColumn;
     }
 
-    // Shows a selection modal to toggle thinking mode on/off.
     private static void OpenThinkingModeSelection(AppState state)
     {
         if (state.ActiveModal is not null ||
@@ -2069,14 +2064,14 @@ public static partial class Program
         bool isCurrentlyOn = string.Equals(state.ThinkingMode, ThinkingModeOptions.On, StringComparison.OrdinalIgnoreCase);
 
         state.ActiveModal = SelectionModalState<string>.Create(
-            new StemCode.Application.Models.SelectionPromptRequest<string>(
+            new SelectionPromptRequest<string>(
                 "Thinking Mode",
                 [
-                    new StemCode.Application.Models.SelectionPromptOption<string>(
+                    new SelectionPromptOption<string>(
                         "On",
                         "on",
                         "Enable thinking. Currently: " + currentMode + "."),
-                    new StemCode.Application.Models.SelectionPromptOption<string>(
+                    new SelectionPromptOption<string>(
                         "Off",
                         "off",
                         "Disable thinking. Currently: " + currentMode + ".")
@@ -2090,19 +2085,16 @@ public static partial class Program
             {
                 if (string.Equals(mode, ThinkingModeOptions.On, StringComparison.OrdinalIgnoreCase))
                 {
-                    // Turn thinking on — open reasoning selection (which sets reasoning -> turns thinking on)
                     HandleCommand(state, "/reasoning");
                 }
                 else
                 {
-                    // Turn thinking off — set reasoning to none
                     HandleCommand(state, "/reasoning none");
                 }
             },
             onCancelled: _ => state.AddSystemMessage("Thinking mode selection cancelled."));
     }
-    // Opens the working directory in the system file manager (Explorer on Windows,
-    // Finder on macOS, the default file manager on Linux).
+
     private static void OpenDirectoryInExplorer(AppState state)
     {
         string directory = state.RootDirectory ?? Directory.GetCurrentDirectory();
@@ -2131,10 +2123,6 @@ public static partial class Program
         }
     }
 
-    // Opens a new terminal window rooted at the working directory.
-    // On Windows it prefers Windows Terminal (wt.exe) falling back to cmd.exe.
-    // On macOS it opens the built-in Terminal app.
-    // On Linux it tries x-terminal-emulator then a few common terminals.
     private static void OpenTerminalInDirectory(AppState state)
     {
         string directory = state.RootDirectory ?? Directory.GetCurrentDirectory();

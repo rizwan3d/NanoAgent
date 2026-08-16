@@ -1,4 +1,5 @@
 using StemCode.Application.Utilities;
+using StemCode.Application.Voice;
 using StemCode.Infrastructure.Telemetry;
 using Spectre.Console;
 using Spectre.Console.Rendering;
@@ -132,7 +133,10 @@ public static partial class Program
             root["body"].Update(BuildBodyPanel(state));
         }
 
-            root["input-status"].Update(new Markup(BuildInputStatusLineMarkup(state)));
+            root["input-status"].Update(new Markup(
+                IsVoiceOperationActive(state)
+                    ? BuildVoiceStatusLineMarkup(state)
+                    : BuildInputStatusLineMarkup(state)));
             root["input"].Update(BuildInputPanel(state));
 
             root["footer"].Update(new Markup(" " + BuildFooterMarkup(state)));
@@ -570,6 +574,54 @@ public static partial class Program
         return plainText.Length <= widthBudget
             ? paddedMarkup
             : $"{new string(' ', InputLeftGutterWidth)}[grey]{Markup.Escape(TruncateFromRight(plainText, widthBudget))}[/]";
+    }
+
+    private static string BuildVoiceStatusLineMarkup(AppState state)
+    {
+        VoiceInteractionState voice = VoiceInteractionState.For(state);
+        string label = voice.ProgressStage switch
+        {
+            VoiceProgressStage.Downloading => "Downloading voice model",
+            VoiceProgressStage.Recording => "Listening",
+            VoiceProgressStage.Transcribing => "Transcribing voice",
+            VoiceProgressStage.Updating => "Updating voice models",
+            _ => "Preparing voice"
+        };
+
+        const string Hint = "press any key to stop";
+        int widthBudget = Math.Max(20, GetMainPaneWidth(state) - InputLeftGutterWidth);
+
+        string markup;
+        if (voice.ProgressFraction is double fraction)
+        {
+            int percentage = (int)Math.Round(Math.Clamp(fraction, 0d, 1d) * 100d);
+            int barWidth = Math.Clamp(
+                widthBudget - label.Length - Hint.Length - percentage.ToString().Length - 8,
+                8,
+                40);
+            string bar = BuildProgressBar(fraction, barWidth);
+            markup = "[yellow]" + Markup.Escape(label) + "[/] " + bar + " [grey]" + percentage + "% " + Hint + "[/]";
+        }
+        else
+        {
+            markup = "[yellow]" + Markup.Escape(label) + "[/] [grey]" + Hint + "[/]";
+        }
+
+        string paddedMarkup = new string(' ', InputLeftGutterWidth) + markup;
+        string plainText = Markup.Remove(markup);
+        return plainText.Length <= widthBudget
+            ? paddedMarkup
+            : new string(' ', InputLeftGutterWidth) + "[grey]" + Markup.Escape(TruncateFromRight(plainText, widthBudget)) + "[/]";
+    }
+
+    private static string BuildProgressBar(double fraction, int width)
+    {
+        int total = Math.Max(1, width);
+        int filled = (int)Math.Round(Math.Clamp(fraction, 0d, 1d) * total);
+        filled = Math.Clamp(filled, 0, total);
+        string filledBar = new string('#', filled);
+        string emptyBar = new string('-', total - filled);
+        return "[#7FE7F2]" + filledBar + "[/][grey]" + emptyBar + "[/]";
     }
 
     private static void ResetInputPanelClickZones(AppState state)
@@ -1762,6 +1814,12 @@ public static partial class Program
         {
             return BuildFooterLineMarkup(
                 "[grey]Ctrl+C: quit[/]  [grey]|[/]  [grey]/help[/]");
+        }
+
+        if (IsVoiceOperationActive(state))
+        {
+            return BuildFooterLineMarkup(
+                "[grey]Any key: stop voice[/]  [grey]|[/]  [grey]/help[/]");
         }
 
         if (state.IsReaderViewActive)

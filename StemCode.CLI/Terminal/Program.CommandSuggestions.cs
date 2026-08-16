@@ -364,6 +364,9 @@ public static partial class Program
             .Concat(
             [
                 new SlashCommandSuggestion("/clear", "/clear", "Clear the terminal conversation view.", false),
+                new SlashCommandSuggestion("/voice", "/voice", "Start voice dictation (Ctrl+R).", false),
+                new SlashCommandSuggestion("/voice setup", "/voice setup", "Configure the voice model and microphone.", true),
+                new SlashCommandSuggestion("/voice update", "/voice update", "Update the local voice models.", false),
                 new SlashCommandSuggestion("/ls", "/ls", "List files in the current workspace.", false),
                 new SlashCommandSuggestion("/read", "/read <file>", "Read a workspace file after confirmation.", true)
             ])

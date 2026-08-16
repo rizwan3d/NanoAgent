@@ -36,4 +36,22 @@
   <ItemGroup>
     <ProjectReference Include="..\StemCode\StemCode.csproj" />
   </ItemGroup>
+
+  <!--
+    Build/publish the Whisper "voice kit" (stemcode-voice) next to this host so voice
+    dictation works without a separate install. Runs as an independent dotnet publish with
+    an isolated intermediate path so it cannot contend with other builds of the project.
+  -->
+  <Target Name="PublishVoiceRuntime" AfterTargets="Build">
+    <PropertyGroup>
+      <VoiceRuntimeProject>$(MSBuildThisFileDirectory)..\StemCode.Voice\StemCode.Voice.csproj</VoiceRuntimeProject>
+      <VoiceRuntimeOutput>$(OutDir)voice</VoiceRuntimeOutput>
+    </PropertyGroup>
+    <MakeDir Directories="$(VoiceRuntimeOutput)" />
+    <Exec Condition="'$(RuntimeIdentifier)' != ''"
+          Command="dotnet publish &quot;$(VoiceRuntimeProject)&quot; -c $(Configuration) -r $(RuntimeIdentifier) -p:SelfContained=true -o &quot;$(VoiceRuntimeOutput)&quot;" />
+    <Exec Condition="'$(RuntimeIdentifier)' == ''"
+          Command="dotnet publish &quot;$(VoiceRuntimeProject)&quot; -c $(Configuration) -r $(NETCoreSdkRuntimeIdentifier) -p:SelfContained=true -o &quot;$(VoiceRuntimeOutput)&quot;" />
+  </Target>
+
 </Project>

@@ -191,7 +191,7 @@ public sealed class AppState
     // so the working directory / git branch line is clickable like the messages panel header.
     public int HeaderWorkingDirectoryClickRow { get; set; } = -1;
     // Screen geometry for the input panel header row. Set during BuildUi() so a mouse
-    // click on the "Model: &lt;name&gt;" row opens the model selection interface.
+    // click on the "Model: <name>" row opens the model selection interface.
     public int InputPanelHeaderRow { get; set; } = -1;
     public int InputPanelHeaderLeftColumn { get; set; } = -1;
     public int InputPanelHeaderRightColumn { get; set; } = -1;

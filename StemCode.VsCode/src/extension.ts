@@ -4,6 +4,7 @@ import { StemCodeProcessManager } from './services/StemCodeProcessManager';
 import { registerCommands } from './commands';
 import { SessionManager } from './services/SessionManager';
 import { registerChatCommands } from './commands/chat';
+import { registerVoiceCommand } from './commands/voice';
 import { ChatViewProvider } from './webviews/ChatViewProvider';
 
 let processManager: StemCodeProcessManager;
@@ -31,8 +32,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     registerCommands(context, processManager, logService);
     registerChatCommands(context, sessionManager, chatViewProvider);
+    registerVoiceCommand(context, processManager, chatViewProvider);
 
-    // Check autoStart config
     const config = vscode.workspace.getConfiguration('stemcode');
     if (config.get<boolean>('autoStart', false)) {
         processManager.start();

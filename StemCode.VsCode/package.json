@@ -46,6 +46,9 @@
     "onStartupFinished",
     "onCommand:stemcode.openChat",
     "onCommand:stemcode.showTerminals",
+    "onCommand:stemcode.voiceDictation",
+    "onCommand:stemcode.voiceSetup",
+    "onCommand:stemcode.voiceUpdate",
     "onView:stemcode.chatView"
   ],
   "main": "./dist/extension.js",
@@ -90,6 +93,19 @@
         "command": "stemcode.newChat",
         "title": "StemCode: New Chat",
         "icon": "$(add)"
+      },
+      {
+        "command": "stemcode.voiceDictation",
+        "title": "StemCode: Voice Dictation",
+        "icon": "$(mic)"
+      },
+      {
+        "command": "stemcode.voiceSetup",
+        "title": "StemCode: Voice Setup"
+      },
+      {
+        "command": "stemcode.voiceUpdate",
+        "title": "StemCode: Update Voice Models"
       },
       {
         "command": "stemcode.sendSelection",
@@ -147,14 +163,19 @@
           "group": "navigation@1"
         },
         {
-          "command": "stemcode.start",
+          "command": "stemcode.voiceDictation",
           "when": "view == stemcode.chatView",
           "group": "navigation@2"
         },
         {
-          "command": "stemcode.showTerminals",
+          "command": "stemcode.start",
           "when": "view == stemcode.chatView",
           "group": "navigation@3"
+        },
+        {
+          "command": "stemcode.showTerminals",
+          "when": "view == stemcode.chatView",
+          "group": "navigation@4"
         }
       ]
     },

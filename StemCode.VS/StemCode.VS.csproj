@@ -61,6 +61,7 @@
     <Compile Include="Services\VsProtocol.cs" />
     <Compile Include="ToolWindows\ChatToolWindow.cs" />
     <Compile Include="ToolWindows\ChatToolWindowControl.cs" />
+    <Compile Include="ToolWindows\ChatToolWindowControl.Voice.cs" />
     <Compile Include="ToolWindows\ChatMessageModel.cs" />
     <Compile Include="ToolWindows\ChatCommands.cs" />
     <Compile Include="ToolWindows\DiffModel.cs" />
