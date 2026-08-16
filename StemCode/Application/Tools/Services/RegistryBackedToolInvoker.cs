@@ -48,6 +48,8 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
         ArgumentNullException.ThrowIfNull(allowedToolNames);
         cancellationToken.ThrowIfCancellationRequested();
 
+        bool toolNameRecognized = _toolRegistry.TryResolve(toolCall.Name, out _);
+
         if (!allowedToolNames.Contains(toolCall.Name))
         {
             string phaseName = executionPhase == ConversationExecutionPhase.Planning
@@ -62,7 +64,8 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                     $"Tool '{toolCall.Name}' is not available during the {phaseName} phase.",
                     new ToolRenderPayload(
                         $"Tool unavailable: {toolCall.Name}",
-                        $"'{toolCall.Name}' cannot be used during the {phaseName} phase.")));
+                        $"'{toolCall.Name}' cannot be used during the {phaseName} phase.")),
+                toolNameRecognized);
         }
 
         if (!_toolRegistry.TryResolve(toolCall.Name, out ToolRegistration? registration) || registration is null)
@@ -75,7 +78,8 @@ internal sealed class RegistryBackedToolInvoker : IToolInvoker
                     $"Tool '{toolCall.Name}' is not registered in this agent.",
                     new ToolRenderPayload(
                         $"Unknown tool: {toolCall.Name}",
-                        $"The LLM requested '{toolCall.Name}', but this agent does not have that tool registered.")));
+                        $"The LLM requested '{toolCall.Name}', but this agent does not have that tool registered.")),
+                toolNameRecognized: false);
         }
 
         JsonElement arguments;

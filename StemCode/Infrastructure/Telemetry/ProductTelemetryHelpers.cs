@@ -407,6 +407,7 @@ internal static class ProductTelemetryHelpers
             "skill_load" => "skill",
             "agent_delegate" or "agent_orchestrate" => "agent",
             "ask_question" => "interactive",
+            "unknown" => "unknown",
             _ => "other"
         };
     }

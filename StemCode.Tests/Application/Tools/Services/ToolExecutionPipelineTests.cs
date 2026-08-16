@@ -73,6 +73,111 @@ public sealed class ToolExecutionPipelineTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ReportUnknownTelemetryName_When_ToolNameIsNotRegistered()
+    {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_read"],
+            StringComparer.Ordinal);
+        Mock<IToolInvoker> toolInvoker = new(MockBehavior.Strict);
+        toolInvoker
+            .Setup(invoker => invoker.InvokeAsync(
+                It.IsAny<ConversationToolCall>(),
+                Session,
+                ConversationExecutionPhase.Execution,
+                allowedToolNames,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolInvocationResult(
+                "call_1",
+                "read_file_placeholder\ntext_search",
+                ToolResultFactory.NotFound(
+                    "tool_not_found",
+                    "Tool 'read_file_placeholder\ntext_search' is not registered in this agent.",
+                    new ToolRenderPayload("Unknown tool", "not registered")),
+                toolNameRecognized: false));
+
+        Mock<IProductTelemetry> telemetry = new(MockBehavior.Strict);
+        string? capturedToolName = null;
+        telemetry
+            .Setup(t => t.TrackToolInvoked(
+                It.IsAny<string>(),
+                It.IsAny<ToolResultStatus>(),
+                It.IsAny<bool>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<ConversationExecutionPhase>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()))
+            .Callback<string, ToolResultStatus, bool, TimeSpan, ConversationExecutionPhase, string?, string?, string?>(
+                (name, _, _, _, _, _, _, _) => capturedToolName = name);
+
+        ToolExecutionPipeline sut = new(
+            CreateWorkspaceFileServiceMock().Object,
+            toolInvoker.Object,
+            telemetry: telemetry.Object);
+
+        await sut.ExecuteAsync(
+            [new ConversationToolCall("call_1", "read_file_placeholder\ntext_search", "{}")],
+            Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        capturedToolName.Should().Be("unknown");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_ReportRealToolName_When_ToolNameIsRegistered()
+    {
+        IReadOnlySet<string> allowedToolNames = new HashSet<string>(
+            ["file_read"],
+            StringComparer.Ordinal);
+        Mock<IToolInvoker> toolInvoker = new(MockBehavior.Strict);
+        toolInvoker
+            .Setup(invoker => invoker.InvokeAsync(
+                It.IsAny<ConversationToolCall>(),
+                Session,
+                ConversationExecutionPhase.Execution,
+                allowedToolNames,
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ToolInvocationResult(
+                "call_1",
+                "file_read",
+                ToolResultFactory.NotFound(
+                    "tool_not_found",
+                    "Tool 'file_read' is not registered in this agent.",
+                    new ToolRenderPayload("Unknown tool", "not registered"))));
+
+        Mock<IProductTelemetry> telemetry = new(MockBehavior.Strict);
+        string? capturedToolName = null;
+        telemetry
+            .Setup(t => t.TrackToolInvoked(
+                It.IsAny<string>(),
+                It.IsAny<ToolResultStatus>(),
+                It.IsAny<bool>(),
+                It.IsAny<TimeSpan>(),
+                It.IsAny<ConversationExecutionPhase>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>(),
+                It.IsAny<string?>()))
+            .Callback<string, ToolResultStatus, bool, TimeSpan, ConversationExecutionPhase, string?, string?, string?>(
+                (name, _, _, _, _, _, _, _) => capturedToolName = name);
+
+        ToolExecutionPipeline sut = new(
+            CreateWorkspaceFileServiceMock().Object,
+            toolInvoker.Object,
+            telemetry: telemetry.Object);
+
+        await sut.ExecuteAsync(
+            [new ConversationToolCall("call_1", "file_read", "{}")],
+            Session,
+            ConversationExecutionPhase.Execution,
+            allowedToolNames,
+            CancellationToken.None);
+
+        capturedToolName.Should().Be("file_read");
+    }
+
+    [Fact]
     public async Task ExecuteAsync_Should_RunParallelSafeToolCallsConcurrently()
     {
         IReadOnlySet<string> allowedToolNames = new HashSet<string>(

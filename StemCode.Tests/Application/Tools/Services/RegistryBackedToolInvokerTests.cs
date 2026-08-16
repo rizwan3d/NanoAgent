@@ -45,6 +45,7 @@ public sealed class RegistryBackedToolInvokerTests
         result.Result.Status.Should().Be(ToolResultStatus.NotFound);
         result.Result.Message.Should().Contain("not registered");
         result.Result.JsonResult.Should().Contain("tool_not_found");
+        result.ToolNameRecognized.Should().BeFalse();
     }
 
     [Fact]
@@ -457,6 +458,27 @@ public sealed class RegistryBackedToolInvokerTests
         result.Result.Status.Should().Be(ToolResultStatus.PermissionDenied);
         result.Result.JsonResult.Should().Contain("tool_not_available_in_phase");
         result.Result.Message.Should().Contain("planning phase");
+        result.ToolNameRecognized.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InvokeAsync_Should_MarkToolNameUnrecognized_When_NameIsGarbageAndNotRegistered()
+    {
+        RegistryBackedToolInvoker sut = new(
+            new ToolRegistry([new EchoTool()], new ToolPermissionParser()),
+            new ToolPermissionEvaluator(new StubWorkspaceRootProvider(), DefaultPermissionSettings),
+            new FixedPermissionApprovalPrompt(PermissionApprovalChoice.DenyOnce));
+
+        string garbageName = "read_file_placeholder\n\npath: README.md\n\ntext_search";
+        ToolInvocationResult result = await sut.InvokeAsync(
+            new ConversationToolCall("call_1", garbageName, "{}"),
+            Session,
+            ConversationExecutionPhase.Execution,
+            CreateAllowedToolNames("echo_tool"),
+            CancellationToken.None);
+
+        result.Result.Status.Should().Be(ToolResultStatus.PermissionDenied);
+        result.ToolNameRecognized.Should().BeFalse();
     }
 
     private static IReadOnlySet<string> CreateAllowedToolNames(params string[] toolNames)

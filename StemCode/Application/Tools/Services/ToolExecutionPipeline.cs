@@ -317,8 +317,11 @@ internal sealed class ToolExecutionPipeline : IStreamingToolExecutionPipeline
         try
         {
             ToolResult result = record.InvocationResult.Result;
+            string telemetryToolName = record.InvocationResult.ToolNameRecognized
+                ? record.ToolCall.Name
+                : "unknown";
             _telemetry.TrackToolInvoked(
-                record.ToolCall.Name,
+                telemetryToolName,
                 result.Status,
                 result.IsSuccess,
                 record.CompletedAtUtc - record.StartedAtUtc,

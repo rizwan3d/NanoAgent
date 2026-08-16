@@ -5,7 +5,8 @@ public sealed class ToolInvocationResult
     public ToolInvocationResult(
         string toolCallId,
         string toolName,
-        ToolResult result)
+        ToolResult result,
+        bool toolNameRecognized = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(toolCallId);
         ArgumentException.ThrowIfNullOrWhiteSpace(toolName);
@@ -14,6 +15,7 @@ public sealed class ToolInvocationResult
         ToolCallId = toolCallId.Trim();
         ToolName = toolName.Trim();
         Result = result;
+        ToolNameRecognized = toolNameRecognized;
     }
 
     public ToolResult Result { get; }
@@ -21,6 +23,13 @@ public sealed class ToolInvocationResult
     public string ToolCallId { get; }
 
     public string ToolName { get; }
+
+    /// <summary>
+    /// Indicates whether <see cref="ToolName"/> resolved to a tool registered in this agent.
+    /// When false, the name came from the model/provider and does not correspond to any real
+    /// tool (for example a malformed or hallucinated name), so telemetry should not record it verbatim.
+    /// </summary>
+    public bool ToolNameRecognized { get; }
 
     public string ToDisplayText()
     {
