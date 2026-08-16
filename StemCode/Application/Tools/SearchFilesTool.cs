@@ -107,7 +107,7 @@ internal sealed class SearchFilesTool : ITool
             },
             "includeIgnored": {
               "type": "boolean",
-              "description": "When true, include files ignored by .gitignore or .stemcodeignore."
+              "description": "When true, include files ignored by .stemcodeignore."
             },
             "limit": {
               "type": "integer",

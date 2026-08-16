@@ -79,11 +79,8 @@ public sealed class WorkspaceCodebaseIndexServiceTests
         Directory.CreateDirectory(Path.Combine(workspace.Path, "node_modules", "pkg"));
         Directory.CreateDirectory(Path.Combine(workspace.Path, ".stemcode"));
         await File.WriteAllTextAsync(
-            Path.Combine(workspace.Path, ".gitignore"),
-            "ignored/\n");
-        await File.WriteAllTextAsync(
             Path.Combine(workspace.Path, ".stemcode", ".stemcodeignore"),
-            "secret.txt\n");
+            "ignored/\nsecret.txt\n");
         await File.WriteAllTextAsync(
             Path.Combine(workspace.Path, "src", "Visible.cs"),
             "public sealed class VisibleFeature {}");

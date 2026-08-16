@@ -390,8 +390,7 @@ internal sealed class ApplyPatchTool(IWorkspaceFileService workspaceFileService)
             return true;
         }
 
-        if (message.Contains("excluded by .stemcode/.stemcodeignore", StringComparison.OrdinalIgnoreCase) ||
-            message.Contains("excluded by .gitignore", StringComparison.OrdinalIgnoreCase))
+        if (message.Contains("excluded by .stemcode/.stemcodeignore", StringComparison.OrdinalIgnoreCase))
         {
             guidance =
                 $"{message} " +

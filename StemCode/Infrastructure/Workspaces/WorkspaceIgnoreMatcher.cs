@@ -5,7 +5,6 @@ namespace StemCode.Infrastructure.Workspaces;
 
 internal sealed class WorkspaceIgnoreMatcher
 {
-    private const string GitIgnoreFileName = ".gitignore";
     private const string IgnoreFileDirectoryName = ".stemcode";
     private const string IgnoreFileName = ".stemcodeignore";
     private static readonly string StemCodeIgnoreRelativePath = Path.Combine(IgnoreFileDirectoryName, IgnoreFileName);
@@ -31,7 +30,7 @@ internal sealed class WorkspaceIgnoreMatcher
     {
         return Load(
             workspaceRoot,
-            [GitIgnoreFileName, StemCodeIgnoreRelativePath]);
+            [StemCodeIgnoreRelativePath]);
     }
 
     public static WorkspaceIgnoreMatcher Load(
@@ -524,13 +523,6 @@ internal sealed class WorkspaceIgnoreMatcher
                 continue;
             }
 
-            string normalizedIgnoreFilePath = NormalizePath(ignoreFilePath);
-            if (string.Equals(normalizedIgnoreFilePath, GitIgnoreFileName, GetPathComparison()))
-            {
-                candidates.AddRange(DiscoverGitIgnoreFiles(workspaceRoot));
-                continue;
-            }
-
             string fullIgnoreFilePath = Path.GetFullPath(
                 Path.IsPathRooted(ignoreFilePath)
                     ? ignoreFilePath
@@ -561,51 +553,6 @@ internal sealed class WorkspaceIgnoreMatcher
             .OrderBy(static candidate => GetPathSegments(candidate.BaseRelativeDirectory).Length)
             .ThenBy(static candidate => candidate.DisplayPath, pathComparer)
             .ToArray();
-    }
-
-    private static IEnumerable<IgnoreFileCandidate> DiscoverGitIgnoreFiles(string workspaceRoot)
-    {
-        Stack<string> pendingDirectories = new();
-        pendingDirectories.Push(workspaceRoot);
-
-        while (pendingDirectories.Count > 0)
-        {
-            string currentDirectory = pendingDirectories.Pop();
-
-            IEnumerable<string> directories;
-            try
-            {
-                directories = Directory.EnumerateDirectories(currentDirectory);
-            }
-            catch (Exception exception) when (IsFileSystemAccessException(exception))
-            {
-                continue;
-            }
-
-            foreach (string directory in directories)
-            {
-                pendingDirectories.Push(directory);
-            }
-
-            IEnumerable<string> ignoreFiles;
-            try
-            {
-                ignoreFiles = Directory.EnumerateFiles(currentDirectory, GitIgnoreFileName, SearchOption.TopDirectoryOnly);
-            }
-            catch (Exception exception) when (IsFileSystemAccessException(exception))
-            {
-                continue;
-            }
-
-            foreach (string ignoreFile in ignoreFiles)
-            {
-                string displayPath = WorkspacePath.ToRelativePath(workspaceRoot, ignoreFile);
-                yield return new IgnoreFileCandidate(
-                    ignoreFile,
-                    GetRelativeDirectory(displayPath),
-                    displayPath);
-            }
-        }
     }
 
     private static string GetRelativeDirectory(string relativePath)

@@ -669,9 +669,9 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchFilesAsync_Should_ExcludeRootGitIgnoredFiles()
+    public async Task SearchFilesAsync_Should_ExcludeRootStemCodeIgnoredFiles()
     {
-        await WriteGitIgnoreAsync(
+        await WriteStemCodeIgnoreAsync(
             """
             ignored/
             """);
@@ -690,17 +690,16 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchFilesAsync_Should_RespectNestedGitIgnoreRules()
+    public async Task SearchFilesAsync_Should_RespectStemCodeIgnoreRules()
     {
         Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "visible"));
         Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src", "generated"));
-        await WriteGitIgnoreAsync(
+        await WriteStemCodeIgnoreAsync(
             """
-            generated/
+            src/generated/
             *.snap
             !keep.snap
-            """,
-            "src");
+            """);
         await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "visible", "Program.cs"), "class Program {}", CancellationToken.None);
         await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "generated", "Program.cs"), "class Program {}", CancellationToken.None);
         await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "test.snap"), "snapshot", CancellationToken.None);
@@ -720,9 +719,9 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchFilesAsync_Should_DenyGitIgnoredSearchPath()
+    public async Task SearchFilesAsync_Should_DenyStemCodeIgnoredSearchPath()
     {
-        await WriteGitIgnoreAsync("ignored/");
+        await WriteStemCodeIgnoreAsync("ignored/");
         Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
         await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "ignored", "Program.cs"), "class Program {}", CancellationToken.None);
         WorkspaceFileService sut = CreateSut();
@@ -733,7 +732,7 @@ public sealed class WorkspaceFileServiceTests : IDisposable
 
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
-            .WithMessage("*excluded by .gitignore*");
+            .WithMessage("*excluded by .stemcode/.stemcodeignore*");
     }
 
     [Fact]
@@ -839,9 +838,9 @@ public sealed class WorkspaceFileServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SearchFilesAsync_Should_IncludeIgnoredFiles_When_Requested()
+    public async Task SearchFilesAsync_Should_IncludeStemCodeIgnoredFiles_When_Requested()
     {
-        await WriteGitIgnoreAsync("ignored/");
+        await WriteStemCodeIgnoreAsync("ignored/");
         Directory.CreateDirectory(Path.Combine(_workspaceRoot, "src"));
         Directory.CreateDirectory(Path.Combine(_workspaceRoot, "ignored"));
         await File.WriteAllTextAsync(Path.Combine(_workspaceRoot, "src", "Program.cs"), "class Program {}", CancellationToken.None);
@@ -2701,20 +2700,6 @@ public sealed class WorkspaceFileServiceTests : IDisposable
         Directory.CreateDirectory(stemCodeDirectory);
         await File.WriteAllTextAsync(
             Path.Combine(stemCodeDirectory, ".stemcodeignore"),
-            content,
-            CancellationToken.None);
-    }
-
-    private async Task WriteGitIgnoreAsync(
-        string content,
-        string? relativeDirectory = null)
-    {
-        string directory = string.IsNullOrWhiteSpace(relativeDirectory)
-            ? _workspaceRoot
-            : Path.Combine(_workspaceRoot, relativeDirectory);
-        Directory.CreateDirectory(directory);
-        await File.WriteAllTextAsync(
-            Path.Combine(directory, ".gitignore"),
             content,
             CancellationToken.None);
     }

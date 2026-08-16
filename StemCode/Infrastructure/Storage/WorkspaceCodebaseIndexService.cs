@@ -32,7 +32,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
 
     private static readonly string[] IgnoreFilePaths =
     [
-        ".gitignore",
         Path.Combine(".stemcode", ".stemcodeignore")
     ];
 
