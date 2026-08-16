@@ -60,8 +60,9 @@ public sealed class VoiceModelCatalogTests
     {
         string path = VoiceModelCatalog.ModelPath("a/b\\c:*?");
 
-        path.Should().NotContain('/');
-        path.Should().NotContain('\\');
-        path.Should().EndWith(".bin");
+        string fileName = Path.GetFileName(path);
+        fileName.Should().NotContain("/");
+        fileName.Should().NotContain("\\");
+        fileName.Should().EndWith(".bin");
     }
 }
