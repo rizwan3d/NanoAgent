@@ -4,7 +4,9 @@ set -euo pipefail
 readonly OWNER="rizwan3d"
 readonly REPO="StemCode"
 readonly APP_NAME="StemCode.CLI"
+readonly VOICE_APP_NAME="StemCode.Voice"
 readonly EXECUTABLE_NAME="StemCode.CLI"
+readonly VOICE_EXECUTABLE_NAME="stemcode-voice"
 # Installed command name: '/update' sets StemCode_COMMAND_NAME so the running
 # binary's filename is preserved when replacing it in place.
 readonly COMMAND_NAME="${STEMCODE_COMMAND_NAME:-${StemCode_COMMAND_NAME:-stemcode}}"
@@ -133,6 +135,16 @@ resolve_archive_executable_name() {
     printf '%s.exe\n' "$EXECUTABLE_NAME"
   else
     printf '%s\n' "$EXECUTABLE_NAME"
+  fi
+}
+
+resolve_voice_archive_executable_name() {
+  local platform="$1"
+
+  if is_windows_platform "$platform"; then
+    printf '%s.exe\n' "$VOICE_EXECUTABLE_NAME"
+  else
+    printf '%s\n' "$VOICE_EXECUTABLE_NAME"
   fi
 }
 
@@ -736,12 +748,19 @@ main() {
   local platform
   local install_dir
   local asset_name
+  local voice_asset_name
   local download_url
+  local voice_download_url
   local archive_path
+  local voice_archive_path
   local extract_dir
+  local voice_extract_dir
   local source_binary
+  local source_voice_binary
   local destination_binary
+  local voice_destination_dir
   local source_binary_name
+  local source_voice_binary_name
   local destination_file_name
 
   log "StemCode CLI Installer"
@@ -765,49 +784,70 @@ main() {
   fi
 
   asset_name="${APP_NAME}-${platform}.zip"
+  voice_asset_name="${VOICE_APP_NAME}-${platform}.zip"
   download_url="https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${asset_name}"
+  voice_download_url="https://github.com/${OWNER}/${REPO}/releases/download/${tag}/${voice_asset_name}"
   source_binary_name="$(resolve_archive_executable_name "$platform")"
+  source_voice_binary_name="$(resolve_voice_archive_executable_name "$platform")"
   destination_file_name="$(resolve_destination_file_name "$platform")"
 
-  finish_step "Using ${APP_NAME} ${tag} for ${platform}."
+  finish_step "Using ${APP_NAME} and ${VOICE_APP_NAME} ${tag} for ${platform}."
 
   start_step "Preparing install directory..."
   log "Install directory: ${install_dir}"
   TEMP_ROOT="$(mktemp -d)"
   archive_path="${TEMP_ROOT}/${asset_name}"
+  voice_archive_path="${TEMP_ROOT}/${voice_asset_name}"
   extract_dir="${TEMP_ROOT}/extract"
+  voice_extract_dir="${TEMP_ROOT}/voice-extract"
 
-  mkdir -p "$extract_dir" "$install_dir"
+  mkdir -p "$extract_dir" "$voice_extract_dir" "$install_dir"
   finish_step "Workspace ready."
 
-  start_step "Downloading ${asset_name}..."
+  start_step "Downloading release assets..."
   if ! download_to_file "$download_url" "$archive_path" 1; then
     fail "Download failed from ${download_url}."
   fi
-  finish_step "Downloaded $(format_bytes "$(file_size "$archive_path")")."
+  if ! download_to_file "$voice_download_url" "$voice_archive_path" 1; then
+    fail "Download failed from ${voice_download_url}."
+  fi
+  finish_step "Downloaded ${asset_name} ($(format_bytes "$(file_size "$archive_path")")) and ${voice_asset_name} ($(format_bytes "$(file_size "$voice_archive_path")"))."
 
-  start_step "Verifying download..."
+  start_step "Verifying downloads..."
   verify_archive_sha256 "$tag" "$asset_name" "$archive_path"
+  verify_archive_sha256 "$tag" "$voice_asset_name" "$voice_archive_path"
   finish_step "Checksum verification passed."
 
-  start_step "Extracting archive..."
+  start_step "Extracting archives..."
   unzip -qo "$archive_path" -d "$extract_dir"
+  unzip -qo "$voice_archive_path" -d "$voice_extract_dir"
 
   source_binary="$(find "$extract_dir" -type f -name "$source_binary_name" | head -n 1)"
+  source_voice_binary="$(find "$voice_extract_dir" -type f -name "$source_voice_binary_name" | head -n 1)"
 
   if [[ -z "$source_binary" || ! -f "$source_binary" ]]; then
     fail "Expected executable '${source_binary_name}' was not found in ${asset_name}."
   fi
-  finish_step "Found ${source_binary_name}."
+  if [[ -z "$source_voice_binary" || ! -f "$source_voice_binary" ]]; then
+    fail "Expected executable '${source_voice_binary_name}' was not found in ${voice_asset_name}."
+  fi
+  finish_step "Found ${source_binary_name} and ${source_voice_binary_name}."
 
-  start_step "Installing command..."
+  start_step "Installing command and Voice runtime..."
   destination_binary="${install_dir}/${destination_file_name}"
+  voice_destination_dir="${install_dir}/voice"
+
   cp "$source_binary" "$destination_binary"
+  rm -rf "$voice_destination_dir"
+  mkdir -p "$voice_destination_dir"
+  cp -R "${voice_extract_dir}/." "$voice_destination_dir/"
+
   if ! is_windows_platform "$platform"; then
     chmod 0755 "$destination_binary"
+    chmod 0755 "${voice_destination_dir}/${source_voice_binary_name}"
   fi
 
-  finish_step "Installed '${COMMAND_NAME}' to ${destination_binary}."
+  finish_step "Installed '${COMMAND_NAME}' to ${destination_binary} and Voice runtime to ${voice_destination_dir}."
 
   send_install_telemetry "$platform" "$tag"
 
