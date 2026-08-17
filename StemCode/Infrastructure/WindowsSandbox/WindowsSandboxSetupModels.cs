@@ -78,6 +78,12 @@ internal sealed class WindowsSandboxSetupPayload
 
     public string[] DenyWritePaths { get; set; } = [];
 
+    /// <summary>
+    /// Workspace paths whose read access is denied to the sandbox identity. Resolved from
+    /// <c>.stemcode/.stemcodeignore</c>, which is the only source of read restrictions.
+    /// </summary>
+    public string[] DenyReadPaths { get; set; } = [];
+
     public string RealUser { get; set; } = string.Empty;
 
     public string[] SandboxUsernames { get; set; } = [];

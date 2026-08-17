@@ -67,7 +67,8 @@ internal static class WindowsSandboxProcessRunner
             context.CommandCwd,
             context.WritableRoots,
             sandboxEnvironment,
-            context.IncludeTempEnvironmentVariables);
+            context.IncludeTempEnvironmentVariables,
+            context.ResolvedRestrictedPathPolicy);
         EnsureSetupFresh(context, paths);
 
         WindowsCapabilitySids capabilitySids = WindowsCapabilitySidStore.LoadOrCreate(context.StemCodeHome);
@@ -147,7 +148,8 @@ internal static class WindowsSandboxProcessRunner
             context.CommandCwd,
             context.WritableRoots,
             sandboxEnvironment,
-            context.IncludeTempEnvironmentVariables);
+            context.IncludeTempEnvironmentVariables,
+            context.ResolvedRestrictedPathPolicy);
         EnsureSetupFresh(context, paths);
 
         WindowsCapabilitySids capabilitySids = WindowsCapabilitySidStore.LoadOrCreate(context.StemCodeHome);
@@ -589,6 +591,7 @@ internal static class WindowsSandboxProcessRunner
                 ReadRoots = [context.CommandCwd, .. WindowsSandboxSetupRoots.PlatformDefaultReadRoots],
                 WriteRoots = [.. paths.Allow],
                 DenyWritePaths = [.. paths.Deny],
+                DenyReadPaths = [.. paths.DenyRead],
                 RealUser = Environment.UserName,
                 SandboxUsernames =
                 [
@@ -1227,6 +1230,19 @@ internal static class WindowsSandboxProcessRunner
             WindowsSandboxLog.Write(context.StemCodeHome, "skipped platform root ACE grants: process is not elevated");
         }
 
+        // Read denials come from the workspace restriction policy and must apply in every
+        // sandbox mode, including read-only, because the workspace read grant above is
+        // recursive. Windows canonical ACL ordering places these explicit deny entries ahead of
+        // the inherited allow entries, so the deny wins for the restricted subtree.
+        ApplyRestrictedReadAcls(
+            context,
+            capabilitySids,
+            workspaceSid,
+            sandboxGroupSid,
+            paths,
+            temporaryAces,
+            cancellationToken);
+
         if (context.Mode != ToolSandboxMode.WorkspaceWrite)
         {
             return;
@@ -1253,6 +1269,57 @@ internal static class WindowsSandboxProcessRunner
             cancellationToken.ThrowIfCancellationRequested();
             WindowsSandboxAcl.AddDenyWriteAce(path, workspaceSid);
             WindowsSandboxAcl.AddDenyWriteAce(path, capabilitySids.Workspace);
+        }
+    }
+
+    /// <summary>
+    /// Applies read-deny ACEs for restricted workspace paths to every sandbox identity, so a
+    /// restricted path is unreadable even though the workspace root is granted recursive read.
+    /// </summary>
+    private static void ApplyRestrictedReadAcls(
+        WindowsSandboxExecutionContext context,
+        WindowsCapabilitySids capabilitySids,
+        string workspaceSid,
+        string sandboxGroupSid,
+        WindowsAllowDenyPaths paths,
+        List<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces,
+        CancellationToken cancellationToken)
+    {
+        if (paths.DenyRead.Count == 0)
+        {
+            return;
+        }
+
+        string[] sandboxSids =
+        [
+            sandboxGroupSid,
+            capabilitySids.Readonly,
+            capabilitySids.Workspace,
+            workspaceSid
+        ];
+
+        foreach (string path in paths.DenyRead)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (string sid in sandboxSids.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    WindowsSandboxAcl.AddDenyReadAce(path, sid);
+                    temporaryAces.Add((path, sid, WindowsSandboxAcl.DenyReadRights, AccessControlType.Deny));
+                }
+                catch (Exception exception)
+                {
+                    // A restricted path that cannot be locked down must not silently look
+                    // enforced, so surface it instead of continuing quietly.
+                    WindowsSandboxLog.Write(
+                        context.StemCodeHome,
+                        $"failed to deny read on restricted path {path} for {sid}: {exception.GetType().Name}: {exception.Message}");
+                    throw new InvalidOperationException(
+                        $"Unable to apply the sandbox read restriction for '{path}'. The command was not started because the restriction could not be enforced.",
+                        exception);
+                }
+            }
         }
     }
 

@@ -18,6 +18,20 @@ internal static class WindowsSandboxAcl
         FileSystemRights.ChangePermissions |
         FileSystemRights.TakeOwnership;
 
+    /// <summary>
+    /// Rights withheld from restricted paths. Read, list, traverse, and attribute access are all
+    /// denied so a restricted file cannot be read, enumerated, or probed for metadata.
+    /// </summary>
+    internal const FileSystemRights DenyReadRights =
+        FileSystemRights.Read |
+        FileSystemRights.ReadData |
+        FileSystemRights.ListDirectory |
+        FileSystemRights.ReadAttributes |
+        FileSystemRights.ReadExtendedAttributes |
+        FileSystemRights.ReadPermissions |
+        FileSystemRights.ExecuteFile |
+        FileSystemRights.Traverse;
+
     public static void AddAllowAce(string path, string sid, FileSystemRights rights)
     {
         ApplyRule(path, sid, rights, AccessControlType.Allow, remove: false);
@@ -26,6 +40,19 @@ internal static class WindowsSandboxAcl
     public static void AddDenyWriteAce(string path, string sid)
     {
         ApplyRule(path, sid, DenyWriteRights, AccessControlType.Deny, remove: false);
+    }
+
+    /// <summary>
+    /// Denies read access to <paramref name="path"/> for <paramref name="sid"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="FileSystemSecurity"/> keeps deny entries ahead of allow entries in canonical
+    /// order, and explicit entries ahead of inherited ones, so this deny overrides a recursive
+    /// read grant inherited from the workspace root.
+    /// </remarks>
+    public static void AddDenyReadAce(string path, string sid)
+    {
+        ApplyRule(path, sid, DenyReadRights, AccessControlType.Deny, remove: false);
     }
 
     public static void RevokeAce(string path, string sid, FileSystemRights rights, AccessControlType type)

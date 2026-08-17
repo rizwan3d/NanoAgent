@@ -5,6 +5,7 @@ using StemCode.Application.Tools.Models;
 using StemCode.Infrastructure.Secrets;
 using StemCode.Infrastructure.Tools;
 using StemCode.Infrastructure.WindowsSandbox;
+using StemCode.Infrastructure.Workspaces;
 
 namespace StemCode.Infrastructure.CustomTools;
 
@@ -45,11 +46,14 @@ internal sealed class CustomToolProcessExecutor
             WorkingDirectory: workingDirectory,
             MaxOutputCharacters: configuration.MaxOutputChars);
 
+        WorkspaceRestrictedPathPolicy restrictedPathPolicy =
+            WorkspaceRestrictedPathPolicy.LoadForSandbox(workspaceRoot);
         ShellCommandSandboxPlan sandboxPlan = ShellCommandSandboxPlanner.Create(
             baseRequest,
             _permissionSettings.SandboxMode,
             workspaceRoot,
-            workingDirectory);
+            workingDirectory,
+            restrictedPathPolicy);
         ProcessExecutionRequest request = sandboxPlan.Request with
         {
             EnvironmentVariables = CreateEnvironment(
@@ -73,7 +77,10 @@ internal sealed class CustomToolProcessExecutor
 
             return _windowsSandboxProcessRunner.RunAsync(
                 request,
-                CreateWindowsSandboxExecutionContext(workspaceRoot, workingDirectory),
+                CreateWindowsSandboxExecutionContext(
+                    workspaceRoot,
+                    workingDirectory,
+                    restrictedPathPolicy),
                 cancellationToken);
         }
 
@@ -119,7 +126,8 @@ internal sealed class CustomToolProcessExecutor
 
     private WindowsSandboxExecutionContext CreateWindowsSandboxExecutionContext(
         string workspaceRoot,
-        string workingDirectory)
+        string workingDirectory,
+        WorkspaceRestrictedPathPolicy restrictedPathPolicy)
     {
         IReadOnlyList<string> writableRoots = _permissionSettings.SandboxMode == ToolSandboxMode.WorkspaceWrite
             ? [workspaceRoot]
@@ -131,7 +139,8 @@ internal sealed class CustomToolProcessExecutor
             workspaceRoot,
             workingDirectory,
             writableRoots,
-            IncludeTempEnvironmentVariables: _permissionSettings.SandboxMode == ToolSandboxMode.WorkspaceWrite);
+            IncludeTempEnvironmentVariables: _permissionSettings.SandboxMode == ToolSandboxMode.WorkspaceWrite,
+            RestrictedPathPolicy: restrictedPathPolicy);
     }
 
     private static string ToWireValue(ToolSandboxMode sandboxMode)

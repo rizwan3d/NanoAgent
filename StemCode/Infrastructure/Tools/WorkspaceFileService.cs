@@ -459,7 +459,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: true, fileRequired: false, ToolPathAccessKind.List);
         WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
-        EnsurePathNotIgnored(fullPath, isDirectory: true, ignoreMatcher);
+        EnsurePathNotRestricted(fullPath, isDirectory: true);
         return new WorkspaceDirectoryListResult(
             ToWorkspaceRelativePath(fullPath),
             ListDirectoryManaged(fullPath, recursive, ignoreMatcher));
@@ -474,7 +474,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Read);
-        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, isDirectory: false);
 
         if (DetectEncodingFromBom(fullPath) is WorkspaceTextEncoding.Utf8 or WorkspaceTextEncoding.Utf8Bom &&
             LooksBinary(fullPath))
@@ -521,7 +521,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         cancellationToken.ThrowIfCancellationRequested();
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, isDirectory: false);
         string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
         FileWritePreview preview = BuildFileWritePreview(previousContent, string.Empty);
 
@@ -558,7 +558,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         }
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, isDirectory: false);
         string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
         string currentContent = InsertContentAtLine(previousContent, line, content, out int insertedLineCount);
 
@@ -721,7 +721,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         ArgumentNullException.ThrowIfNull(content);
 
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, Directory.Exists(fullPath));
         bool fileExists = File.Exists(fullPath);
         string? previousContent = null;
         if (fileExists && !overwrite)
@@ -784,7 +784,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         CancellationToken cancellationToken)
     {
         string fullPath = ResolveWorkspacePath(path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Read);
-        EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, Directory.Exists(fullPath));
         if (Directory.Exists(fullPath))
         {
             throw new InvalidOperationException(
@@ -835,7 +835,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         CancellationToken cancellationToken)
     {
         string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(fullPath, isDirectory: Directory.Exists(fullPath), LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, Directory.Exists(fullPath));
         if (File.Exists(fullPath))
         {
             throw new InvalidOperationException(
@@ -873,7 +873,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         CancellationToken cancellationToken)
     {
         string fullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(fullPath, isDirectory: false, LoadWorkspaceIgnoreMatcher());
+        EnsurePathNotRestricted(fullPath, isDirectory: false);
         string previousContent = await ReadWorkspaceFileAsync(fullPath, cancellationToken);
 
         DeleteWorkspaceFile(
@@ -897,8 +897,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         CancellationToken cancellationToken)
     {
         string currentFullPath = ResolveWorkspacePath(operation.Path, directoryRequired: false, fileRequired: true, ToolPathAccessKind.Write);
-        WorkspaceIgnoreMatcher ignoreMatcher = LoadWorkspaceIgnoreMatcher();
-        EnsurePathNotIgnored(currentFullPath, isDirectory: false, ignoreMatcher);
+        EnsurePathNotRestricted(currentFullPath, isDirectory: false);
         FileEncodingInfo encoding = DetectFileEncoding(currentFullPath);
         string previousContent = await ReadWorkspaceFileAsync(currentFullPath, cancellationToken);
         WorkspaceFileEditState expectedSourceState = new(
@@ -913,7 +912,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         string destinationFullPath = operation.MoveToPath is null
             ? currentFullPath
             : ResolveWorkspacePath(operation.MoveToPath, directoryRequired: false, fileRequired: false, ToolPathAccessKind.Write);
-        EnsurePathNotIgnored(destinationFullPath, Directory.Exists(destinationFullPath), ignoreMatcher);
+        EnsurePathNotRestricted(destinationFullPath, Directory.Exists(destinationFullPath));
 
         if (!WorkspacePath.PathEquals(currentFullPath, destinationFullPath) &&
             File.Exists(destinationFullPath))
@@ -1794,6 +1793,32 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
     private WorkspaceIgnoreMatcher LoadWorkspaceIgnoreMatcher()
     {
         return WorkspaceIgnoreMatcher.Load(GetWorkspaceRoot());
+    }
+
+    /// <summary>
+    /// Loads the workspace read/write restriction policy. This is the same resolved policy that
+    /// the OS sandbox backends consume, so a path blocked here is also blocked by bubblewrap,
+    /// <c>sandbox-exec</c>, and the Windows sandbox ACLs.
+    /// </summary>
+    private WorkspaceRestrictedPathPolicy LoadWorkspaceRestrictedPathPolicy()
+    {
+        return WorkspaceRestrictedPathPolicy.Load(GetWorkspaceRoot());
+    }
+
+    /// <summary>
+    /// Rejects a path that the workspace restriction policy blocks. Descendants of a restricted
+    /// directory are rejected as well, matching what the OS sandbox enforces.
+    /// </summary>
+    private void EnsurePathNotRestricted(string fullPath, bool isDirectory)
+    {
+        if (!LoadWorkspaceRestrictedPathPolicy()
+                .TryGetRestrictionSource(fullPath, isDirectory, out string sourceDisplayPath))
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Path '{ToWorkspaceRelativePath(fullPath)}' is excluded by {sourceDisplayPath}.");
     }
 
     private WorkspaceIgnoreMatcher LoadWorkspaceSearchIgnoreMatcher()

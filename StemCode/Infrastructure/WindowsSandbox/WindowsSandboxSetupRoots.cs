@@ -1,5 +1,7 @@
 using System.Text;
 using StemCode.Application.Models;
+using StemCode.Application.Utilities;
+using StemCode.Infrastructure.Workspaces;
 
 namespace StemCode.Infrastructure.WindowsSandbox;
 
@@ -14,21 +16,9 @@ internal static class WindowsSandboxSetupRoots
         Environment.GetFolderPath(Environment.SpecialFolder.Programs),
     ];
 
-    private static readonly string[] UserProfileRootExclusions =
-    [
-        ".ssh",
-        ".tsh",
-        ".brev",
-        ".gnupg",
-        ".aws",
-        ".azure",
-        ".kube",
-        ".docker",
-        ".config",
-        ".npm",
-        ".pki",
-        ".terraform.d",
-    ];
+    // Shared with the Linux and macOS sandbox backends so every platform withholds the same
+    // credential directories.
+    private static readonly string[] UserProfileRootExclusions = SandboxHostPaths.SensitiveHomeEntries;
 
     private static readonly string[] ProxyEnvKeys =
     [
@@ -65,26 +55,33 @@ internal static class WindowsSandboxSetupRoots
         string[] writableRoots,
         IReadOnlyDictionary<string, string>? envMap,
         bool includeTempEnvironmentVariables,
-        string stemCodeHome)
+        string stemCodeHome,
+        WorkspaceRestrictedPathPolicy? restrictedPathPolicy = null)
     {
-        var writeRoots = GatherWriteRoots(mode, policyCwd, commandCwd, writableRoots, envMap, includeTempEnvironmentVariables);
+        WorkspaceRestrictedPathPolicy policy = restrictedPathPolicy
+            ?? WorkspaceRestrictedPathPolicy.Load(policyCwd);
+
+        var writeRoots = GatherWriteRoots(mode, policyCwd, commandCwd, writableRoots, envMap, includeTempEnvironmentVariables, policy);
         writeRoots = ExpandUserProfileRoot(writeRoots);
         writeRoots = FilterUserProfileRoot(writeRoots);
         writeRoots = FilterUserProfileRootExclusions(writeRoots);
         writeRoots = FilterSshConfigDependencyRoots(writeRoots);
         writeRoots = FilterSensitiveWriteRoots(writeRoots, stemCodeHome);
+        writeRoots = FilterRestrictedRoots(writeRoots, policy);
 
         var readRoots = GatherReadRoots(commandCwd, writableRoots, stemCodeHome);
         readRoots = ExpandUserProfileRoot(readRoots);
         readRoots = FilterUserProfileRoot(readRoots);
         readRoots = FilterUserProfileRootExclusions(readRoots);
         readRoots = FilterSshConfigDependencyRoots(readRoots);
+        readRoots = FilterRestrictedRoots(readRoots, policy);
 
         var writeRootSet = new HashSet<string>(writeRoots, StringComparer.OrdinalIgnoreCase);
         readRoots.RemoveAll(root => writeRootSet.Contains(root));
 
         payload.ReadRoots = [.. readRoots];
         payload.WriteRoots = [.. writeRoots];
+        payload.DenyReadPaths = [.. ResolveRestrictedPaths(policy, policyCwd, commandCwd, writableRoots)];
     }
 
     internal static string[] BuildPayloadDenyWritePaths(
@@ -94,9 +91,17 @@ internal static class WindowsSandboxSetupRoots
         string[] writableRoots,
         IReadOnlyDictionary<string, string>? envMap,
         bool includeTempEnvironmentVariables,
-        string[]? explicitDenyWritePaths)
+        string[]? explicitDenyWritePaths,
+        WorkspaceRestrictedPathPolicy? restrictedPathPolicy = null)
     {
-        var allowDeny = ComputeAllowDenyPaths(mode, policyCwd, commandCwd, writableRoots, envMap, includeTempEnvironmentVariables);
+        var allowDeny = ComputeAllowDenyPaths(
+            mode,
+            policyCwd,
+            commandCwd,
+            writableRoots,
+            envMap,
+            includeTempEnvironmentVariables,
+            restrictedPathPolicy);
         var denyWritePaths = new List<string>();
 
         if (explicitDenyWritePaths is not null)
@@ -150,7 +155,8 @@ internal static class WindowsSandboxSetupRoots
         string commandCwd,
         string[] writableRoots,
         IReadOnlyDictionary<string, string>? envMap,
-        bool includeTempEnvironmentVariables)
+        bool includeTempEnvironmentVariables,
+        WorkspaceRestrictedPathPolicy? restrictedPathPolicy = null)
     {
         var roots = new List<string>();
 
@@ -167,7 +173,14 @@ internal static class WindowsSandboxSetupRoots
             }
         }
 
-        var allowDeny = ComputeAllowDenyPaths(mode, policyCwd, commandCwd, writableRoots, envMap, includeTempEnvironmentVariables);
+        var allowDeny = ComputeAllowDenyPaths(
+            mode,
+            policyCwd,
+            commandCwd,
+            writableRoots,
+            envMap,
+            includeTempEnvironmentVariables,
+            restrictedPathPolicy);
         roots.AddRange(allowDeny.Allow);
 
         var dedup = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -189,7 +202,8 @@ internal static class WindowsSandboxSetupRoots
         string commandCwd,
         string[] writableRoots,
         IReadOnlyDictionary<string, string>? envMap,
-        bool includeTempEnvironmentVariables)
+        bool includeTempEnvironmentVariables,
+        WorkspaceRestrictedPathPolicy? restrictedPathPolicy = null)
     {
         var allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var deny = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -205,46 +219,12 @@ internal static class WindowsSandboxSetupRoots
             return false;
         }
 
-        void addExistingDenyPath(string p)
-        {
-            if (Directory.Exists(p) || File.Exists(p))
-            {
-                deny.Add(CanonicalExistingPath(p));
-            }
-        }
-
-        string[] ProtectedChildren = [".git", ".stemcode", ".agents"];
-
         void addWritableRoot(string root, string policyCwdLocal)
         {
             string candidate = Path.IsPathRooted(root)
                 ? root
                 : Path.Combine(policyCwdLocal, root);
-            string? canonical = null;
-            if (addExistingAllowPath(candidate))
-            {
-                canonical = CanonicalExistingPath(candidate);
-            }
-            else
-            {
-                try
-                {
-                    canonical = Path.GetFullPath(candidate);
-                }
-                catch
-                {
-                    return;
-                }
-            }
-
-            if (canonical is not null)
-            {
-                foreach (string child in ProtectedChildren)
-                {
-                    string protectedEntry = Path.Combine(canonical, child);
-                    addExistingDenyPath(protectedEntry);
-                }
-            }
+            addExistingAllowPath(candidate);
         }
 
         if (mode == ToolSandboxMode.WorkspaceWrite)
@@ -273,7 +253,109 @@ internal static class WindowsSandboxSetupRoots
             }
         }
 
+        // Denials come exclusively from the workspace restriction policy. Paths the sandbox
+        // could otherwise protect but that `.stemcode/.stemcodeignore` does not match stay
+        // accessible, so OS enforcement matches the file tools exactly.
+        foreach (string restricted in ResolveRestrictedPaths(
+                     restrictedPathPolicy,
+                     policyCwd,
+                     commandCwd,
+                     writableRoots))
+        {
+            deny.Add(restricted);
+        }
+
         return (allow, deny);
+    }
+
+    /// <summary>
+    /// Resolves restricted workspace paths that fall inside the sandbox scopes, using
+    /// <c>.stemcode/.stemcodeignore</c> as the single policy source.
+    /// </summary>
+    internal static List<string> ResolveRestrictedPaths(
+        WorkspaceRestrictedPathPolicy? restrictedPathPolicy,
+        string policyCwd,
+        string commandCwd,
+        IReadOnlyList<string> writableRoots)
+    {
+        if (restrictedPathPolicy is null || !restrictedPathPolicy.HasRestrictions)
+        {
+            return [];
+        }
+
+        List<string> scopes = [commandCwd, policyCwd];
+        foreach (string root in writableRoots)
+        {
+            scopes.Add(Path.IsPathRooted(root) ? root : Path.Combine(policyCwd, root));
+        }
+
+        var resolved = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (WorkspaceRestrictedPath restricted in restrictedPathPolicy.RestrictedPaths)
+        {
+            if (!Directory.Exists(restricted.FullPath) && !File.Exists(restricted.FullPath))
+            {
+                continue;
+            }
+
+            bool inScope = false;
+            bool isScopeRoot = false;
+            foreach (string scope in scopes)
+            {
+                if (string.IsNullOrWhiteSpace(scope))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (WorkspacePath.PathEquals(scope, restricted.FullPath))
+                    {
+                        isScopeRoot = true;
+                        break;
+                    }
+
+                    inScope |= WorkspacePath.IsSamePathOrDescendant(scope, restricted.FullPath);
+                }
+                catch (Exception exception) when (
+                    exception is ArgumentException or
+                        NotSupportedException or
+                        PathTooLongException or
+                        IOException or
+                        System.Security.SecurityException)
+                {
+                    // Ignore paths this host cannot canonicalize.
+                }
+            }
+
+            if (isScopeRoot || !inScope)
+            {
+                continue;
+            }
+
+            string canonical = CanonicalExistingPath(restricted.FullPath);
+            if (seen.Add(canonical))
+            {
+                resolved.Add(canonical);
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>Removes restricted paths and their descendants from a root list.</summary>
+    internal static List<string> FilterRestrictedRoots(
+        List<string> roots,
+        WorkspaceRestrictedPathPolicy? restrictedPathPolicy)
+    {
+        if (restrictedPathPolicy is null || !restrictedPathPolicy.HasRestrictions)
+        {
+            return roots;
+        }
+
+        roots.RemoveAll(root => restrictedPathPolicy.IsRestricted(root, Directory.Exists(root)));
+        return roots;
     }
 
     internal static List<string> ProfileReadRoots(string userProfile)

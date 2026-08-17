@@ -731,6 +731,7 @@ internal sealed class InitCommandHandler : IReplCommandHandler
         .stemcode/tmp/
         .stemcode/temp/
         .stemcode/memory/*.jsonl
+        .stemcode/secrets/
 
         # VCS and OS metadata
         .git/

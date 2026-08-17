@@ -5,6 +5,7 @@ using StemCode.Application.Tools.Models;
 using StemCode.Application.Utilities;
 using StemCode.Infrastructure.Secrets;
 using StemCode.Infrastructure.WindowsSandbox;
+using StemCode.Infrastructure.Workspaces;
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
@@ -491,7 +492,8 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             shellRequest,
             effectiveSandboxMode,
             workspaceRoot,
-            workingDirectory);
+            workingDirectory,
+            WorkspaceRestrictedPathPolicy.LoadForSandbox(workspaceRoot));
         IReadOnlyDictionary<string, string> sandboxEnvironment = BuildSandboxEnvironment(
             request,
             workspaceRoot,
@@ -534,7 +536,8 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
             workspaceRoot,
             workingDirectory,
             writableRoots,
-            IncludeTempEnvironmentVariables: effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite);
+            IncludeTempEnvironmentVariables: effectiveSandboxMode == ToolSandboxMode.WorkspaceWrite,
+            RestrictedPathPolicy: WorkspaceRestrictedPathPolicy.LoadForSandbox(workspaceRoot));
     }
 
     private ShellCommandExecutionResult CreateExecutionFailureResult(
