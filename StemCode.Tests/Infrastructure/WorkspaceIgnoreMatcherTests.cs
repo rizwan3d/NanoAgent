@@ -103,6 +103,61 @@ public sealed class WorkspaceIgnoreMatcherTests
     }
 
     // ------------------------------------------------------------------
+    // CompiledGlob: precompiled, allocation-free per-candidate matching
+    // ------------------------------------------------------------------
+
+    [Theory]
+    [InlineData("*.log", "a/b.log", false, true)]
+    [InlineData("src/*.log", "other/a.log", false, false)]
+    [InlineData("**/*.log", "a/b/c.log", false, true)]
+    [InlineData("src/**", "src/a/b", false, true)]
+    [InlineData("build/", "build/a.txt", false, true)]
+    [InlineData("[abc].txt", "a.txt", false, true)]
+    [InlineData("[!a].txt", "a.txt", false, false)]
+    [InlineData("**/", "a/b", false, true)]
+    public void CompiledGlob_Matches_Should_AgreeWithMatchesGlob(
+        string pattern,
+        string relativePath,
+        bool isDirectory,
+        bool expected)
+    {
+        WorkspaceIgnoreMatcher.CompiledGlob glob = WorkspaceIgnoreMatcher.CompiledGlob.Parse(pattern);
+
+        glob.IsValid.Should().BeTrue();
+        glob.Matches(relativePath.AsSpan(), isDirectory)
+            .Should()
+            .Be(expected);
+
+        // The compiled form must agree with the per-call parse path so the
+        // precompiled optimization cannot silently diverge in behavior.
+        WorkspaceIgnoreMatcher.MatchesGlob(pattern, relativePath, isDirectory)
+            .Should()
+            .Be(expected);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData(null!)]
+    public void CompiledGlob_Parse_Should_ProduceInvalidGlobForEmptyPattern(string pattern)
+    {
+        WorkspaceIgnoreMatcher.CompiledGlob glob = WorkspaceIgnoreMatcher.CompiledGlob.Parse(pattern);
+
+        glob.IsValid.Should().BeFalse();
+        glob.Matches("a/b.log".AsSpan(), isDirectory: false).Should().BeFalse();
+    }
+
+    [Fact]
+    public void CompiledGlob_Matches_Should_HonorCaseInsensitivityOnWindows()
+    {
+        bool expected = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+        WorkspaceIgnoreMatcher.CompiledGlob.Parse("*.LOG")
+            .Matches("a/b.log".AsSpan(), isDirectory: false)
+            .Should()
+            .Be(expected);
+    }
+
+    // ------------------------------------------------------------------
     // Load / IsIgnored: file-driven rules, negation, nested base-relative
     // ------------------------------------------------------------------
 

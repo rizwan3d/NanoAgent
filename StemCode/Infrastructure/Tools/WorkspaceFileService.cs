@@ -128,6 +128,29 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         int TotalMatchCount,
         bool HasMore,
         string? NextCursor);
+
+    private readonly struct SearchPathFilter
+    {
+        public SearchPathFilter(
+            bool includeHidden,
+            bool includeGenerated,
+            bool includeIgnored,
+            WorkspaceIgnoreMatcher.CompiledGlob[] includeGlobs,
+            WorkspaceIgnoreMatcher.CompiledGlob[] excludeGlobs)
+        {
+            IncludeHidden = includeHidden;
+            IncludeGenerated = includeGenerated;
+            IncludeIgnored = includeIgnored;
+            IncludeGlobs = includeGlobs;
+            ExcludeGlobs = excludeGlobs;
+        }
+
+        public bool IncludeHidden { get; }
+        public bool IncludeGenerated { get; }
+        public bool IncludeIgnored { get; }
+        public WorkspaceIgnoreMatcher.CompiledGlob[] IncludeGlobs { get; }
+        public WorkspaceIgnoreMatcher.CompiledGlob[] ExcludeGlobs { get; }
+    }
     private readonly record struct WorkspaceFileReadPage(
         string RawContent,
         string DisplayContent,
@@ -1005,13 +1028,14 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
     {
         bool searchPathIsDirectory = Directory.Exists(fullPath);
         bool searchPathExists = File.Exists(fullPath) || searchPathIsDirectory;
+        SearchPathFilter filter = BuildSearchPathFilter(request);
         if (searchPathExists &&
             !string.Equals(ToWorkspaceRelativePath(fullPath), ".", StringComparison.Ordinal) &&
             !ShouldIncludeSearchPath(
                 ToWorkspaceRelativePath(fullPath),
                 fullPath,
                 searchPathIsDirectory,
-                request,
+                filter,
                 ignoreMatcher))
         {
             int initialOffset = GetSearchOffset(request);
@@ -1021,12 +1045,12 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         IEnumerable<string> files = File.Exists(fullPath)
             ? [fullPath]
             : Directory.Exists(fullPath)
-                ? EnumerateSearchFiles(fullPath, request, ignoreMatcher)
+                ? EnumerateSearchFiles(fullPath, filter, ignoreMatcher)
                 : throw new FileNotFoundException(
                     $"Search path '{request.Path ?? "."}' does not exist.");
 
         List<WorkspaceFileSearchMatch> matches = files
-            .Select(filePath => CreateSearchMatch(request, effectiveMode, filePath, ignoreMatcher))
+            .Select(filePath => CreateSearchMatch(request, effectiveMode, filePath, filter, ignoreMatcher))
             .Where(static match => match is not null)
             .Select(static match => match!)
             .OrderByDescending(static match => match.Score)
@@ -1061,10 +1085,11 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         WorkspaceFileSearchRequest request,
         string effectiveMode,
         string filePath,
+        SearchPathFilter filter,
         WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         string relativePath = ToWorkspaceRelativePath(filePath);
-        if (!ShouldIncludeSearchPath(relativePath, filePath, isDirectory: false, request, ignoreMatcher))
+        if (!ShouldIncludeSearchPath(relativePath, filePath, isDirectory: false, filter, ignoreMatcher))
         {
             return null;
         }
@@ -1091,7 +1116,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
         string relativePath,
         string fullPath,
         bool isDirectory,
-        WorkspaceFileSearchRequest request,
+        SearchPathFilter filter,
         WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         if (IsGitMetadataPath(relativePath))
@@ -1099,38 +1124,81 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
             return false;
         }
 
-        if (ignoreMatcher.IsIgnored(fullPath, isDirectory, request.IncludeIgnored))
+        if (ignoreMatcher.IsIgnored(fullPath, isDirectory, filter.IncludeIgnored))
         {
             return false;
         }
 
-        if (!request.IncludeHidden &&
+        if (!filter.IncludeHidden &&
             IsHiddenPath(relativePath, fullPath, isDirectory))
         {
             return false;
         }
 
-        if (!request.IncludeGenerated &&
+        if (!filter.IncludeGenerated &&
             IsGeneratedOrVendorPath(relativePath))
         {
             return false;
         }
 
-        IReadOnlyList<string> includeGlobs = GetEffectiveIncludeGlobs(request);
         if (!isDirectory &&
-            includeGlobs.Count > 0 &&
-            !includeGlobs.Any(glob => WorkspaceIgnoreMatcher.MatchesGlob(glob, relativePath, isDirectory)))
+            filter.IncludeGlobs.Length > 0 &&
+            !MatchesAnyGlob(filter.IncludeGlobs, relativePath, isDirectory))
         {
             return false;
         }
 
-        if (request.ExcludeGlobs?.Count > 0 &&
-            request.ExcludeGlobs.Any(glob => WorkspaceIgnoreMatcher.MatchesGlob(glob, relativePath, isDirectory)))
+        if (filter.ExcludeGlobs.Length > 0 &&
+            MatchesAnyGlob(filter.ExcludeGlobs, relativePath, isDirectory))
         {
             return false;
         }
 
         return true;
+    }
+
+    private static bool MatchesAnyGlob(
+        WorkspaceIgnoreMatcher.CompiledGlob[] globs,
+        string relativePath,
+        bool isDirectory)
+    {
+        ReadOnlySpan<char> path = relativePath.AsSpan();
+        foreach (WorkspaceIgnoreMatcher.CompiledGlob glob in globs)
+        {
+            if (glob.Matches(path, isDirectory))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static SearchPathFilter BuildSearchPathFilter(WorkspaceFileSearchRequest request)
+    {
+        return new SearchPathFilter(
+            request.IncludeHidden,
+            request.IncludeGenerated,
+            request.IncludeIgnored,
+            CompileGlobs(GetEffectiveIncludeGlobs(request)),
+            CompileGlobs(request.ExcludeGlobs));
+    }
+
+    private static WorkspaceIgnoreMatcher.CompiledGlob[] CompileGlobs(
+        IReadOnlyList<string>? globs)
+    {
+        if (globs is null || globs.Count == 0)
+        {
+            return [];
+        }
+
+        WorkspaceIgnoreMatcher.CompiledGlob[] compiled = new WorkspaceIgnoreMatcher.CompiledGlob[globs.Count];
+        for (int index = 0; index < globs.Count; index++)
+        {
+            compiled[index] = WorkspaceIgnoreMatcher.CompiledGlob.Parse(globs[index]);
+        }
+
+        return compiled;
     }
 
     private static IReadOnlyList<string> GetEffectiveIncludeGlobs(WorkspaceFileSearchRequest request)
@@ -1168,7 +1236,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
 
     private IEnumerable<string> EnumerateSearchFiles(
         string root,
-        WorkspaceFileSearchRequest request,
+        SearchPathFilter filter,
         WorkspaceSearchIgnoreMatcher ignoreMatcher)
     {
         Stack<string> pendingDirectories = new();
@@ -1201,7 +1269,7 @@ internal sealed class WorkspaceFileService : IWorkspaceFileService, IDisposable
 
                 bool isDirectory = attributes.HasFlag(FileAttributes.Directory);
                 string relativePath = ToWorkspaceRelativePath(entry);
-                if (!ShouldIncludeSearchPath(relativePath, entry, isDirectory, request, ignoreMatcher))
+                if (!ShouldIncludeSearchPath(relativePath, entry, isDirectory, filter, ignoreMatcher))
                 {
                     continue;
                 }

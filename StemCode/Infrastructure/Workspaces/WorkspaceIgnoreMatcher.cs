@@ -151,25 +151,66 @@ internal sealed class WorkspaceIgnoreMatcher
         string relativePath,
         bool isDirectory)
     {
-        if (string.IsNullOrWhiteSpace(pattern) || string.IsNullOrWhiteSpace(relativePath))
+        return CompiledGlob.Parse(pattern)
+            .Matches(relativePath.AsSpan(), isDirectory);
+    }
+
+    /// <summary>
+    /// A glob pattern parsed once so it can be matched against many candidate
+    /// paths without re-parsing. Call <see cref="Matches"/> on the hot path;
+    /// it allocates nothing beyond a stack-only <see cref="ReadOnlySpan{T}"/>
+    /// view of the candidate path.
+    /// </summary>
+    internal readonly struct CompiledGlob
+    {
+        private readonly IgnoreRule? _rule;
+
+        private CompiledGlob(IgnoreRule? rule) => _rule = rule;
+
+        /// <summary>
+        /// False when the pattern was empty/whitespace or did not parse into a
+        /// usable rule. Such a glob never matches, mirroring
+        /// <see cref="MatchesGlob"/>.
+        /// </summary>
+        public bool IsValid => _rule is not null;
+
+        public static CompiledGlob Parse(string pattern)
         {
-            return false;
+            if (string.IsNullOrWhiteSpace(pattern))
+            {
+                return default;
+            }
+
+            return new CompiledGlob(ParseRule(pattern, string.Empty, "<glob>"));
         }
 
-        IgnoreRule? rule = ParseRule(pattern, string.Empty, "<glob>");
-        if (rule is null)
+        public static bool TryParse(string pattern, out CompiledGlob glob)
         {
-            return false;
+            glob = Parse(pattern);
+            return glob.IsValid;
         }
 
-        ReadOnlySpan<char> normalizedPath = TrimPathSpan(relativePath);
-        if (normalizedPath.IsEmpty ||
-            normalizedPath.Equals(".", StringComparison.Ordinal))
+        /// <summary>
+        /// Returns true when <paramref name="relativePath"/> matches this glob.
+        /// The path is treated as already relative and may use either '/' or '\'
+        /// separators. Allocation free.
+        /// </summary>
+        public bool Matches(ReadOnlySpan<char> relativePath, bool isDirectory)
         {
-            return false;
-        }
+            if (_rule is null)
+            {
+                return false;
+            }
 
-        return Matches(rule, normalizedPath, isDirectory);
+            ReadOnlySpan<char> normalizedPath = TrimPathSpan(relativePath);
+            if (normalizedPath.IsEmpty ||
+                normalizedPath.Equals(".", StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            return WorkspaceIgnoreMatcher.Matches(_rule, normalizedPath, isDirectory);
+        }
     }
 
     private IgnoreRule? GetIgnoringRule(
@@ -664,9 +705,9 @@ internal sealed class WorkspaceIgnoreMatcher
     /// Segment scanning accepts both '/' and '\', so no separator-replacement
     /// string is required on the matching hot path.
     /// </summary>
-    private static ReadOnlySpan<char> TrimPathSpan(string path)
+    private static ReadOnlySpan<char> TrimPathSpan(ReadOnlySpan<char> path)
     {
-        ReadOnlySpan<char> span = path.AsSpan();
+        ReadOnlySpan<char> span = path;
         int start = 0;
         while (start < span.Length && char.IsWhiteSpace(span[start]))
         {
