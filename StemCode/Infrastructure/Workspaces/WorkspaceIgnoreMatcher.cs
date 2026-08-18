@@ -1,5 +1,4 @@
 using StemCode.Application.Utilities;
-using System.Text.RegularExpressions;
 
 namespace StemCode.Infrastructure.Workspaces;
 
@@ -11,6 +10,14 @@ internal sealed class WorkspaceIgnoreMatcher
 
     private const string GitIgnoreFileName = ".gitignore";
     private static readonly string GitIgnoreRelativePath = GitIgnoreFileName;
+
+    // gitignore-style matching is case-insensitive on Windows and
+    // case-sensitive everywhere else. This mirrors the original RegexOptions
+    // (CultureInvariant | IgnoreCase) and is reused across every match.
+    private static readonly StringComparison SegmentComparison =
+        OperatingSystem.IsWindows()
+            ? StringComparison.OrdinalIgnoreCase
+            : StringComparison.Ordinal;
 
     private static readonly WorkspaceIgnoreMatcher EmptyMatcher = new(
         string.Empty,
@@ -155,9 +162,14 @@ internal sealed class WorkspaceIgnoreMatcher
             return false;
         }
 
-        string[] pathSegments = NormalizePath(relativePath)
-            .Split('/', StringSplitOptions.RemoveEmptyEntries);
-        return pathSegments.Length > 0 && Matches(rule, pathSegments, isDirectory);
+        ReadOnlySpan<char> normalizedPath = TrimPathSpan(relativePath);
+        if (normalizedPath.IsEmpty ||
+            normalizedPath.Equals(".", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return Matches(rule, normalizedPath, isDirectory);
     }
 
     private IgnoreRule? GetIgnoringRule(
@@ -169,21 +181,17 @@ internal sealed class WorkspaceIgnoreMatcher
             return null;
         }
 
-        string normalizedPath = NormalizePath(relativePath);
-        if (string.IsNullOrWhiteSpace(normalizedPath) ||
-            string.Equals(normalizedPath, ".", StringComparison.Ordinal))
+        ReadOnlySpan<char> normalizedPath = TrimPathSpan(relativePath);
+        if (normalizedPath.IsEmpty ||
+            normalizedPath.Equals(".", StringComparison.Ordinal))
         {
             return null;
         }
 
-        string[] pathSegments = normalizedPath.Split(
-            '/',
-            StringSplitOptions.RemoveEmptyEntries);
-
         IgnoreRule? ignoringRule = null;
         foreach (IgnoreRule rule in _rules)
         {
-            if (!Matches(rule, pathSegments, isDirectory))
+            if (!Matches(rule, normalizedPath, isDirectory))
             {
                 continue;
             }
@@ -195,6 +203,395 @@ internal sealed class WorkspaceIgnoreMatcher
 
         return ignoringRule;
     }
+
+    // ---------------------------------------------------------------------
+    // Span-based matching core (allocation free on the hot path)
+    // ---------------------------------------------------------------------
+
+    private static bool Matches(
+        IgnoreRule rule,
+        ReadOnlySpan<char> path,
+        bool isDirectory)
+    {
+        int totalSegments = CountSegments(path);
+        if (totalSegments == 0)
+        {
+            return false;
+        }
+
+        if (!StartsWithSegments(path, rule.BasePathSegments))
+        {
+            return false;
+        }
+
+        if (!rule.HasSlash)
+        {
+            return MatchesSingleSegmentRule(rule, path, totalSegments, isDirectory);
+        }
+
+        return MatchesPathRule(rule, path, totalSegments, isDirectory);
+    }
+
+    private static bool MatchesSingleSegmentRule(
+        IgnoreRule rule,
+        ReadOnlySpan<char> path,
+        int totalSegments,
+        bool isDirectory)
+    {
+        ReadOnlySpan<char> pattern = rule.PatternSegments[0].AsSpan();
+        int startIndex = rule.BasePathSegments.Length;
+        int segmentCount = rule.DirectoryOnly && !isDirectory
+            ? totalSegments - 1
+            : totalSegments;
+
+        int offset = 0;
+        int segmentIndex = 0;
+        while (TryGetSegment(path, ref offset, out ReadOnlySpan<char> segment))
+        {
+            if (segmentIndex >= startIndex &&
+                segmentIndex < segmentCount &&
+                MatchSegmentGlob(pattern, segment, SegmentComparison))
+            {
+                return true;
+            }
+
+            segmentIndex++;
+        }
+
+        return false;
+    }
+
+    private static bool MatchesPathRule(
+        IgnoreRule rule,
+        ReadOnlySpan<char> path,
+        int totalSegments,
+        bool isDirectory)
+    {
+        if (!rule.DirectoryOnly &&
+            MatchesSegments(rule, patternIndex: 0, path, offset: 0, totalSegments))
+        {
+            return true;
+        }
+
+        // A directory-only (or path) rule also ignores every path beneath the
+        // matched directory. Instead of allocating Take(count).ToArray() for
+        // each prefix, we cap how many leading segments the matcher may consume.
+        int directoryPrefixCount = isDirectory
+            ? totalSegments
+            : totalSegments - 1;
+
+        for (int count = 1; count <= directoryPrefixCount; count++)
+        {
+            if (MatchesSegments(rule, patternIndex: 0, path, offset: 0, count))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool MatchesSegments(
+        IgnoreRule rule,
+        int patternIndex,
+        ReadOnlySpan<char> path,
+        int offset,
+        int remainingSegments)
+    {
+        while (true)
+        {
+            if (patternIndex >= rule.PatternSegments.Length)
+            {
+                return remainingSegments == 0;
+            }
+
+            ReadOnlySpan<char> patternSegment = rule.PatternSegments[patternIndex].AsSpan();
+            if (patternSegment.Equals("**", StringComparison.Ordinal))
+            {
+                if (MatchesSegments(rule, patternIndex + 1, path, offset, remainingSegments))
+                {
+                    return true;
+                }
+
+                if (remainingSegments == 0)
+                {
+                    return false;
+                }
+
+                if (!TryGetSegment(path, ref offset, out _))
+                {
+                    return false;
+                }
+
+                remainingSegments--;
+                continue;
+            }
+
+            if (remainingSegments == 0)
+            {
+                return false;
+            }
+
+            if (!TryGetSegment(path, ref offset, out ReadOnlySpan<char> pathSegment))
+            {
+                return false;
+            }
+
+            remainingSegments--;
+            if (!MatchSegmentGlob(patternSegment, pathSegment, SegmentComparison))
+            {
+                return false;
+            }
+
+            patternIndex++;
+        }
+    }
+
+    private static bool StartsWithSegments(
+        ReadOnlySpan<char> path,
+        string[] prefixSegments)
+    {
+        if (prefixSegments.Length == 0)
+        {
+            return true;
+        }
+
+        int offset = 0;
+        for (int index = 0; index < prefixSegments.Length; index++)
+        {
+            if (!TryGetSegment(path, ref offset, out ReadOnlySpan<char> segment))
+            {
+                return false;
+            }
+
+            if (!segment.Equals(prefixSegments[index].AsSpan(), SegmentComparison))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns the next non-empty path segment, advancing <paramref name="offset"/>
+    /// past it (and any trailing separators). Both '/' and '\' are accepted so
+    /// Windows paths do not need to be normalized into a new string first.
+    /// Allocation free.
+    /// </summary>
+    private static bool TryGetSegment(
+        ReadOnlySpan<char> path,
+        ref int offset,
+        out ReadOnlySpan<char> segment)
+    {
+        while (offset < path.Length && IsPathSeparator(path[offset]))
+        {
+            offset++;
+        }
+
+        if (offset >= path.Length)
+        {
+            segment = default;
+            return false;
+        }
+
+        int start = offset;
+        while (offset < path.Length && !IsPathSeparator(path[offset]))
+        {
+            offset++;
+        }
+
+        segment = path.Slice(start, offset - start);
+        return true;
+    }
+
+    private static bool IsPathSeparator(char value)
+    {
+        return value is '/' or '\\';
+    }
+
+    private static int CountSegments(ReadOnlySpan<char> path)
+    {
+        int count = 0;
+        int offset = 0;
+        while (TryGetSegment(path, ref offset, out _))
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// Matches a single gitignore segment glob (no '/') against a path segment.
+    /// Supports '*' (any run), '?' (any single char), and '[...]' character
+    /// classes. This replaces the previous per-segment <see cref="Regex"/> so
+    /// matching allocates nothing on the heap.
+    /// </summary>
+    private static bool MatchSegmentGlob(
+        ReadOnlySpan<char> pattern,
+        ReadOnlySpan<char> text,
+        StringComparison comparison)
+    {
+        bool ignoreCase = comparison == StringComparison.OrdinalIgnoreCase;
+        int p = 0;
+        int t = 0;
+        int star = -1;
+        int starText = -1;
+
+        while (t < text.Length)
+        {
+            if (p >= pattern.Length)
+            {
+                if (star < 0)
+                {
+                    return false;
+                }
+
+                p = star + 1;
+                starText++;
+                t = starText;
+                continue;
+            }
+
+            char patternChar = pattern[p];
+            if (patternChar == '*')
+            {
+                star = p;
+                starText = t;
+                p++;
+                continue;
+            }
+
+            if (MatchToken(pattern, ref p, text, t, ignoreCase))
+            {
+                t++;
+                continue;
+            }
+
+            if (star < 0)
+            {
+                return false;
+            }
+
+            p = star + 1;
+            starText++;
+            t = starText;
+        }
+
+        while (p < pattern.Length && pattern[p] == '*')
+        {
+            p++;
+        }
+
+        return p == pattern.Length;
+    }
+
+    private static bool MatchToken(
+        ReadOnlySpan<char> pattern,
+        ref int p,
+        ReadOnlySpan<char> text,
+        int t,
+        bool ignoreCase)
+    {
+        char patternChar = pattern[p];
+        if (patternChar == '?')
+        {
+            p++;
+            return true;
+        }
+
+        if (patternChar == '[')
+        {
+            int relativeEnd = pattern[(p + 1)..].IndexOf(']');
+            int end = relativeEnd < 0
+                ? -1
+                : p + 1 + relativeEnd;
+            if (end > p + 1)
+            {
+                ReadOnlySpan<char> content = pattern.Slice(p + 1, end - p - 1);
+                p = end + 1;
+                return IsCharInClass(content, text[t], ignoreCase);
+            }
+
+            // Unterminated class: treat '[' as a literal character.
+            p++;
+            return CharEquals('[', text[t], ignoreCase);
+        }
+
+        p++;
+        return CharEquals(patternChar, text[t], ignoreCase);
+    }
+
+    private static bool IsCharInClass(
+        ReadOnlySpan<char> content,
+        char c,
+        bool ignoreCase)
+    {
+        bool negated = false;
+        int start = 0;
+        if (content.Length > 0 && content[0] == '!')
+        {
+            negated = true;
+            start = 1;
+        }
+
+        bool found = false;
+        int i = start;
+        while (i < content.Length)
+        {
+            if (i + 2 < content.Length &&
+                content[i + 1] == '-' &&
+                content[i + 2] != ']')
+            {
+                if (CharInRange(c, content[i], content[i + 2], ignoreCase))
+                {
+                    found = true;
+                    break;
+                }
+
+                i += 3;
+            }
+            else
+            {
+                if (CharEquals(content[i], c, ignoreCase))
+                {
+                    found = true;
+                    break;
+                }
+
+                i++;
+            }
+        }
+
+        return negated ? !found : found;
+    }
+
+    private static bool CharInRange(char c, char low, char high, bool ignoreCase)
+    {
+        if (ignoreCase)
+        {
+            c = char.ToLowerInvariant(c);
+            low = char.ToLowerInvariant(low);
+            high = char.ToLowerInvariant(high);
+        }
+
+        return c >= low && c <= high;
+    }
+
+    private static bool CharEquals(char a, char b, bool ignoreCase)
+    {
+        if (a == b)
+        {
+            return true;
+        }
+
+        return ignoreCase && char.ToLowerInvariant(a) == char.ToLowerInvariant(b);
+    }
+
+    // ---------------------------------------------------------------------
+    // Rule parsing (load time only)
+    // ---------------------------------------------------------------------
 
     private static IgnoreRule? ParseRule(
         string line,
@@ -255,260 +652,34 @@ internal sealed class WorkspaceIgnoreMatcher
             hasSlash,
             baseSegments,
             matchSegments,
-            matchSegments.Select(CreateSegmentRegex).ToArray(),
             sourceDisplayPath);
     }
 
-    private static bool Matches(
-        IgnoreRule rule,
-        IReadOnlyList<string> pathSegments,
-        bool isDirectory)
+    // ---------------------------------------------------------------------
+    // Path normalization helpers
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns a trimmed view of <paramref name="path"/> without allocating.
+    /// Segment scanning accepts both '/' and '\', so no separator-replacement
+    /// string is required on the matching hot path.
+    /// </summary>
+    private static ReadOnlySpan<char> TrimPathSpan(string path)
     {
-        if (pathSegments.Count == 0)
+        ReadOnlySpan<char> span = path.AsSpan();
+        int start = 0;
+        while (start < span.Length && char.IsWhiteSpace(span[start]))
         {
-            return false;
+            start++;
         }
 
-        if (!StartsWithSegments(pathSegments, rule.BasePathSegments))
+        int end = span.Length;
+        while (end > start && char.IsWhiteSpace(span[end - 1]))
         {
-            return false;
+            end--;
         }
 
-        if (!rule.HasSlash)
-        {
-            return MatchesSingleSegmentRule(rule, pathSegments, isDirectory);
-        }
-
-        return MatchesPathRule(rule, pathSegments, isDirectory);
-    }
-
-    private static bool MatchesSingleSegmentRule(
-        IgnoreRule rule,
-        IReadOnlyList<string> pathSegments,
-        bool isDirectory)
-    {
-        Regex segmentRegex = rule.SegmentRegexes[0];
-        int startIndex = rule.BasePathSegments.Length;
-        int segmentCount = rule.DirectoryOnly && !isDirectory
-            ? pathSegments.Count - 1
-            : pathSegments.Count;
-
-        for (int index = startIndex; index < segmentCount; index++)
-        {
-            if (segmentRegex.IsMatch(pathSegments[index]))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool MatchesPathRule(
-        IgnoreRule rule,
-        IReadOnlyList<string> pathSegments,
-        bool isDirectory)
-    {
-        if (!rule.DirectoryOnly &&
-            MatchesSegments(rule, pathSegments))
-        {
-            return true;
-        }
-
-        int directoryPrefixCount = isDirectory
-            ? pathSegments.Count
-            : pathSegments.Count - 1;
-
-        for (int count = 1; count <= directoryPrefixCount; count++)
-        {
-            if (MatchesSegments(rule, pathSegments.Take(count).ToArray()))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private static bool MatchesSegments(
-        IgnoreRule rule,
-        IReadOnlyList<string> pathSegments)
-    {
-        return MatchesSegments(
-            rule,
-            patternIndex: 0,
-            pathSegments,
-            pathIndex: 0);
-    }
-
-    private static bool MatchesSegments(
-        IgnoreRule rule,
-        int patternIndex,
-        IReadOnlyList<string> pathSegments,
-        int pathIndex)
-    {
-        while (true)
-        {
-            if (patternIndex >= rule.PatternSegments.Length)
-            {
-                return pathIndex >= pathSegments.Count;
-            }
-
-            string patternSegment = rule.PatternSegments[patternIndex];
-            if (string.Equals(patternSegment, "**", StringComparison.Ordinal))
-            {
-                if (MatchesSegments(
-                        rule,
-                        patternIndex + 1,
-                        pathSegments,
-                        pathIndex))
-                {
-                    return true;
-                }
-
-                if (pathIndex >= pathSegments.Count)
-                {
-                    return false;
-                }
-
-                pathIndex++;
-                continue;
-            }
-
-            if (pathIndex >= pathSegments.Count ||
-                !rule.SegmentRegexes[patternIndex].IsMatch(pathSegments[pathIndex]))
-            {
-                return false;
-            }
-
-            patternIndex++;
-            pathIndex++;
-        }
-    }
-
-    private static bool StartsWithSegments(
-        IReadOnlyList<string> pathSegments,
-        IReadOnlyList<string> prefixSegments)
-    {
-        if (prefixSegments.Count == 0)
-        {
-            return true;
-        }
-
-        if (pathSegments.Count < prefixSegments.Count)
-        {
-            return false;
-        }
-
-        StringComparison comparison = OperatingSystem.IsWindows()
-            ? StringComparison.OrdinalIgnoreCase
-            : StringComparison.Ordinal;
-
-        for (int index = 0; index < prefixSegments.Count; index++)
-        {
-            if (!string.Equals(pathSegments[index], prefixSegments[index], comparison))
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    private static Regex CreateSegmentRegex(string patternSegment)
-    {
-        if (string.Equals(patternSegment, "**", StringComparison.Ordinal))
-        {
-            return new Regex("^.*$", GetRegexOptions());
-        }
-
-        return new Regex(
-            "^" + ConvertSegmentGlobToRegex(patternSegment) + "$",
-            GetRegexOptions());
-    }
-
-    private static string ConvertSegmentGlobToRegex(string value)
-    {
-        StringWriter writer = new();
-        for (int index = 0; index < value.Length; index++)
-        {
-            char character = value[index];
-            switch (character)
-            {
-                case '*':
-                    writer.Write(".*");
-                    break;
-
-                case '?':
-                    writer.Write('.');
-                    break;
-
-                case '[':
-                    if (TryReadCharacterClass(value, index, out string? characterClass, out int endIndex))
-                    {
-                        writer.Write(characterClass);
-                        index = endIndex;
-                    }
-                    else
-                    {
-                        writer.Write(@"\[");
-                    }
-
-                    break;
-
-                default:
-                    writer.Write(Regex.Escape(character.ToString()));
-                    break;
-            }
-        }
-
-        return writer.ToString();
-    }
-
-    private static bool TryReadCharacterClass(
-        string value,
-        int startIndex,
-        out string? characterClass,
-        out int endIndex)
-    {
-        characterClass = null;
-        endIndex = startIndex;
-
-        int closingIndex = value.IndexOf(']', startIndex + 1);
-        if (closingIndex <= startIndex + 1)
-        {
-            return false;
-        }
-
-        string content = value[(startIndex + 1)..closingIndex];
-        if (string.IsNullOrEmpty(content))
-        {
-            return false;
-        }
-
-        if (content[0] == '!')
-        {
-            content = "^" + content[1..];
-        }
-        else if (content[0] == '^')
-        {
-            content = @"\^" + content[1..];
-        }
-
-        characterClass = "[" + content.Replace(@"\", @"\\", StringComparison.Ordinal) + "]";
-        endIndex = closingIndex;
-        return true;
-    }
-
-    private static RegexOptions GetRegexOptions()
-    {
-        RegexOptions options = RegexOptions.CultureInvariant;
-        if (OperatingSystem.IsWindows())
-        {
-            options |= RegexOptions.IgnoreCase;
-        }
-
-        return options;
+        return span.Slice(start, end - start);
     }
 
     private static string NormalizePath(string path)
@@ -607,7 +778,6 @@ internal sealed class WorkspaceIgnoreMatcher
         bool HasSlash,
         string[] BasePathSegments,
         string[] PatternSegments,
-        Regex[] SegmentRegexes,
         string SourceDisplayPath);
 
     private sealed record IgnoreFileCandidate(
