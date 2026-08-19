@@ -123,11 +123,17 @@ public sealed class WorkspaceCodebaseIndexServiceTests
         staleStatus.IsStale.Should().BeTrue();
         staleStatus.NewFileCount.Should().Be(1);
 
-        var search = await sut.SearchAsync(
-            "SecondFeature",
-            limit: 5,
-            includeSnippets: false,
-            CancellationToken.None);
+        // The incremental rebuild is triggered by the file-system watcher, whose events can
+        // arrive a few milliseconds after the write. Poll the search until the new file is
+        // reflected so the assertion is not racy on slow CI filesystems.
+        CodebaseIndexSearchResult search = await PollUntilAsync(
+            () => sut.SearchAsync(
+                "SecondFeature",
+                limit: 5,
+                includeSnippets: false,
+                CancellationToken.None),
+            result => result.Matches.Any(match => match.Path == "second.cs"),
+            TimeSpan.FromSeconds(3));
 
         search.IndexWasUpdated.Should().BeTrue();
         search.Matches.Should().ContainSingle(match => match.Path == "second.cs");
@@ -258,6 +264,29 @@ public sealed class WorkspaceCodebaseIndexServiceTests
             {
                 Directory.Delete(Path, recursive: true);
             }
+        }
+    }
+
+    private static async Task<T> PollUntilAsync<T>(
+        Func<Task<T>> action,
+        Func<T, bool> predicate,
+        TimeSpan timeout)
+    {
+        DateTime deadline = DateTime.UtcNow + timeout;
+        while (true)
+        {
+            T result = await action();
+            if (predicate(result))
+            {
+                return result;
+            }
+
+            if (DateTime.UtcNow > deadline)
+            {
+                return result;
+            }
+
+            await Task.Delay(50);
         }
     }
 }

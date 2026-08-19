@@ -6,10 +6,12 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Collections.Frozen;
+using System.Threading;
 
 namespace StemCode.Infrastructure.Storage;
 
-internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
+internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService, IDisposable
 {
     private const int CurrentIndexVersion = 3;
     private const int MaxParallelIndexingTasks = 8;
@@ -150,15 +152,49 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
     private readonly TimeProvider _timeProvider;
     private readonly IWorkspaceRootProvider _workspaceRootProvider;
 
+    private readonly SemaphoreSlim _rebuildGate = new(1, 1);
+    private readonly FileSystemWatcher? _watcher;
+    private int _dirtyGeneration;
+    private volatile bool _watchHealthy = true;
+    private CodebaseIndexSnapshot? _snapshot;
+
     public WorkspaceCodebaseIndexService(
         IWorkspaceRootProvider workspaceRootProvider,
         TimeProvider? timeProvider = null)
     {
         _workspaceRootProvider = workspaceRootProvider;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _watcher = TryCreateWatcher(GetWorkspaceRoot());
+    }
+
+    public void Dispose()
+    {
+        _rebuildGate.Dispose();
+        _watcher?.Dispose();
     }
 
     public async Task<CodebaseIndexBuildResult> BuildAsync(
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // An explicit build always rebuilds (the single-flight gate serializes it with
+        // any concurrent search/list rebuild). The rebuilt snapshot is published atomically.
+        await _rebuildGate.WaitAsync(cancellationToken);
+        try
+        {
+            RebuildOutcome outcome = await RebuildAsync(force, cancellationToken);
+            Interlocked.Exchange(ref _snapshot, outcome.Snapshot);
+            return outcome.BuildResult;
+        }
+        finally
+        {
+            _rebuildGate.Release();
+        }
+    }
+
+    private async Task<RebuildOutcome> RebuildAsync(
         bool force,
         CancellationToken cancellationToken)
     {
@@ -197,7 +233,11 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
                     HasSameMetadata(candidate, existingFile) &&
                     OwnersEqual(existingFile.Owners, owners))
                 {
-                    candidateResults[index] = CandidateIndexResult.Reused(existingFile, owners);
+                    // Clone the reused file into brand-new objects so the published,
+                    // resident snapshot is never mutated by the rebuild path.
+                    candidateResults[index] = CandidateIndexResult.Reused(
+                        CloneFileForReuse(existingFile, owners),
+                        owners);
                     return;
                 }
 
@@ -222,7 +262,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
 
             if (result.ReusedFile is not null)
             {
-                result.ReusedFile.Owners = result.Owners;
                 indexedFiles.Add(result.ReusedFile);
                 reused++;
                 continue;
@@ -251,6 +290,7 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             skipped += scan.Files.Count - MaxIndexedFiles;
         }
 
+        // Operates only on the freshly built, not-yet-published file objects.
         ResolveRepositoryMetadata(indexedFiles);
 
         HashSet<string> currentPaths = scan.Files
@@ -276,8 +316,10 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             cancellationToken);
 
         stopwatch.Stop();
-        CodebaseIndexStats stats = BuildStats(index);
-        return new CodebaseIndexBuildResult(
+        int dirtyGeneration = Volatile.Read(ref _dirtyGeneration);
+        CodebaseIndexSnapshot snapshot = BuildSnapshot(index, dirtyGeneration);
+        CodebaseIndexStats stats = snapshot.Stats;
+        CodebaseIndexBuildResult buildResult = new CodebaseIndexBuildResult(
             ToWorkspaceRelativePath(workspaceRoot, indexPath),
             builtAtUtc,
             index.Files.Count,
@@ -289,6 +331,7 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             stopwatch.ElapsedMilliseconds,
             stats,
             CreateBuildWarnings(scan, ownershipRules.Count, skipped));
+        return new RebuildOutcome(snapshot, buildResult);
     }
 
     public async Task<CodebaseIndexStatusResult> GetStatusAsync(CancellationToken cancellationToken)
@@ -389,28 +432,21 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
         cancellationToken.ThrowIfCancellationRequested();
 
-        CodebaseIndexStatusResult status = await GetStatusAsync(cancellationToken);
-        bool indexWasUpdated = !status.Exists || status.IsStale;
-        if (indexWasUpdated)
-        {
-            await BuildAsync(force: false, cancellationToken);
-        }
+        // Capture the resident snapshot exactly once. If the workspace is unchanged since
+        // it was built (dirty generation matches and the file watcher is healthy), no
+        // workspace scan or rebuild happens on the search path at all.
+        CodebaseIndexSnapshot? current = Volatile.Read(ref _snapshot);
+        bool needsFresh = current is null ||
+                          current.Generation != Volatile.Read(ref _dirtyGeneration) ||
+                          !_watchHealthy ||
+                          _watcher is null;
+        FreshSnapshot fresh = needsFresh
+            ? await EnsureFreshSnapshotAsync(force: false, cancellationToken)
+            : new FreshSnapshot(current!, null);
+        CodebaseIndexSnapshot snapshot = fresh.Snapshot;
 
         string workspaceRoot = GetWorkspaceRoot();
         string indexPath = GetIndexPath(workspaceRoot);
-        CodebaseIndexDocument? index = await LoadIndexAsync(indexPath, cancellationToken);
-        if (index is null)
-        {
-            return new CodebaseIndexSearchResult(
-                query.Trim(),
-                ToWorkspaceRelativePath(workspaceRoot, indexPath),
-                indexWasUpdated,
-                IndexedFileCount: 0,
-                EmptyStats(),
-                CreateQueryWarnings(indexWasUpdated, status.Warnings),
-                Matches: []);
-        }
-
         string normalizedQuery = query.Trim();
         string[] queryTerms = Tokenize(normalizedQuery)
             .Distinct(StringComparer.Ordinal)
@@ -418,12 +454,11 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             .ToArray();
         float[] queryEmbedding = CreateQueryEmbedding(normalizedQuery, queryTerms);
         int maxResults = Math.Clamp(limit, 1, 50);
-        Dictionary<string, IReadOnlyList<CodebaseIndexedCallEdgeDocument>> incomingCallMap = CreateIncomingCallMap(index.Files);
 
-        CodebaseIndexSearchMatch?[] scoredMatches = new CodebaseIndexSearchMatch?[index.Files.Count];
+        CodebaseIndexSearchMatch?[] scoredMatches = new CodebaseIndexSearchMatch?[snapshot.Files.Length];
         Parallel.For(
             0,
-            index.Files.Count,
+            snapshot.Files.Length,
             new ParallelOptions
             {
                 CancellationToken = cancellationToken,
@@ -433,12 +468,12 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             {
                 scoredMatches[fileIndex] = ScoreFile(
                     workspaceRoot,
-                    index.Files[fileIndex],
+                    snapshot.Files[fileIndex],
                     normalizedQuery,
                     queryTerms,
                     queryEmbedding,
                     includeSnippets: false,
-                    incomingCallMap,
+                    snapshot.IncomingCallMap,
                     cancellationToken);
             });
 
@@ -468,13 +503,14 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             }
         }
 
+        bool indexWasUpdated = fresh.BuildResult is not null;
         return new CodebaseIndexSearchResult(
             normalizedQuery,
             ToWorkspaceRelativePath(workspaceRoot, indexPath),
             indexWasUpdated,
-            index.Files.Count,
-            BuildStats(index),
-            CreateQueryWarnings(indexWasUpdated, status.Warnings),
+            snapshot.Files.Length,
+            snapshot.Stats,
+            CreateQueryWarnings(indexWasUpdated, fresh.BuildResult),
             matches);
     }
 
@@ -484,39 +520,33 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        CodebaseIndexStatusResult status = await GetStatusAsync(cancellationToken);
-        bool indexWasUpdated = !status.Exists || status.IsStale;
-        if (indexWasUpdated)
-        {
-            await BuildAsync(force: false, cancellationToken);
-        }
+        // Capture the resident snapshot exactly once; skip the per-search workspace scan
+        // when the workspace has not changed since the snapshot was built.
+        CodebaseIndexSnapshot? current = Volatile.Read(ref _snapshot);
+        bool needsFresh = current is null ||
+                          current.Generation != Volatile.Read(ref _dirtyGeneration) ||
+                          !_watchHealthy ||
+                          _watcher is null;
+        FreshSnapshot fresh = needsFresh
+            ? await EnsureFreshSnapshotAsync(force: false, cancellationToken)
+            : new FreshSnapshot(current!, null);
+        CodebaseIndexSnapshot snapshot = fresh.Snapshot;
 
         string workspaceRoot = GetWorkspaceRoot();
         string indexPath = GetIndexPath(workspaceRoot);
-        CodebaseIndexDocument? index = await LoadIndexAsync(indexPath, cancellationToken);
-        if (index is null)
-        {
-            return new CodebaseIndexListResult(
-                ToWorkspaceRelativePath(workspaceRoot, indexPath),
-                TotalIndexedFileCount: 0,
-                ReturnedFileCount: 0,
-                EmptyStats(),
-                CreateQueryWarnings(indexWasUpdated, status.Warnings),
-                Files: []);
-        }
-
-        string[] files = index.Files
+        string[] files = snapshot.Files
             .Select(static file => file.Path)
             .Order(StringComparer.OrdinalIgnoreCase)
             .Take(Math.Clamp(limit, 1, 10_000))
             .ToArray();
 
+        bool indexWasUpdated = fresh.BuildResult is not null;
         return new CodebaseIndexListResult(
             ToWorkspaceRelativePath(workspaceRoot, indexPath),
-            index.Files.Count,
+            snapshot.Files.Length,
             files.Length,
-            BuildStats(index),
-            CreateQueryWarnings(indexWasUpdated, status.Warnings),
+            snapshot.Stats,
+            CreateQueryWarnings(indexWasUpdated, fresh.BuildResult),
             files);
     }
 
@@ -527,7 +557,7 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
         IReadOnlyList<string> queryTerms,
         IReadOnlyList<float> queryEmbedding,
         bool includeSnippets,
-        IReadOnlyDictionary<string, IReadOnlyList<CodebaseIndexedCallEdgeDocument>> incomingCallMap,
+        FrozenDictionary<string, CodebaseIndexedCallEdgeDocument[]> incomingCallMap,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -583,7 +613,7 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             ? []
             : CreateSnippets(workspaceRoot, file.Path, normalizedQuery, queryTerms, cancellationToken);
 
-        incomingCallMap.TryGetValue(file.Path, out IReadOnlyList<CodebaseIndexedCallEdgeDocument>? incomingCalls);
+        incomingCallMap.TryGetValue(file.Path, out CodebaseIndexedCallEdgeDocument[]? incomingCalls);
 
         return new CodebaseIndexSearchMatch(
             file.Path,
@@ -891,13 +921,44 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             Directory.CreateDirectory(parentDirectory);
         }
 
-        await using FileStream stream = File.Create(indexPath);
+        // Serialize to memory once, then persist. The preferred path is an atomic temp-file
+        // rename (MoveFileEx / renameat2) so a crash/interrupt can never leave a half-written
+        // index behind. Some restricted filesystems/sandboxes block rename/copy operations and
+        // lock temp files, surfacing that as a sharing violation; in that case we fall back to a
+        // truncating create-write of the already-serialized bytes (no temp file to be locked).
+        await using var memory = new MemoryStream();
         await JsonSerializer.SerializeAsync(
-            stream,
+            memory,
             index,
             CodebaseIndexJsonContext.Default.CodebaseIndexDocument,
             cancellationToken);
-        await stream.WriteAsync("\n"u8.ToArray(), cancellationToken);
+        await memory.WriteAsync("\n"u8.ToArray(), cancellationToken);
+        await memory.FlushAsync(cancellationToken);
+        byte[] bytes = memory.ToArray();
+
+        string tempPath = string.Concat(
+            indexPath,
+            ".",
+            Guid.NewGuid().ToString("N"),
+            ".tmp");
+        bool wroteViaTemp = false;
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, bytes, cancellationToken);
+            File.Move(tempPath, indexPath, overwrite: true);
+            wroteViaTemp = true;
+        }
+        catch (IOException)
+        {
+            await File.WriteAllBytesAsync(indexPath, bytes, cancellationToken);
+        }
+        finally
+        {
+            if (!wroteViaTemp && File.Exists(tempPath))
+            {
+                File.Delete(tempPath);
+            }
+        }
     }
 
     private static FileSemanticAnalysis AnalyzeFile(
@@ -2138,7 +2199,7 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
 
     private static IReadOnlyList<string> CreateQueryWarnings(
         bool indexWasUpdated,
-        IReadOnlyList<string> statusWarnings)
+        CodebaseIndexBuildResult? buildResult)
     {
         List<string> warnings = [];
         if (indexWasUpdated)
@@ -2146,7 +2207,11 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             warnings.Add("Index was stale and was refreshed before returning results.");
         }
 
-        warnings.AddRange(statusWarnings.Where(static warning => !warning.StartsWith("Index is stale", StringComparison.OrdinalIgnoreCase)));
+        if (buildResult is not null)
+        {
+            warnings.AddRange(buildResult.Warnings);
+        }
+
         return warnings.Distinct(StringComparer.Ordinal).ToArray();
     }
 
@@ -2179,22 +2244,6 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
             string.IsNullOrWhiteSpace(edge.CalleePath) ? null : edge.CalleePath,
             edge.LineNumber,
             edge.IsResolved);
-    }
-
-    private static Dictionary<string, IReadOnlyList<CodebaseIndexedCallEdgeDocument>> CreateIncomingCallMap(
-        IReadOnlyList<CodebaseIndexedFileDocument> files)
-    {
-        return files
-            .SelectMany(static file => file.Calls)
-            .Where(static call => !string.IsNullOrWhiteSpace(call.CalleePath))
-            .GroupBy(static call => call.CalleePath!, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                static group => group.Key,
-                static group => (IReadOnlyList<CodebaseIndexedCallEdgeDocument>)group
-                    .OrderBy(static call => call.CallerPath, StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(static call => call.LineNumber)
-                    .ToArray(),
-                StringComparer.OrdinalIgnoreCase);
     }
 
     private static void ResolveRepositoryMetadata(List<CodebaseIndexedFileDocument> indexedFiles)
@@ -2463,6 +2512,275 @@ internal sealed class WorkspaceCodebaseIndexService : ICodebaseIndexService
     }
 
     private sealed record CallableSymbolTarget(string Path, string Name);
+
+    // ---- Resident snapshot, single-flight rebuild, and dirty-generation tracking ----
+    //
+    // The index is deserialized once into a CodebaseIndexSnapshot that is kept resident.
+    // Every search/list captures that snapshot via a single Volatile.Read and reads from the
+    // frozen maps it contains, so no per-search workspace scan or JSON deserialize is required
+    // on the hot path. A rebuild produces entirely new objects and publishes them with
+    // Interlocked.Exchange; the previously published snapshot is never mutated.
+    //
+    // A FileSystemWatcher bumps a dirty generation whenever the workspace changes. When the
+    // generation still matches the snapshot's generation (and the watcher is healthy), the
+    // search path skips the workspace scan entirely. Note: integer-id CSR / inverted indexes
+    // are intentionally NOT used here; revisit only if profiling shows the frozen-map version
+    // is still too costly.
+
+    private async Task<FreshSnapshot> EnsureFreshSnapshotAsync(
+        bool force,
+        CancellationToken cancellationToken)
+    {
+        CodebaseIndexSnapshot? current = Volatile.Read(ref _snapshot);
+        if (!RequiresScanRebuild(current, force))
+        {
+            return new FreshSnapshot(current!, null);
+        }
+
+        // Single-flight rebuild gate: the first caller through rebuilds; later arrivals that
+        // find the snapshot already fresh after acquiring the gate just use the published one.
+        await _rebuildGate.WaitAsync(cancellationToken);
+        try
+        {
+            current = Volatile.Read(ref _snapshot);
+            if (!RequiresScanRebuild(current, force))
+            {
+                return new FreshSnapshot(current!, null);
+            }
+
+            if (current is null && !force)
+            {
+                CodebaseIndexSnapshot? loaded = await TryLoadSnapshotAsync(cancellationToken);
+                if (loaded is not null)
+                {
+                    Interlocked.Exchange(ref _snapshot, loaded);
+                    return new FreshSnapshot(loaded, null);
+                }
+            }
+
+            RebuildOutcome outcome = await RebuildAsync(force, cancellationToken);
+            Interlocked.Exchange(ref _snapshot, outcome.Snapshot);
+            return new FreshSnapshot(outcome.Snapshot, outcome.BuildResult);
+        }
+        finally
+        {
+            _rebuildGate.Release();
+        }
+    }
+
+    private bool RequiresScanRebuild(CodebaseIndexSnapshot? current, bool force)
+    {
+        if (force)
+        {
+            return true;
+        }
+
+        if (current is null)
+        {
+            return true;
+        }
+
+        // Without a reliable watcher we cannot trust the dirty generation, so fall back to a
+        // real scan/rebuild decision on every entry.
+        if (_watcher is null || !_watchHealthy)
+        {
+            return true;
+        }
+
+        return current.Generation != Volatile.Read(ref _dirtyGeneration);
+    }
+
+    private async Task<CodebaseIndexSnapshot?> TryLoadSnapshotAsync(CancellationToken cancellationToken)
+    {
+        string workspaceRoot = GetWorkspaceRoot();
+        string indexPath = GetIndexPath(workspaceRoot);
+        CodebaseIndexDocument? document = await LoadIndexAsync(indexPath, cancellationToken);
+        if (document is null)
+        {
+            return null;
+        }
+
+        return BuildSnapshot(document, Volatile.Read(ref _dirtyGeneration));
+    }
+
+    private static CodebaseIndexSnapshot BuildSnapshot(
+        CodebaseIndexDocument document,
+        int generation)
+    {
+        CodebaseIndexedFileDocument[] files = document.Files
+            .Where(static file => file is not null && !string.IsNullOrWhiteSpace(file.Path))
+            .ToArray();
+        FrozenDictionary<string, CodebaseIndexedFileDocument> fileMap = files.ToFrozenDictionary(
+            static file => file.Path,
+            StringComparer.OrdinalIgnoreCase);
+        FrozenDictionary<string, CodebaseIndexedCallEdgeDocument[]> incomingCallMap = files
+            .SelectMany(static file => file.Calls)
+            .Where(static call => !string.IsNullOrWhiteSpace(call.CalleePath))
+            .GroupBy(static call => call.CalleePath!, StringComparer.OrdinalIgnoreCase)
+            .Select(static group => (
+                Key: group.Key,
+                Edges: group
+                    .OrderBy(static call => call.CallerPath, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(static call => call.LineNumber)
+                    .ToArray()))
+            .ToFrozenDictionary(
+                static item => item.Key,
+                static item => item.Edges,
+                StringComparer.OrdinalIgnoreCase);
+        CodebaseIndexStats stats = BuildStats(document);
+        return new CodebaseIndexSnapshot(
+            document,
+            files,
+            fileMap,
+            incomingCallMap,
+            stats,
+            generation);
+    }
+
+    private static CodebaseIndexedFileDocument CloneFileForReuse(
+        CodebaseIndexedFileDocument source,
+        string[] owners)
+    {
+        return new CodebaseIndexedFileDocument
+        {
+            Path = source.Path,
+            Length = source.Length,
+            LastWriteTimeUtc = source.LastWriteTimeUtc,
+            Language = source.Language,
+            LineCount = source.LineCount,
+            Symbols = (string[])source.Symbols.Clone(),
+            SemanticSymbols = source.SemanticSymbols
+                .Select(static symbol => new CodebaseIndexedSemanticSymbolDocument
+                {
+                    Name = symbol.Name,
+                    Kind = symbol.Kind,
+                    ContainerName = symbol.ContainerName,
+                    Signature = symbol.Signature,
+                    StartLine = symbol.StartLine,
+                    EndLine = symbol.EndLine
+                })
+                .ToArray(),
+            Dependencies = source.Dependencies
+                .Select(static dependency => new CodebaseIndexedDependencyDocument
+                {
+                    Kind = dependency.Kind,
+                    Target = dependency.Target,
+                    IsWorkspaceLocal = dependency.IsWorkspaceLocal,
+                    ResolvedPaths = (string[])dependency.ResolvedPaths.Clone()
+                })
+                .ToArray(),
+            Owners = (string[])owners.Clone(),
+            Calls = source.Calls
+                .Select(static call => new CodebaseIndexedCallEdgeDocument
+                {
+                    CallerSymbol = call.CallerSymbol,
+                    CallerPath = call.CallerPath,
+                    CalleeSymbol = call.CalleeSymbol,
+                    CalleePath = call.CalleePath,
+                    LineNumber = call.LineNumber,
+                    IsResolved = call.IsResolved
+                })
+                .ToArray(),
+            Embedding = (float[])source.Embedding.Clone()
+        };
+    }
+
+    private FileSystemWatcher? TryCreateWatcher(string workspaceRoot)
+    {
+        try
+        {
+            if (!Directory.Exists(workspaceRoot))
+            {
+                return null;
+            }
+
+            var watcher = new FileSystemWatcher(workspaceRoot)
+            {
+                IncludeSubdirectories = true,
+                NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite,
+                InternalBufferSize = 65536
+            };
+            watcher.Created += MarkDirty;
+            watcher.Changed += MarkDirty;
+            watcher.Deleted += MarkDirty;
+            watcher.Renamed += MarkRenamedDirty;
+            watcher.Error += MarkWatchUnhealthy;
+            watcher.EnableRaisingEvents = true;
+            return watcher;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private void MarkDirty(object? sender, FileSystemEventArgs e)
+    {
+        if (IsOwnMetadataPath(e.FullPath))
+        {
+            return;
+        }
+
+        Interlocked.Increment(ref _dirtyGeneration);
+    }
+
+    private void MarkRenamedDirty(object? sender, RenamedEventArgs e)
+    {
+        // Only ignore renames that stay entirely inside our own metadata tree (e.g. temp swap);
+        // anything touching the real workspace is treated as a change.
+        if (!IsOwnMetadataPath(e.FullPath) || !IsOwnMetadataPath(e.OldFullPath))
+        {
+            Interlocked.Increment(ref _dirtyGeneration);
+        }
+    }
+
+    private void MarkWatchUnhealthy(object? sender, ErrorEventArgs e) => _watchHealthy = false;
+
+    private static bool IsOwnMetadataPath(string fullPath)
+    {
+        string normalized = fullPath.Replace('\\', '/');
+        return normalized.Contains("/.stemcode/", StringComparison.OrdinalIgnoreCase) ||
+               normalized.EndsWith("/.stemcode", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private sealed record RebuildOutcome(
+        CodebaseIndexSnapshot Snapshot,
+        CodebaseIndexBuildResult BuildResult);
+
+    private sealed record FreshSnapshot(
+        CodebaseIndexSnapshot Snapshot,
+        CodebaseIndexBuildResult? BuildResult);
+
+    private sealed class CodebaseIndexSnapshot
+    {
+        public CodebaseIndexSnapshot(
+            CodebaseIndexDocument document,
+            CodebaseIndexedFileDocument[] files,
+            FrozenDictionary<string, CodebaseIndexedFileDocument> fileMap,
+            FrozenDictionary<string, CodebaseIndexedCallEdgeDocument[]> incomingCallMap,
+            CodebaseIndexStats stats,
+            int generation)
+        {
+            Document = document;
+            Files = files;
+            FileMap = fileMap;
+            IncomingCallMap = incomingCallMap;
+            Stats = stats;
+            Generation = generation;
+        }
+
+        public CodebaseIndexDocument Document { get; }
+
+        public CodebaseIndexedFileDocument[] Files { get; }
+
+        public FrozenDictionary<string, CodebaseIndexedFileDocument> FileMap { get; }
+
+        public FrozenDictionary<string, CodebaseIndexedCallEdgeDocument[]> IncomingCallMap { get; }
+
+        public CodebaseIndexStats Stats { get; }
+
+        public int Generation { get; }
+    }
 
     private sealed record CodeOwnersRule(string Pattern, string[] Owners, Regex Matcher);
 }
