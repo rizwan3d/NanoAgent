@@ -186,36 +186,45 @@ internal static class WindowsSandboxAcl
         AccessControlType type,
         bool remove)
     {
-        FileSystemSecurity security = GetSecurity(path);
-        SecurityIdentifier identity = new(sid);
-        InheritanceFlags inheritance = Directory.Exists(path)
-            ? InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit
-            : InheritanceFlags.None;
-        PropagationFlags propagation = Directory.Exists(path)
-            ? PropagationFlags.None
-            : PropagationFlags.NoPropagateInherit;
-        FileSystemAccessRule rule = new(
-            identity,
-            rights,
-            inheritance,
-            propagation,
-            type);
+        try
+        {
+            FileSystemSecurity security = GetSecurity(path);
+            SecurityIdentifier identity = new(sid);
+            InheritanceFlags inheritance = Directory.Exists(path)
+                ? InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit
+                : InheritanceFlags.None;
+            PropagationFlags propagation = Directory.Exists(path)
+                ? PropagationFlags.None
+                : PropagationFlags.NoPropagateInherit;
+            FileSystemAccessRule rule = new(
+                identity,
+                rights,
+                inheritance,
+                propagation,
+                type);
 
-        bool changed = false;
-        if (remove)
-        {
-            security.RemoveAccessRuleAll(rule);
-            changed = true;
-        }
-        else if (!HasEquivalentRule(security, identity, rights, type))
-        {
-            security.AddAccessRule(rule);
-            changed = true;
-        }
+            bool changed = false;
+            if (remove)
+            {
+                security.RemoveAccessRuleAll(rule);
+                changed = true;
+            }
+            else if (!HasEquivalentRule(security, identity, rights, type))
+            {
+                security.AddAccessRule(rule);
+                changed = true;
+            }
 
-        if (changed)
+            if (changed)
+            {
+                SetSecurity(path, security);
+            }
+        }
+        catch (UnauthorizedAccessException exception)
         {
-            SetSecurity(path, security);
+            throw new UnauthorizedAccessException(
+                $"Unable to update sandbox ACLs for '{path}'. {exception.Message}{BuildOwnershipHint(path)}",
+                exception);
         }
     }
 
@@ -251,5 +260,38 @@ internal static class WindowsSandboxAcl
         }
 
         new FileInfo(path).SetAccessControl((FileSecurity)security);
+    }
+
+    private static string BuildOwnershipHint(string path)
+    {
+        string? owner = TryGetOwner(path);
+        if (string.IsNullOrWhiteSpace(owner))
+        {
+            return string.Empty;
+        }
+
+        string ownerMessage = $" Current owner: '{owner}'.";
+        return IsSandboxAccount(owner)
+            ? ownerMessage + " This path is owned by a StemCode sandbox account. Run /setup-sandbox to repair the workspace or change the folder owner back to your normal user."
+            : ownerMessage;
+    }
+
+    private static bool IsSandboxAccount(string owner)
+    {
+        return owner.EndsWith("\\" + WindowsSandboxPaths.OfflineUsername, StringComparison.OrdinalIgnoreCase) ||
+               owner.EndsWith("\\" + WindowsSandboxPaths.OnlineUsername, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? TryGetOwner(string path)
+    {
+        try
+        {
+            IdentityReference? owner = GetSecurity(path).GetOwner(typeof(NTAccount));
+            return owner?.Value;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

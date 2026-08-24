@@ -94,12 +94,76 @@ public sealed class ShellCommandServiceTests : IDisposable
         ProcessExecutionRequest request = processRunner.Requests[0];
         request.FileName.Should().Be("powershell");
         request.MaxOutputCharacters.Should().Be(8000);
-        request.Arguments.Should().Contain("-Command");
+        request.Arguments.Should().ContainInOrder("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command");
         request.Arguments[^1].Should().Contain("$__stemcode_script_text");
         request.Arguments[^1].Should().Contain("FromBase64String");
         request.Arguments[^1].Should().Contain("$__stemcode_exit = $__stemcode_segment_exit");
         request.Arguments[^1].Should().Contain(". ([ScriptBlock]::Create($__stemcode_script_text))");
         request.Arguments[^1].Should().NotContain("&&");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_UseExecutionPolicyBypass_ForWindowsPowerShell()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        processRunner.EnqueueResult(new ProcessExecutionResult(0, "ok", string.Empty));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+
+        await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("npm run dev", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().ContainSingle();
+        ProcessExecutionRequest request = processRunner.Requests[0];
+        request.FileName.Should().Be("powershell");
+        request.Arguments.Should().ContainInOrder("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command");
+        request.Arguments[^1].Should().Contain("npm run dev");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Should_RunPowerShellScriptShim_WhenExecutionPolicyIsBypassed()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string shimDirectory = Path.Combine(_workspaceRoot, "shim-bin");
+        Directory.CreateDirectory(shimDirectory);
+        await File.WriteAllTextAsync(
+            Path.Combine(shimDirectory, "npm.ps1"),
+            "param([string[]]$args)\r\nWrite-Output ('ps1 ' + ($args -join ' '))\r\n",
+            CancellationToken.None);
+
+        string shimPath = shimDirectory.Replace("'", "''", StringComparison.Ordinal);
+        ShellCommandService sut = new(
+            new ProcessRunner(),
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            new PermissionSettings
+            {
+                SandboxMode = ToolSandboxMode.DangerFullAccess
+            });
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest(
+                "$env:PATH = '" + shimPath + ";' + $env:PATH; npm run dev",
+                null),
+            CancellationToken.None);
+
+        result.ExitCode.Should().Be(0, result.StandardError);
+        result.StandardError.Should().BeEmpty();
+        result.StandardOutput.Should().Contain("ps1");
     }
 
     [Fact]
@@ -362,6 +426,37 @@ public sealed class ShellCommandServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ExecuteAsync_Should_ReturnFailureResult_When_WindowsSandboxRunnerThrowsUnauthorizedAccess()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new();
+        windowsSandboxProcessRunner.EnqueueFailure(
+            new UnauthorizedAccessException(
+                "Unable to update sandbox ACLs for 'C:\\Users\\allga\\AppData\\Roaming\\StemCode'. Attempted to perform an unauthorized operation."));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            windowsSandboxProcessRunner: windowsSandboxProcessRunner);
+
+        ShellCommandExecutionResult result = await sut.ExecuteAsync(
+            new ShellCommandExecutionRequest("npm run build 2>&1", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().BeEmpty();
+        windowsSandboxProcessRunner.Requests.Should().ContainSingle();
+        result.ExitCode.Should().Be(126);
+        result.SandboxEnforcement.Should().Be("windows-sandbox");
+        result.StandardError.Should().Contain("Unable to start Windows OS sandbox shell execution:");
+        result.StandardError.Should().Contain("Unable to update sandbox ACLs");
+        result.StandardError.Should().Contain("C:\\Users\\allga\\AppData\\Roaming\\StemCode");
+    }
+
+    [Fact]
     public async Task StartBackgroundAsync_Should_RouteWindowsSandboxedBackgroundTerminals_ThroughSandboxRunner()
     {
         if (!OperatingSystem.IsWindows())
@@ -405,6 +500,37 @@ public sealed class ShellCommandServiceTests : IDisposable
             sessionId: null,
             CancellationToken.None);
         stopped.TerminalStatus.Should().Be("stopped");
+    }
+
+    [Fact]
+    public async Task StartBackgroundAsync_Should_ReturnFailureResult_When_WindowsSandboxRunnerThrowsUnauthorizedAccess()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        FakeProcessRunner processRunner = new();
+        FakeWindowsSandboxProcessRunner windowsSandboxProcessRunner = new();
+        windowsSandboxProcessRunner.EnqueueBackgroundFailure(
+            new UnauthorizedAccessException(
+                "Unable to update sandbox ACLs for 'C:\\Users\\allga\\AppData\\Roaming\\StemCode'. Attempted to perform an unauthorized operation."));
+        ShellCommandService sut = new(
+            processRunner,
+            new StubWorkspaceRootProvider(_workspaceRoot),
+            windowsSandboxProcessRunner: windowsSandboxProcessRunner);
+
+        ShellCommandExecutionResult result = await sut.StartBackgroundAsync(
+            new ShellCommandExecutionRequest("npm run dev", null),
+            CancellationToken.None);
+
+        processRunner.Requests.Should().BeEmpty();
+        windowsSandboxProcessRunner.BackgroundRequests.Should().ContainSingle();
+        result.ExitCode.Should().Be(126);
+        result.Background.Should().BeTrue();
+        result.TerminalStatus.Should().Be("failed");
+        result.StandardError.Should().Contain("Unable to start Windows OS sandbox background terminal:");
+        result.StandardError.Should().Contain("Unable to update sandbox ACLs");
     }
 
     [Fact]
@@ -812,6 +938,8 @@ public sealed class ShellCommandServiceTests : IDisposable
     {
         private readonly Queue<ProcessExecutionResult> _results = new();
         private readonly Queue<string> _backgroundOutputs = new();
+        private readonly Queue<Exception> _failures = new();
+        private readonly Queue<Exception> _backgroundFailures = new();
 
         public List<(ProcessExecutionRequest Request, WindowsSandboxExecutionContext Context)> Requests { get; } = [];
 
@@ -827,6 +955,16 @@ public sealed class ShellCommandServiceTests : IDisposable
             _backgroundOutputs.Enqueue(standardOutput);
         }
 
+        public void EnqueueFailure(Exception exception)
+        {
+            _failures.Enqueue(exception);
+        }
+
+        public void EnqueueBackgroundFailure(Exception exception)
+        {
+            _backgroundFailures.Enqueue(exception);
+        }
+
         public Task<ProcessExecutionResult> RunAsync(
             ProcessExecutionRequest request,
             WindowsSandboxExecutionContext context,
@@ -834,6 +972,11 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             Requests.Add((request, context));
+
+            if (_failures.Count > 0)
+            {
+                throw _failures.Dequeue();
+            }
 
             if (_results.Count == 0)
             {
@@ -850,6 +993,12 @@ public sealed class ShellCommandServiceTests : IDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             BackgroundRequests.Add((request, context));
+
+            if (_backgroundFailures.Count > 0)
+            {
+                throw _backgroundFailures.Dequeue();
+            }
+
             string standardOutput = _backgroundOutputs.Count > 0
                 ? _backgroundOutputs.Dequeue()
                 : string.Empty;

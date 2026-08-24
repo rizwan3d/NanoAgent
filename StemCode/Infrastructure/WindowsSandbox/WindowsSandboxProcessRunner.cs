@@ -19,6 +19,7 @@ internal static class WindowsSandboxProcessRunner
     private const uint HandleFlagInherit = 0x00000001;
     private const int BufferSize = 4096;
     private const int CreateProcessWithLogonWCommandLineLimit = 1024;
+    private static readonly TimeSpan RunnerTerminateGracePeriod = TimeSpan.FromSeconds(3);
     internal const int StatusDllInitFailed = unchecked((int)0xC0000142);
 
     public static async Task<ProcessExecutionResult> RunAsync(
@@ -345,10 +346,14 @@ internal static class WindowsSandboxProcessRunner
             throw new Win32Exception(error, diagnostics.Text);
         }
 
+        WindowsSandboxJobObject? jobObject = null;
+        NamedPipeServerStream? inboundServer = null;
+        NamedPipeServerStream? outboundServer = null;
         try
         {
-            using NamedPipeServerStream inboundServer = WindowsSandboxRunnerClient.CreateInboundServer(pipeIn, sandboxUserSid);
-            using NamedPipeServerStream outboundServer = WindowsSandboxRunnerClient.CreateOutboundServer(pipeOut, sandboxUserSid);
+            jobObject = CreateRunnerJobObject(processInformation, context.StemCodeHome);
+            inboundServer = WindowsSandboxRunnerClient.CreateInboundServer(pipeIn, sandboxUserSid);
+            outboundServer = WindowsSandboxRunnerClient.CreateOutboundServer(pipeOut, sandboxUserSid);
             WindowsSandboxLog.Write(context.StemCodeHome, $"runner launched: pid={processInformation.dwProcessId}, file={launchCommand.FileName}");
 
             await Task.WhenAll(
@@ -397,15 +402,28 @@ internal static class WindowsSandboxProcessRunner
                 WindowsSandboxLog.Write(context.StemCodeHome, $"runner connect canceled: pid={processInformation.dwProcessId}, exit_code={unchecked((int)exitCode)}");
             }
 
-            if (processInformation.hProcess != IntPtr.Zero)
+            if (inboundServer is not null)
             {
-                WindowsSandboxNative.TerminateProcess(processInformation.hProcess, 1);
+                await TryRequestRunnerTerminationAsync(
+                    inboundServer,
+                    processInformation,
+                    context.StemCodeHome);
+            }
+            else if (processInformation.hProcess != IntPtr.Zero)
+            {
+                TryWaitForProcessExit(
+                    processInformation.hProcess,
+                    RunnerTerminateGracePeriod,
+                    context.StemCodeHome);
             }
 
             throw;
         }
         finally
         {
+            inboundServer?.Dispose();
+            outboundServer?.Dispose();
+
             if (processInformation.hThread != IntPtr.Zero)
             {
                 WindowsSandboxNative.CloseHandle(processInformation.hThread);
@@ -415,6 +433,8 @@ internal static class WindowsSandboxProcessRunner
             {
                 WindowsSandboxNative.CloseHandle(processInformation.hProcess);
             }
+
+            jobObject?.Dispose();
         }
     }
 
@@ -520,9 +540,11 @@ internal static class WindowsSandboxProcessRunner
 
         NamedPipeServerStream? inboundServer = null;
         NamedPipeServerStream? outboundServer = null;
+        WindowsSandboxJobObject? jobObject = null;
         bool ownershipTransferred = false;
         try
         {
+            jobObject = CreateRunnerJobObject(processInformation, context.StemCodeHome);
             inboundServer = WindowsSandboxRunnerClient.CreateInboundServer(pipeIn, sandboxUserSid);
             outboundServer = WindowsSandboxRunnerClient.CreateOutboundServer(pipeOut, sandboxUserSid);
             WindowsSandboxLog.Write(context.StemCodeHome, $"background runner launched: pid={processInformation.dwProcessId}, file={launchCommand.FileName}");
@@ -548,6 +570,7 @@ internal static class WindowsSandboxProcessRunner
 
             WindowsSandboxBackgroundProcess handle = new(
                 processInformation,
+                jobObject,
                 inboundServer,
                 outboundServer,
                 context.StemCodeHome,
@@ -561,6 +584,7 @@ internal static class WindowsSandboxProcessRunner
             {
                 inboundServer?.Dispose();
                 outboundServer?.Dispose();
+                jobObject?.Dispose();
                 if (processInformation.hProcess != IntPtr.Zero)
                 {
                     WindowsSandboxNative.TerminateProcess(processInformation.hProcess, 1);
@@ -577,6 +601,94 @@ internal static class WindowsSandboxProcessRunner
                 }
             }
         }
+    }
+
+    private static WindowsSandboxJobObject CreateRunnerJobObject(
+        WindowsSandboxNative.ProcessInformation processInformation,
+        string stemCodeHome)
+    {
+        if (processInformation.hProcess == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("Windows sandbox runner launch did not provide a process handle.");
+        }
+
+        WindowsSandboxJobObject jobObject = WindowsSandboxJobObject.CreateKillOnClose();
+        try
+        {
+            jobObject.AssignProcess(processInformation.hProcess);
+            WindowsSandboxLog.Write(stemCodeHome, $"runner job attached: pid={processInformation.dwProcessId}");
+            return jobObject;
+        }
+        catch (Exception exception)
+        {
+            WindowsSandboxLog.Write(stemCodeHome, $"runner job attach failed: {exception.GetType().Name}: {exception.Message}");
+            jobObject.Dispose();
+            try
+            {
+                WindowsSandboxNative.TerminateProcess(processInformation.hProcess, 1);
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+    }
+
+    private static async Task TryRequestRunnerTerminationAsync(
+        Stream inboundServer,
+        WindowsSandboxNative.ProcessInformation processInformation,
+        string stemCodeHome)
+    {
+        try
+        {
+            await WindowsSandboxFramedIpc.WriteAsync(
+                inboundServer,
+                new WindowsSandboxIpcMessage
+                {
+                    Kind = WindowsSandboxIpcMessageKind.Terminate
+                },
+                CancellationToken.None);
+            WindowsSandboxLog.Write(stemCodeHome, $"runner terminate requested: pid={processInformation.dwProcessId}");
+        }
+        catch (Exception exception) when (
+            exception is IOException or ObjectDisposedException or InvalidDataException or InvalidOperationException or OperationCanceledException)
+        {
+            WindowsSandboxLog.Write(stemCodeHome, $"runner terminate request failed: {exception.GetType().Name}: {exception.Message}");
+            return;
+        }
+
+        if (processInformation.hProcess != IntPtr.Zero &&
+            !TryWaitForProcessExit(processInformation.hProcess, RunnerTerminateGracePeriod, stemCodeHome))
+        {
+            WindowsSandboxLog.Write(stemCodeHome, $"runner terminate grace expired: pid={processInformation.dwProcessId}");
+        }
+    }
+
+    private static bool TryWaitForProcessExit(
+        IntPtr processHandle,
+        TimeSpan timeout,
+        string stemCodeHome)
+    {
+        uint waitResult = WindowsSandboxNative.WaitForSingleObject(
+            processHandle,
+            (uint)Math.Clamp(timeout.TotalMilliseconds, 0, uint.MaxValue));
+
+        return waitResult switch
+        {
+            WindowsSandboxNative.WaitObject0 => true,
+            WindowsSandboxNative.WaitTimeout => false,
+            WindowsSandboxNative.WaitFailed => LogWaitFailure(stemCodeHome),
+            _ => false
+        };
+    }
+
+    private static bool LogWaitFailure(string stemCodeHome)
+    {
+        WindowsSandboxLog.Write(
+            stemCodeHome,
+            $"runner wait failed: win32={Marshal.GetLastWin32Error()}");
+        return false;
     }
 
     private static void EnsureSetupFresh(
@@ -915,6 +1027,7 @@ internal static class WindowsSandboxProcessRunner
     {
         string windowsDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
         string systemDir = Environment.SystemDirectory;
+        string windowsPowerShellDir = Path.Combine(systemDir, "WindowsPowerShell", "v1.0");
         WindowsSandboxRuntimeLayout layout = EnsureSandboxRuntimeLayout(stemCodeHome);
 
         environment["USERPROFILE"] = layout.ProfileDir;
@@ -935,7 +1048,7 @@ internal static class WindowsSandboxProcessRunner
         string pathValue = environment.TryGetValue("PATH", out string? existingPath) && !string.IsNullOrWhiteSpace(existingPath)
             ? existingPath
             : string.Empty;
-        string[] requiredPathPrefixes = [systemDir, windowsDir];
+        string[] requiredPathPrefixes = [windowsPowerShellDir, systemDir, windowsDir];
         foreach (string prefix in requiredPathPrefixes.Reverse())
         {
             if (!string.IsNullOrWhiteSpace(prefix) &&
@@ -1787,7 +1900,11 @@ internal static class WindowsSandboxProcessRunner
                 return;
             }
 
-            ProcessExecutionResult result = await RunSandboxUserChildAsync(request, context, cancellationToken);
+            ProcessExecutionResult result = await RunSandboxUserChildBufferedAsync(
+                request,
+                context,
+                inboundClient,
+                cancellationToken);
             await WindowsSandboxFramedIpc.WriteAsync(
                 outboundClient,
                 new WindowsSandboxIpcMessage
@@ -1817,9 +1934,10 @@ internal static class WindowsSandboxProcessRunner
         }
     }
 
-    private static Task<ProcessExecutionResult> RunSandboxUserChildAsync(
+    private static async Task<ProcessExecutionResult> RunSandboxUserChildBufferedAsync(
         ProcessExecutionRequest request,
         WindowsSandboxExecutionContext context,
+        Stream inboundClient,
         CancellationToken cancellationToken)
     {
         // The helper already runs as the dedicated sandbox user with ACLs prepared for the
@@ -1833,9 +1951,61 @@ internal static class WindowsSandboxProcessRunner
         };
 
         WindowsSandboxLog.Write(context.StemCodeHome, "restricted child launch path: sandbox-user-direct");
-        return new ProcessRunner().RunAsync(
-            sandboxedRequest,
+
+        using Process process = new()
+        {
+            StartInfo = CreateChildStartInfo(sandboxedRequest, redirectStandardInput: true),
+            EnableRaisingEvents = true
+        };
+
+        process.Start();
+
+        Task<string> standardOutputTask = ReadToEndCappedAsync(
+            process.StandardOutput,
+            request.MaxOutputCharacters,
             cancellationToken);
+        Task<string> standardErrorTask = ReadToEndCappedAsync(
+            process.StandardError,
+            request.MaxOutputCharacters,
+            cancellationToken);
+
+        if (request.StandardInput is not null)
+        {
+            await process.StandardInput.WriteAsync(request.StandardInput.AsMemory(), cancellationToken);
+            await process.StandardInput.FlushAsync(cancellationToken);
+        }
+
+        process.StandardInput.Close();
+
+        using CancellationTokenSource terminateListenerCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        Task terminateListenerTask = ListenForTerminateAsync(
+            inboundClient,
+            process,
+            terminateListenerCts.Token);
+
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            TryKillChild(process);
+        }
+
+        terminateListenerCts.Cancel();
+
+        try
+        {
+            await terminateListenerTask;
+        }
+        catch
+        {
+        }
+
+        return new ProcessExecutionResult(
+            TryGetChildExitCode(process),
+            await standardOutputTask,
+            await standardErrorTask);
     }
 
     private static async Task RunSandboxUserChildStreamingAsync(
@@ -1860,7 +2030,7 @@ internal static class WindowsSandboxProcessRunner
         using SemaphoreSlim writeLock = new(1, 1);
         using Process process = new()
         {
-            StartInfo = CreateStreamingChildStartInfo(sandboxedRequest),
+            StartInfo = CreateChildStartInfo(sandboxedRequest, redirectStandardInput: false),
             EnableRaisingEvents = true
         };
 
@@ -1941,11 +2111,14 @@ internal static class WindowsSandboxProcessRunner
             cancellationToken);
     }
 
-    private static ProcessStartInfo CreateStreamingChildStartInfo(ProcessExecutionRequest request)
+    private static ProcessStartInfo CreateChildStartInfo(
+        ProcessExecutionRequest request,
+        bool redirectStandardInput)
     {
         ProcessStartInfo startInfo = new()
         {
             FileName = request.FileName,
+            RedirectStandardInput = redirectStandardInput,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -2100,6 +2273,17 @@ internal static class WindowsSandboxProcessRunner
     {
         await using FileStream stream = new(handle, FileAccess.Read, BufferSize, isAsync: false);
         using StreamReader reader = new(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
+        return await ReadToEndCappedAsync(
+            reader,
+            maxCharacters,
+            cancellationToken);
+    }
+
+    private static async Task<string> ReadToEndCappedAsync(
+        TextReader reader,
+        int? maxCharacters,
+        CancellationToken cancellationToken)
+    {
         char[] buffer = new char[BufferSize];
         StringBuilder builder = new();
         bool truncated = false;

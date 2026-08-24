@@ -367,6 +367,99 @@ public sealed class ProcessRunnerTests
     }
 
     [Fact]
+    public async Task RunAsync_Should_ResolvePowerShellByNameInsideWindowsSandbox_WithMinimalPath()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        WindowsSandboxExecutionContext context = CreateWindowsSandboxExecutionContext(temp.WorkspaceRoot);
+        string minimalPath = string.Join(
+            ";",
+            new[]
+            {
+                Environment.SystemDirectory,
+                Environment.GetFolderPath(Environment.SpecialFolder.Windows)
+            }.Where(static path => !string.IsNullOrWhiteSpace(path)));
+        ProcessExecutionRequest request = new(
+            "powershell",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "[Console]::Out.Write('sandbox-powershell-ok')"
+            ],
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256,
+            EnvironmentVariables: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["PATH"] = minimalPath
+            });
+
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
+        ProcessExecutionResult result = await WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            timeout.Token);
+
+        result.ExitCode.Should().Be(0, $"stdout={result.StandardOutput} stderr={result.StandardError}");
+        result.StandardError.Should().BeNullOrWhiteSpace();
+        result.StandardOutput.Should().Be("sandbox-powershell-ok");
+    }
+
+    [Fact]
+    public async Task RunAsync_Should_TerminateSandboxChildProcess_WhenCanceled()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        using TempWorkspace temp = new();
+        WindowsSandboxExecutionContext context = CreateWindowsSandboxExecutionContext(temp.WorkspaceRoot);
+        string pidFile = Path.Combine(temp.WorkspaceRoot, "sandbox-child.pid");
+        string escapedPidFile = pidFile.Replace("'", "''", StringComparison.Ordinal);
+        ProcessExecutionRequest request = new(
+            "powershell",
+            [
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                $"Set-Content -LiteralPath '{escapedPidFile}' -Value $PID; Start-Sleep -Seconds 30"
+            ],
+            WorkingDirectory: temp.WorkspaceRoot,
+            MaxOutputCharacters: 256);
+
+        using CancellationTokenSource timeout = CreateWindowsSandboxTimeout();
+        using CancellationTokenSource cancellation = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token);
+        Task<ProcessExecutionResult> runTask = WindowsSandboxProcessRunner.RunAsync(
+            request,
+            context,
+            cancellation.Token);
+        int childPid = await WaitForPidFileAsync(pidFile, timeout.Token);
+
+        try
+        {
+            cancellation.Cancel();
+
+            Func<Task> act = async () => await runTask;
+            await act.Should().ThrowAsync<OperationCanceledException>();
+
+            bool exited = await WaitForProcessExitAsync(
+                childPid,
+                TimeSpan.FromSeconds(10),
+                timeout.Token);
+            exited.Should().BeTrue($"sandbox child pid {childPid} should exit after host cancellation");
+        }
+        finally
+        {
+            TryKillProcess(childPid);
+        }
+    }
+
+    [Fact]
     public void BuildEnvironmentBlockBytes_Should_RejectEnvironmentValuesWithEmbeddedNulls()
     {
         Dictionary<string, string> environment = new(StringComparer.OrdinalIgnoreCase)
@@ -597,6 +690,78 @@ public sealed class ProcessRunnerTests
     private static CancellationTokenSource CreateWindowsSandboxTimeout()
     {
         return new CancellationTokenSource(TimeSpan.FromMinutes(3));
+    }
+
+    private static async Task<int> WaitForPidFileAsync(
+        string pidFile,
+        CancellationToken cancellationToken)
+    {
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (File.Exists(pidFile))
+            {
+                string text = await File.ReadAllTextAsync(pidFile, cancellationToken);
+                if (int.TryParse(text.Trim(), out int pid) && pid > 0)
+                {
+                    return pid;
+                }
+            }
+
+            await Task.Delay(100, cancellationToken);
+        }
+    }
+
+    private static async Task<bool> WaitForProcessExitAsync(
+        int processId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow + timeout;
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!IsProcessRunning(processId))
+            {
+                return true;
+            }
+
+            await Task.Delay(100, cancellationToken);
+        }
+
+        return !IsProcessRunning(processId);
+    }
+
+    private static bool IsProcessRunning(int processId)
+    {
+        try
+        {
+            using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById(processId);
+            return !process.HasExited;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static void TryKillProcess(int processId)
+    {
+        try
+        {
+            using System.Diagnostics.Process process = System.Diagnostics.Process.GetProcessById(processId);
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch (ArgumentException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private sealed class TempStemCodeHome : IDisposable

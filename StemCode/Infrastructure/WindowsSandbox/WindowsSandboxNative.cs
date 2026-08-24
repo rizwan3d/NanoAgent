@@ -48,12 +48,14 @@ internal static class WindowsSandboxNative
     public const uint WaitObject0 = 0x00000000;
     public const uint WaitTimeout = 0x00000102;
     public const uint WaitFailed = 0xFFFFFFFF;
+    public const uint JobObjectLimitKillOnJobClose = 0x00002000;
     public const int StartfUseStdHandles = 0x00000100;
     public const int LogonWithProfile = 0x00000001;
     public const int Logon32LogonInteractive = 2;
     public const int Logon32ProviderDefault = 0;
     public const int SeeMaskNoCloseProcess = 0x00000040;
     public const int SwHide = 0;
+    public const int JobObjectExtendedLimitInformationClass = 9;
     public static readonly IntPtr ProcThreadAttributeHandleList = 0x00020002;
 
     [StructLayout(LayoutKind.Sequential)]
@@ -174,6 +176,60 @@ internal static class WindowsSandboxNative
         public LuidAndAttributes Privileges;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct IoCounters
+    {
+        public ulong ReadOperationCount;
+
+        public ulong WriteOperationCount;
+
+        public ulong OtherOperationCount;
+
+        public ulong ReadTransferCount;
+
+        public ulong WriteTransferCount;
+
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JobObjectBasicLimitInformation
+    {
+        public long PerProcessUserTimeLimit;
+
+        public long PerJobUserTimeLimit;
+
+        public uint LimitFlags;
+
+        public UIntPtr MinimumWorkingSetSize;
+
+        public UIntPtr MaximumWorkingSetSize;
+
+        public uint ActiveProcessLimit;
+
+        public IntPtr Affinity;
+
+        public uint PriorityClass;
+
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct JobObjectExtendedLimitInformation
+    {
+        public JobObjectBasicLimitInformation BasicLimitInformation;
+
+        public IoCounters IoInfo;
+
+        public UIntPtr ProcessMemoryLimit;
+
+        public UIntPtr JobMemoryLimit;
+
+        public UIntPtr PeakProcessMemoryUsed;
+
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct ShellExecuteInfo
     {
@@ -269,6 +325,11 @@ internal static class WindowsSandboxNative
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern IntPtr GetCurrentProcess();
 
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode, EntryPoint = "CreateJobObjectW")]
+    public static extern SafeJobHandle CreateJobObject(
+        IntPtr lpJobAttributes,
+        string? lpName);
+
     [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     public static extern bool CreateProcessAsUser(
         SafeAccessTokenHandle hToken,
@@ -345,6 +406,18 @@ internal static class WindowsSandboxNative
     public static extern bool GetExitCodeProcess(
         IntPtr hProcess,
         out uint lpExitCode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool SetInformationJobObject(
+        SafeJobHandle hJob,
+        int jobObjectInfoClass,
+        IntPtr lpJobObjectInfo,
+        uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool AssignProcessToJobObject(
+        SafeJobHandle hJob,
+        IntPtr hProcess);
 
     [DllImport("kernel32.dll", SetLastError = true)]
     public static extern bool TerminateProcess(

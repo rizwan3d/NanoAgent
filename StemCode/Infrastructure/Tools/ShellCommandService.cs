@@ -125,15 +125,11 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
                         prepared.EffectiveSandboxMode),
                     cancellationToken);
             }
-            catch (PlatformNotSupportedException exception)
-            {
-                return CreateExecutionFailureResult(
-                    normalizedRequest,
-                    prepared.WorkingDirectory,
-                    prepared.SandboxPlan.Enforcement,
-                    $"Unable to start Windows OS sandbox shell execution: {exception.Message}");
-            }
-            catch (Win32Exception exception)
+            catch (Exception exception) when (
+                exception is PlatformNotSupportedException or
+                Win32Exception or
+                UnauthorizedAccessException or
+                InvalidOperationException)
             {
                 return CreateExecutionFailureResult(
                     normalizedRequest,
@@ -310,7 +306,11 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
                     prepared.EffectiveSandboxMode),
                 cancellationToken);
         }
-        catch (Exception exception) when (exception is PlatformNotSupportedException or Win32Exception or InvalidOperationException)
+        catch (Exception exception) when (
+            exception is PlatformNotSupportedException or
+            Win32Exception or
+            UnauthorizedAccessException or
+            InvalidOperationException)
         {
             return CreateExecutionFailureResult(
                 request,
@@ -477,7 +477,7 @@ internal sealed class ShellCommandService : IShellCommandService, IDisposable
         ProcessExecutionRequest shellRequest = OperatingSystem.IsWindows()
             ? new ProcessExecutionRequest(
                 "powershell",
-                ["-NoProfile", "-NonInteractive", "-Command", commandText],
+                ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", commandText],
                 WorkingDirectory: workingDirectory,
                 MaxOutputCharacters: MaxOutputCharacters,
                 UsePseudoTerminal: request.PseudoTerminal)

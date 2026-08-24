@@ -21,6 +21,7 @@ internal sealed class WindowsSandboxBackgroundProcess : IBackgroundProcessHandle
     private readonly NamedPipeServerStream _outbound;
     private readonly string _stemCodeHome;
     private readonly IReadOnlyList<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> _temporaryAces;
+    private WindowsSandboxJobObject? _jobObject;
     private readonly CancellationTokenSource _pumpCts = new();
     private readonly TaskCompletionSource _exitSignal = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim _inboundWriteLock = new(1, 1);
@@ -36,12 +37,14 @@ internal sealed class WindowsSandboxBackgroundProcess : IBackgroundProcessHandle
 
     public WindowsSandboxBackgroundProcess(
         WindowsSandboxNative.ProcessInformation processInformation,
+        WindowsSandboxJobObject jobObject,
         NamedPipeServerStream inbound,
         NamedPipeServerStream outbound,
         string stemCodeHome,
         IReadOnlyList<(string Path, string Sid, FileSystemRights Rights, AccessControlType Type)> temporaryAces)
     {
         _processInformation = processInformation;
+        _jobObject = jobObject;
         _inbound = inbound;
         _outbound = outbound;
         _stemCodeHome = stemCodeHome;
@@ -111,6 +114,7 @@ internal sealed class WindowsSandboxBackgroundProcess : IBackgroundProcessHandle
         }
 
         _pumpCts.Cancel();
+        CloseJobObject();
         TerminateHelperProcess();
         CloseProcessHandles();
 
@@ -158,6 +162,7 @@ internal sealed class WindowsSandboxBackgroundProcess : IBackgroundProcessHandle
 
         if (!_exited)
         {
+            CloseJobObject();
             TerminateHelperProcess();
         }
     }
@@ -290,6 +295,24 @@ internal sealed class WindowsSandboxBackgroundProcess : IBackgroundProcessHandle
             }
 
             _processInformation = default;
+        }
+    }
+
+    private void CloseJobObject()
+    {
+        WindowsSandboxJobObject? jobObject;
+        lock (_stateGate)
+        {
+            jobObject = _jobObject;
+            _jobObject = null;
+        }
+
+        try
+        {
+            jobObject?.Dispose();
+        }
+        catch
+        {
         }
     }
 
