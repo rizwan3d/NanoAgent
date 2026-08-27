@@ -1,9 +1,8 @@
 #!/usr/bin/env node
 "use strict";
 
-const { spawn } = require("child_process");
-
 const { ensureBinary } = require("../scripts/download");
+const { launchBinary } = require("../scripts/launch");
 const { maybeUpdateBinary } = require("../scripts/update");
 const { trackInstall } = require("../scripts/telemetry");
 
@@ -29,10 +28,7 @@ async function main() {
   let binaryPath = await ensureBinary({ log, onDownloaded: () => trackInstall() });
   binaryPath = await maybeUpdateBinary(binaryPath, { log });
 
-  const child = spawn(binaryPath, process.argv.slice(2), {
-    stdio: "inherit",
-    windowsHide: false,
-  });
+  const { child } = await launchBinary(binaryPath, process.argv.slice(2), { log });
 
   const forwardedSignals = ["SIGINT", "SIGTERM", "SIGHUP"];
   const signalHandlers = new Map();
