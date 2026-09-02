@@ -5,17 +5,21 @@ using StemCode.Application.Logging;
 using StemCode.Application.Models;
 using StemCode.Domain.Abstractions;
 using StemCode.Domain.Models;
+using StemCode.Domain.Services;
 
 namespace StemCode.Application.Services;
 
 internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 {
+    private const string StemCodeSubscriptionBaseUrlEnvironmentVariableName = "STEMCODE_SUBSCRIPTION_BASE_URL";
+    private const string DefaultStemCodeSubscriptionBaseUrl = "https://app.growbitlabs.com/v1";
+
     private static readonly SelectionPromptOption<OnboardingProviderSetupChoice>[] ProviderSetupOptions =
     [
         new(
             "Subscription accounts",
             OnboardingProviderSetupChoice.SubscriptionAccount,
-            "Sign in with an existing ChatGPT, Claude, or GitHub Copilot subscription."),
+            "Sign in with a StemCode, ChatGPT, Claude, or GitHub Copilot subscription."),
         new(
             "API key providers",
             OnboardingProviderSetupChoice.ApiKey,
@@ -32,6 +36,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
 
     private static readonly SelectionPromptOption<OnboardingProviderChoice>[] SubscriptionProviderOptions =
     [
+        new(
+            "StemCode subscription",
+            OnboardingProviderChoice.StemCodeSubscription,
+            "Sign in with your GrowBitLabs account and use managed StemCode credits."),
         new(
             "OpenAI ChatGPT Plus/Pro",
             OnboardingProviderChoice.OpenAiChatGptAccount,
@@ -111,6 +119,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
     private readonly IAgentConfigurationStore _configurationStore;
     private readonly IApiKeySecretStore _secretStore;
     private readonly IAgentProviderProfileFactory _profileFactory;
+    private readonly IStemCodeEnterpriseAuthenticator? _stemCodeEnterpriseAuthenticator;
     private readonly IOpenAiChatGptAccountAuthenticator? _openAiChatGptAccountAuthenticator;
     private readonly IAnthropicClaudeAccountAuthenticator? _anthropicClaudeAccountAuthenticator;
     private readonly IGitHubCopilotAuthenticator? _gitHubCopilotAuthenticator;
@@ -129,7 +138,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         ILogger<FirstRunOnboardingService> logger,
         IOpenAiChatGptAccountAuthenticator? openAiChatGptAccountAuthenticator = null,
         IAnthropicClaudeAccountAuthenticator? anthropicClaudeAccountAuthenticator = null,
-        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null)
+        IGitHubCopilotAuthenticator? gitHubCopilotAuthenticator = null,
+        IStemCodeEnterpriseAuthenticator? stemCodeEnterpriseAuthenticator = null)
     {
         _selectionPrompt = selectionPrompt;
         _textPrompt = textPrompt;
@@ -140,6 +150,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         _configurationStore = configurationStore;
         _secretStore = secretStore;
         _profileFactory = profileFactory;
+        _stemCodeEnterpriseAuthenticator = stemCodeEnterpriseAuthenticator;
         _openAiChatGptAccountAuthenticator = openAiChatGptAccountAuthenticator;
         _anthropicClaudeAccountAuthenticator = anthropicClaudeAccountAuthenticator;
         _gitHubCopilotAuthenticator = gitHubCopilotAuthenticator;
@@ -248,6 +259,8 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
             {
                 AgentProviderProfile profile = providerChoice switch
                 {
+                    OnboardingProviderChoice.StemCodeSubscription => _profileFactory.CreateCompatible(
+                        ResolveStemCodeSubscriptionBaseUrl()),
                     OnboardingProviderChoice.OpenAi => _profileFactory.CreateOpenAi(),
                     OnboardingProviderChoice.OpenAiChatGptAccount => _profileFactory.CreateOpenAiChatGptAccount(),
                     OnboardingProviderChoice.AnthropicClaudeAccount => _profileFactory.CreateAnthropicClaudeAccount(),
@@ -286,6 +299,10 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
                 string providerSecret = profile.ProviderKind.GetDefaultApiKey() ??
                     providerChoice switch
                     {
+                        OnboardingProviderChoice.StemCodeSubscription =>
+                            await AuthenticateStemCodeSubscriptionAsync(
+                                profile.ResolveBaseUrl(),
+                                cancellationToken),
                         OnboardingProviderChoice.OpenAiChatGptAccount =>
                             await AuthenticateOpenAiChatGptAccountAsync(cancellationToken),
                         OnboardingProviderChoice.AnthropicClaudeAccount =>
@@ -354,7 +371,7 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return CreateProviderName(
             profile,
             GetProviderDisplayName(providerChoice, profile),
-            includeCompatibleHostSuffix: true);
+            includeCompatibleHostSuffix: providerChoice != OnboardingProviderChoice.StemCodeSubscription);
     }
 
     private static string CreateProviderName(AgentProviderProfile profile)
@@ -445,6 +462,21 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         return await _openAiChatGptAccountAuthenticator.AuthenticateAsync(cancellationToken);
     }
 
+    private async Task<string> AuthenticateStemCodeSubscriptionAsync(
+        string baseUrl,
+        CancellationToken cancellationToken)
+    {
+        if (_stemCodeEnterpriseAuthenticator is null)
+        {
+            throw new InvalidOperationException(
+                "StemCode subscription authentication is unavailable in this runtime.");
+        }
+
+        return await _stemCodeEnterpriseAuthenticator.AuthenticateAsync(
+            baseUrl,
+            cancellationToken);
+    }
+
     private async Task<string> AuthenticateAnthropicClaudeAccountAsync(CancellationToken cancellationToken)
     {
         if (_anthropicClaudeAccountAuthenticator is null)
@@ -499,6 +531,17 @@ internal sealed class FirstRunOnboardingService : IFirstRunOnboardingService
         OnboardingProviderChoice providerChoice,
         AgentProviderProfile profile)
     {
-        return profile.ProviderKind.ToDisplayName();
+        return providerChoice == OnboardingProviderChoice.StemCodeSubscription
+            ? "StemCode subscription"
+            : profile.ProviderKind.ToDisplayName();
+    }
+
+    private static string ResolveStemCodeSubscriptionBaseUrl()
+    {
+        string configuredBaseUrl = Environment.GetEnvironmentVariable(
+            StemCodeSubscriptionBaseUrlEnvironmentVariableName) ??
+            DefaultStemCodeSubscriptionBaseUrl;
+
+        return CompatibleProviderBaseUrlNormalizer.Normalize(configuredBaseUrl);
     }
 }

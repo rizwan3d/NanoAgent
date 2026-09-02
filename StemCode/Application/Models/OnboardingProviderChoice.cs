@@ -17,5 +17,6 @@ public enum OnboardingProviderChoice
     Groq = 12,
     OpenCodeZen = 13,
     LmStudio = 14,
-    DeepSeek = 15
+    DeepSeek = 15,
+    StemCodeSubscription = 16
 }

@@ -83,7 +83,7 @@ internal sealed class StemCodeEnterpriseCredentialService :
         timeoutSource.CancelAfter(CallbackTimeout);
 
         await _statusMessageWriter.ShowInfoAsync(
-            "Opening browser for StemCode Enterprise sign-in.",
+            "Opening browser for StemCode subscription sign-in.",
             cancellationToken);
         await _statusMessageWriter.ShowInfoAsync(
             $"If the browser does not open, visit: {authorizationUrl}",
@@ -115,7 +115,7 @@ internal sealed class StemCodeEnterpriseCredentialService :
         await SaveCredentialsAsync(credentials, cancellationToken);
 
         await _statusMessageWriter.ShowSuccessAsync(
-            "StemCode Enterprise sign-in completed.",
+            "StemCode subscription sign-in completed.",
             cancellationToken);
 
         return SerializeCredentials(credentials);
